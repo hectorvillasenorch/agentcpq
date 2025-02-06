@@ -1,0 +1,37 @@
+# 📌 Ignore Python bytecode files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 📌 Ignore Virtual Environment
+venv/
+.env
+
+# 📌 Ignore Django & Database files
+db.sqlite3
+*.sqlite3
+*.log
+
+# 📌 Ignore Django migrations
+*/migrations/*
+!*/migrations/__init__.py
+
+# 📌 Ignore IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+
+# 📌 Ignore MacOS system files
+.DS_Store
+
+# 📌 Ignore compiled C files
+*.so
+
+# 📌 Ignore Jupyter Notebook checkpoints (if used)
+.ipynb_checkpoints/
+
+# 📌 Ignore static and media files (optional)
+staticfiles/
+media/

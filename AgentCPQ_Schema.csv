@@ -1,0 +1,59 @@
+Table Name,Field Name,Data Type,Description
+Product,id,AutoField,Primary Key
+Product,name,CharField(255),Product name
+Product,description,TextField,Optional product description
+Product,sku,CharField(50),Unique product identifier
+Product,price,"DecimalField(10,2)",Base price of the product
+Product,is_subscription,BooleanField,Indicates if the product is a subscription
+Product,term,IntegerField,"Subscription term (12, 24, etc.)"
+Quote,id,AutoField,Primary Key
+Quote,name,CharField(255),Name of the quote
+Quote,created_at,DateTimeField(auto_now_add=True),Quote creation date
+Quote,updated_at,DateTimeField(auto_now=True),Last updated date
+Quote,status,CharField(50),"Draft, Pending, Approved, etc."
+Quote,total_price,"DecimalField(10,2)",Total price of the quote
+QuoteLine,id,AutoField,Primary Key
+QuoteLine,quote,ForeignKey(Quote),Links to Quote
+QuoteLine,product,ForeignKey(Product),Links to Product
+QuoteLine,quantity,IntegerField,Number of units
+QuoteLine,unit_price,"DecimalField(10,2)",Price per unit
+QuoteLine,total_price,"DecimalField(10,2)",Total price
+Subscription,id,AutoField,Primary Key
+Subscription,quote,ForeignKey(Quote),Links to Quote
+Subscription,product,ForeignKey(Product),Links to Product
+Subscription,start_date,DateField,Start date of subscription
+Subscription,end_date,DateField,End date of subscription
+Subscription,billing_cycle,CharField(50),"Monthly, Quarterly, Annually"
+Subscription,price_per_cycle,"DecimalField(10,2)",Billing price per cycle
+Subscription,term,IntegerField,"Subscription term (12, 24, etc.)"
+Asset,id,AutoField,Primary Key
+Asset,quote,ForeignKey(Quote),Links to Quote
+Asset,product,ForeignKey(Product),Links to Product
+Asset,serial_number,CharField(255),Unique serial number
+Asset,assigned_to,CharField(255),User assigned to asset
+ApprovalWorkflow,id,AutoField,Primary Key
+ApprovalWorkflow,name,CharField(255),Approval workflow name
+ApprovalWorkflow,description,TextField,Optional workflow description
+ApprovalStep,id,AutoField,Primary Key
+ApprovalStep,workflow,ForeignKey(ApprovalWorkflow),Links to Workflow
+ApprovalStep,approver_role,CharField(255),"Manager, CFO, VP, etc."
+ApprovalStep,approval_threshold,"DecimalField(10,2)",Min amount requiring approval
+ApprovalStep,sequence,IntegerField,Step order in approval
+QuoteApproval,id,AutoField,Primary Key
+QuoteApproval,quote,ForeignKey(Quote),Links to Quote
+QuoteApproval,workflow,ForeignKey(ApprovalWorkflow),Links to Workflow
+QuoteApproval,step,ForeignKey(ApprovalStep),Approval step
+QuoteApproval,approved_by,CharField(255),User approving
+QuoteApproval,approved_at,DateTimeField,Approval date
+QuoteApproval,status,CharField(50),"Pending, Approved, Rejected"
+PricingRule,id,AutoField,Primary Key
+PricingRule,name,CharField(255),Pricing rule name
+PricingRule,product,ForeignKey(Product),Links to Product
+PricingRule,min_quantity,IntegerField,Minimum units for discount
+PricingRule,max_quantity,IntegerField,Max units for discount
+PricingRule,discount_percentage,"DecimalField(5,2)",Discount percentage
+PricingRule,fixed_price,"DecimalField(10,2)",Optional fixed price
+ProductRule,id,AutoField,Primary Key
+ProductRule,product,ForeignKey(Product),Links to Product
+ProductRule,related_product,ForeignKey(Product),Dependency/Exclusion Product
+ProductRule,rule_type,CharField(20),"Dependency, Exclusion"

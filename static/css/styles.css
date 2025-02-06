@@ -1,0 +1,120 @@
+/* === Dashboard Layout === */
+.dashboard-container {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* === Sidebar === */
+.sidenav-fixed {
+  width: 250px;
+  background-color: #263238;
+  color: white;
+  position: fixed;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.sidenav-fixed a {
+  color: white;
+  display: flex;
+  align-items: center;
+  padding: 15px;
+  font-size: 20px; /* ✅ Set font size to 20px */
+  font-weight: 500;
+}
+
+.sidenav-fixed a i {
+  color: white; /* ✅ Ensure icons are white */
+  font-size: 24px; /* Adjusted for better visibility */
+  margin-right: 10px;
+}
+
+.sidenav-fixed a:hover {
+  background-color: rgba(255, 255, 255, 0.218);
+}
+
+/* === Main Content === */
+.main-content {
+  margin-left: 250px;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 0;
+}
+
+/* === Content Area === */
+#content-area {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: white;
+  padding: 20px;
+  width: 100%;
+  /* max-width: 1400px; */
+  margin: 0 auto;
+  overflow-y: auto;
+  border-radius: 5px;
+}
+
+/* === Table Styling === */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+th {
+  background-color: #f5f5f5;
+  font-weight: bold;
+}
+
+tr:hover {
+  background-color: #f9f9f9;
+}
+
+/* === Status Chips === */
+.status-chip {
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.status-chip.pending {
+  background-color: #ff9800;
+  color: white;
+}
+
+.status-chip.approved {
+  background-color: #4caf50;
+  color: white;
+}
+
+.status-chip.rejected {
+  background-color: #f44336;
+  color: white;
+}
+
+/* === Icon Buttons === */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  margin-right: 5px;
+  cursor: pointer;
+  text-decoration: none;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+}
+
+.icon-button:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
