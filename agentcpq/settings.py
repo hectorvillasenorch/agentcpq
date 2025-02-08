@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 import os
+import logging
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -39,7 +40,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "cpq",
     "agents",
-    'dashboard',
+    "dashboard",
 ]
 
 MIDDLEWARE = [
@@ -139,3 +140,19 @@ CSP_STYLE_SRC = ("'self'", "https://fonts.googleapis.com")  # Allow Google Fonts
 CSP_FONT_SRC = ("'self'", "https://fonts.gstatic.com")  # Allow Google Fonts
 CSP_IMG_SRC = ("'self'", "data:")  # Allow local images and data URIs
 CSP_CONNECT_SRC = ("'self'",)  # Restrict API calls to your own server
+
+
+
+
+
+# ✅ Set default logging level (change to INFO if you want fewer logs)
+logging.basicConfig(
+    level=logging.DEBUG,  # Change to DEBUG if needed
+    format="%(levelname)s:%(name)s:%(message)s"
+)
+
+
+# ✅ Suppress noisy libraries (OpenAI, HTTPX, and HTTPCore)
+# logging.getLogger("openai").setLevel(logging.WARNING)  # Hide OpenAI debug logs
+logging.getLogger("httpx").setLevel(logging.WARNING)  # Suppress HTTP client logs
+logging.getLogger("httpcore").setLevel(logging.WARNING)  # Suppress low-level HTTP logs

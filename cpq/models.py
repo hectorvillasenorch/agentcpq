@@ -71,6 +71,7 @@ class Quote(models.Model):
     ]
 
     name = models.CharField(max_length=255)
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="quotes")
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, related_name="quotes")
     net_amount = models.DecimalField(max_digits=10, decimal_places=2)
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)

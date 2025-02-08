@@ -11,7 +11,7 @@
     .chat-container {
       display: flex;
       flex-direction: column;
-      height: 100%;
+      height: 100vh;
   }
 
   /* Chat Header */
@@ -63,10 +63,11 @@
 
   /* Agent Message Bubble */
   .agent-message {
+      background-color: #f1f1f1;
       color: black;
       padding: 12px;
       border-radius: 15px;
-      width: 100%;
+      max-width: 70%;
       align-self: flex-start;
       margin: 5px 0;
       word-wrap: break-word;
@@ -104,6 +105,7 @@
       background: #f9f9f9;
       width: 100%;
   }
+
   .chat-input {
     flex-grow: 1;
     border: 0 !important;
@@ -113,16 +115,14 @@
     padding: 10px;
 }
 
-/* Remove focus styles across all browsers */
 .chat-input:focus {
     border: 0 !important;
     outline: none !important;
     box-shadow: none !important;
-    -webkit-box-shadow: none !important; /* Chrome/Safari */
-    -moz-box-shadow: none !important; /* Firefox */
+    -webkit-box-shadow: none !important;
+    -moz-box-shadow: none !important;
 }
 
-/* Ensure autofill background does not interfere */
 .chat-input:-webkit-autofill,
 .chat-input:-webkit-autofill:hover, 
 .chat-input:-webkit-autofill:focus, 
@@ -144,42 +144,12 @@
   .send-button:hover {
       background-color: #1976D2;
   }
-
-  /* Small Icon Buttons */
-  .chat-actions {
-      display: flex;
-      justify-content: center;
-      margin-top: 10px;
-  }
-
-  .action-btn {
-      background: none;
-      border: none;
-      cursor: pointer;
-      padding: 8px;
-      margin: 0 5px;
-      font-size: 22px;
-      color: #666;
-      transition: color 0.2s ease-in-out;
-  }
-
-  .action-btn:hover {
-      color: #2196F3;
-  }
-  </style>
-  
+    </style>
 </head>
 <body class="white lighten-4">
     
   <div class="chat-container">
-    <!-- Chat Messages -->
-    <div id="chat-box" class="chat-box">
-        <div class="agent-message">
-           
-        </div>
-    </div>
-
-    <!-- Chat Input -->
+    <div id="chat-box" class="chat-box"></div>
     <div class="chat-input-container">
       <div class="input-wrapper">
           <input type="text" id="user-input" placeholder="Send a message..." class="chat-input">
@@ -187,129 +157,120 @@
               <i class="material-icons">send</i>
           </button>
       </div>
-      
-      <!-- Icon Buttons -->
-      <div class="chat-actions">
-          <button class="action-btn"><i class="material-icons">history</i></button>
-          <button class="action-btn"><i class="material-icons">lightbulb</i></button>
-          <button class="action-btn"><i class="material-icons">settings</i></button>
-      </div>
-  </div>
-
-    <input type="hidden" id="csrf-token" value="{{ csrf_token }}">
+    </div>
 </div>
 
-    <!-- ✅ JavaScript -->
     <script>
-        function setupChatListeners() {
-            console.log("Setting up chat listeners...");
-            let inputField = document.getElementById("user-input");
-            let button = document.getElementById("send-btn");
+        
+      function setupChatListeners() {
+        console.log("Setting up chat listeners...");
+        let inputField = document.getElementById("user-input");
+        let button = document.getElementById("send-btn");
 
-            if (!inputField || !button) {
-                console.error("Chat input or button not found!");
-                return;
-            }
-
-            button.addEventListener("click", sendMessage);
-            inputField.addEventListener("keypress", function (event) {
-                if (event.key === "Enter") {
-                    sendMessage();
-                }
-            });
-
-            console.log("Chat listeners attached.");
+        if (!inputField || !button) {
+            console.error("Chat input or button not found!");
+            return;
         }
 
-        document.addEventListener("DOMContentLoaded", function () {
-            setupChatListeners();
+        button.addEventListener("click", sendMessage);
+        inputField.addEventListener("keypress", function (event) {
+            if (event.key === "Enter") {
+                sendMessage();
+            }
         });
 
-        async function sendMessage() {
-            let userMessage = document.getElementById("user-input").value.trim();
-            let chatBox = document.getElementById("chat-box");
-            let csrfToken = document.getElementById("csrf-token")?.value || "";
+        console.log("Chat listeners attached.");
+    }
 
-            if (!userMessage) return;
+    document.addEventListener("DOMContentLoaded", function () {
+        setupChatListeners();
+    });
 
-            let userBubble = document.createElement("div");
-            userBubble.classList.add("user-message");
-            userBubble.innerHTML = `<strong>You:</strong> ${userMessage}`;
-            chatBox.appendChild(userBubble);
-            document.getElementById("user-input").value = "";
-
-            try {
-                let response = await fetch("/agents/chat/", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-CSRFToken": csrfToken
-                    },
-                    body: JSON.stringify({ message: userMessage })
-                });
-
-                if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-
-                let data = await response.json();
-                let agentBubble = document.createElement("div");
-                agentBubble.classList.add("agent-message");
-
-                let formattedResponse = formatAgentResponse(data.response);
-                agentBubble.appendChild(formattedResponse);
-                chatBox.appendChild(agentBubble);
-            } catch (error) {
-                console.error("Error:", error);
-                let errorBubble = document.createElement("p");
-                errorBubble.classList.add("agent-message");
-                errorBubble.innerHTML = `<strong>Error:</strong> Could not reach the server.`;
-                chatBox.appendChild(errorBubble);
-            }
-
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
-
-        function formatAgentResponse(response) {
-          let formattedResponse = document.createElement("div");
-          formattedResponse.classList.add("agent-message");
-      
-          // ✅ Check for JSON format
-          if (response.includes("```json")) {
-              let jsonContent = response
-                  .replace("```json", "")
-                  .replace("```", "")
-                  .trim();
-              
-              formattedResponse.innerHTML = `
-                  <strong>Agent:</strong> 📄 Here's the structured data:<br>
-                  <pre class="json-preview"><code>${jsonContent}</code></pre>
-              `;
-              return formattedResponse;
-          }
-      
-          // ✅ Check for numbered lists (like explanations)
-          if (response.includes("1.") && response.includes("2.")) {
-              let listItems = response.split("\n").map(item => {
-                  if (item.match(/^\d+\.\s/)) { // Detects numbers followed by ". "
-                      return `<li>🔹 ${item}</li>`;
-                  }
-                  return `<li>${item}</li>`;
-              }).join("");
-      
-              formattedResponse.innerHTML = `
-                  <strong>Agent:</strong> 📖 Here's a detailed explanation:<br>
-                  <ul class="formatted-list">${listItems}</ul>
-              `;
-              return formattedResponse;
-          }
-      
-          // ✅ Default response (plain text)
-          formattedResponse.innerHTML = `<p>${response}</p>`;
-          return formattedResponse;
+    async function sendMessage() {
+      let userMessage = document.getElementById("user-input").value.trim();
+      let chatBox = document.getElementById("chat-box");
+  
+      if (!userMessage) return;
+  
+      // Display user message
+      let userBubble = document.createElement("div");
+      userBubble.classList.add("user-message");
+      userBubble.textContent = `You: ${userMessage}`;
+      chatBox.appendChild(userBubble);
+      document.getElementById("user-input").value = "";
+  
+      try {
+          let response = await fetch("/agents/chat/", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ message: userMessage })
+          });
+  
+          if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+  
+          let data = await response.json();
+  
+          // ✅ Extract the "message" field if the response is an object
+          let agentMessage = data.message ? data.message : JSON.stringify(data);
+  
+          // Display AI response as plain text
+          let agentBubble = document.createElement("div");
+          agentBubble.classList.add("agent-message");
+          agentBubble.textContent = `Agent: ${agentMessage}`;
+          chatBox.appendChild(agentBubble);
+  
+      } catch (error) {
+          console.error("Error:", error);
+          
+          let errorBubble = document.createElement("div");
+          errorBubble.classList.add("agent-message");
+          errorBubble.textContent = "Error: Could not reach the server.";
+          
+          chatBox.appendChild(errorBubble);
       }
-    </script>
+  
+      chatBox.scrollTop = chatBox.scrollHeight;
+  }
 
-    <!-- Materialize JS -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+  function formatAgentResponse(response) {
+    let formattedResponse = document.createElement("div");
+    formattedResponse.classList.add("agent-message");
+
+    // ✅ Check for JSON format
+    if (response.includes("```json")) {
+        let jsonContent = response
+            .replace("```json", "")
+            .replace("```", "")
+            .trim();
+        
+        formattedResponse.innerHTML = `
+            <strong>Agent:</strong> 📄 Here's the structured data:<br>
+            <pre class="json-preview"><code>${jsonContent}</code></pre>
+        `;
+        return formattedResponse;
+    }
+
+    // ✅ Check for numbered lists (like explanations)
+    if (response.includes("1.") && response.includes("2.")) {
+        let listItems = response.split("\n").map(item => {
+            if (item.match(/^\d+\.\s/)) { // Detects numbers followed by ". "
+                return `<li>🔹 ${item}</li>`;
+            }
+            return `<li>${item}</li>`;
+        }).join("");
+
+        formattedResponse.innerHTML = `
+            <strong>Agent:</strong> 📖 Here's a detailed explanation:<br>
+            <ul class="formatted-list">${listItems}</ul>
+        `;
+        return formattedResponse;
+    }
+
+    // ✅ Default response (plain text)
+    formattedResponse.innerHTML = `<p>${response}</p>`;
+    return formattedResponse;
+}
+    </script>
 
 </body>
 </html>
