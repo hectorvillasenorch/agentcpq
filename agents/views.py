@@ -1,7 +1,7 @@
 import openai , json, os
 import re
 from django.http import JsonResponse
-from .orchestrator import orchestrate_request
+from .orchestrator import handle_user_request
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.template.context_processors import csrf
@@ -23,7 +23,6 @@ def agents_chat(request):
     context = {}
     context.update(csrf(request))  # ✅ Add CSRF token to context
     return render(request, "agents.html", context)
-
 
 
 @csrf_exempt
@@ -58,7 +57,8 @@ def chat_with_gpt(request):
                     return JsonResponse({"response": f"✅ Product `{product_sku}` added to the quote."})
 
             # ✅ Step 3: Route User Message via Orchestrator
-            response = orchestrate_request(user_message, session_data)
+            response = handle_user_request(user_message, session_data)
+            
 
             # ✅ Step 4: Store Context in Session
             request.session["session_data"] = session_data
@@ -71,123 +71,6 @@ def chat_with_gpt(request):
             return JsonResponse({"response": f"⚠️ An error occurred: {str(e)}"}, status=500)
 
     return JsonResponse({"error": "Invalid request"}, status=400)
-# def chat_with_gpt(request):
-#     """Processes user message, determines intent, and routes response."""
-#     if request.method == "POST":
-#         data = json.loads(request.body)
-#         user_message = data.get("message", "").strip()
-
-#         try:
-#             session_data = request.session.get("session_memory", {})
-#             response = orchestrate_request(user_message, session_data)
-
-#             return JsonResponse({"response": response})  # ✅ Fixed: Wrapped in a dictionary
-
-#         except Exception as e:
-#             logging.error(f"❌ Error in chat_with_gpt: {e}")
-#             return JsonResponse({"response": "⚠️ An error occurred while processing your request."})
-
-#     return JsonResponse({"error": "Invalid request"}, status=400)
-# def chat_with_gpt(request):
-#     """Process user messages and route them based on intent (create/update product)."""
-#     if request.method == "POST":
-#         data = json.loads(request.body)
-#         user_message = data.get("message", "").strip()
-
-#         try:
-#             client = openai.OpenAI(api_key=OPENAI_API_KEY)
-
-#             # ✅ Step 1: Check if user is responding to a pending action
-#             pending_action = request.session.get("pending_action")
-            
-#             if pending_action == "confirm_creation":
-#                 product_details = request.session.get("pending_product")
-#                 print("🔹 DEBUG: Pending product details before creation:", product_details)  # ✅ Debugging step
-
-#                 if user_message in ["yes", "confirm"]:
-#                     response_text = create_product_record(product_details)  # ✅ Now returns a string
-#                     request.session.pop("pending_action", None)
-#                     request.session.pop("pending_product", None)
-#                     return JsonResponse({"response": response_text})  # ✅ Correct place to return JsonResponse
-
-#                 else:
-#                     request.session.pop("pending_action", None)
-#                     request.session.pop("pending_product", None)
-#                     return JsonResponse({"response": "❌ Product creation canceled."})
-
-#             if pending_action == "confirm_update":
-#                 updated_product = request.session.get("pending_update")
-#                 print("🔹 DEBUG: Pending update details before confirmation:", updated_product)  # ✅ Debugging step
-
-#                 if user_message in ["yes", "confirm"]:
-#                     response_text = update_product_record(updated_product)  # ✅ Now returns a string
-#                     request.session.pop("pending_action", None)
-#                     request.session.pop("pending_update", None)
-#                     return JsonResponse({"response": response_text})  # ✅ Correct place to return JsonResponse
-
-#                 else:
-#                     request.session.pop("pending_action", None)
-#                     request.session.pop("pending_update", None)
-#                     return JsonResponse({"response": "❌ Product update canceled."})
-
-#             # ✅ Step 2: Detect user intent
-#             intent_detection_prompt = f"""
-#             You are an AI assistant that classifies user messages into intents.
-#             Here are the possible intents:
-#             - "create_product": When the user wants to create a new product.
-#             - "update_product": When the user wants to update an existing product.
-#             - "general_query": When the user asks something else.
-
-#             User message: "{user_message}"
-#             Return only the intent as a single word.
-#             """
-
-#             response = client.chat.completions.create(
-#                 model="gpt-4",
-#                 messages=[{"role": "user", "content": intent_detection_prompt}]
-#             )
-#             intent = response.choices[0].message.content.strip().lower()
-
-#             print("🔹 DEBUG: DETECTED INTENT:", intent)  # ✅ Debugging step
-
-#             # ✅ Step 3: Route request based on detected intent
-#             if intent == "create_product":
-#                 product_response = create_product_from_message(user_message)
-
-#                 if product_response["product_details"]:
-#                     print("🔹 DEBUG: Extracted product details before storing in session:", product_response["product_details"])  # ✅ Debugging step
-#                     request.session["pending_action"] = "confirm_creation"
-#                     request.session["pending_product"] = product_response["product_details"]
-
-#                 return JsonResponse({"response": product_response["message"]})
-
-#             elif intent == "update_product":
-#                 update_response = update_product_details(user_message)
-
-#                 if update_response["product_details"]:
-#                     print("🔹 DEBUG: Extracted update details before storing in session:", update_response["product_details"])  # ✅ Debugging step
-#                     request.session["pending_action"] = "confirm_update"
-#                     request.session["pending_update"] = update_response["product_details"]
-
-#                 return JsonResponse({"response": update_response["message"]})
-
-#             else:
-#                 # ✅ Step 4: Process general AI queries
-#                 response = client.chat.completions.create(
-#                     model="gpt-4",
-#                     messages=[
-#                         {"role": "system", "content": "You are an AI assistant that helps users with CPQ automation."},
-#                         {"role": "user", "content": user_message}
-#                     ]
-#                 )
-#                 ai_response = response.choices[0].message.content
-
-#         except Exception as e:
-#             ai_response = f"⚠️ Error: {str(e)}"
-
-#         return JsonResponse({"response": ai_response})
-
-#     return JsonResponse({"error": "Invalid request"}, status=400)
 
 def create_product_from_message(user_message):
     """Extract product details, validate, and ask for confirmation before creating."""

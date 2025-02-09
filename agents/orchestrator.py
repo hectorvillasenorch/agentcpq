@@ -2,7 +2,7 @@ import openai
 import json
 import os
 import logging
-from agents.quote_agent import create_quote_agent, add_product_to_quote
+from agents.quote_agent import add_product_to_quote, quote_agent
 # from agents.product_agent import product_agent
 # from agents.bundles_agent import configure_bundle_agent
 # from agents.pricing_agent import apply_discount_agent
@@ -12,12 +12,20 @@ from dotenv import load_dotenv
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-4"
-
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
-
 logging.basicConfig(level=logging.DEBUG)
-
 openai.log = "warning"
+
+def handle_user_request(user_message, session_data):
+    """Handles user requests, checking for session reset before processing."""
+    
+    if should_reset_session(user_message):
+        session_data.clear()
+        return {"message": "🔄 Session cleared! Let's start fresh. What would you like to do?"}
+
+    # ✅ Proceed with normal processing
+    return orchestrate_request(user_message, session_data)
+
 
 def orchestrate_request(user_message, session_data):
     """Dynamically determine next steps based on user request and session context."""
@@ -28,22 +36,16 @@ def orchestrate_request(user_message, session_data):
     # ✅ Handle pending actions first
     pending_action = session_data.get("pending_action")
 
-    if pending_action and user_message.strip():
+    if pending_action:
         logging.info(f"🟡 Pending Action Detected: {pending_action}")
 
         if pending_action == "confirm_opportunity":
-          session_data["opportunity"] = user_message.strip()  # Ensure clean input
-          session_data["pending_action"] = "add_product"  # ✅ Move to adding products
-          return {"message": f"✅ Opportunity `{session_data['opportunity']}` added. Would you like to add products now?"}
+            session_data["opportunity"] = user_message
+            session_data["pending_action"] = None
+            return quote_agent(user_message, session_data)  # ✅ Use `quote_agent`
 
         elif pending_action == "add_product":
-            return add_product_to_quote(user_message, session_data)  # Add product to existing quote
-
-        # elif pending_action == "apply_discount":
-        #     return apply_discount_to_quote(user_message, session_data)  # Apply discount to quote
-
-        # elif pending_action == "provide_dates":
-        #     return provide_dates_for_subscription(user_message, session_data)  # Handle subscription dates
+            return quote_agent(user_message, session_data)  # ✅ Unified logic for all quote actions
 
     # ✅ No pending actions → Determine new action
     prompt = f"""
@@ -58,6 +60,7 @@ def orchestrate_request(user_message, session_data):
     - "AddProduct"
     - "ApplyDiscount"
     - "ProvideDates"
+    - "ShowQuoteDetails"  ✅ NEW ACTION TO FETCH QUOTE DETAILS
     - "GeneralQuery"
 
     If the request is unclear, return "GeneralQuery".
@@ -79,15 +82,9 @@ def orchestrate_request(user_message, session_data):
         logging.error(f"❌ Error in OpenAI call: {e}")
         return {"message": "⚠️ Sorry, an error occurred while processing your request."}
 
-    # ✅ Route all quote-related actions to the Quote Agent
-    if decision == "CreateQuote":
-      return create_quote_agent(user_message, session_data)
-
-    if decision == "AddProduct":
-        return add_product_to_quote(user_message, session_data)  # ✅ Separate AddProduct logic
-
-    # if decision in ["ApplyDiscount", "ProvideDates"]:
-    #     return modify_quote_details(user_message, session_data)  # ✅ Placeholder function
+    # ✅ Route all quote-related actions to the **quote_agent**
+    if decision in ["CreateQuote", "AddProduct", "ApplyDiscount", "ProvideDates", "ShowQuoteDetails"]:
+        return quote_agent(decision, user_message, session_data)  # ✅ Handles all quote interactions
 
     # ✅ Handle general queries
     if decision == "GeneralQuery":
@@ -119,3 +116,31 @@ def query_gpt_for_general_response(user_message):
     except Exception as e:
         logging.error(f"❌ Error processing general query: {e}")
         return "⚠️ I had trouble processing that. Can you ask differently?"
+    
+def should_reset_session(user_message):
+    """Use GPT to determine if the user intends to reset the session."""
+    prompt = f"""
+    Determine if the user message indicates a request to reset the session.
+
+    **User Message:** "{user_message}"
+
+    If the user wants to reset the session, return **ONLY** "RESET".
+    Otherwise, return **ONLY** "CONTINUE".
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "Determine if the user wants to reset the session."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        decision = response.choices[0].message.content.strip().upper()
+        return decision == "RESET"
+
+    except Exception as e:
+        logging.error(f"❌ Error in GPT session reset detection: {e}")
+        return False  # Default to not resetting if GPT fails
+
