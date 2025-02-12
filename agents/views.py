@@ -1,4 +1,6 @@
-import openai , json, os
+import openai
+import json
+import os
 import re
 from django.http import JsonResponse
 from .orchestrator import handle_user_request
@@ -35,6 +37,9 @@ def chat_with_gpt(request):
         try:
             # ✅ Step 1: Load Session Context
             session_data = request.session.get("session_data", {})
+            # ✅ Step 1: Load Session Context
+            session_data = request.session.get("session_data", {})
+            print("🔹 DEBUG: Session Data:", session_data)  # ✅ Debugging step
 
             # ✅ Step 2: Handle Pending Actions
             pending_action = session_data.get("pending_action")

@@ -156,3 +156,6 @@ logging.basicConfig(
 # logging.getLogger("openai").setLevel(logging.WARNING)  # Hide OpenAI debug logs
 logging.getLogger("httpx").setLevel(logging.WARNING)  # Suppress HTTP client logs
 logging.getLogger("httpcore").setLevel(logging.WARNING)  # Suppress low-level HTTP logs
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')

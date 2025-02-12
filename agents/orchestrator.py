@@ -33,21 +33,6 @@ def orchestrate_request(user_message, session_data):
     # ✅ Ensure session data is serializable
     session_context = {k: str(v) for k, v in session_data.items() if isinstance(v, (str, int, float, list, dict))}
     
-    # ✅ Handle pending actions first
-    pending_action = session_data.get("pending_action")
-
-    if pending_action:
-        logging.info(f"🟡 Pending Action Detected: {pending_action}")
-
-        if pending_action == "confirm_opportunity":
-            session_data["opportunity"] = user_message
-            session_data["pending_action"] = None
-            return quote_agent(user_message, session_data)  # ✅ Use `quote_agent`
-
-        elif pending_action == "add_product":
-            return quote_agent(user_message, session_data)  # ✅ Unified logic for all quote actions
-
-    # ✅ No pending actions → Determine new action
     prompt = f"""
     You are an AI assistant that classifies user requests into predefined actions.
 
@@ -58,6 +43,7 @@ def orchestrate_request(user_message, session_data):
     **Return ONLY one of the following labels (do NOT add explanations):**
     - "CreateQuote"
     - "AddProduct"
+    - "GenerateQuoteDocument"
     - "ApplyDiscount"
     - "ProvideDates"
     - "ShowQuoteDetails"  ✅ NEW ACTION TO FETCH QUOTE DETAILS
@@ -83,7 +69,7 @@ def orchestrate_request(user_message, session_data):
         return {"message": "⚠️ Sorry, an error occurred while processing your request."}
 
     # ✅ Route all quote-related actions to the **quote_agent**
-    if decision in ["CreateQuote", "AddProduct", "ApplyDiscount", "ProvideDates", "ShowQuoteDetails"]:
+    if decision in ["CreateQuote", "AddProduct", "ApplyDiscount", "ProvideDates", "ShowQuoteDetails", "GenerateQuoteDocument"]:
         return quote_agent(decision, user_message, session_data)  # ✅ Handles all quote interactions
 
     # ✅ Handle general queries
@@ -91,7 +77,7 @@ def orchestrate_request(user_message, session_data):
         return query_gpt_for_general_response(user_message)
 
     logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
-    return {"message": "🤖 Sorry, I couldn’t understand your request."}
+    return {"message": "🤖 Sorry, I couldn’t understand your request. From Orchestrator"}
 
 def query_gpt_for_general_response(user_message):
     """Send open-ended queries to GPT."""
