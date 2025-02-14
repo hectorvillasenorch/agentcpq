@@ -33,7 +33,7 @@ def chat_with_gpt(request):
     if request.method == "POST":
         data = json.loads(request.body)
         user_message = data.get("message", "").strip()
-
+        
         try:
             # ✅ Step 1: Load Session Context
             session_data = request.session.get("session_data", {})

@@ -46,7 +46,8 @@ def orchestrate_request(user_message, session_data):
     - "GenerateQuoteDocument"
     - "ApplyDiscount"
     - "ProvideDates"
-    - "ShowQuoteDetails"  ✅ NEW ACTION TO FETCH QUOTE DETAILS
+    - "ShowQuoteDetails"
+    - "UpdateQuoteLine"
     - "GeneralQuery"
 
     If the request is unclear, return "GeneralQuery".
@@ -69,7 +70,7 @@ def orchestrate_request(user_message, session_data):
         return {"message": "⚠️ Sorry, an error occurred while processing your request."}
 
     # ✅ Route all quote-related actions to the **quote_agent**
-    if decision in ["CreateQuote", "AddProduct", "ApplyDiscount", "ProvideDates", "ShowQuoteDetails", "GenerateQuoteDocument"]:
+    if decision in ["CreateQuote", "AddProduct", "ApplyDiscount", "ProvideDates", "ShowQuoteDetails", "GenerateQuoteDocument","UpdateQuoteLine"]:
         return quote_agent(decision, user_message, session_data)  # ✅ Handles all quote interactions
 
     # ✅ Handle general queries

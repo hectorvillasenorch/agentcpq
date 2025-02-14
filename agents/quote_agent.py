@@ -12,8 +12,9 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from django.http import FileResponse
 from django.conf import settings
-from reportlab.lib.colors import Color
 from reportlab.lib.colors import HexColor
+from django.http import JsonResponse
+from django.db import models
 
 
 # ✅ Load environment variables
@@ -88,6 +89,7 @@ def quote_agent(action, user_message, session_data):
         "ShowQuoteDetails": show_quote_details,
         "AddProduct": add_product_to_quote,
         "GenerateQuoteDocument": generate_quote_pdf,
+        "UpdateQuoteLine": update_quote_line,
         # "ApplyDiscount": apply_discount,
         # "ProvideDates": provide_dates,
     }
@@ -215,6 +217,107 @@ def add_product_to_quote(user_message, session_data):
         "message": f"✅ Added {quantity}x {sku} to quote `{quote.name}`. Net amount updated to ${quote.net_amount:.2f}. Would you like to add more products or apply a discount?"
     }
 
+def update_quote_line(user_message, session_data):
+    """Updates only the modified fields in quote lines."""
+    try:
+        updates = json.loads(user_message.replace("Update Quote Line: ", ""))  # Extract JSON array
+
+        active_quote = session_data.get("active_quote")
+
+        if not active_quote:
+            logging.warning("⚠️ No active quote found in session. Attempting to extract from message...")
+            extracted_quote_name = extract_quote_name(user_message)
+
+            if extracted_quote_name:
+                try:
+                    quote = Quote.objects.get(name=extracted_quote_name)
+                    session_data["active_quote"] = {"quote_id": quote.id, "quote_name": quote.name}  # Store in session
+                except Quote.DoesNotExist:
+                    return {"message": f"⚠️ No quote found with name {extracted_quote_name}."}
+            else:
+                return {"message": "⚠️ No active quote found. Please specify a quote name."}
+        else:
+            quote = Quote.objects.get(id=session_data["active_quote"]["quote_id"])
+
+        for update in updates:
+            sku = update["sku"]
+            field = update["field"]
+            new_value = update["value"]
+
+            try:
+                quote_line = QuoteLine.objects.get(quote=quote, product__sku=sku)
+            except QuoteLine.DoesNotExist:
+                return {"message": f"⚠️ Error: No line item found for SKU {sku} in this quote."}
+
+            # ✅ Update based on the field dynamically
+            if field == "quantity":
+                quote_line.quantity = int(new_value)
+            elif field == "unit_price":
+                quote_line.unit_price = Decimal(new_value)
+
+            quote_line.save()
+
+        return {"message": "✅ Quote line(s) updated successfully."}
+
+    except Exception as e:
+        return {"message": f"⚠️ Error updating quote line: {str(e)}"}
+
+def extract_quote_line_updates(user_message):
+    """Uses GPT to extract SKU, field, and new value for quote line updates."""
+    try:
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+        prompt = f"""
+        Extract structured update details from the following request.
+        Return a JSON array with objects containing:
+        - "sku" (string, required)
+        - "field" (string, either "quantity" or "unit_price")
+        - "value" (string or number, new value)
+
+        **Example Input & Output:**
+        User: "Update AI-10 quantity to 600 and price to 49.99"
+        Response:
+        [
+            {{"sku": "AI-10", "field": "quantity", "value": "600"}},
+            {{"sku": "AI-10", "field": "unit_price", "value": "49.99"}}
+        ]
+
+        **IMPORTANT:** Only return the JSON array. Do not include any explanation, labels, or extra text.
+
+        User Request: "{user_message}"
+        """
+
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        raw_response = response.choices[0].message.content.strip()
+        
+        # 🔍 Log raw GPT response
+        logging.info(f"🔍 Raw GPT Response: {raw_response}")
+
+        # ✅ Fix: Remove unwanted prefixes like "Response:"
+        cleaned_response = raw_response.lstrip("Response:").strip()
+
+        try:
+            extracted_data = json.loads(cleaned_response)
+
+            # Ensure GPT response is a list
+            if isinstance(extracted_data, list):
+                return extracted_data
+            else:
+                logging.warning("⚠️ GPT did not return a list, returning empty array.")
+                return []
+
+        except json.JSONDecodeError:
+            logging.error(f"❌ GPT returned invalid JSON after cleaning: {cleaned_response}")
+            return []
+
+    except Exception as e:
+        logging.error(f"❌ Error extracting quote line updates: {str(e)}")
+        return []
+
 def extract_quote_name(user_message):
     """Extracts the quote name from user input."""
     import re
@@ -232,6 +335,9 @@ def show_quote_details(user_message, session_data):
 
         # ✅ Get the quote by name
         quote = Quote.objects.get(name=quote_name)
+        session_data["active_quote"] = {"quote_id": quote.id}
+         # ✅ Update session to track the active quote
+    
 
         # ✅ Fetch related quote lines
         quote_lines = QuoteLine.objects.filter(quote=quote)
@@ -365,7 +471,10 @@ def generate_quote_pdf(user_message, session_data):
 
         buffer.close()
 
-        return {"message": f"📄 Quote PDF generated successfully! Download: {settings.MEDIA_URL}{pdf_filename}"}
+        return {
+            "message": "📄 Quote PDF generated successfully!",
+            "download_url": f"{settings.MEDIA_URL}{pdf_filename}"
+            }
 
     except Quote.DoesNotExist:
         return {"message": "⚠️ Error: Quote not found."}

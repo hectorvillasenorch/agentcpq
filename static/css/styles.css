@@ -8,30 +8,48 @@
 /* === Sidebar === */
 .sidenav-fixed {
   width: 250px;
-  background-color: #263238;
+  /* background-color: #263238; */
+  background-color: #464646;
   color: white;
   position: fixed;
   height: 100%;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* ✅ Centers the sidebar content */
+  padding-top: 20px;
 }
 
+/* ✅ Style for links: Center in sidebar, align text to the left */
 .sidenav-fixed a {
   color: white;
   display: flex;
   align-items: center;
+  justify-content: flex-start; /* ✅ Aligns text to the left */
+  width: 90%; /* ✅ Ensures links span most of the sidebar width */
   padding: 15px;
-  font-size: 20px; /* ✅ Set font size to 20px */
+  font-size: 20px;
   font-weight: 500;
+  text-decoration: none;
+  border-radius: 8px;
 }
 
 .sidenav-fixed a i {
-  color: white; /* ✅ Ensure icons are white */
-  font-size: 24px; /* Adjusted for better visibility */
+  color: white;
+  font-size: 24px;
   margin-right: 10px;
 }
 
 .sidenav-fixed a:hover {
-  background-color: rgba(255, 255, 255, 0.218);
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ✅ Brand Styling: Centered at the top */
+.brand {
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 20px;
 }
 
 /* === Main Content === */
@@ -42,6 +60,9 @@
   flex-direction: column;
   height: 100vh;
   padding: 0;
+}
+.brand{
+  text-align: center;
 }
 
 /* === Content Area === */
