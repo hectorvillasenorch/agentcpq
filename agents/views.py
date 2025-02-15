@@ -30,10 +30,17 @@ def agents_chat(request):
 @csrf_exempt
 def chat_with_gpt(request):
     """Process user messages and route them based on AI-determined intent."""
+    opportunity_id = request.GET.get('opportunity_id', 'No Opportunity ID provided')
+
+    # ✅ Log the full incoming request URL
+    print(f"🔹 DEBUG: Incoming request URL - {request.build_absolute_uri()}")  
+    print(f"🔹 DEBUG: Extracted Opportunity ID - {opportunity_id}")  
+
     if request.method == "POST":
         data = json.loads(request.body)
         user_message = data.get("message", "").strip()
-        
+            
+
         try:
             # ✅ Step 1: Load Session Context
             session_data = request.session.get("session_data", {})

@@ -139,3 +139,6 @@ agent_map = {
 ## **📜 License**
 MIT License. See `LICENSE` for details.
 
+
+✅ **MVP-Features**: 
+- Core quoting  

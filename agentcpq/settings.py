@@ -26,7 +26,19 @@ SECRET_KEY = "django-insecure-bub3zw@!0=_wdp43tnesi*7!j5&yw3n4ejp(q5fni87n_2lc5%
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+# ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    '127.0.0.1', 
+    'localhost', 
+    'ddc6-2607-fb91-aa9-5bd3-d4b3-7ebd-4fd8-d224.ngrok-free.app'
+]
+
+# Allow Django to be embedded in an IFrame (required for Salesforce)
+X_FRAME_OPTIONS = 'ALLOWALL'
+CSRF_TRUSTED_ORIGINS = [
+    'https://ddc6-2607-fb91-aa9-5bd3-d4b3-7ebd-4fd8-d224.ngrok-free.app',
+    'https://agente001.lightning.force.com'
+]
 
 
 # Application definition
