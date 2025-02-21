@@ -18,7 +18,6 @@ def product_agent(action, user_message, session_data):
     action_map = {
         "CreateProductRecord": create_product,
         "UpdateProductRecord": update_product,
-        # "CreateBundle": add_product_to_quote,
         # "UpdateBundle": generate_quote_pdf,
     }
 
@@ -26,36 +25,36 @@ def product_agent(action, user_message, session_data):
     if action in action_map:
         return action_map[action](user_message, session_data)
 
-    return {"message": "🤖 Sorry, I couldn’t understand your request."}
+    return {"message": "🤖 Sorry, I couldn’t understand your request. From Product Agent"}
 
 
 
 def create_product(user_message, session_data):
-    """Extract product details, validate, and ask for confirmation before creating."""
+    """Extracts product details, validates fields, and creates the product record."""
     try:
-        # ✅ Extract product details using GPT
-        product_details = extract_product_details(user_message)
+        product_details = extract_product_details(user_message, session_data)
 
         if "error" in product_details:
-            return {"message": product_details["error"], "product_details": None}
+            return {"message": product_details["error"]}
 
-        # ✅ Check if SKU exists in the database (preserving case)
+        # ✅ Validate required fields
+        required_fields = ["sku", "name", "price"]
+        missing_fields = [field for field in required_fields if not product_details.get(field)]
+
+        if missing_fields:
+            return {"message": f"⚠️ Missing required fields: {', '.join(missing_fields)}. Please provide them."}
+
+        # ✅ Check if SKU exists
         if Product.objects.filter(sku=product_details["sku"]).exists():
-            return {"message": f"⚠️ Product `{product_details['sku']}` already exists in the database.", "product_details": None}
+            return {"message": f"⚠️ Product `{product_details['sku']}` already exists in the database."}
 
-        # ✅ Debugging: Store extracted product details in session
-        session_data["pending_product"] = product_details
+        # ✅ Create product record
+        success_message = create_product_record(product_details)
 
-        # ✅ Show JSON Preview Before Creating
-        json_preview = json.dumps(product_details, indent=2)
-        return {
-            "message": f"🔹 Here is the product that will be created:\n```json\n{json_preview}\n```\nDo you confirm?",
-            "product_details": product_details
-        }
+        return {"message": success_message}  # ✅ Ensure correct response format
 
     except Exception as e:
-        return {"message": f"⚠️ Error processing product creation: {str(e)}", "product_details": None}
-    
+        return {"message": f"⚠️ Error processing product creation: {str(e)}"}
 
 def extract_sku_from_message(user_message):
     """Extract SKU from user input using GPT."""
@@ -95,7 +94,7 @@ def extract_sku_from_message(user_message):
         print(f"⚠️ Error extracting SKU: {str(e)}")
         return "MISSING_SKU"
 
-def update_product(user_message):
+def update_product(user_message, session_data):
     """Modify product details based on user input before confirmation."""
     try:
         print("🔹 DEBUG: USER MESSAGE:", user_message)  # Debugging step
@@ -128,18 +127,29 @@ def update_product(user_message):
         # ✅ Modify product details using GPT
         updated_product = gpt_modify_product_details(user_message, product_details)
 
-        # ✅ Show updated JSON to user before saving
+        if not updated_product:
+            return {"message": "⚠️ No changes detected or invalid update request."}
+
+        # ✅ Store JSON preview for reference
         json_preview = json.dumps(updated_product, indent=2)
+
+        # ✅ Execute the update
+        product_update_executed = update_product_record(updated_product)
+
         return {
-            "message": f"🔹 Updated product details:\n```json\n{json_preview}\n```\nDo you confirm?",
+            "message": f"🔹 Updated product details:\n```json\n{json_preview}\n```\n\n {product_update_executed}",
             "product_details": updated_product
         }
 
     except Exception as e:
         return {"message": f"⚠️ Error updating product details: {str(e)}", "product_details": None}
 
-def extract_product_details(user_request):
-    """Use GPT to extract product details based on our schema."""
+def extract_product_details(user_request, session_data):
+    """Use GPT to extract product details based on our schema, considering session data."""
+    
+    # ✅ Retrieve pending product if available
+    pending_product = session_data.get("pending_product")
+
     schema = f"""
     Extract product details from the following request and return them as JSON.
     Fields:
@@ -161,6 +171,9 @@ def extract_product_details(user_request):
         "is_bundle": false
     }}
 
+    If the user is confirming a previous product creation (e.g., "Yes, confirm"), use the following pending product details:
+    {json.dumps(pending_product, indent=2) if pending_product else "None"}
+
     Request: {user_request}
     """
 
@@ -176,18 +189,18 @@ def extract_product_details(user_request):
 
         # ✅ Print the raw response to debug issues
         raw_response = response.choices[0].message.content.strip()
-        print("🔹 RAW GPT RESPONSE:", raw_response)  # Debugging
+        print("🔹 RAW LLM RESPONSE:", raw_response)  # Debugging
 
         # ✅ Ensure it's a valid JSON response
         try:
             extracted_data = json.loads(raw_response)
         except json.JSONDecodeError:
-            return {"error": f"⚠️ GPT returned invalid JSON: {raw_response}"}
+            return {"error": f"⚠️ LLM returned invalid JSON: {raw_response}"}
 
         return extracted_data
 
     except Exception as e:
-        return {"error": f"⚠️ Error extracting product details: {str(e)}"}    
+        return {"error": f"⚠️ Error extracting product details: {str(e)}"}
   
 def create_product_record(product_details):
     """Create a new product record in the database and return a success message."""

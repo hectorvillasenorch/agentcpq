@@ -27,20 +27,129 @@ def handle_user_request(user_message, session_data):
     return orchestrate_request(user_message, session_data)
 
 
+# def orchestrate_request(user_message, session_data):
+#     """Dynamically determine next steps based on user request and session context."""
+    
+#     # ✅ Ensure session data is serializable
+#     session_context = {k: str(v) for k, v in session_data.items() if isinstance(v, (str, int, float, list, dict))}
+    
+#     prompt = f"""
+#     You are an AI assistant that classifies user requests into predefined actions.
+
+#     **User Request:** "{user_message}"
+
+#     **Current Session Data:** {json.dumps(session_context, indent=2)}
+
+#     **Return ONLY one of the following labels (do NOT add explanations):**
+#     - "CreateQuote"
+#     - "AddProduct"
+#     - "GenerateQuoteDocument"
+#     - "ApplyDiscount"
+#     - "ProvideDates"
+#     - "ShowQuoteDetails"
+#     - "UpdateQuoteLine"
+#     - "CreateProductRecord"
+#     - "UpdateProductRecord"
+#     - "GeneralQuery"
+
+#     If the request is unclear, return "GeneralQuery".
+#     """
+
+#     try:
+#         response = client.chat.completions.create(
+#             model="gpt-4",
+#             messages=[
+#                 {"role": "system", "content": "Analyze the request and determine next action."},
+#                 {"role": "user", "content": prompt}
+#             ]
+#         )
+
+#         decision = response.choices[0].message.content.strip().replace('"', '')
+#         logging.info(f"🟢 AI Decision Received: {decision} (Type: {type(decision)})")
+
+#     except Exception as e:
+#         logging.error(f"❌ Error in OpenAI call: {e}")
+#         return {"message": "⚠️ Sorry, an error occurred while processing your request."}
+
+#     # ✅ Route all quote-related actions to the **quote_agent**
+#     if decision in ["CreateQuote", "AddProduct", "ApplyDiscount", "ProvideDates", "ShowQuoteDetails", "GenerateQuoteDocument","UpdateQuoteLine"]:
+#         return quote_agent(decision, user_message, session_data)  # ✅ Handles all quote interactions
+
+#     # ✅ Route all product-related actions to the **product_agent
+#     if decision in ["CreateProductRecord", "UpdateProductRecord", "CreateBundle", "UpdateBundle"]:
+#         return product_agent(decision, user_message, session_data)  # ✅ Handles all product interactions    
+
+#     # ✅ Handle general queries
+#     if decision == "GeneralQuery":
+#         return query_gpt_for_general_response(user_message)
+
+#     logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
+#     return {"message": "🤖 Sorry, I couldn’t understand your request. From Orchestrator"}
+
 def orchestrate_request(user_message, session_data):
     """Dynamically determine next steps based on user request and session context."""
-    
-    # ✅ Ensure session data is serializable
+
     session_context = {k: str(v) for k, v in session_data.items() if isinstance(v, (str, int, float, list, dict))}
     
-    prompt = f"""
+    # ✅ Check for Pending Actions using GPT
+    pending_action = session_data.get("pending_action")
+    logging.info(f"🟡 Pending Action Decision: {pending_action}")
+
+    if pending_action:
+        logging.info(f"🟡 Pending Action Detected: {pending_action}")
+
+        pending_prompt = f"""
+        You are an AI assistant that determines the correct next action when there is a pending request.
+
+        **User Input:** "{user_message}"
+
+        **Pending Action:** "{pending_action}"
+
+        **Current Session Data:** {json.dumps(session_context, indent=2)}
+
+        **Return ONLY one of the following labels (no explanations):**
+        - "ConfirmProductCreation"
+        - "ConfirmQuoteCreation"
+        - "ConfirmAddProduct"
+        - "CancelPendingAction"
+        - "Unknown"
+        """
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "Analyze the request and determine pending action."},
+                    {"role": "user", "content": pending_prompt}
+                ]
+            )
+
+            pending_decision = response.choices[0].message.content.strip().replace('"', '')
+            logging.info(f"🟡 Pending Action Decision: {pending_decision}")
+
+        except Exception as e:
+            logging.error(f"❌ Error in GPT pending action call: {e}")
+            return {"message": "⚠️ Sorry, an error occurred while processing your request."}
+
+        pending_action_map = {
+            "ConfirmProductCreation": ("CreateProductRecord", product_agent),
+            "ConfirmQuoteCreation": ("CreateQuote", quote_agent),
+            "ConfirmAddProduct": ("AddProduct", quote_agent),
+        }
+
+        if pending_decision in pending_action_map:
+            mapped_action, agent_function = pending_action_map[pending_decision]
+            return agent_function(mapped_action, user_message, session_data)
+
+    # ✅ No Pending Actions - Determine the Next Action
+    action_prompt = f"""
     You are an AI assistant that classifies user requests into predefined actions.
 
     **User Request:** "{user_message}"
 
     **Current Session Data:** {json.dumps(session_context, indent=2)}
 
-    **Return ONLY one of the following labels (do NOT add explanations):**
+    **Return ONLY one of the following labels (no explanations):**
     - "CreateQuote"
     - "AddProduct"
     - "GenerateQuoteDocument"
@@ -51,8 +160,6 @@ def orchestrate_request(user_message, session_data):
     - "CreateProductRecord"
     - "UpdateProductRecord"
     - "GeneralQuery"
-
-    If the request is unclear, return "GeneralQuery".
     """
 
     try:
@@ -60,28 +167,32 @@ def orchestrate_request(user_message, session_data):
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "Analyze the request and determine next action."},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": action_prompt}
             ]
         )
 
         decision = response.choices[0].message.content.strip().replace('"', '')
-        logging.info(f"🟢 AI Decision Received: {decision} (Type: {type(decision)})")
+        logging.info(f"🟢 AI Decision Received: {decision}")
 
     except Exception as e:
         logging.error(f"❌ Error in OpenAI call: {e}")
         return {"message": "⚠️ Sorry, an error occurred while processing your request."}
 
-    # ✅ Route all quote-related actions to the **quote_agent**
-    if decision in ["CreateQuote", "AddProduct", "ApplyDiscount", "ProvideDates", "ShowQuoteDetails", "GenerateQuoteDocument","UpdateQuoteLine"]:
-        return quote_agent(decision, user_message, session_data)  # ✅ Handles all quote interactions
+    # ✅ Map Actions to Their Respective Agents
+    action_map = {
+        "CreateQuote": quote_agent,
+        "AddProduct": quote_agent,
+        "GenerateQuoteDocument": quote_agent,
+        "ApplyDiscount": quote_agent,
+        "ProvideDates": quote_agent,
+        "ShowQuoteDetails": quote_agent,
+        "UpdateQuoteLine": quote_agent,
+        "CreateProductRecord": product_agent,
+        "UpdateProductRecord": product_agent,
+    }
 
-    # ✅ Route all product-related actions to the **product_agent
-    if decision in ["CreateProductRecord", "UpdateProductRecord", "CreateBundle", "UpdateBundle"]:
-        return product_agent(decision, user_message, session_data)  # ✅ Handles all product interactions    
-
-    # ✅ Handle general queries
-    if decision == "GeneralQuery":
-        return query_gpt_for_general_response(user_message)
+    if decision in action_map:
+        return action_map[decision](decision, user_message, session_data)
 
     logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
     return {"message": "🤖 Sorry, I couldn’t understand your request. From Orchestrator"}
