@@ -131,14 +131,44 @@ agent_map = {
 
 ## **📌 Roadmap**
 ✅ **MVP**: Core quoting & product functionality  
+
+**MVP-Features**:
+- Core quoting -- All CPQ functionality
+- Approval Quote
+- Make it send with DocuSign -- NEED 
+- Allow voice to text
+
+## ✅ **USE CASES / PROMPTS FOR MVP**
+
+### 1. Pricing Inquiry  
+**Jane from TechCorp mentioned that they’re evaluating AI-AgentCPQ and asked for pricing on 25 seats.**  
+*Agent should infer the need to generate a quote for 25 licenses.*
+
+### 2. Competitive Analysis  
+**Acme Inc. is looking at upgrading their existing CPQ system and wants a comparison between our AI-AgentCPQ and their current solution.**  
+*Agent should recognize the need for a competitive analysis or product recommendation.*
+
+### 3. Proposal Request  
+**Michael from XYZ Enterprises liked the demo and said he’d need a proposal for a 3-year contract with an annual subscription.**  
+*Agent should suggest creating a subscription quote with a multi-year term.*
+
+### 4. Upsell Opportunity  
+**I had a great call with Lisa at CloudTech—she's interested in adding 50 more licenses to their existing contract.**  
+*Agent should identify this as an upsell opportunity and prepare a quote update.*
+
+### 5. Discount Request  
+**The finance team at GlobalSoft is reviewing our pricing, and they asked if we offer bulk discounts for 100+ seats.**  
+*Agent should infer a request for discounting rules or pricing flexibility.*
+
 🔜 **Integrations**: Support for Salesforce, HubSpot, and more  
 🔜 **Advanced AI**: Adaptive learning for better quote recommendations  
 
----
-
-## **📜 License**
-MIT License. See `LICENSE` for details.
+-
 
 
-✅ **MVP-Features**: 
-- Core quoting  
+
+✅ **Go to Market Strategy**: 
+- Focus on big guys
+
+
+

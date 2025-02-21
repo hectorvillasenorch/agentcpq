@@ -3,7 +3,7 @@ import json
 import os
 import logging
 from agents.quote_agent import add_product_to_quote, quote_agent
-# from agents.product_agent import product_agent
+from agents.product_agent import product_agent
 # from agents.bundles_agent import configure_bundle_agent
 # from agents.pricing_agent import apply_discount_agent
 # from agents.approvals_agent import submit_for_approval
@@ -48,6 +48,8 @@ def orchestrate_request(user_message, session_data):
     - "ProvideDates"
     - "ShowQuoteDetails"
     - "UpdateQuoteLine"
+    - "CreateProductRecord"
+    - "UpdateProductRecord"
     - "GeneralQuery"
 
     If the request is unclear, return "GeneralQuery".
@@ -72,6 +74,10 @@ def orchestrate_request(user_message, session_data):
     # ✅ Route all quote-related actions to the **quote_agent**
     if decision in ["CreateQuote", "AddProduct", "ApplyDiscount", "ProvideDates", "ShowQuoteDetails", "GenerateQuoteDocument","UpdateQuoteLine"]:
         return quote_agent(decision, user_message, session_data)  # ✅ Handles all quote interactions
+
+    # ✅ Route all product-related actions to the **product_agent
+    if decision in ["CreateProductRecord", "UpdateProductRecord", "CreateBundle", "UpdateBundle"]:
+        return product_agent(decision, user_message, session_data)  # ✅ Handles all product interactions    
 
     # ✅ Handle general queries
     if decision == "GeneralQuery":

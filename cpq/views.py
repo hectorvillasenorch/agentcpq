@@ -1,5 +1,9 @@
 from django.shortcuts import render, get_object_or_404
-from .models import Product, Quote
+from .models import Product, SystemFieldMapping,Quote
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt 
+from django.apps import apps
+from salesforce.models import SalesforceToken
 
 def product_list(request):
     """Fetch all products and display them in a table."""
@@ -15,7 +19,80 @@ def settings_view(request):
     return render(request, "cpq/settings.html") 
 
 def quotes_view(request):
-    """Fix infinite recursion by ensuring only a single call."""
-    quotes = Quote.objects.select_related('opportunity__account').all()
-    return render(request, "cpq/quotes.html", {"quotes": quotes})
+    """Render the list of Quotes."""
+    
+    quotes = Quote.objects.select_related("opportunity__account").all()
+    
+    # ✅ Check if Salesforce is authenticated
+    is_authenticated = SalesforceToken.objects.exists()
 
+    return render(request, "quotes.html", {
+        "quotes": quotes,
+        "is_authenticated": is_authenticated,  # ✅ Used to show Sync button conditionally
+    })
+
+
+
+MODEL_CHOICES = {
+    "Opportunity": "Opportunity",  # ✅ Use class name, not table name
+    "Quote": "Quote",
+    "QuoteLine": "QuoteLine",
+}
+def field_mapping_view(request):
+    """Dynamically fetch schema fields for the selected CRM and object type."""
+
+    # ✅ Get the selected CRM and Object Type from request
+    selected_crm = request.GET.get("crm", "AgentCPQ")  
+    selected_model = request.GET.get("object_type", "Opportunity")
+
+    if selected_model not in MODEL_CHOICES:
+        return JsonResponse({"error": "Invalid object type"}, status=400)
+
+    # ✅ Get the correct model class dynamically
+    ModelClass = apps.get_model('cpq', MODEL_CHOICES[selected_model])
+    local_fields = [field.name for field in ModelClass._meta.fields]  # ✅ Get all fields
+
+    # ✅ Fetch only mappings that match the selected CRM and Object Type
+    mappings = {
+        m.local_field: m.crm_field
+        for m in SystemFieldMapping.objects.filter(crm=selected_crm, field_type=selected_model)
+    }
+
+    return render(request, "field_mapping.html", {
+        "local_fields": local_fields,
+        "mappings": mappings,
+        "selected_crm": selected_crm,
+        "selected_model": selected_model,
+        "available_models": MODEL_CHOICES.keys(),
+    })
+
+
+@csrf_exempt
+def save_field_mappings(request):
+    """Save field mappings for a selected CRM and object type."""
+    if request.method == "POST":
+        crm = request.POST.get("crm", "AgentCPQ")  # ✅ Capture CRM selection
+        object_type = request.POST.get("object_type", "Opportunity")  # ✅ Capture object type selection
+
+        updated_count = 0
+        for key, value in request.POST.items():
+            if key in ["crm", "object_type"]:
+                continue  # ✅ Skip non-mapping fields
+
+            crm_field = value.strip()
+            if crm_field:  # ✅ Ensure it's not empty
+                mapping, created = SystemFieldMapping.objects.update_or_create(
+                    crm=crm,  
+                    local_field=key,  
+                    field_type=object_type,  # ✅ Ensure object type is saved correctly
+                    defaults={"crm_field": crm_field}
+                )
+                if created:
+                    updated_count += 1
+
+        return JsonResponse({
+            "success": True,
+            "message": f"Updated {updated_count} mappings for {crm} - {object_type}."
+        })
+
+    return JsonResponse({"success": False, "message": "Invalid request."})

@@ -13,6 +13,9 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 from pathlib import Path
 import os
 import logging
+from dotenv import load_dotenv
+
+load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -30,15 +33,26 @@ DEBUG = True
 ALLOWED_HOSTS = [
     '127.0.0.1', 
     'localhost', 
-    'ddc6-2607-fb91-aa9-5bd3-d4b3-7ebd-4fd8-d224.ngrok-free.app'
+    '6dd6-2607-fb91-aa9-5bd3-d405-90c9-2011-5a6e.ngrok-free.app'
 ]
 
 # Allow Django to be embedded in an IFrame (required for Salesforce)
 X_FRAME_OPTIONS = 'ALLOWALL'
 CSRF_TRUSTED_ORIGINS = [
-    'https://ddc6-2607-fb91-aa9-5bd3-d4b3-7ebd-4fd8-d224.ngrok-free.app',
+    'https://6dd6-2607-fb91-aa9-5bd3-d405-90c9-2011-5a6e.ngrok-free.app',
     'https://agente001.lightning.force.com'
 ]
+# ✅ Ensure CSRF Cookie is set for external requests
+CSRF_COOKIE_SECURE = True  # Ensures cookie is only set over HTTPS
+SESSION_COOKIE_SECURE = True  # Ensures session cookies are also secure
+
+# ✅ Allow CORS (Optional, only if needed)
+CORS_ALLOWED_ORIGINS = [
+    "https://6dd6-2607-fb91-aa9-5bd3-d405-90c9-2011-5a6e.ngrok-free.app"
+]
+
+# ✅ Allow all domains in development (Use only for testing)
+CSRF_COOKIE_DOMAIN = None
 
 
 # Application definition
@@ -53,6 +67,7 @@ INSTALLED_APPS = [
     "cpq",
     "agents",
     "dashboard",
+    "salesforce",
 ]
 
 MIDDLEWARE = [
@@ -154,15 +169,11 @@ CSP_IMG_SRC = ("'self'", "data:")  # Allow local images and data URIs
 CSP_CONNECT_SRC = ("'self'",)  # Restrict API calls to your own server
 
 
-
-
-
 # ✅ Set default logging level (change to INFO if you want fewer logs)
 logging.basicConfig(
     level=logging.DEBUG,  # Change to DEBUG if needed
     format="%(levelname)s:%(name)s:%(message)s"
 )
-
 
 # ✅ Suppress noisy libraries (OpenAI, HTTPX, and HTTPCore)
 # logging.getLogger("openai").setLevel(logging.WARNING)  # Hide OpenAI debug logs
@@ -171,3 +182,10 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)  # Suppress low-level HT
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Salesforce OAuth settings for your connected app
+SALESFORCE_CLIENT_ID = os.getenv("SF_CID")
+SALESFORCE_CLIENT_SECRET = os.getenv("SF_SECRET")
+SALESFORCE_REDIRECT_URI = "https://6dd6-2607-fb91-aa9-5bd3-d405-90c9-2011-5a6e.ngrok-free.app/salesforce/callback"
+SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/authorize"
+SALESFORCE_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"

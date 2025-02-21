@@ -1,65 +1,122 @@
 <style>
-  .icon-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 5px;
-    margin-right: 5px;
-    cursor: pointer;
-    text-decoration: none;
-    border-radius: 50%;
-    transition: background-color 0.2s;
-  }
-
-  .icon-button:hover {
-    background-color: rgba(0, 0, 0, 0.05);
-  }
-
-  table {
-    font-size: 20px;
-  }
-</style>
-
-<div class="container-fluid" style="width: 100%;">
-  <h2 class="blue-text text-darken-3 center-align">
-      <i class="material-icons">request_quote</i> Quotes
-  </h2>
-
-  <table class="striped highlight responsive-table" style="width: 100%;">
-      <thead>
-          <tr>
-              <th>Name</th>
-              <th>Opportunity</th>
-              <th>Account</th>
-              <th>Status</th>
-              <th>Net Amount</th>
-              <th>Created</th>
-              <th>Actions</th>
-          </tr>
-      </thead>
-      <tbody>
-          {% for quote in quotes %}
-              <tr>
-                  <td>{{ quote.name }}</td>
-                  <td>{{ quote.opportunity.name }}</td>
-                  <td>{{ quote.opportunity.account.name }}</td>
-                  <td><span class="chip">{{ quote.status }}</span></td>
-                  <td>${{ quote.net_amount }}</td>
-                  <td>{{ quote.created_at|date:"M d, Y" }}</td>
-                  <td>
-                      <a href="#" class="icon-button">
-                          <i class="material-icons blue-text">edit</i>
-                      </a>
-                      <a href="#" class="icon-button">
-                          <i class="material-icons red-text">delete</i>
-                      </a>
-                  </td>
-              </tr>
-          {% empty %}
-              <tr>
-                  <td colspan="7" class="center-align">No quotes found.</td>
-              </tr>
-          {% endfor %}
-      </tbody>
-  </table>
-</div>
+    .icon-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 5px;
+      margin-right: 5px;
+      cursor: pointer;
+      text-decoration: none;
+      border-radius: 50%;
+      transition: background-color 0.2s;
+    }
+  
+    .icon-button:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+  
+    table {
+      font-size: 20px;
+    }
+  
+    .sync-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 5px 10px;
+      margin-right: 5px;
+      cursor: pointer;
+      text-decoration: none;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      background-color: #007bff;
+      color: white;
+      transition: background-color 0.2s;
+    }
+  
+    .sync-button:hover {
+      background-color: #0056b3;
+    }
+  </style>
+  
+  <div class="container-fluid" style="width: 100%;">
+    <h2 class="blue-text text-darken-3 center-align">
+        <i class="material-icons">request_quote</i> Quotes
+    </h2>
+  
+    <table class="striped highlight responsive-table" style="width: 100%;">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Opportunity</th>
+                <th>Account</th>
+                <th>Status</th>
+                <th>Net Amount</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <form id="csrf-form">
+                {% csrf_token %}
+            </form>
+            
+            <input type="hidden" id="csrf-token" value="{{ csrf_token }}">
+            {% for quote in quotes %}
+                <tr>
+                    <td>{{ quote.name }}</td>
+                    <td>{{ quote.opportunity.name }}</td>
+                    <td>{{ quote.opportunity.account.name }}</td>
+                    <td><span class="chip">{{ quote.status }}</span></td>
+                    <td>${{ quote.net_amount }}</td>
+                    <td>{{ quote.created_at|date:"M d, Y" }}</td>
+                    <td>
+                        
+                        <a href="#" class="icon-button">
+                            <i class="material-icons blue-text">edit</i>
+                        </a>
+                        <a href="#" class="icon-button">
+                            <i class="material-icons red-text">delete</i>
+                        </a>
+                       
+                        <!-- Sync to Salesforce Button -->
+                        {% if is_authenticated %}
+                        
+                        <button class="sync-button" onclick="syncQuote('{{ quote.id }}')">
+                                🔄 Sync to SF
+                            </button>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="7" class="center-align">No quotes found.</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+  </div>
+  <script>
+    async function syncQuote(quoteId) {
+        // ✅ Get CSRF token from the hidden form field
+        const csrfToken = document.querySelector("input[name='csrfmiddlewaretoken']").value;
+    
+        let response = await fetch(`/salesforce/sync-quote/${quoteId}/`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrfToken  // ✅ Include CSRF token in headers
+            }
+        });
+    
+        let data = await response.json();
+    
+        if (data.message) {
+            alert("✅ " + data.message);
+        } else {
+            alert("❌ Sync Failed: " + JSON.stringify(data));
+        }
+    }
+    </script>

@@ -30,21 +30,26 @@ class Opportunity(models.Model):
     stage = models.CharField(max_length=50, choices=STAGE_CHOICES, default='Prospecting')
     expected_close_date = models.DateField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    primary_quote = models.ForeignKey(
+        "Quote", 
+        on_delete=models.SET_NULL,  # Set to NULL if quote is deleted
+        related_name="opportunity_primary_quote",
+        null=True, blank=True
+    )
 
     def __str__(self):
         return f"{self.name} - {self.stage}"
 
-
-
-
 # 🚀 Product Model (Handles both standalone & bundle products)
 class Product(models.Model):
+    
     name = models.CharField(max_length=255)
     sku = models.CharField(max_length=100, unique=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     is_subscription = models.BooleanField(default=False)
     term = models.IntegerField(null=True, blank=True)  # In months (12, 24, etc.)
     is_bundle = models.BooleanField(default=False)  # ✅ If True, it has options (child products)
+    family = models.CharField(max_length=50)
 
     def __str__(self):
         return self.name
@@ -73,11 +78,15 @@ class Quote(models.Model):
     name = models.CharField(max_length=255)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="quotes")
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, related_name="quotes")
+    sf_opportunity_id = models.CharField(max_length=18, blank=True, null=True)
     net_amount = models.DecimalField(max_digits=10, decimal_places=2)
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Draft')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    additional_discount = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    expiration_date = models.DateField(null=True, blank=True) 
+    notes = models.TextField(blank=True, null=True) 
 
     def __str__(self):
         return f"{self.name} - {self.status}"
@@ -88,7 +97,9 @@ class QuoteLine(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="quote_lines")
     quantity = models.IntegerField(default=1)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    special_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
+    additional_discount = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     parent_quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="parent_quote_lines", blank=True, null=True)
 
     def save(self, *args, **kwargs):
@@ -226,6 +237,52 @@ class Usage(models.Model):
 
     def __str__(self):
         return f"Usage of {self.product.name} on {self.usage_date}"
-    
+
+class SystemFieldMapping(models.Model):
+    """Stores manual field mappings between local CPQ fields and CRM fields."""
+
+    CRM_CHOICES = [
+        ('AgentCPQ', 'AgentCPQ'),
+        ('Salesforce', 'Salesforce'),
+        ('HubSpot', 'HubSpot'),
+        ('Dynamics', 'Microsoft Dynamics'),
+        ('Custom', 'Custom CRM'),
+    ]
+
+    FIELD_TYPE_CHOICES = [
+        ('Opportunity', 'Opportunity Field'),
+        ('Quote', 'Quote Field'),
+        ('LineItem', 'Line Item Field'),
+    ]
+
+    crm = models.CharField(max_length=50, choices=CRM_CHOICES)
+    field_type = models.CharField(max_length=50, choices=FIELD_TYPE_CHOICES, default="Quote")
+    local_field = models.CharField(max_length=255)  # ✅ Field name in CPQ
+    crm_field = models.CharField(max_length=255)  # ✅ Field name in the CRM
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('crm', 'field_type', 'local_field', 'crm_field') 
+
+    def __str__(self):
+        return f"{self.crm} - {self.field_type} - {self.local_field} → {self.crm_field}"
+
+class Pricebook(models.Model):
+    """Represents a Salesforce Pricebook (e.g., Standard Pricebook, Custom Pricebooks)."""
+    name = models.CharField(max_length=255)
+    salesforce_id = models.CharField(max_length=18, unique=True, blank=True, null=True)  # ✅ SF Pricebook ID
+
+    def __str__(self):
+        return self.name
 
 
+class PricebookEntry(models.Model):
+    """Represents a Pricebook Entry linked to a Product and Pricebook."""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="pricebook_entries")
+    pricebook = models.ForeignKey(Pricebook, on_delete=models.CASCADE, related_name="entries")
+    salesforce_id = models.CharField(max_length=18, unique=True, blank=True, null=True)  # ✅ SF PricebookEntry ID
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2)
+
+    def __str__(self):
+        return f"{self.product.name} in {self.pricebook.name} - ${self.unit_price}"

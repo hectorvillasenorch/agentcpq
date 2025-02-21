@@ -27,6 +27,9 @@
             <a href="{% url 'dashboard' %}?view=quotes">
                 <i class="material-icons">request_quote</i> Quotes
             </a>
+            <a href="{% url 'dashboard' %}?view=setup">
+                <i class="material-icons">settings</i> Setup
+            </a>
         </div>
 
         <!-- Main Content -->
@@ -38,6 +41,8 @@
                 {% include "products.html" %}
             {% elif request.GET.view == "quotes" %}
                 {% include "quotes.html" %}
+            {% elif request.GET.view == "setup" %}
+                {% include "setup.html" %}
             {% else %}
                 <p class="grey-text text-darken-2 center-align">Select an option from the sidebar.</p>
             {% endif %}
