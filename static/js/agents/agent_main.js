@@ -2,9 +2,6 @@ document.addEventListener("DOMContentLoaded", function () {
   setupChatListeners();
 });
 
-/**
-* ✅ Setup chat listeners for message input and button click
-*/
 function setupChatListeners() {
   console.log("Setting up chat listeners...");
 
@@ -23,50 +20,83 @@ function setupChatListeners() {
 
   console.log("Chat listeners attached.");
 }
-
+function toggleSidebar() {
+    document.querySelector(".sidenav-fixed").classList.toggle("active");
+}
 /**
 * ✅ Send user message to the agent and handle response
 */
 async function sendMessage() {
-  const inputField = document.getElementById("user-input");
-  const chatBox = document.getElementById("chat-box");
+    const inputField = document.getElementById("user-input");
+    const chatBox = document.getElementById("chat-box");
 
-  let userMessage = inputField.value.trim();
-  if (!userMessage) return;
+    let userMessage = inputField.value.trim();
+    if (!userMessage) return;
 
-  // Append user message to chat
-  appendMessage("user-message", `<strong>You:</strong> ${userMessage}`);
+    // Append user message to chat
+    appendMessage("user-message", `<strong>You:</strong> ${userMessage}`);
 
-  inputField.value = ""; // Clear input field
+    inputField.value = ""; // Clear input field
 
-  try {
-      const response = await fetch("/agents/chat/", {   
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: userMessage })
-      });
+    try {
+        const response = await fetch("/agents/chat/", {   
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: userMessage })
+        });
 
-      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        console.log("Full Response:", response);
 
-      const data = await response.json();
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP error! Status: ${response.status} - ${errorText}`);
+        }
 
-      // Handle agent response
-      if (data.response && data.response.quote_details) {
-          appendMessage("agent-message", renderQuoteDetails(data.response.quote_details));
-      } else if (data.response.download_url) {
-          appendMessage("agent-message", `📄 Quote PDF generated! <a href="${data.response.download_url}" target="_blank">Download Here</a>`);
-      } else {
-          appendMessage("agent-message", `🤖 Agent: ${data.response.message}`);
-      }
+        const data = await response.json();
+        console.log("Parsed JSON:", data);
 
-      chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll chat
-  } catch (error) {
-      console.error("Error:", error);
-      appendMessage("agent-message", `<strong>Error:</strong> Could not reach the server.`);
-  }
-}
+        let responseMessage = ""; // Initialize message variable
 
-/**
+        // ✅ Handle Missing Product Warnings
+        if (data.response && data.response.warnings) {
+            responseMessage += `<div class="warning-message"><strong>⚠️ Warnings:</strong><ul>`;
+            data.response.warnings.forEach(warning => {
+                responseMessage += `<li>${warning}</li>`;
+            });
+            responseMessage += `</ul></div>`;
+        }
+
+        // ✅ Handle Approval History Response
+        if (data.response && data.response.history) {
+            responseMessage += renderApprovalHistory(data.response);
+        } 
+        // ✅ Handle Quote Details Response
+        else if (data.response && data.response.quote_details) {
+            responseMessage += renderQuoteDetails(data.response.quote_details);
+        } 
+        // ✅ Handle Quote PDF Response
+        else if (data.response.download_url) {
+            responseMessage += `📄 Quote PDF generated! <a href="${data.response.download_url}" target="_blank">Download Here</a>`;
+        } 
+        // ✅ Default Response (Handle General Messages)
+        else if (data.response && data.response.message) {
+            responseMessage += `<div class="general-message">${data.response.message}</div>`;
+        } 
+        // ✅ Handle Unexpected Empty Response
+        else {
+            responseMessage += `<div class="error-message">🤖 No response received. Please try again.</div>`;
+        }
+
+        // ✅ Append the final response message to the chat
+        appendMessage("agent-message", responseMessage);
+
+        // Auto-scroll chat
+        chatBox.scrollTop = chatBox.scrollHeight;
+    } catch (error) {
+        console.error("Error:", error);
+        appendMessage("agent-message", `<strong>Error:</strong> ${error.message}`);
+    }
+}/**
 * ✅ Append message to the chat box
 */
 function appendMessage(className, message) {
@@ -123,6 +153,44 @@ function renderQuoteDetails(quote) {
   return html;
 }
 
+/**
+* ✅ Render Approval History as an HTML table
+*/
+function renderApprovalHistory(approvalData) {
+    if (!approvalData.history || approvalData.history.length === 0) {
+        return `<p>ℹ️ No approvals found for this quote.</p>`;
+    }
+
+    // ✅ Ensure quote_name is available
+    let quoteTitle = approvalData.quote_name ? `<h4>Approval History for Quote: <strong>${approvalData.quote_name}</strong></h4>` : `<h4>Approval History</h4>`;
+
+    let table = `<table style="width:100%; border-collapse: collapse; margin-top: 10px;">
+        <thead>
+            <tr style="background-color: #f4f4f4;">
+                <th style="border: 1px solid #ddd; padding: 8px;">Workflow</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Step</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Status</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Approved By</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Approved At</th>
+            </tr>
+        </thead>
+        <tbody>`;
+
+    approvalData.history.forEach(approval => {
+        table += `<tr>
+            <td style="border: 1px solid #ddd; padding: 8px;">${approval.workflow}</td>
+            <td style="border: 1px solid #ddd; padding: 8px;">${approval.step}</td>
+            <td style="border: 1px solid #ddd; padding: 8px;">${approval.status}</td>
+            <td style="border: 1px solid #ddd; padding: 8px;">${approval.approved_by}</td>
+            <td style="border: 1px solid #ddd; padding: 8px;">${approval.approved_at}</td>
+        </tr>`;
+    });
+
+    table += `</tbody></table>`;
+
+    // ✅ Wrap with quote name at the top
+    return `<div>${quoteTitle}${table}</div>`;
+}
 /**
 * ✅ Handle input changes in quote lines
 */

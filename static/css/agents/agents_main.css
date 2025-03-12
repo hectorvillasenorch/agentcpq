@@ -5,12 +5,12 @@ body {
 
 /* ✅ Quote Container */
 .quote-container {
-  width: 1200px;
+  width: 85%;
   margin: 20px auto;
   padding: 20px;
   background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  /* border-radius: 12px; */
+  box-shadow: 0px 1px 5px rgba(0, 0, 0, 0.1);
 }
 
 /* ✅ Quote Header */
@@ -120,7 +120,7 @@ h2 {
   flex-grow: 1;
   overflow-y: auto;
   padding: 15px;
-  background-color: #fafafa;
+  background-color: #ffffff;
   border: 1px solid #ddd;
   border-radius: 5px;
   display: flex;
@@ -133,22 +133,25 @@ h2 {
 .agent-message {
   padding: 12px;
   border-radius: 15px;
-  max-width: 70%;
-  margin: 5px 0;
+  margin: 15px 0;
   word-wrap: break-word;
   font-size: 20px;
 }
 
 .user-message {
-  background-color: #2196F3;
-  color: white;
+  background-color: #e9e9e9;
+  color: #000000;
   align-self: flex-end;
+  border-bottom: 1px solid #eeeeee;
+  width: 40%;
 }
 
 .agent-message {
-  background-color: #f1f1f1;
+  background-color: #ffffff;
   color: black;
   align-self: flex-start;
+  border-bottom: 1px solid #eeeeee;
+  width: 100%;
 }
 
 /* ✅ JSON Response Styling */
@@ -173,6 +176,7 @@ h2 {
   padding: 10px;
 }
 
+
 /* ✅ Input and Send Button Wrapper */
 .input-wrapper {
   display: flex;
@@ -191,6 +195,12 @@ h2 {
   font-size: 20px !important;
   background: transparent;
   padding: 10px;
+}
+.chat-input:focus,
+.chat-input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
 }
 
 /* ✅ Remove Autofill Styling */
@@ -216,3 +226,31 @@ h2 {
 .send-button:hover {
   background-color: #1976D2;
 }
+
+
+.warning-message {
+  background-color: #fff3cd;
+  color: #856404;
+  padding: 8px;
+  border-left: 4px solid #ffae42;
+  margin: 5px 0;
+  font-size: 14px;
+}
+
+.error-message {
+  background-color: #f8d7da;
+  color: #721c24;
+  padding: 8px;
+  border-left: 4px solid #dc3545;
+  margin: 5px 0;
+  font-size: 14px;
+}
+
+/* .general-message {
+  background-color: #e2e3e5;
+  color: #333;
+  padding: 8px;
+  border-left: 4px solid #6c757d;
+  margin: 5px 0;
+  font-size: 14px;
+} */

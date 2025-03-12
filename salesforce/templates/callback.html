@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Salesforce Callback</title>
+    <script>
+        window.onload = function() {
+            // Extract the URL fragment (e.g., #access_token=...&instance_url=...)
+            const hash = window.location.hash.substring(1);
+            const params = new URLSearchParams(hash);
+            const accessToken = params.get("access_token");
+            const instanceUrl = params.get("instance_url");
+
+            if (accessToken && instanceUrl) {
+                // Redirect to token receiver with token as query parameters
+                window.location.href = "/salesforce/token-receiver/?access_token=" 
+                    + encodeURIComponent(accessToken) + "&instance_url=" + encodeURIComponent(instanceUrl);
+            } else {
+                document.body.innerHTML = "<h3>Error: Missing access token.</h3>";
+            }
+        };
+    </script>
+</head>
+<body>
+    <h3>Processing Salesforce authentication...</h3>
+</body>
+</html>

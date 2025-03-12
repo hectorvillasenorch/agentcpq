@@ -1,4 +1,6 @@
 from django.db import models
+from django.db.models import Sum
+from datetime import datetime
 
 
 class Account(models.Model):
@@ -88,6 +90,26 @@ class Quote(models.Model):
     expiration_date = models.DateField(null=True, blank=True) 
     notes = models.TextField(blank=True, null=True) 
 
+    def get_total_discount_percentage(self):
+        """
+        Calculates the total discount percentage for this quote.
+        Assumes a field `additional_discount` exists on quote lines.
+        """
+        total_discount = self.quote_lines.aggregate(
+            total_discount=Sum("additional_discount")
+        )["total_discount"] or 0
+
+        # Get total quote amount to calculate percentage
+        total_amount = self.get_total_amount()  # Ensure this method exists
+
+        if total_amount > 0:
+            return (total_discount / total_amount) * 100
+        return 0  # Return 0% discount if there's no amount
+
+    def get_total_amount(self):
+
+        return self.quote_lines.aggregate(total_amount=Sum("total_price"))["total_amount"] or 0
+
     def __str__(self):
         return f"{self.name} - {self.status}"
 
@@ -156,15 +178,120 @@ class ApprovalWorkflow(models.Model):
     def __str__(self):
         return self.name
 
-
-class ApprovalStep(models.Model):
-    workflow = models.ForeignKey(ApprovalWorkflow, on_delete=models.CASCADE, related_name="steps")
-    approver_role = models.CharField(max_length=255)  # e.g., 'Manager', 'CFO', 'VP'
-    approval_threshold = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    sequence = models.PositiveIntegerField()
+class ApprovalRule(models.Model):
+    workflow = models.ForeignKey(
+        'ApprovalWorkflow',
+        on_delete=models.CASCADE,
+        related_name='rules'
+    )
+    name = models.CharField(max_length=255)
+    priority = models.IntegerField(
+        default=0,
+        help_text="Higher priority rules are evaluated first."
+    )
+    # This can be extended in the future with other fields or flags
 
     def __str__(self):
-        return f"{self.workflow.name} - {self.approver_role} (Step {self.sequence})"
+        return f"{self.name} (Priority: {self.priority})"
+
+    def matches_quote(self, quote):
+        """
+        Evaluates all conditions related to this rule against the given quote.
+        By default, we use AND logic: all conditions must match to return True.
+        """
+        conditions = self.conditions.all()
+        if not conditions.exists():
+            # If there are no conditions, assume it always matches
+            return True
+
+        # Evaluate each condition
+        for condition in conditions:
+            if not condition.matches(quote):
+                return False
+        return True
+
+class RuleCondition(models.Model):
+    OPERATORS = [
+        ('>=', 'Greater Than or Equal'),
+        ('<=', 'Less Than or Equal'),
+        ('==', 'Equal'),
+        ('>', 'Greater Than'),
+        ('<', 'Less Than'),
+        ('!=', 'Not Equal'),
+    ]
+
+    rule = models.ForeignKey(
+        'ApprovalRule',
+        on_delete=models.CASCADE,
+        null=True, 
+        related_name='conditions'
+    )
+    field_name = models.CharField(max_length=255)  # e.g. "discount_percentage"
+    operator = models.CharField(max_length=2, choices=OPERATORS)
+    value = models.DecimalField(max_digits=12, decimal_places=2)
+
+    def __str__(self):
+        return f"{self.rule.name} condition: {self.field_name} {self.operator} {self.value}"
+
+    def matches(self, quote):
+        """
+        Evaluates this condition against the quote.
+        For example, if field_name == "discount_percentage":
+          1. we compute quote's discount
+          2. compare with 'value' using 'operator'.
+        """
+        # 1. Retrieve the field's current value (example: discount_percentage)
+        field_value = self._get_quote_field_value(quote, self.field_name)
+
+        # 2. Convert to Decimal as needed:
+        from decimal import Decimal
+        compare_value = Decimal(str(self.value))
+        current_value = Decimal(str(field_value))
+
+        # 3. Apply operator logic
+        if self.operator == '>=':
+            return current_value >= compare_value
+        elif self.operator == '<=':
+            return current_value <= compare_value
+        elif self.operator == '==':
+            return current_value == compare_value
+        elif self.operator == '>':
+            return current_value > compare_value
+        elif self.operator == '<':
+            return current_value < compare_value
+        elif self.operator == '!=':
+            return current_value != compare_value
+        return False
+
+    def _get_quote_field_value(self, quote, field_name):
+        """
+        Here you map `field_name` to the actual attribute or computed value on the quote.
+        For example, if `field_name` == "discount_percentage", you might do:
+          return quote.get_total_discount_percentage()
+        If `field_name` == "total_amount", you might do:
+          return quote.get_total_amount()
+        """
+        # As a simple example, if we store discount in a "discount_percentage" field:
+        if field_name == "discount_percentage":
+            return quote.get_total_discount_percentage()
+        elif field_name == "total_amount":
+            return quote.get_total_amount()
+        
+        # Fallback or dynamic attribute retrieval:
+        return getattr(quote, field_name, 0)
+
+class ApprovalStep(models.Model):
+    rule = models.ForeignKey(
+        'ApprovalRule',
+        on_delete=models.CASCADE,
+        null=True,
+        related_name='steps'
+    )
+    sequence = models.PositiveIntegerField(default=1)
+    approver_role = models.CharField(max_length=255, help_text="Role required to approve this step")
+
+    def __str__(self):
+        return f"{self.rule.name} (Step {self.sequence} - {self.approver_role})"
 
 
 class QuoteApproval(models.Model):

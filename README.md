@@ -141,7 +141,7 @@ agent_map = {
 ## ✅ **USE CASES / PROMPTS FOR MVP**
 
 ### 1. Pricing Inquiry  
-**Jane from TechCorp mentioned that they’re evaluating AI-AgentCPQ and asked for pricing on 25 seats.**  
+**Jane from TechCorp mentioned that they’re evaluating  and asked for pricing on 25 seats.**  
 *Agent should infer the need to generate a quote for 25 licenses.*
 
 ### 2. Competitive Analysis  
@@ -163,12 +163,14 @@ agent_map = {
 🔜 **Integrations**: Support for Salesforce, HubSpot, and more  
 🔜 **Advanced AI**: Adaptive learning for better quote recommendations  
 
--
-
-
 
 ✅ **Go to Market Strategy**: 
 - Focus on big guys
 
+## APPROVALS
 
-
+“Submit quote for approval.”	✅ Quote Q-00032 submitted for approval. Awaiting Manager approval.
+“Does this quote need approval?”	⚠️ This quote requires Manager approval due to a 20% discount. Would you like to submit it now?
+“Approve quote Q-00032.”	✅ Quote Q-00032 has been approved.
+“Reject quote Q-00032.”	❌ Quote Q-00032 has been rejected.
+“Recall quote Q-00032.”	🔄 Quote Q-00032 has been recalled and can be modified again.

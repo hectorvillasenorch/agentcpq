@@ -8,7 +8,6 @@ urlpatterns = [
     path('dashboard/', include('dashboard.urls')),
     path('agents/', include('agents.urls')),  
     path('cpq/', include('cpq.urls')), 
-    path("agents/", include("agents.urls")),
     path("salesforce/", include("salesforce.urls")),
 ]
 

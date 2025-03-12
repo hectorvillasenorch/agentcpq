@@ -5,10 +5,9 @@
   overflow: hidden;
 }
 
-/* === Sidebar === */
+/* === Sidebar (Responsive) === */
 .sidenav-fixed {
   width: 250px;
-  /* background-color: #263238; */
   background-color: #464646;
   color: white;
   position: fixed;
@@ -16,43 +15,75 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  align-items: center; /* ✅ Centers the sidebar content */
+  align-items: center;
   padding-top: 20px;
+  transition: transform 0.3s ease-in-out;
 }
 
-/* ✅ Style for links: Center in sidebar, align text to the left */
+/* ✅ Mobile Sidebar: Hidden by Default */
+@media screen and (max-width: 768px) {
+  .sidenav-fixed {
+    width: 200px;
+    transform: translateX(-100%);
+    position: absolute;
+  }
+
+  /* ✅ Sidebar open state */
+  .sidenav-fixed.active {
+    transform: translateX(0);
+  }
+}
+
+/* ✅ Sidebar Links */
 .sidenav-fixed a {
   color: white;
   display: flex;
   align-items: center;
-  justify-content: flex-start; /* ✅ Aligns text to the left */
-  width: 90%; /* ✅ Ensures links span most of the sidebar width */
+  justify-content: flex-start;
+  width: 90%;
   padding: 15px;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 500;
   text-decoration: none;
   border-radius: 8px;
 }
 
 .sidenav-fixed a i {
-  color: white;
-  font-size: 24px;
+  font-size: 22px;
   margin-right: 10px;
 }
 
-.sidenav-fixed a:hover {
-  background-color: rgba(255, 255, 255, 0.2);
-}
-
-/* ✅ Brand Styling: Centered at the top */
+/* ✅ Sidebar Brand */
 .brand {
   text-align: center;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: bold;
-  margin-bottom: 20px;
+  margin-bottom: 15px;
 }
 
-/* === Main Content === */
+/* ✅ Mobile Sidebar Toggle Button */
+.sidebar-toggle {
+  display: none;
+  position: absolute;
+  width: 50px;
+  top: 3px;
+  left: 4px;
+  font-size: 30px;
+  cursor: pointer;
+  /* vertical-align: top; */
+  color: white;
+  background: #313131;
+  text-align: center;
+  height: 50px;
+}
+
+@media screen and (max-width: 768px) {
+  .sidebar-toggle {
+    display: block;
+  }
+}
+
+/* === Main Content (Responsive) === */
 .main-content {
   margin-left: 250px;
   flex-grow: 1;
@@ -60,9 +91,13 @@
   flex-direction: column;
   height: 100vh;
   padding: 0;
+  transition: margin-left 0.3s ease-in-out;
 }
-.brand{
-  text-align: center;
+
+@media screen and (max-width: 768px) {
+  .main-content {
+    margin-left: 0;
+  }
 }
 
 /* === Content Area === */
@@ -73,13 +108,12 @@
   background-color: white;
   padding: 20px;
   width: 100%;
-  /* max-width: 1400px; */
   margin: 0 auto;
   overflow-y: auto;
   border-radius: 5px;
 }
 
-/* === Table Styling === */
+/* === Table Styling (Responsive) === */
 table {
   width: 100%;
   border-collapse: collapse;
@@ -100,30 +134,34 @@ tr:hover {
   background-color: #f9f9f9;
 }
 
-/* === Status Chips === */
+/* ✅ Responsive Table */
+@media screen and (max-width: 768px) {
+  table {
+    font-size: 14px;
+  }
+
+  th, td {
+    padding: 8px;
+  }
+}
+
+/* === Status Chips (Mobile Optimized) === */
 .status-chip {
   padding: 6px 12px;
   border-radius: 16px;
   font-weight: bold;
   text-transform: uppercase;
+  font-size: 14px;
 }
 
-.status-chip.pending {
-  background-color: #ff9800;
-  color: white;
+@media screen and (max-width: 768px) {
+  .status-chip {
+    font-size: 12px;
+    padding: 4px 8px;
+  }
 }
 
-.status-chip.approved {
-  background-color: #4caf50;
-  color: white;
-}
-
-.status-chip.rejected {
-  background-color: #f44336;
-  color: white;
-}
-
-/* === Icon Buttons === */
+/* === Icon Buttons (Mobile Adjustments) === */
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -138,4 +176,12 @@ tr:hover {
 
 .icon-button:hover {
   background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* ✅ Mobile Adjustments */
+@media screen and (max-width: 768px) {
+  .icon-button {
+    padding: 4px;
+    margin-right: 3px;
+  }
 }
