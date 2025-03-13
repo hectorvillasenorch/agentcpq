@@ -45,9 +45,7 @@ def approval_agent(action, user_message, session_data):
 
 
 def submit_for_approval(user_message, session_data, quote_name=None, quote_id=None):
-    """Handles submitting a quote for approval or retrieving approval status.
-       If the quote (by name) is not found, it will be auto-approved.
-    """
+    
     logging.info("🔄 Processing quote submission or status check...")
 
     # ✅ Extract quote name if not provided
@@ -166,7 +164,7 @@ def get_approval_status(user_message=None, session_data=None, quote_id=None, sta
     """Retrieves the approval status and history of a given quote, with optional filtering by status.
        If the quote is not found, it will be auto-approved.
     """
-    logging.warning(f"⚠️ Quote ID:==========================> `{quote_id}` ")
+    logging.warning(f"⚠️ Quote ID:==========================> {quote_id} ")
     try:
         
         # ✅ 1. If no quote_id provided, check session_data for active quote
@@ -181,23 +179,23 @@ def get_approval_status(user_message=None, session_data=None, quote_id=None, sta
             }
 
         # ✅ 3. Retrieve the quote
-        try:
-            quote = Quote.objects.get(name=quote_id)
-        except Quote.DoesNotExist:
-            logging.warning(f"⚠️ Quote with ID `{quote_id}` not found. Auto-approving it.")
-            # Simulate auto-approval for a missing quote:
-            return {
-                "success": True,
-                "message": f"✅ Quote with ID `{quote_id}` not found in records but has been auto-approved.",
-                "quote_name": quote_id,
-                "history": [{
-                    "workflow": "Auto-Approval",
-                    "step": "System Approved",
-                    "status": "Approved",
-                    "approved_by": "System",
-                    "approved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }]
-            }
+        
+        quote = Quote.objects.get(id=quote_id)
+        # except Quote.DoesNotExist:
+        #     logging.warning(f"⚠️ Quote with ID `{quote_id}` not found. Auto-approving it.")
+        #     # Simulate auto-approval for a missing quote:
+        #     return {
+        #         "success": True,
+        #         "message": f"✅ Quote with ID `{quote_id}` not found in records but has been auto-approved.",
+        #         "quote_name": quote_id,
+        #         "history": [{
+        #             "workflow": "Auto-Approval",
+        #             "step": "System Approved",
+        #             "status": "Approved",
+        #             "approved_by": "System",
+        #             "approved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        #         }]
+            # }
 
         # ✅ 4. Fetch approval records for this quote
         approvals = QuoteApproval.objects.filter(quote_id=quote.id).order_by('-approved_at')
@@ -205,7 +203,7 @@ def get_approval_status(user_message=None, session_data=None, quote_id=None, sta
         if not approvals.exists():
             return {
                 "success": True,
-                "message": f"ℹ️ No approvals found for Quote `{quote.name}`.",
+                "message": f"<br> ℹ️ Quote {quote.name} has not been submitted for approval yet. <br>🔷 <b> Status:</b> {quote.status}",
                 "quote_name": quote.name,
                 "history": []
             }
@@ -230,7 +228,7 @@ def get_approval_status(user_message=None, session_data=None, quote_id=None, sta
         }
 
     except Exception as e:
-        logging.error(f"❌ Error retrieving approval status: {str(e)}")
+        logging.error(f"❌ Error retrieving approval status---: {str(e)}")
         return {
             "success": False,
             "message": f"⚠️ Error retrieving approval status: {str(e)}"
@@ -429,6 +427,7 @@ def parse_user_message(user_message):
 
         # ✅ Access the message content correctly
         parsed_response = json.loads(response.choices[0].message.content)
+        logging.info(f"✅ {parsed_response} parsed from user message.")
         return parsed_response
 
     except Exception as e:

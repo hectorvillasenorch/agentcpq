@@ -174,3 +174,12 @@ agent_map = {
 “Approve quote Q-00032.”	✅ Quote Q-00032 has been approved.
 “Reject quote Q-00032.”	❌ Quote Q-00032 has been rejected.
 “Recall quote Q-00032.”	🔄 Quote Q-00032 has been recalled and can be modified again.
+
+
+## EMOJIS
+✅ Success
+⚠️ Warning	
+⛔ Invalid Method
+🚨 Invalid JSON	
+🔥 Server Error	
+🔵 Information Only	🔵 or ℹ️
