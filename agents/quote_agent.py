@@ -46,25 +46,20 @@ def quote_agent(action, user_message, session_data):
 
 def create_quote(user_message, session_data):
     """Handles quote creation while preserving context."""
-
-    extracted_details = extract_quote_details(user_message)
-
-    # ✅ Ensure we have extracted details, otherwise check session data
+    extracted_details = extract_quote_details(user_message)   
     account_name = extracted_details.get("account", session_data.get("account", "")).strip()
     opportunity_name = extracted_details.get("opportunity", session_data.get("opportunity", "")).strip()
 
     if not account_name:
         return {"message": "⚠️ Error: Could not determine the account. Please specify an account name."}
 
-    # ✅ Check if Opportunity exists; if not, generate a new name dynamically
     opportunity = Opportunity.objects.filter(name=opportunity_name, account__name=account_name).first()
     if not opportunity:
         opportunity_name = f"Opportunity {account_name}"
-
-    # ✅ Handle confirmation of Opportunity before proceeding
+    
     if session_data.get("pending_action") == "confirm_opportunity":
         session_data["opportunity"] = opportunity_name
-        session_data["pending_action"] = "add_product"  # ✅ Move to next step
+        session_data["pending_action"] = "add_product"  
         return {"message": f"✅ Opportunity `{opportunity_name}` added. Would you like to add products now?"}
 
     if not opportunity_name:
@@ -97,7 +92,7 @@ def create_quote(user_message, session_data):
     session_data["pending_action"] = "add_product"  # ✅ Ensure we move to the next step
 
     return {
-        "message": f"✅ Quote `{quote.name}` created for {account_name} under opportunity `{opportunity_name}`. Would you like to add products now?",
+            "message": f"✅ Quote `{quote.name}` created for {account_name} under opportunity `{opportunity_name}`. Would you like to add products now?",
         "quote_id": quote.id
     }
 

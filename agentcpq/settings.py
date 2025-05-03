@@ -45,11 +45,12 @@ CSRF_TRUSTED_ORIGINS = [
     NGROK_FULL_URL,
     'https://agente001.lightning.force.com'
 ]
-# ✅ Ensure CSRF Cookie is set for external requests
-CSRF_COOKIE_SECURE = True  # Ensures cookie is only set over HTTPS
-SESSION_COOKIE_SECURE = True  # Ensures session cookies are also secure
 
-# ✅ Allow CORS (Optional, only if needed)
+CSRF_COOKIE_SECURE = True 
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_AGE = 86400  
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+
 CORS_ALLOWED_ORIGINS = [
     NGROK_FULL_URL
 ]
@@ -81,6 +82,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "django.middleware.common.CommonMiddleware",
 ]
 
 ROOT_URLCONF = "agentcpq.urls"

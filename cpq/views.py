@@ -23,15 +23,12 @@ def quotes_view(request):
     
     quotes = Quote.objects.select_related("opportunity__account").all()
     
-    # ✅ Check if Salesforce is authenticated
     is_authenticated = SalesforceToken.objects.exists()
 
     return render(request, "quotes.html", {
         "quotes": quotes,
         "is_authenticated": is_authenticated,  # ✅ Used to show Sync button conditionally
     })
-
-
 
 MODEL_CHOICES = {
     "Opportunity": "Opportunity",  # ✅ Use class name, not table name

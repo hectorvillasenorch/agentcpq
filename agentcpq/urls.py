@@ -1,6 +1,5 @@
 from django.contrib import admin
 from django.urls import path, include
-from agents.views import agents_chat, chat_with_gpt
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -9,6 +8,7 @@ urlpatterns = [
     path('agents/', include('agents.urls')),  
     path('cpq/', include('cpq.urls')), 
     path("salesforce/", include("salesforce.urls")),
+    path('admin/', admin.site.urls),
 ]
 
 if settings.DEBUG:

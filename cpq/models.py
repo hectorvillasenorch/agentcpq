@@ -1,19 +1,37 @@
 from django.db import models
 from django.db.models import Sum
 from datetime import datetime
+import uuid
 
+BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+def base62_encode(number, length=14):
+    result = []
+    while number > 0:
+        number, remainder = divmod(number, 62)
+        result.append(BASE62[remainder])
+    return ''.join(reversed(result)).zfill(length)
+
+def generate_agentcpq_id():
+    number = uuid.uuid4().int >> 64
+    base = base62_encode(number)
+    branded = base[:4] + "ACPQ" + base[4:]
+    return branded[:18].upper()
 
 class Account(models.Model):
-    """Represents a company or business entity in the CRM."""
-    name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255)
     industry = models.CharField(max_length=255, blank=True, null=True)
     website = models.URLField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    accid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    
 
-    def __str__(self):
-        return self.name
-
+    def save(self, *args, **kwargs):
+        if not self.accid:
+            self.accid = generate_agentcpq_id()
+        super().save(*args, **kwargs)
 
 class Opportunity(models.Model):
     """Represents a sales opportunity linked to an Account."""
@@ -38,11 +56,14 @@ class Opportunity(models.Model):
         related_name="opportunity_primary_quote",
         null=True, blank=True
     )
+    oppid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    
 
-    def __str__(self):
-        return f"{self.name} - {self.stage}"
+    def save(self, *args, **kwargs):
+        if not self.oppid:
+            self.oppid = generate_agentcpq_id()
+        super().save(*args, **kwargs)
 
-# 🚀 Product Model (Handles both standalone & bundle products)
 class Product(models.Model):
     
     name = models.CharField(max_length=255)
@@ -52,12 +73,13 @@ class Product(models.Model):
     term = models.IntegerField(null=True, blank=True)  # In months (12, 24, etc.)
     is_bundle = models.BooleanField(default=False)  # ✅ If True, it has options (child products)
     family = models.CharField(max_length=50)
+    prdid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
 
-    def __str__(self):
-        return self.name
+    def save(self, *args, **kwargs):
+        if not self.prdid:
+            self.prdid = generate_agentcpq_id()
+        super().save(*args, **kwargs)
 
-
-# 🚀 Option Model (Like Salesforce CPQ)
 class Option(models.Model):
     parent_product = models.ForeignKey(Product, related_name="options", on_delete=models.CASCADE)  # 🔗 Parent Bundle
     product = models.ForeignKey(Product, related_name="included_in", on_delete=models.CASCADE)  # 🔗 Child Product
@@ -89,7 +111,7 @@ class Quote(models.Model):
     additional_discount = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     expiration_date = models.DateField(null=True, blank=True) 
     notes = models.TextField(blank=True, null=True) 
-
+    qteid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     def get_total_discount_percentage(self):
         """
         Calculates the total discount percentage for this quote.
@@ -109,11 +131,13 @@ class Quote(models.Model):
     def get_total_amount(self):
 
         return self.quote_lines.aggregate(total_amount=Sum("total_price"))["total_amount"] or 0
+    
 
-    def __str__(self):
-        return f"{self.name} - {self.status}"
+    def save(self, *args, **kwargs):
+        if not self.qteid:
+            self.qteid = generate_agentcpq_id()
+        super().save(*args, **kwargs)
 
-# Quote Line Model
 class QuoteLine(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="quote_lines")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="quote_lines")
@@ -136,8 +160,6 @@ class QuoteLine(models.Model):
     def __str__(self):
         return f"{self.product.name} ({self.quantity}x)"
 
-
-# Subscription Model
 class Subscription(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="subscriptions")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="subscriptions")
@@ -155,8 +177,6 @@ class Subscription(models.Model):
     def __str__(self):
         return f"{self.product.name} Subscription ({self.term} months)"
 
-
-# Asset Model
 class Asset(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="assets")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="assets")
@@ -169,8 +189,6 @@ class Asset(models.Model):
     def __str__(self):
         return f"Asset: {self.product.name} - {self.serial_number}"
 
-
-# Approval Workflow Models
 class ApprovalWorkflow(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
@@ -293,7 +311,6 @@ class ApprovalStep(models.Model):
     def __str__(self):
         return f"{self.rule.name} (Step {self.sequence} - {self.approver_role})"
 
-
 class QuoteApproval(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="approvals")
     workflow = models.ForeignKey(ApprovalWorkflow, on_delete=models.CASCADE)
@@ -309,8 +326,6 @@ class QuoteApproval(models.Model):
     def __str__(self):
         return f"Quote: {self.quote.name} | {self.step.approver_role} | {self.status}"
 
-
-# Pricing Rules
 class PricingRule(models.Model):
     name = models.CharField(max_length=255)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="pricing_rules")
@@ -322,8 +337,6 @@ class PricingRule(models.Model):
     def __str__(self):
         return f"{self.name} | {self.product.name} | {self.discount_percentage}% Discount"
 
-
-# Product Rules (Dependencies & Exclusions)
 class ProductRule(models.Model):
     RULE_TYPES = [
         ('Dependency', 'Dependency'),
@@ -337,8 +350,6 @@ class ProductRule(models.Model):
     def __str__(self):
         return f"{self.product.name} {self.rule_type} {self.related_product.name}"
 
-
-# Contract Model
 class Contract(models.Model):
     subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="contract")
     start_date = models.DateField()
@@ -352,8 +363,6 @@ class Contract(models.Model):
     def __str__(self):
         return f"Contract for {self.subscription.product.name} ({self.contract_status})"
 
-
-# Usage Model
 class Usage(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="usage_records")
     subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="usage_records")
@@ -402,7 +411,6 @@ class Pricebook(models.Model):
 
     def __str__(self):
         return self.name
-
 
 class PricebookEntry(models.Model):
     """Represents a Pricebook Entry linked to a Product and Pricebook."""

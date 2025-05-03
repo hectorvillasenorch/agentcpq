@@ -1,14 +1,14 @@
 import json
 import os
-import re
+import logging
+
 from django.http import JsonResponse
-from .orchestrator import handle_user_request
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.template.context_processors import csrf
 from dotenv import load_dotenv
-import logging
-from .orchestrator import orchestrate_request
+
+from .orchestrator import handle_user_request  # or orchestrate_request if needed
 
 logger = logging.getLogger(__name__)
 
@@ -17,130 +17,79 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-4"
 
 
-
 def agents_chat(request):
     """Render the chat page with CSRF token."""
     context = {}
-    context.update(csrf(request))  # ✅ Add CSRF token to context
+    context.update(csrf(request))
     return render(request, "agents.html", context)
 
 
-# @csrf_exempt
-# def chat_with_gpt(request):
-#     """Process user messages and route them based on AI-determined intent."""
-#     opportunity_id = request.GET.get('opportunity_id', 'No Opportunity ID provided')
+def _handle_pending_action(pending_action, user_message, session_data):
+ 
+    if pending_action == "confirm_opportunity":
+        session_data["opportunity_name"] = user_message
+        session_data["pending_action"] = None
+        return {
+            "response": f"✅ Opportunity `{user_message}` added. "
+                        "Would you like to add products now?"
+        }
 
-#     # ✅ Log the full incoming request URL
-#     print(f"🔹 DEBUG: Incoming request URL - {request.build_absolute_uri()}")  
-#     print(f"🔹 DEBUG: Extracted Opportunity ID - {opportunity_id}")  
+    if pending_action == "confirm_product_addition":
+        session_data["product_sku"] = user_message
+        session_data["pending_action"] = None
+        return {
+            "response": f"✅ Product `{user_message}` added to the quote."
+        }
 
-#     if request.method == "POST":
-#         data = json.loads(request.body)
-#         user_message = data.get("message", "").strip()
-            
+    return None  # Unrecognized or no pending action to handle
 
-#         try:
-#             # ✅ Step 1: Load Session Context
-#             session_data = request.session.get("session_data", {})
-#             # ✅ Step 1: Load Session Context
-#             session_data = request.session.get("session_data", {})
-#             print("🔹 DEBUG: Session Data:", session_data)  # ✅ Debugging step
 
-#             # ✅ Step 2: Handle Pending Actions
-#             pending_action = session_data.get("pending_action")
-
-#             if pending_action:
-#                 logging.info(f"🔄 Resuming pending action: {pending_action}")
-
-#                 if pending_action == "confirm_opportunity":
-#                     opportunity_name = user_message
-#                     session_data["opportunity_name"] = opportunity_name
-#                     session_data["pending_action"] = None
-#                     request.session["session_data"] = session_data
-#                     return JsonResponse({"response": f"✅ Opportunity `{opportunity_name}` added. Would you like to add products now?"})
-
-#                 if pending_action == "confirm_product_addition":
-#                     product_sku = user_message
-#                     session_data["product_sku"] = product_sku
-#                     session_data["pending_action"] = None
-#                     request.session["session_data"] = session_data
-#                     return JsonResponse({"response": f"✅ Product `{product_sku}` added to the quote."})
-
-#             # ✅ Step 3: Route User Message via Orchestrator
-#             response = handle_user_request(user_message, session_data)
-            
-
-#             # ✅ Step 4: Store Context in Session
-#             request.session["session_data"] = session_data
-#             logging.info(f"[Orchestrator] Agent Response: {response}")
-
-#             return JsonResponse({"response": response})
-
-#         except Exception as e:
-#             logging.error(f"❌ Error in `chat_with_gpt`: {e}")
-#             return JsonResponse({"response": f"⚠️ An error occurred: {str(e)}"}, status=500)
-
-#     return JsonResponse({"error": "Invalid request"}, status=400)
-
-@csrf_exempt  
+@csrf_exempt
 def chat_with_gpt(request):
     """API endpoint to process user messages and route them based on AI-determined intent."""
-
-    opportunity_id = request.GET.get("opportunity_id", "No Opportunity ID provided")
-
-    # ✅ Log the request URL and extracted opportunity ID
-    logger.info(f"🔹 DEBUG: Incoming request URL - {request.build_absolute_uri()}")
-    logger.info(f"🔹 DEBUG: Extracted Opportunity ID - {opportunity_id}")
-
+    # --- 1. Validate request method ---
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request method. Use POST."}, status=405)
 
+    # --- 2. Log basic info ---
+    opportunity_id = request.GET.get("opportunity_id", "No Opportunity ID provided")
+    logger.info(f"🔹 DEBUG: Incoming request URL - {request.build_absolute_uri()}")
+    logger.info(f"🔹 DEBUG: Extracted Opportunity ID - {opportunity_id}")
+
+    # --- 3. Parse JSON body ---
     try:
-        # ✅ Step 1: Parse JSON request body safely
-        try:
-            data = json.loads(request.body)
-            user_message = data.get("message", "").strip()
-        except json.JSONDecodeError:
-            return JsonResponse({"error": "Invalid JSON format."}, status=400)
+        data = json.loads(request.body)
+        user_message = data.get("message", "").strip()
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format."}, status=400)
 
-        if not user_message:
-            return JsonResponse({"error": "Message cannot be empty."}, status=400)
+    if not user_message:
+        return JsonResponse({"error": "Message cannot be empty."}, status=400)
 
-        # ✅ Step 2: Load session context
-        session_data = request.session.get("session_data", {})
-        logger.info(f"🔹 DEBUG: Session Data: {session_data}")
+    # --- 4. Load session data ---
+    session_data = request.session.get("session_data", {})
+    logger.info(f"🔹 DEBUG: Session Data: {session_data}")
 
-        # ✅ Step 3: Handle pending actions before processing a new request
-        pending_action = session_data.get("pending_action")
+    # --- 5. Handle pending actions (if any) ---
+    pending_action = session_data.get("pending_action")
+    if pending_action:
+        logger.info(f"🔄 Resuming pending action: {pending_action}")
+        result = _handle_pending_action(pending_action, user_message, session_data)
+        if result:
+            # If the pending action was fulfilled, update session and return immediately
+            request.session["session_data"] = session_data
+            logger.info(f"[Pending Action Resolved] Response: {result['response']}")
+            return JsonResponse(result)
 
-        if pending_action:
-            logger.info(f"🔄 Resuming pending action: {pending_action}")
-
-            if pending_action == "confirm_opportunity":
-                session_data["opportunity_name"] = user_message
-                session_data["pending_action"] = None
-                request.session["session_data"] = session_data
-                return JsonResponse(
-                    {"response": f"✅ Opportunity `{user_message}` added. Would you like to add products now?"}
-                )
-
-            if pending_action == "confirm_product_addition":
-                session_data["product_sku"] = user_message
-                session_data["pending_action"] = None
-                request.session["session_data"] = session_data
-                return JsonResponse(
-                    {"response": f"✅ Product `{user_message}` added to the quote."}
-                )
-
-        # ✅ Step 4: Route User Message via Orchestrator
-        response = handle_user_request(user_message, session_data)
-
-        # ✅ Step 5: Store updated session context
-        request.session["session_data"] = session_data
-        logger.info(f"[Orchestrator] AI Response: {response}")
-
-        return JsonResponse({"response": response})
-
+    # --- 6. No pending action -> Orchestrate new user request ---
+    try:
+        ai_response = handle_user_request(user_message, session_data)
     except Exception as e:
-        logger.error(f"❌ Error in `chat_with_gpt`: {e}", exc_info=True)
+        logger.error(f"❌ Error in Orchestrator logic: {e}", exc_info=True)
         return JsonResponse({"error": "Internal server error."}, status=500)
+
+    # --- 7. Save updated session data ---
+    request.session["session_data"] = session_data
+    logger.info(f"[Orchestrator] AI Response: {ai_response}")
+
+    return JsonResponse({"response": ai_response})
