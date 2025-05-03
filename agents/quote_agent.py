@@ -450,9 +450,10 @@ def show_quote_details(user_message, session_data):
                 } for line in quote_lines
             ]
         }
+        
 
         return {"message": "✅ Here are the quote details:", "quote_details": quote_details}
-
+    
     except Quote.DoesNotExist:
         return {"message": "⚠️ Error: Quote not found. Please check the quote name."}
     

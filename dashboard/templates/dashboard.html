@@ -31,6 +31,18 @@
             <a href="{% url 'dashboard' %}?view=setup">
                 <i class="material-icons">settings</i> Setup
             </a>
+            <div class="divider"></div>
+            <div class="session-list">
+                <p class="session-list-title">Chat History</p>
+                {% for chat in chat_sessions %}
+                    <a href="{% url 'dashboard-agents' %}?session_id={{ chat.session_id }}" class="chat-history-item">
+                        <i class="material-icons">chat</i>
+                        {{ chat.title|default:"Untitled"|truncatechars:24 }}
+                    </a>
+                {% empty %}
+                    <p style="padding: 0 16px;">No past chats</p>
+                {% endfor %}
+            </div>
         </div>
 
         <!-- Main Content -->

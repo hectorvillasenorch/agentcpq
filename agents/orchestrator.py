@@ -6,6 +6,9 @@ from agents.quote_agent import add_product_to_quote, quote_agent
 from agents.product_agent import product_agent
 from agents.approvals_agent import approval_agent
 from dotenv import load_dotenv
+from agents.models import ChatSession, ChatMessage
+from django.contrib.auth.models import User
+from uuid import uuid4
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -15,17 +18,52 @@ logging.basicConfig(level=logging.DEBUG)
 openai.log = "warning"
 
 def handle_user_request(user_message, session_data):
-    # to-do: Add logic to select the correct agent
+    """
+    Entry point for handling user messages.
+    Handles session reset and returns all user chat sessions for context.
+    """
+    user = User.objects.get(username="hvillasenor")  # Replace with dynamic user if needed
 
+    # Reset session if prompted
     if should_reset_session(user_message):
         session_data.clear()
-        return {"message": "🔄 Session cleared! Let's start fresh. What would you like to do?"}
-    return orchestrate_request(user_message, session_data)
+        return {
+            "message": "🔄 Session cleared! Let's start fresh. What would you like to do?",
+            "session_reset": True,
+            "chat_sessions": list(ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at"))
+        }
+
+    # Normal orchestration
+    response = orchestrate_request(user_message, session_data)
+
+    # Inject chat session list into response
+    response["chat_sessions"] = list(ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at"))
+    return response
 
 def orchestrate_request(user_message, session_data):
     
     session_context = {k: str(v) for k, v in session_data.items() if isinstance(v, (str, int, float, list, dict))}
-   
+    
+    session_id = session_data.get("session_id")
+    # ⚠️ Use a real user later; hardcode for now
+    user = User.objects.get(username="hvillasenor")
+
+    if not session_id:
+        chat_session = ChatSession.objects.create(
+            user=user,
+            session_id=str(uuid4()),
+            title=user_message[:30]  # Optionally use part of the first message
+        )
+        session_data["session_id"] = chat_session.session_id
+    else:
+        chat_session = ChatSession.objects.get(session_id=session_id)
+
+    ChatMessage.objects.create(
+        session=chat_session,
+        sender="user",
+        content=user_message
+    )
+
     action_prompt = f"""
     You are an AI assistant that classifies user requests into predefined actions.
     **User Request:** "{user_message}"
@@ -66,8 +104,25 @@ def orchestrate_request(user_message, session_data):
     action_map = get_action_map()
 
     if decision in action_map:
-        return action_map[decision](decision, user_message, session_data)
+        result = action_map[decision](decision, user_message, session_data)
+        
+        agent_message = result.get("message", "")
 
+        for key, value in result.items():
+            if key not in ("message", "session_id"):
+                agent_message += f"\n\n📦 {key}:\n{json.dumps(value, indent=2)}"
+
+        ChatMessage.objects.create(
+            session=chat_session,
+            sender="agent",
+            content=agent_message
+        )
+
+        result["message"] = agent_message
+        result["session_id"] = session_data["session_id"]
+
+        return result
+    
     logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
     return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
 
