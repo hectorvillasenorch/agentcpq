@@ -18,13 +18,8 @@ logging.basicConfig(level=logging.DEBUG)
 openai.log = "warning"
 
 def handle_user_request(user_message, session_data):
-    """
-    Entry point for handling user messages.
-    Handles session reset and returns all user chat sessions for context.
-    """
-    user = User.objects.get(username="hvillasenor")  # Replace with dynamic user if needed
+    user = User.objects.get(username="hvillasenor") 
 
-    # Reset session if prompted
     if should_reset_session(user_message):
         session_data.clear()
         return {
@@ -32,11 +27,9 @@ def handle_user_request(user_message, session_data):
             "session_reset": True,
             "chat_sessions": list(ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at"))
         }
-
-    # Normal orchestration
+    
     response = orchestrate_request(user_message, session_data)
 
-    # Inject chat session list into response
     response["chat_sessions"] = list(ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at"))
     return response
 
@@ -60,7 +53,7 @@ def orchestrate_request(user_message, session_data):
 
     ChatMessage.objects.create(
         session=chat_session,
-        sender="user",
+        sender="You",
         content=user_message
     )
 

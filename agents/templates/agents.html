@@ -11,7 +11,18 @@
 </head>
 <body class="white lighten-4">  
     <div class="chat-container">
-        <div id="chat-box" class="chat-box"></div>
+        <!-- <div id="chat-box" class="chat-box"></div> -->
+        <div id="chat-box" class="chat-box">
+            {% for msg in chat_messages %}
+              <div class="chat-message {{ msg.sender }}">
+                {% if msg.sender == 'agent' and 'quote_details' in msg.content %}
+                  <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
+                {% else %}
+                  <div class="chat-text">{{ msg.content}}</div>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
         <div class="chat-input-container">
         <div class="input-wrapper">
             <input type="text" id="user-input" placeholder="Create a Quote..." class="chat-input">

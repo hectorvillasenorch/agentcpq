@@ -1,6 +1,26 @@
 document.addEventListener("DOMContentLoaded", function () {
   setupChatListeners();
+  setupSessionSwitching(); 
+  enhanceStructuredAgentMessages(); // 🔥
 });
+
+function setupSessionSwitching() {
+    document.querySelectorAll(".chat-history-item").forEach(item => {
+      item.addEventListener("click", function (e) {
+        e.preventDefault();
+  
+        const sessionId = this.dataset.sessionId;
+        if (!sessionId) return;
+  
+        const url = new URL(window.location.href);
+        url.searchParams.set("view", "agents");
+        url.searchParams.set("session_id", sessionId);
+  
+        // Redirect to the same page with updated session_id
+        window.location.href = url.toString();
+      });
+    });
+  }
 
 function setupChatListeners() {
   console.log("Setting up chat listeners...");
@@ -23,6 +43,32 @@ function setupChatListeners() {
 function toggleSidebar() {
     document.querySelector(".sidenav-fixed").classList.toggle("active");
 }
+function unescapeUnicode(str) {
+    return str.replace(/\\u[\dA-F]{4}/gi, function (match) {
+      return String.fromCharCode(parseInt(match.replace(/\\u/g, ''), 16));
+    });
+  }
+function enhanceStructuredAgentMessages() {
+    document.querySelectorAll(".agent-json").forEach(div => {
+      const raw = div.dataset.raw;
+  
+      const startIndex = raw.indexOf('{');
+      if (startIndex !== -1) {
+        const jsonStr = raw.slice(startIndex);
+  
+        try {
+          const quote = JSON.parse(unescapeUnicode(jsonStr));
+          const html = renderQuoteDetails(quote);
+          div.innerHTML = html;
+        } catch (e) {
+          console.error("❌ JSON parse failed:", e, jsonStr);
+          div.innerHTML = `<div class="error-message">❌ JSON parsing error</div>`;
+        }
+      } else {
+        div.innerHTML = `<div class="error-message">⚠️ Could not find quote details JSON</div>`;
+      }
+    });
+  }
 /**
 * ✅ Send user message to the agent and handle response
 */
@@ -34,7 +80,7 @@ async function sendMessage() {
     if (!userMessage) return;
 
     // Append user message to chat
-    appendMessage("user-message", `<strong>You:</strong> ${userMessage}`);
+    appendMessage("user", `<strong>You:</strong> ${userMessage}`);
 
     inputField.value = ""; // Clear input field
 
@@ -88,7 +134,7 @@ async function sendMessage() {
         }
 
         // ✅ Append the final response message to the chat
-        appendMessage("agent-message", responseMessage);
+        appendMessage("agent", responseMessage);
 
         // Auto-scroll chat
         chatBox.scrollTop = chatBox.scrollHeight;
@@ -100,11 +146,26 @@ async function sendMessage() {
 * ✅ Append message to the chat box
 */
 function appendMessage(className, message) {
-  const chatBox = document.getElementById("chat-box");
-  let messageBubble = document.createElement("div");
-  messageBubble.classList.add(className);
-  messageBubble.innerHTML = message;
-  chatBox.appendChild(messageBubble);
+    const chatBox = document.getElementById("chat-box");
+    let messageBubble = document.createElement("div");
+    messageBubble.classList.add("chat-message", sender);
+  
+    // ✅ Detect stored quote_details as string
+    if (sender === "agent" && message.includes("quote_details: {")) {
+      try {
+        // Extract JSON from string
+        const match = message.match(/quote_details:\s({.+})/);
+        if (match && match[1]) {
+          const quote = JSON.parse(match[1]);
+          message = renderQuoteDetails(quote);  // Use your nice formatter
+        }
+      } catch (e) {
+        console.warn("Failed to parse quote_details JSON:", e);
+      }
+    }
+  
+    messageBubble.innerHTML = message;
+    chatBox.appendChild(messageBubble);
 }
 
 /**

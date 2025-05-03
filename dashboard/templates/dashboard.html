@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="{% static 'materialize/materialize.min.css' %}">
     <script src="{% static 'materialize/materialize.min.js' %}" defer></script>
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}">
 </head>
 <body>
 
@@ -35,7 +36,7 @@
             <div class="session-list">
                 <p class="session-list-title">Chat History</p>
                 {% for chat in chat_sessions %}
-                    <a href="{% url 'dashboard-agents' %}?session_id={{ chat.session_id }}" class="chat-history-item">
+                    <a href="#" class="chat-history-item" data-session-id="{{ chat.session_id }}">
                         <i class="material-icons">chat</i>
                         {{ chat.title|default:"Untitled"|truncatechars:24 }}
                     </a>
