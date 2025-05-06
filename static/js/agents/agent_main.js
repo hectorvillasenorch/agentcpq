@@ -148,10 +148,10 @@ async function sendMessage() {
 function appendMessage(className, message) {
     const chatBox = document.getElementById("chat-box");
     let messageBubble = document.createElement("div");
-    messageBubble.classList.add("chat-message", sender);
+    messageBubble.classList.add("chat-message", className);
   
     // ✅ Detect stored quote_details as string
-    if (sender === "agent" && message.includes("quote_details: {")) {
+    if (className === "agent" && message.includes("quote_details: {")) {
       try {
         // Extract JSON from string
         const match = message.match(/quote_details:\s({.+})/);

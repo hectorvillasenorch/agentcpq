@@ -1,51 +1,142 @@
 <style>
-    .icon-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 5px;
-      margin-right: 5px;
-      cursor: pointer;
-      text-decoration: none;
-      border-radius: 50%;
-      transition: background-color 0.2s;
-    }
-  
-    .icon-button:hover {
-      background-color: rgba(0, 0, 0, 0.05);
-    }
-  
-    table {
-      font-size: 20px;
-    }
-  
-    .sync-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 5px 10px;
-      margin-right: 5px;
-      cursor: pointer;
-      text-decoration: none;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      font-weight: bold;
-      background-color: #007bff;
-      color: white;
-      transition: background-color 0.2s;
-    }
-  
-    .sync-button:hover {
-      background-color: #0056b3;
-    }
+    body {
+        background-color: #f9fafb;
+        font-family: 'Inter', sans-serif;
+        color: #111827;
+      }
+    
+      .container-fluid {
+        padding: 2rem;
+      }
+    
+      h2 {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #1f2937;
+        text-align: center;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+      }
+    
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        border-radius: 0.5rem;
+        overflow: hidden;
+        background-color: white;
+        color: #111827;
+        font-size: 1.1rem;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      }
+    
+      th, td {
+        padding: 1rem;
+        text-align: left;
+        border-bottom: 1px solid #e5e7eb;
+      }
+    
+      th {
+        background-color: #f3f4f6;
+        font-weight: 600;
+        color: #374151;
+        text-transform: uppercase;
+        font-size: 1rem;
+      }
+    
+      tr:hover {
+        background-color: #f9fafb;
+      }
+    
+      .chip {
+        background-color: #2563eb;
+        color: white;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+      }
+    
+      .icon-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px;
+        margin-right: 8px;
+        border-radius: 6px;
+        transition: background-color 0.2s;
+        font-size: 1rem;
+        color: #2563eb;
+        background-color: transparent;
+        border: 1px solid transparent;
+      }
+    
+      .icon-button:hover {
+        background-color: #e0e7ff;
+      }
+    
+      .sync-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 12px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        background-color: #10b981;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        transition: background-color 0.2s;
+      }
+    
+      .sync-button:hover {
+        background-color: #059669;
+      }
+    
+      @media (max-width: 768px) {
+        table, thead, tbody, th, td, tr {
+          display: block;
+        }
+    
+        tr {
+          margin-bottom: 1rem;
+        }
+    
+        td {
+          padding-left: 50%;
+          position: relative;
+        }
+    
+        td::before {
+          position: absolute;
+          top: 1rem;
+          left: 1rem;
+          white-space: nowrap;
+          color: #6b7280;
+          font-weight: 600;
+        }
+      }
+      .section-highlight {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #10b981;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: linear-gradient(to right, #e2fee0, transparent);
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1.5rem;
+      }
   </style>
   
   <div class="container-fluid" style="width: 100%;">
-    <h2 class="blue-text text-darken-3 center-align">
+ 
+    <h2 class="section-highlight">
         <i class="material-icons">request_quote</i> Quotes
-    </h2>
-  
+      </h2>
     <table class="striped highlight responsive-table" style="width: 100%;">
         <thead>
             <tr>

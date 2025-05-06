@@ -8,16 +8,18 @@
 /* === Sidebar (Responsive) === */
 .sidenav-fixed {
   width: 250px;
-  background-color: #464646;
-  color: white;
-  position: fixed;
   height: 100%;
+  position: fixed;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   padding-top: 20px;
+  color: white;
   transition: transform 0.3s ease-in-out;
+
+  /* ✅ Gradient from black to dark blue */
+  background: linear-gradient(to bottom, #464646, #1c1c1c, #292929);
 }
 /* === Chat Session List === */
 .session-list {
@@ -51,7 +53,7 @@
 }
 
 .chat-history-item:hover {
-  background-color: #555555;
+  background-color: #424242;
   color: #ffffff;
 }
 
