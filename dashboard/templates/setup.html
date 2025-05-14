@@ -1,13 +1,10 @@
     <div class="salesforce-auth-status">
-      {% if is_setup %}
-        <h2>⚙️ Setup</h2>
-          {% if is_authenticated %}
+    
               <p style="color: green; font-weight: bold;">✅ Salesforce Authenticated</p>
-          {% else %}
+    
               <p style="color: red; font-weight: bold;">❌ Not Connected to Salesforce</p>
               <a href="{% url 'salesforce_login' %}" class="btn btn-primary">Login to Salesforce</a>
-          {% endif %}
-      {% endif %}
+
   </div>
 
     <div class="setup-section">

@@ -6,8 +6,10 @@ from salesforce.models import SalesforceToken
 from django.shortcuts import redirect
 import pkce
 import requests
-from salesforce.models import SalesforceToken
 from cpq.models import Quote, QuoteLine
+import logging
+import datetime
+from datetime import timezone as dt_timezone
 
 def salesforce_login(request):
     """Redirect the user to Salesforce OAuth login using PKCE."""
@@ -31,8 +33,6 @@ def salesforce_login(request):
     return redirect(auth_url)
 
 def salesforce_callback(request):
-    """Handles Salesforce OAuth callback and exchanges code for an access token using PKCE."""
-    
     code = request.GET.get("code")
     if not code:
         return JsonResponse({"error": "Missing authorization code"}, status=400)
@@ -42,29 +42,49 @@ def salesforce_callback(request):
     if not code_verifier:
         return JsonResponse({"error": "Missing PKCE code verifier"}, status=400)
 
+    # ✅ Exchange the code for tokens
     payload = {
         "grant_type": "authorization_code",
         "client_id": settings.SALESFORCE_CLIENT_ID,
         "redirect_uri": settings.SALESFORCE_REDIRECT_URI,
         "code": code,
-        "code_verifier": code_verifier,  # ✅ Use PKCE code verifier
+        "code_verifier": code_verifier,
     }
 
     token_response = requests.post(settings.SALESFORCE_TOKEN_URL, data=payload)
     token_data = token_response.json()
+    logging.info(f"🔍 TOKEN SF: {token_data}")
 
     if "access_token" in token_data:
+        # ✅ Parse issued_at
+        issued_at_raw = token_data.get("issued_at")
+        issued_at = None
+        expires_at = None
+
+        if issued_at_raw:
+            issued_at_ts = int(issued_at_raw) / 1000
+            issued_at = datetime.datetime.fromtimestamp(issued_at_ts, tz=dt_timezone.utc)
+            expires_at = issued_at + datetime.timedelta(hours=1)
+
+        # ✅ Save to DB
         SalesforceToken.objects.update_or_create(
-            user_id="default",
+            user_id="default",  # adjust if using auth users
             defaults={
                 "access_token": token_data["access_token"],
                 "refresh_token": token_data.get("refresh_token"),
                 "instance_url": token_data["instance_url"],
+                "issued_at_raw": issued_at_raw,
+                "issued_at": issued_at,
+                "expires_at": expires_at,
             }
         )
+
         return HttpResponseRedirect("/dashboard?view=setup")
 
-    return JsonResponse({"error": "Salesforce authentication failed", "details": token_data}, status=400)
+    return JsonResponse({
+        "error": "Salesforce authentication failed",
+        "details": token_data
+    }, status=400)
 
 def token_receiver(request):
     """Receives the token as a query parameter and stores it."""
@@ -111,7 +131,23 @@ def test_salesforce_api(request):
     except Exception as e:
         return JsonResponse({"error": "Invalid response from Salesforce", "details": str(e)}, status=500)
 
+# def get_salesforce_token():
+#     token = SalesforceToken.objects.first()
+#     if not token:
+#         return None
 
+#     # Check expiration
+#     expires_at = token.issued_at + timedelta(seconds=token.expires_in)
+#     if timezone.now() >= expires_at:
+#         print("🔄 Access token expired — refreshing...")
+#         refreshed = refresh_salesforce_token(token)
+#         if refreshed:
+#             token = SalesforceToken.objects.first()
+#         else:
+#             print("❌ Token refresh failed.")
+#             return None
+
+#     return token
 
 def sync_quote_to_salesforce(request, quote_id):
     """Syncs a Quote’s value and Line Items to a Salesforce Opportunity."""

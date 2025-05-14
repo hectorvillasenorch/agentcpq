@@ -183,3 +183,60 @@ agent_map = {
 🚨 Invalid JSON	
 🔥 Server Error	
 🔵 Information Only	🔵 or ℹ️
+
+
+# #agent_template.py 
+
+def agent_logic(user_message: str, session_data: dict, crm: dict) -> dict:
+    """
+    Core agent logic template for AgentCPQ.
+
+    Parameters:
+    - user_message: str
+    - session_data: dict
+    - crm: dict
+
+    Returns:
+    - dict: structured agent response
+    """
+
+    # 1. Understand the intent
+    intent = detect_intent(user_message)
+
+    # 2. Retrieve context
+    context = extract_context(session_data, crm)
+
+    # 3. Apply agent-specific logic
+    response = apply_agent_logic(intent, context)
+
+    # 4. Update session if needed
+    updated_session = update_session(intent, session_data)
+
+    # 5. Return structured result
+    return {
+        "intent": intent,
+        "response": response,
+        "session": updated_session
+    }
+
+
+# --- Placeholder methods ---
+
+def detect_intent(user_message: str) -> str:
+    """Step 1: Detect the user's intent from the message."""
+    pass
+
+
+def extract_context(session_data: dict, crm: dict) -> dict:
+    """Step 2: Gather relevant objects from session and CRM."""
+    pass
+
+
+def apply_agent_logic(intent: str, context: dict) -> dict:
+    """Step 3: Perform agent-specific processing."""
+    pass
+
+
+def update_session(intent: str, session_data: dict) -> dict:
+    """Step 4: Modify session data based on interaction."""
+    pass

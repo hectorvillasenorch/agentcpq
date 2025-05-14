@@ -15,8 +15,8 @@ import os
 import logging
 from dotenv import load_dotenv
 
-NGROK_FULL_URL = "https://52df-2607-fb90-5787-8ed8-a1ee-445c-b27e-7cab.ngrok-free.app"
-NGROK_URI = "52df-2607-fb90-5787-8ed8-a1ee-445c-b27e-7cab.ngrok-free.app"
+NGROK_FULL_URL = "https://b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.ngrok-free.app"
+NGROK_URI = "b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.ngrok-free.app"
 
 load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -191,6 +191,6 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # Salesforce OAuth settings for your connected app
 SALESFORCE_CLIENT_ID = os.getenv("SF_CID")
 SALESFORCE_CLIENT_SECRET = os.getenv("SF_SECRET")
-SALESFORCE_REDIRECT_URI = "https://6dd6-2607-fb91-aa9-5bd3-d405-90c9-2011-5a6e.ngrok-free.app/salesforce/callback"
+SALESFORCE_REDIRECT_URI = "https://b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.ngrok-free.app/salesforce/callback"
 SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/authorize"
 SALESFORCE_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
