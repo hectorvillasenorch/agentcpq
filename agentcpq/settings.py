@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     "agents",
     "dashboard",
     "salesforce",
+    "hubspot",
 ]
 
 MIDDLEWARE = [

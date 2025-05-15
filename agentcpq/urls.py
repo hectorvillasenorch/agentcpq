@@ -9,6 +9,7 @@ urlpatterns = [
     path('cpq/', include('cpq.urls')), 
     path("salesforce/", include("salesforce.urls")),
     path('admin/', admin.site.urls),
+    path('hubspot/', include('hubspot.urls')),
 ]
 
 if settings.DEBUG:

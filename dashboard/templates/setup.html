@@ -1,16 +1,131 @@
-    <div class="salesforce-auth-status">
-    
-              <p style="color: green; font-weight: bold;">✅ Salesforce Authenticated</p>
-    
-              <p style="color: red; font-weight: bold;">❌ Not Connected to Salesforce</p>
-              <a href="{% url 'salesforce_login' %}" class="btn btn-primary">Login to Salesforce</a>
-
-  </div>
-
-    <div class="setup-section">
-        <h3>Field Mapping</h3>
-        <p>Adjust how fields are mapped between AgentCPQ and your CRM.</p>
-        <a href="/cpq/field-mapping" class="btn">🔧 Manage Mappings</a>
+<style>
+    .admin-section {
+      border: 1px solid #e0e0e0;
+      border-radius: 16px;
+      margin-bottom: 32px;
+      padding: 24px;
+      background-color: #fff;
+      font-size: 18px;
+    }
+    .admin-header {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .admin-status {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .admin-status p {
+      margin: 0;
+      font-weight: 500;
+    }
+    .status-success {
+      color: #2e7d32;
+    }
+    .status-fail {
+      color: #c62828;
+    }
+    .platform-logo {
+      height: 28px;
+      vertical-align: middle;
+    }
+  </style>
+  
+  <div class="container">
+    <h4 class="center-align" style="margin-bottom: 40px;">⚙️ Admin Dashboard</h4>
+  
+    <!-- 🔗 Integrations -->
+    <div class="admin-section">
+      <div class="admin-header">🔌 Platform Integrations</div>
+  
+      <!-- Salesforce -->
+<div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div style="display: flex; align-items: center; gap: 14px;">
+      <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/Salesforce.com_logo.svg/320px-Salesforce.com_logo.svg.png"
+           alt="Salesforce Logo" style="height: 30px;">
+      <div>
+        <p class="status-success">✅ Salesforce Connected</p>
+        <!-- <p class="status-fail">❌ Not Connected</p> -->
+        <p>Used for syncing quotes, products, and accounts.</p>
+      </div>
     </div>
-
-    
+    <a href="{% url 'salesforce_login' %}" class="btn blue">🔐 Connect</a>
+  </div>
+  
+  <!-- HubSpot -->
+  <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center;">
+    <div style="display: flex; align-items: center; gap: 14px;">
+      <img src="https://cdn.worldvectorlogo.com/logos/hubspot-1.svg"
+           alt="HubSpot Logo" style="height: 30px;">
+      <div>
+        {% if hubspot_connected %}
+          <p class="status-success">✅ HubSpot Connected</p>
+        {% else %}
+          <p class="status-fail">❌ Not Connected to HubSpot</p>
+        {% endif %}
+        <p>Connect to sync deals and contacts in real-time.</p>
+      </div>
+    </div>
+    <a href="{% url 'start_hubspot_auth' %}" class="btn orange">🔐 Connect</a>
+  </div>
+  </div>
+  
+    <!-- 👥 User Management -->
+    <div class="admin-section">
+      <div class="admin-header">👥 User Management</div>
+      <p>Manage who can access and administer the AgentCPQ system.</p>
+      <div class="row">
+        <div class="col s12 m6">
+          <a href="/admin/users/add" class="btn green">➕ Add User</a>
+        </div>
+        <div class="col s12 m6">
+          <a href="/admin/users/manage" class="btn red lighten-1">👤 Manage Users</a>
+        </div>
+      </div>
+    </div>
+  
+    <!-- 🤖 Agent Management -->
+    <div class="admin-section">
+      <div class="admin-header">🤖 Agent Control Center</div>
+      <p>Enable or disable AI agents within the AgentCPQ platform.</p>
+      <ul class="collection">
+        <li class="collection-item">
+          Quoting Agent — <span class="green-text">Active</span>
+          <a href="/admin/agents/quoting/toggle" class="secondary-content btn-flat">Toggle</a>
+        </li>
+        <li class="collection-item">
+          Pricing Agent — <span class="red-text">Inactive</span>
+          <a href="/admin/agents/pricing/toggle" class="secondary-content btn-flat">Toggle</a>
+        </li>
+        <li class="collection-item">
+          Analytics Agent — <span class="green-text">Active</span>
+          <a href="/admin/agents/analytics/toggle" class="secondary-content btn-flat">Toggle</a>
+        </li>
+      </ul>
+    </div>
+  
+    <!-- 📊 Logs & Usage -->
+    <div class="admin-section">
+      <div class="admin-header">📊 Logs & System Usage</div>
+      <p>Monitor API usage, agent interactions, and performance history.</p>
+      <div class="row">
+        <div class="col s12 m6">
+          <a href="/admin/logs" class="btn grey darken-1">📄 View Logs</a>
+        </div>
+        <div class="col s12 m6">
+          <a href="/admin/usage" class="btn indigo">📈 Usage Stats</a>
+        </div>
+      </div>
+    </div>
+  
+    <!-- 🛠️ Future Config (optional) -->
+    <div class="admin-section">
+      <div class="admin-header">🛠️ Configuration (Coming Soon)</div>
+      <p>API keys, license management, multi-tenant settings, and more.</p>
+    </div>
+  </div>
