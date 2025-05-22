@@ -50,60 +50,65 @@
 
         <div class="row">
            <!-- ✅ Select CRM -->
-            <div class="input-field col s12">
-              <select id="crm" onchange="updateFields()">
-                  <option value="AgentCPQ" {% if selected_crm == "AgentCPQ" %}selected{% endif %}>AgentCPQ</option>
-                  <option value="Salesforce" {% if selected_crm == "Salesforce" %}selected{% endif %}>Salesforce</option>
-                  <option value="HubSpot" {% if selected_crm == "HubSpot" %}selected{% endif %}>HubSpot</option>
-                  <option value="Dynamics" {% if selected_crm == "Dynamics" %}selected{% endif %}>Microsoft Dynamics</option>
-                  <option value="Custom" {% if selected_crm == "Custom" %}selected{% endif %}>Custom CRM</option>
-              </select>
-              <label>Select CRM</label>
-            </div>
+           
+           <div class="input-field col s12">
+            <select id="crm" onchange="onAnyDropdownChange()">
+              <option value="AgentCPQ" {% if selected_crm == "AgentCPQ" %}selected{% endif %}>AgentCPQ</option>
+              <option value="HubSpot" {% if selected_crm == "HubSpot" %}selected{% endif %}>HubSpot</option>
+              <option value="Salesforce" {% if selected_crm == "Salesforce" %}selected{% endif %}>Salesforce</option>
+            </select>
+            <label>Select CRM</label>
+          </div>
 
             <!-- ✅ Select Object Type -->
             <div class="input-field col s12">
-              <select id="object_type" onchange="updateFields()">
+                <select id="object_type" onchange="onAnyDropdownChange()">
                   {% for model in available_models %}
-                  <option value="{{ model }}" {% if model == selected_model %}selected{% endif %}>{{ model }}</option>
+                    <option value="{{ model }}" {% if selected_model == model %}selected{% endif %}>{{ model }}</option>
                   {% endfor %}
-              </select>
-              <label>Select Object Type</label>
-            </div>
+                </select>
+                <label>Select Object Type</label>
+              </div>
 
-        <!-- ✅ Field Mapping Table -->
-        <h5 class="center-align">Map Fields</h5>
-        <div class="table-container">
-            <table class="highlight responsive-table">
-                <thead>
-                    <tr>
-                        <th>Local Field</th>
-                        <th>CRM Field Mapping</th>
-                    </tr>
-                </thead>
-                <tbody id="mapping-table-body">
-                    {% for field in local_fields %}
-                    <tr>
-                        <td>{{ field }}</td>
-                        <td>
-                          <input type="text" id="map_{{ field }}" class="crm-input" value="{{ mappings|get_item:field }}" placeholder="Enter CRM Field">
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+                <!-- ✅ Field Mapping Table -->
+            <h5 class="center-align">Map Fields</h5>
+            <div class="table-container">
+                <table class="highlight responsive-table">
+                    <thead>
+                        <tr>
+                            <th>Local Field</th>
+                            <th>CRM Field Mapping</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mapping-table-body">
+                        <!-- All rows will be inserted dynamically by JS -->
+                    </tbody>
+                </table>
+            </div>
 
         <div class="row center-align">
             <button class="btn waves-effect waves-light" onclick="saveMappings()">Save Mappings</button>
         </div>
     </div>
-
+    <script>
+        const localFields = {{ local_fields|safe }};
+        const fieldMappings = {{ mappings_json|safe }};
+        console.log("🧠 localFields is:", localFields);
+        console.log("🧠 fieldMappings:", fieldMappings);
+      </script>
     <script>
       document.addEventListener('DOMContentLoaded', function() {
           var elems = document.querySelectorAll('select');
           M.FormSelect.init(elems);
+          updateFields();
+          
       });
+      function onAnyDropdownChange() {
+        const crm = document.getElementById("crm").value;
+        const objectType = document.getElementById("object_type").value;
+        window.location.href = `/cpq/field-mapping/?crm=${crm}&object_type=${objectType}`;
+        console.log("🧠 localFields is:", localFields);
+      }
       
       async function saveMappings() {
           let formData = new FormData();
@@ -113,8 +118,11 @@
           formData.append("crm", crm);
           formData.append("object_type", objectType);
           
-          document.querySelectorAll('.crm-input').forEach(input => {
-              formData.append(input.id.replace("map_", ""), input.value);
+          document.querySelectorAll('#mapping-table-body tr').forEach(row => {
+            const input = row.querySelector('input, select'); // support both <input> and <select>
+            if (input) {
+                formData.append(input.id.replace("map_", ""), input.value);
+            }
           });
       
           try {
@@ -135,12 +143,76 @@
           }
       }
       
-      function updateFields() {
-          let crm = document.getElementById("crm").value;
-          let objectType = document.getElementById("object_type").value;
-          
-          window.location.href = `/cpq/field-mapping/?crm=${crm}&object_type=${objectType}`;
-      }
+      async function updateFields() {
+        const objectType = document.getElementById("object_type").value;
+    
+        const tableBody = document.getElementById("mapping-table-body");
+        tableBody.innerHTML = "";
+    
+        let crmFields = [];
+    
+        try {
+            const res = await fetch(`/cpq/hubspot/schema/?object_type=${objectType}`);
+            const data = await res.json();
+    
+            if (data.error) {
+                console.warn("⚠️ HubSpot schema fetch failed:", data.error);
+                M.toast({ html: "⚠️ CRM fields not available", classes: "orange lighten-1" });
+            } else {
+                crmFields = data.fields;
+            }
+    
+        } catch (err) {
+            console.error("HubSpot schema fetch error:", err);
+            M.toast({ html: "⚠️ Failed to fetch CRM schema", classes: "orange lighten-1" });
+        }
+    
+        localFields.forEach(field => {
+            const row = document.createElement("tr");
+        
+            const td1 = document.createElement("td");
+            td1.textContent = field;
+            row.appendChild(td1);
+        
+            const td2 = document.createElement("td");
+        
+            // Create text input
+            const input = document.createElement("input");
+            input.type = "text";
+            input.className = "crm-input";
+            input.id = `map_${field.replace(/\W+/g, '_')}`;
+            input.placeholder = "Enter CRM field";
+            
+            // ✅ Pre-fill saved mapping from DB
+            const saved = fieldMappings[field];
+            if (saved) {
+                input.value = saved;
+            }
+        
+            // ✅ Attach datalist for CRM suggestions (if available)
+            if (crmFields.length > 0) {
+                const dataListId = `datalist_${field.replace(/\W+/g, '_')}`;
+                input.setAttribute("list", dataListId);
+        
+                const dataList = document.createElement("datalist");
+                dataList.id = dataListId;
+        
+                crmFields.forEach(fieldName => {
+                    const option = document.createElement("option");
+                    option.value = fieldName;
+                    dataList.appendChild(option);
+                });
+        
+                td2.appendChild(dataList);
+            }
+        
+            td2.appendChild(input);
+            row.appendChild(td2);
+            tableBody.appendChild(row);
+        });
+    
+        M.FormSelect.init(document.querySelectorAll('select'));
+    }
       </script>
 
 </body>

@@ -7,10 +7,12 @@ from dotenv import load_dotenv
 from hubspot.models import HubspotToken
 from django.utils.timezone import now, timedelta
 import requests
+from django.views.decorators.csrf import csrf_exempt 
 
 load_dotenv()
 HUBSPOT_CLIENT_ID = os.getenv("HS_CID")
 HUBSPOT_CLIENT_SECRET = os.getenv("HS_SECRET")
+
 def start_hubspot_auth(request):
     """
     Redirects the user to HubSpot's OAuth authorization page.
@@ -67,6 +69,7 @@ def refresh_hubspot_token(user_id="default"):
     token_obj.save()
 
     return token_obj
+
 def hubspot_callback(request):
     code = request.GET.get("code")
     if not code:
@@ -105,42 +108,8 @@ def hubspot_callback(request):
         }
     )
 
-    return JsonResponse({"message": "HubSpot authorization successful"})
-
-def hubspot_webhook(request):
-    return JsonResponse({"message": "HubSpot webhook received."})
-
-
-def start_hubspot_auth(request):
-    base_url = "https://app.hubspot.com/oauth/authorize"
-    client_id = HUBSPOT_CLIENT_ID  
-
-    redirect_uri = request.build_absolute_uri('/hubspot/oauth/callback/')
-
-    params = {
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "scope": "crm.objects.contacts.read crm.objects.deals.read"
-    }
-
-    auth_url = f"{base_url}?{urlencode(params)}"
-    return HttpResponseRedirect(auth_url)
-
-
-def get_contacts():
-    token = HubspotToken.objects.get(user_id="default")  # adjust if needed
-
-    headers = {
-        "Authorization": f"Bearer {token.access_token}"
-    }
-
-    response = requests.get(
-        "https://api.hubapi.com/crm/v3/objects/contacts",
-        headers=headers
-    )
-
-    return response.json()
-
+    # return JsonResponse({"message": "HubSpot authorization successful"})
+    return HttpResponseRedirect("/dashboard/?view=setup")
 
 def setup_dashboard(request):
     hubspot_connected = False
@@ -161,3 +130,117 @@ def setup_dashboard(request):
     return render(request, "setup.html", {
         "hubspot_connected": hubspot_connected,
     })
+# def hubspot_webhook(request):
+#     return JsonResponse({"message": "HubSpot webhook received."})
+
+
+# def start_hubspot_auth(request):
+#     base_url = "https://app.hubspot.com/oauth/authorize"
+#     client_id = HUBSPOT_CLIENT_ID  
+
+#     redirect_uri = request.build_absolute_uri('/hubspot/oauth/callback/')
+
+#     params = {
+#         "client_id": client_id,
+#         "redirect_uri": redirect_uri,
+#         "scope": "crm.objects.contacts.read crm.objects.deals.read"
+#     }
+
+#     auth_url = f"{base_url}?{urlencode(params)}"
+#     return HttpResponseRedirect(auth_url)
+
+
+
+def get_contacts():
+    token = HubspotToken.objects.get(user_id="default")  # adjust if needed
+
+    headers = {
+        "Authorization": f"Bearer {token.access_token}"
+    }
+
+    response = requests.get(
+        "https://api.hubapi.com/crm/v3/objects/contacts",
+        headers=headers
+    )
+
+    return response.json()
+
+
+def sync_quote_to_hubspot(quote):
+    token = HubspotToken.objects.get(user_id="default")
+    headers = {
+        "Authorization": f"Bearer {token.access_token}",
+        "Content-Type": "application/json"
+    }
+
+    data = {
+        "properties": {
+            "agentcpq_quote_id": quote.qteid  # ensure this field exists
+        }
+    }
+
+    url = f"https://api.hubapi.com/crm/v3/objects/deals/{quote.hs_deal_id}"
+    res = requests.patch(url, headers=headers, json=data)
+
+    if res.status_code == 200:
+        print(f"✅ Synced quote {quote.id} to HubSpot deal {quote.hs_deal_id}")
+    else:
+        print(f"❌ Sync failed: {res.status_code} — {res.text}")
+
+
+def sync_opportunities_from_hubspot():
+    from hubspot.models import HubspotToken
+    from cpq.models import Opportunity, Account
+
+    token = HubspotToken.objects.get(user_id="default")
+    headers = {"Authorization": f"Bearer {token.access_token}"}
+    
+    url = "https://api.hubapi.com/crm/v3/objects/deals"
+    res = requests.get(url, headers=headers)
+
+    for item in res.json().get("results", []):
+        deal_id = item["id"]
+        props = item["properties"]
+        name = props.get("dealname", f"Deal {deal_id}")
+        amount = props.get("amount", "0")
+        account_name = props.get("company", "Unknown")
+
+        account, _ = Account.objects.get_or_create(name=account_name)
+        Opportunity.objects.update_or_create(
+            hs_deal_id=deal_id,
+            defaults={
+                "name": name,
+                "account": account,
+                "amount": amount,
+            }
+        )
+
+@csrf_exempt
+def get_hubspot_schema(request):
+    object_type = request.GET.get("object_type")
+
+    hs_object_map = {
+        "Opportunity": "deals",
+        "Account": "companies",
+        "Contact": "contacts",
+        "Product": "products"
+    }
+
+    hs_object = hs_object_map.get(object_type)
+    if not hs_object:
+        return JsonResponse({"error": "Unsupported object"}, status=400)
+
+    try:
+        token = HubspotToken.objects.get(user_id="default")
+        headers = {"Authorization": f"Bearer {token.access_token}"}
+        url = f"https://api.hubapi.com/crm/v3/properties/{hs_object}"
+
+        res = requests.get(url, headers=headers)
+        print("HubSpot Response:", res.json())
+        props = res.json().get("results", [])
+
+        crm_fields = [p["name"] for p in props if not p.get("hidden")]
+        
+        return JsonResponse({"fields": crm_fields})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)

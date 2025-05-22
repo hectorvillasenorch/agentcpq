@@ -112,6 +112,8 @@ class Quote(models.Model):
     expiration_date = models.DateField(null=True, blank=True) 
     notes = models.TextField(blank=True, null=True) 
     qteid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    hs_deal_id = models.CharField(max_length=64,blank=True,null=True,help_text="The HubSpot Deal ID linked to this quote")
+    hs_primary = models.BooleanField(default=False,help_text="Marks this quote as the primary quote for the HubSpot deal")
     def get_total_discount_percentage(self):
         """
         Calculates the total discount percentage for this quote.
@@ -411,6 +413,7 @@ class Pricebook(models.Model):
 
     def __str__(self):
         return self.name
+
 
 class PricebookEntry(models.Model):
     """Represents a Pricebook Entry linked to a Product and Pricebook."""

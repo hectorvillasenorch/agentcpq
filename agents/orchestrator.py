@@ -10,6 +10,11 @@ from agents.models import ChatSession, ChatMessage
 from django.contrib.auth.models import User
 from uuid import uuid4
 
+
+# TDOO STOP Call to GPT 
+# Pything to understand request, and catch before hitting LLM
+
+
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-4"
