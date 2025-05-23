@@ -22,7 +22,7 @@ from django.db.models import Max
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4"
+OPENAI_MODEL = "gpt-4o-mini"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
@@ -49,6 +49,8 @@ def create_quote(user_message, session_data):
     extracted_details = extract_quote_details(user_message)   
     account_name = extracted_details.get("account", session_data.get("account", "")).strip()
     opportunity_name = extracted_details.get("opportunity", session_data.get("opportunity", "")).strip()
+    #  -------------- MODIFICATION --------------
+    extracted_products = extracted_details.get("products", []) # ✅ extraer productos
 
     if not account_name:
         return {"message": "⚠️ Error: Could not determine the account. Please specify an account name."}
@@ -60,11 +62,11 @@ def create_quote(user_message, session_data):
     if session_data.get("pending_action") == "confirm_opportunity":
         session_data["opportunity"] = opportunity_name
         session_data["pending_action"] = "add_product"  
-        return {"message": f"✅ Opportunity `{opportunity_name}` added. Would you like to add products now?"}
+        return {"message": f"✅ Opportunity `{opportunity_name}` added. Would you like to add more products now?"}
 
     if not opportunity_name:
         return {"message": "📝 Please provide an opportunity name before creating the quote."}
-
+    
     # ✅ Create or retrieve Account
     account, _ = Account.objects.get_or_create(name=account_name)
 
@@ -89,97 +91,107 @@ def create_quote(user_message, session_data):
         "account": account_name,
         "opportunity": opportunity_name
     }
-    session_data["pending_action"] = "add_product"  # ✅ Ensure we move to the next step
-
-    return {
-            "message": f"✅ Quote `{quote.name}` created for {account_name} under opportunity `{opportunity_name}`. Would you like to add products now?",
-        "quote_id": quote.id
-    }
-
-
-def extract_product_details(user_message):
-    """Extract multiple product SKUs, quantities, and discounts from user input using GPT."""
-    prompt = f"""
-    Extract all product details from the user's request. The user may specify multiple products in a single message.
     
-    **Expected fields per product:**
-    - sku (string, unique identifier)
-    - quantity (integer, default 1 if not specified)
-    - discount (integer, percentage, default 0 if not specified)
+    # -------------- MODIFICATION START --------------
+    if not extracted_products:
+        logging.info("🟡 No products provided in initial quote creation.")
 
-    **Example Input:** 
-    "Add AI-CPQ-001 x 5 with 10% discount, AI-CPQ-002 x 2 with 5% discount, and AI-CPQ-003 x 10 with 15% discount."
+        session_data["pending_action"] = "add_product"  # ✅ Ensure we move to the next step
 
-    **Expected JSON Output:**
-    [
-        {{"sku": "AI-CPQ-001", "quantity": 5, "discount": 10}},
-        {{"sku": "AI-CPQ-002", "quantity": 2, "discount": 5}},
-        {{"sku": "AI-CPQ-003", "quantity": 10, "discount": 15}}
-    ]
+        return {
+            "message": f"✅ Quote `{quote.name}` created for {account_name} under opportunity `{opportunity_name}`. Would you like to add more products now?",
+            "quote_id": quote.id
+        }
 
-    **User Request:** "{user_message}"
+    else:
+        # ✅ Add products to the quote if provided
+        total_added_price = Decimal(0)
+        added_products = []
 
-    **Return a valid JSON array of product objects. Do not include explanations, just return the JSON.**
-    """
+        for product_data in extracted_products:
+            sku = product_data.get("sku")
+            quantity = product_data.get("quantity", 1)
+            discount = product_data.get("discount", 0)
 
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Extract structured product details for quote addition."},
-                {"role": "user", "content": prompt}
-            ]
-        )
+            # ✅ Validate product exists
+            try:
+                product = Product.objects.get(sku=sku)
+            except Product.DoesNotExist:
+                logging.warning(f"⚠️ Product `{sku}` not found. Skipping...")
+                continue  # Skip this product and move to the next
 
-        # ✅ Extract raw response
-        raw_response = response.choices[0].message.content.strip()
-        logging.info(f"🔍 Raw GPT Response: {raw_response}")
+            # ✅ Ensure proper rounding for calculations
+            unit_price = Decimal(product.price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            discount_multiplier = Decimal((100 - discount) / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            total_price = (unit_price * Decimal(quantity) * discount_multiplier).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-        # ✅ Ensure valid JSON response
-        try:
-            extracted_products = json.loads(raw_response)
-            if isinstance(extracted_products, list) and all("sku" in p and "quantity" in p and "discount" in p for p in extracted_products):
-                return extracted_products
-            else:
-                logging.warning("⚠️ GPT response is not in expected format.")
-                return None
-        except json.JSONDecodeError:
-            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
-            return None
+            logging.info(f"=>>>>>>>>>>>>>>>>>>>> Discount Multiplier: {discount_multiplier}")
+            logging.info(f"=>>>>>>>>>>>>>>>>>>>> Unit Price: {unit_price}")
+            logging.info(f"=>>>>>>>>>>>>>>>>>>>> Quantity: {quantity}")
+            logging.info(f"=>>>>>>>>>>>>>>>>>>>> Total Price Calculated: {total_price}")
 
-    except Exception as e:
-        logging.error(f"❌ Error extracting product details: {str(e)}")
-        return None    
+            # ✅ Create Quote Line Item
+            quote_line = QuoteLine.objects.create(
+                quote=quote,
+                product=product,
+                quantity=quantity,
+                unit_price=unit_price,
+                additional_discount=Decimal(discount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                total_price=total_price
+            )
 
-def extract_quote_details(user_message):
-    """Use GPT to extract details for quote creation."""
-    prompt = f"""
-    Extract the following details from the user's request for quote creation:
-    - Account Name
-    - Opportunity Name (if applicable)
-    - Products and Quantities
-    - Discounts (if mentioned)
-    - Subscription Start/End Dates (if applicable)
-    
-    Return a JSON object with these keys:
-    {{"account": "", "opportunity": "", "products": [{{"sku": "", "quantity": 1, "discount": 0}}], "start_date": "", "end_date": ""}}.
-    
-    User Request: "{user_message}"
-    """
-    
-    response = client.chat.completions.create(
-        model=OPENAI_MODEL,
-        messages=[{"role": "system", "content": "Extract structured data from the user request."},
-                  {"role": "user", "content": prompt}]
-    )
-    
-    try:
-        extracted_data = json.loads(response.choices[0].message.content)
-        return extracted_data
-    except json.JSONDecodeError:
-        return None
+            # ✅ Force saving and reloading from DB to verify
+            quote_line.refresh_from_db()
+            logging.info(f"=>>>>>>>>>>>>>>>>>>>> Saved Total Price in DB: {quote_line.total_price}")
+
+            # ✅ Manually update the total_price if it does not match
+            if quote_line.total_price != total_price:
+                logging.warning(f"⚠️ Mismatch detected! Expected: {total_price}, but DB saved: {quote_line.total_price}")
+                QuoteLine.objects.filter(id=quote_line.id).update(total_price=total_price)
+                quote_line.refresh_from_db()
+                logging.info(f"✅ Total Price Updated in DB: {quote_line.total_price}")
+
+            total_added_price += total_price
+            added_products.append(f"{quantity}x `{sku}` with {discount}% discount")
+
+        # ✅ Update quote net amount
+        quote.net_amount += total_added_price
+        quote.save()
+
+        # ✅ Update amount in Opportunity
+        update_opportunity_net_amount(quote.opportunity)
+
+        # ✅ Reset pending action and update session
+        session_data["pending_action"] = None  
+        session_data["active_quote"] = {"quote_id": quote.id, "quote_name": quote.name}  # Ensure session persists
+        
+        # ✅ Check if the quote requires approval after adding the product
+        approval_suggestion = get_approval_status("", "", quote.id, "")
+
+        if added_products:
+            #response_message = f"✅ Added {quantity}x {sku} to quote `{quote.name}`. Net amount updated to ${quote.net_amount:.2f}. Would you like to add more products?"
+            response_message = (
+                f"✅ Quote `{quote.name}` created for {account_name} under opportunity `{opportunity_name}`.\n"
+                f"✅ Added {quantity}x {sku} to quote `{quote.name}`. Net amount updated to ${quote.net_amount:.2f}."
+                "Would you like to add more products?"
+            )
+        
+
+        # If an approval suggestion exists, append it to the message
+        if "message" in approval_suggestion:
+            response_message += f"\n\n{approval_suggestion['message']}"
+        
+            return {
+                "message": response_message
+            }
+        else:
+            return {
+                "message": "⚠️ No valid products were added. Please check the SKUs and try again."
+            }
+        
 
 
+#< ----------------- ADD PRODUCT TO QUOTE -------------------- >
 
 def add_product_to_quote(user_message, session_data):
     """Handles adding multiple products to an existing quote."""
@@ -284,6 +296,88 @@ def add_product_to_quote(user_message, session_data):
         return {
             "message": "⚠️ No valid products were added. Please check the SKUs and try again."
         }
+    
+def extract_product_details(user_message):
+    """Extract multiple product SKUs, quantities, and discounts from user input using GPT."""
+    prompt = f"""
+    Extract all product details from the user's request. The user may specify multiple products in a single message.
+    
+    **Expected fields per product:**
+    - sku (string, unique identifier)
+    - quantity (integer, default 1 if not specified)
+    - discount (integer, percentage, default 0 if not specified)
+
+    **Example Input:** 
+    "Add AI-CPQ-001 x 5 with 10% discount, AI-CPQ-002 x 2 with 5% discount, and AI-CPQ-003 x 10 with 15% discount."
+
+    **Expected JSON Output:**
+    [
+        {{"sku": "AI-CPQ-001", "quantity": 5, "discount": 10}},
+        {{"sku": "AI-CPQ-002", "quantity": 2, "discount": 5}},
+        {{"sku": "AI-CPQ-003", "quantity": 10, "discount": 15}}
+    ]
+
+    **User Request:** "{user_message}"
+
+    **Return a valid JSON array of product objects. Do not include explanations, just return the JSON.**
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Extract structured product details for quote addition."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        # ✅ Extract raw response
+        raw_response = response.choices[0].message.content.strip()
+        logging.info(f"🔍 Raw GPT Response: {raw_response}")
+
+        # ✅ Ensure valid JSON response
+        try:
+            extracted_products = json.loads(raw_response)
+            if isinstance(extracted_products, list) and all("sku" in p and "quantity" in p and "discount" in p for p in extracted_products):
+                return extracted_products
+            else:
+                logging.warning("⚠️ GPT response is not in expected format.")
+                return None
+        except json.JSONDecodeError:
+            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
+            return None
+
+    except Exception as e:
+        logging.error(f"❌ Error extracting product details: {str(e)}")
+        return None    
+
+def extract_quote_details(user_message):
+    """Use GPT to extract details for quote creation."""
+    prompt = f"""
+    Extract the following details from the user's request for quote creation:
+    - Account Name
+    - Opportunity Name (if applicable)
+    - Products and Quantities
+    - Discounts (if mentioned)
+    - Subscription Start/End Dates (if applicable)
+    
+    Return a JSON object with these keys:
+    {{"account": "", "opportunity": "", "products": [{{"sku": "", "quantity": 1, "discount": 0}}], "start_date": "", "end_date": ""}}.
+    
+    User Request: "{user_message}"
+    """
+    
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "system", "content": "Extract structured data from the user request."},
+                  {"role": "user", "content": prompt}]
+    )
+    
+    try:
+        extracted_data = json.loads(response.choices[0].message.content)
+        return extracted_data
+    except json.JSONDecodeError:
+        return None
 
 def update_quote_line(user_message, session_data):
     """Updates only the modified fields in quote lines."""
@@ -325,7 +419,26 @@ def update_quote_line(user_message, session_data):
 
             quote_line.save()
 
-        return {"message": "✅ Quote line(s) updated successfully."}
+        update_quote_net_amount(quote)
+        update_opportunity_net_amount(quote.opportunity)
+        return {
+            "message": "✅ Quote line(s) updated successfully.",
+            "quote_details": {
+                "quote_id": quote.id,
+                "quote_name": quote.name,
+                "net_amount": str(quote.net_amount),
+                "quote_line_total_price": str(quote_line.total_price),
+                "line_items": [
+                    {
+                        "sku": ql.product.sku,
+                        "quantity": ql.quantity,
+                        "unit_price": str(ql.unit_price),
+                        "total_price": str(ql.total_price),  # Asegúrate de tener este campo
+                    }
+                    for ql in QuoteLine.objects.filter(quote=quote)
+                ]
+            }
+        }
 
     except Exception as e:
         return {"message": f"⚠️ Error updating quote line: {str(e)}"}
@@ -345,6 +458,24 @@ def update_quote_net_amount(quote):
         print(f"✅ Updated Quote {quote.id} Net Amount: {quote.net_amount}")  # Debugging log
     except Exception as e:
         print(f"⚠️ Error updating net amount for Quote {quote.id}: {str(e)}")
+
+def update_opportunity_net_amount(opportunity):
+    """Recalculate and update the opportunity's total amount from all related quotes."""
+    try:
+        # ✅ Add all the net_amounts of the quotes associated with the opportunity
+        total_amount = opportunity.quotes.aggregate(
+            total=Sum('net_amount')
+        )['total']
+
+        # ✅ Ensure we round to 2 decimal places
+        opportunity.amount = Decimal(total_amount or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        # ✅ Guardar la oportunidad actualizada
+        opportunity.save()
+
+        print(f"✅ Updated Opportunity {opportunity.id} Amount: {opportunity.amount}")
+    except Exception as e:
+        print(f"⚠️ Error updating amount for Opportunity {opportunity.id}: {str(e)}")
 
 def extract_quote_line_updates(user_message):
     """Uses GPT to extract SKU, field, and new value for quote line updates."""

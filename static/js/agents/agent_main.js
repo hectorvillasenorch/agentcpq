@@ -40,14 +40,17 @@ function setupChatListeners() {
 
   console.log("Chat listeners attached.");
 }
+
 function toggleSidebar() {
     document.querySelector(".sidenav-fixed").classList.toggle("active");
 }
+
 function unescapeUnicode(str) {
     return str.replace(/\\u[\dA-F]{4}/gi, function (match) {
       return String.fromCharCode(parseInt(match.replace(/\\u/g, ''), 16));
     });
   }
+
 function enhanceStructuredAgentMessages() {
     document.querySelectorAll(".agent-json").forEach(div => {
       const raw = div.dataset.raw;
@@ -69,6 +72,7 @@ function enhanceStructuredAgentMessages() {
       }
     });
   }
+
 /**
 * ✅ Send user message to the agent and handle response
 */
@@ -142,7 +146,9 @@ async function sendMessage() {
         console.error("Error:", error);
         appendMessage("agent-message", `<strong>Error:</strong> ${error.message}`);
     }
-}/**
+}
+
+/**
 * ✅ Append message to the chat box
 */
 function appendMessage(className, message) {
@@ -166,6 +172,11 @@ function appendMessage(className, message) {
   
     messageBubble.innerHTML = message;
     chatBox.appendChild(messageBubble);
+
+    // ✅ Ejecuta si el mensaje recién insertado contiene JSON estructurado
+    if (message.includes("agent-json")) {
+        enhanceStructuredAgentMessages();
+    }
 }
 
 /**
@@ -184,7 +195,7 @@ function renderQuoteDetails(quote) {
               <p><strong>Created At:</strong> ${quote.created_at}</p>
           </div>
           <h4>📦 Line Items</h4>
-          <table class="quote-table">
+          <table class="quote-table" data-quote-id="${quote.quote_name}">
               <thead>
                   <tr>
                       <th>Product</th>
@@ -203,7 +214,7 @@ function renderQuoteDetails(quote) {
               <td>${item.sku}</td>
               <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"></td>
               <td><input type="number" step="0.01" min="0" value="${item.unit_price.replace('$', '')}" data-quote="${quote.quote_name}" data-sku="${item.sku}" class="editable-field" data-field="unit_price" onchange="updateQuoteLine(this)"></td>
-              <td id="total-${item.sku}">${item.total_price}</td>
+              <td class="total-price" data-sku="${item.sku}">${item.total_price}</td>
           </tr>`;
   });
 
@@ -252,6 +263,7 @@ function renderApprovalHistory(approvalData) {
     // ✅ Wrap with quote name at the top
     return `<div>${quoteTitle}${table}</div>`;
 }
+
 /**
 * ✅ Handle input changes in quote lines
 */
@@ -277,39 +289,81 @@ document.addEventListener("change", (event) => {
 });
 
 /**
-* ✅ Send updated quote line details to the server
+* ✅ Update quote line and reflect changes in UI
 */
+
 async function updateQuoteLine(input) {
-  const quoteId = input.dataset.quote;
-  const sku = input.dataset.sku;
-  const field = input.dataset.field;
-  const newValue = input.value.trim();
+    const quoteId = input.dataset.quote;
+    const sku = input.dataset.sku;
+    const field = input.dataset.field;
+    const newValue = input.value.trim();
 
-  if (!quoteId || !sku || !field) {
-      console.warn("⚠️ Missing data attributes.");
-      return;
-  }
+    if (!quoteId || !sku || !field) {
+        console.warn("⚠️ Missing data attributes.");
+        return;
+    }
 
-  console.log(`🔄 Field Changed: ${field}, SKU: ${sku}, New Value: ${newValue}, Quote: ${quoteId}`);
+    console.log(`🔄 Field Changed: ${field}, SKU: ${sku}, New Value: ${newValue}, Quote: ${quoteId}`);
 
-  const updateData = [{ sku, field, value: newValue }];
-  const userMessage = `Update Quote Line: ${JSON.stringify(updateData)}`;
+    const updateData = [{ sku, field, value: newValue }];
+    const userMessage = `Update Quote Line: ${JSON.stringify(updateData)}`;
 
-  try {
-      const response = await fetch("/agents/chat/", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: userMessage })
-      });
+    try {
+        const response = await fetch("/agents/chat/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: userMessage })
+        });
 
-      const data = await response.json();
-      console.log("✅ Server Response:", data);
+        const data = await response.json();
+        console.log("✅ Server Response:", data);
 
-      alert(data.response ? "✅ Quote updated successfully!" : "⚠️ Failed to update quote.");
-  } catch (error) {
-      console.error("❌ Error updating quote line:", error);
-  }
+        if (data.response && data.response.quote_details) {
+            const updatedQuote = data.response.quote_details;
+
+            //First we update very single quote line total price
+            const row =input.closest("tr");
+
+            updatedQuote.line_items.forEach(item => {
+                const totalCell = row.querySelector(`.total-price[data-sku="${sku}"]`);
+                if (totalCell) {
+                    //1. Get the total price from quote line
+                    const total = parseFloat(item.total_price);
+
+                    //2. Formatted
+                    const formattedTotal = `$${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+                    //3. Upgrade the DOM immediately
+                    totalCell.textContent = formattedTotal;
+                }
+            });
+
+            //Finally we update the Net Amount
+            
+            const quoteContainer = input.closest(".quote-container");
+            const netAmountParagraph = quoteContainer.querySelector(".total-amount");
+
+            if (netAmountParagraph) {
+
+                //1. Get the Net Amount from quote
+                const totalNetAmount = parseFloat(updatedQuote.net_amount);
+
+                //2. Formatted
+                const formattedTotalNetAmount = `$${totalNetAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+                netAmountParagraph.textContent = `💰 Net Amount: ${formattedTotalNetAmount}`;
+                console.log("Se actualiza el Net Amount");
+            }
+            alert("✅ Quote updated successfully!");
+        } else {
+            alert("⚠️ Failed to update quote.");
+        }
+    } catch (error) {
+        console.error("❌ Error updating quote line:", error);
+        alert("❌ Failed to update quote.");
+    }
 }
+
 
 /**
 * ✅ Format agent response messages with structured JSON or lists
