@@ -2,6 +2,7 @@ from django.db import models
 from django.db.models import Sum
 from datetime import datetime
 import uuid
+from django.utils import timezone
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -17,6 +18,40 @@ def generate_agentcpq_id():
     base = base62_encode(number)
     branded = base[:4] + "ACPQ" + base[4:]
     return branded[:18].upper()
+
+class Lead(models.Model):
+    STATUS_CHOICES = [
+        ('new', 'New'),
+        ('qualified', 'Qualified'),
+        ('converted', 'Converted'),
+        ('disqualified', 'Disqualified'),
+    ]
+
+    source = models.CharField(max_length=100, blank=True, help_text="e.g., Website, Referral, LinkedIn")
+    contact = models.ForeignKey('Contact', on_delete=models.CASCADE, related_name='leads')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
+    notes = models.TextField(blank=True)
+    assigned_to = models.CharField(max_length=100, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Lead: {self.contact} ({self.get_status_display()})"
+
+class Contact(models.Model):
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100, blank=True)
+    email = models.EmailField(unique=True)
+    phone = models.CharField(max_length=20, blank=True)
+    company = models.CharField(max_length=255, blank=True)
+    job_title = models.CharField(max_length=100, blank=True)
+    notes = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.first_name} {self.last_name or ''}".strip()
 
 class Account(models.Model):
     name = models.CharField(max_length=255)
@@ -35,19 +70,29 @@ class Account(models.Model):
 
 class Opportunity(models.Model):
     """Represents a sales opportunity linked to an Account."""
+    # STAGE_CHOICES = [
+    #     ('Prospecting', 'Prospecting'),
+    #     ('Qualification', 'Qualification'),
+    #     ('Proposal', 'Proposal Sent'),
+    #     ('Negotiation', 'Negotiation'),
+    #     ('Closed Won', 'Closed Won'),
+    #     ('Closed Lost', 'Closed Lost'),
+    # ]
+
     STAGE_CHOICES = [
-        ('Prospecting', 'Prospecting'),
-        ('Qualification', 'Qualification'),
-        ('Proposal', 'Proposal Sent'),
-        ('Negotiation', 'Negotiation'),
-        ('Closed Won', 'Closed Won'),
-        ('Closed Lost', 'Closed Lost'),
+        ("appointmentscheduled", "Appointment Scheduled"),
+        ("qualifiedtobuy", "Qualified to Buy"),
+        ("presentationscheduled", "Presentation Scheduled"),
+        ("decisionmakerboughtin", "Decision Maker Bought-In"),
+        ("contractsent", "Contract Sent"),
+        ("closedwon", "Closed Won"),
+        ("closedlost", "Closed Lost"),
     ]
 
     name = models.CharField(max_length=255)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="opportunities")
     amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    stage = models.CharField(max_length=50, choices=STAGE_CHOICES, default='Prospecting')
+    stage = models.CharField(max_length=50, choices=STAGE_CHOICES, default='appointmentscheduled')
     expected_close_date = models.DateField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     primary_quote = models.ForeignKey(
@@ -57,6 +102,7 @@ class Opportunity(models.Model):
         null=True, blank=True
     )
     oppid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    hs_deal_id = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     
 
     def save(self, *args, **kwargs):
@@ -70,10 +116,12 @@ class Product(models.Model):
     sku = models.CharField(max_length=100, unique=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     is_subscription = models.BooleanField(default=False)
-    term = models.IntegerField(null=True, blank=True)  # In months (12, 24, etc.)
-    is_bundle = models.BooleanField(default=False)  # ✅ If True, it has options (child products)
+    term = models.IntegerField(null=True, blank=True)
+    is_bundle = models.BooleanField(default=False)
     family = models.CharField(max_length=50)
     prdid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    description = models.TextField(blank=True) 
 
     def save(self, *args, **kwargs):
         if not self.prdid:
