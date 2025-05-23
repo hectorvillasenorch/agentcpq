@@ -68,7 +68,7 @@ def field_mapping_view(request):
         "Product": "Product",
         "Opportunity": "Opportunity",
         "Account": "Account",
-        "QuoteLine": "QuoteLine",
+        "line_items": "line_items",
     }
     selected_model_raw = request.GET.get("object_type", "Opportunity")
     selected_model = alias_map.get(selected_model_raw, selected_model_raw)

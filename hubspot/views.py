@@ -20,7 +20,8 @@ def start_hubspot_auth(request):
     """
     base_url = "https://app.hubspot.com/oauth/authorize"
     client_id = HUBSPOT_CLIENT_ID
-    scope = "crm.objects.contacts.read crm.objects.deals.read"  # change as needed
+    # scope = "crm.objects.contacts.read crm.objects.deals.read"  # change as needed
+    scope = "crm.objects.companies.read crm.objects.companies.read crm.objects.companies.write crm.objects.contacts.read crm.objects.contacts.write crm.objects.deals.read crm.objects.deals.write crm.objects.line_items.read crm.objects.line_items.write crm.schemas.companies.read crm.schemas.companies.write crm.schemas.contacts.read crm.schemas.contacts.write crm.schemas.deals.read crm.schemas.deals.write crm.schemas.line_items.read crm.objects.products.read crm.objects.products.write"
     state = "agentcpq123"  # optional: use for security / context
 
     # Dynamically build redirect_uri (e.g. http://localhost:8000/hubspot/oauth/callback/)
@@ -223,7 +224,9 @@ def get_hubspot_schema(request):
         "Opportunity": "deals",
         "Account": "companies",
         "Contact": "contacts",
-        "Product": "products"
+        "Product": "products",
+        "Quote": "quotes",
+        "QuoteLine": "line_items"
     }
 
     hs_object = hs_object_map.get(object_type)
