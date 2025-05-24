@@ -17,13 +17,14 @@ from uuid import uuid4
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4"
+OPENAI_MODEL = "gpt-4o-mini"
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 logging.basicConfig(level=logging.DEBUG)
 openai.log = "warning"
 
 def handle_user_request(user_message, session_data):
-    user = User.objects.get(username="hvillasenor") 
+    user = User.objects.get(username="jahirrivera") 
+    print(session_data); #MODIFICACION
 
     if should_reset_session(user_message):
         session_data.clear()
@@ -33,7 +34,17 @@ def handle_user_request(user_message, session_data):
             "chat_sessions": list(ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at"))
         }
     
-    response = orchestrate_request(user_message, session_data)
+     # 🧠 Shortcut manual: "show quote details for <quote_id>"
+    if user_message.lower().startswith("show quote details for "):
+
+        logging.info("NO SE USA GPT\n")
+        response = orchestrate_request_simulation(user_message, session_data)
+        #quote_id = user_message[len("show quote details for "):].strip()
+        #session_data["quote_id"] = quote_id
+        #return quote_agent("ShowQuoteDetails", user_message, session_data)
+    else:
+        logging.info("SE USA GPT\n")
+        response = orchestrate_request(user_message, session_data)
 
     response["chat_sessions"] = list(ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at"))
     return response
@@ -44,7 +55,7 @@ def orchestrate_request(user_message, session_data):
     
     session_id = session_data.get("session_id")
     # ⚠️ Use a real user later; hardcode for now
-    user = User.objects.get(username="hvillasenor")
+    user = User.objects.get(username="jahirrivera")
 
     if not session_id:
         chat_session = ChatSession.objects.create(
@@ -93,7 +104,7 @@ def orchestrate_request(user_message, session_data):
             ]
         )
         decision = response.choices[0].message.content.strip().replace('"', '')
-        logging.info(f"🟢 AI Decision Received: {decision}")
+        logging.info(f"🟢 AI Decision Received: {decision} \n")
 
     except Exception as e:
         logging.error(f"❌ Error in OpenAI call: {e}")
@@ -123,6 +134,59 @@ def orchestrate_request(user_message, session_data):
     
     logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
     return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
+
+
+def orchestrate_request_simulation(user_message, session_data):
+    
+    session_context = {k: str(v) for k, v in session_data.items() if isinstance(v, (str, int, float, list, dict))}
+    
+    session_id = session_data.get("session_id")
+    # ⚠️ Use a real user later; hardcode for now
+    user = User.objects.get(username="jahirrivera")
+
+    if not session_id:
+        chat_session = ChatSession.objects.create(
+            user=user,
+            session_id=str(uuid4()),
+            title=user_message[:30]  # Optionally use part of the first message
+        )
+        session_data["session_id"] = chat_session.session_id
+    else:
+        chat_session = ChatSession.objects.get(session_id=session_id)
+
+    ChatMessage.objects.create(
+        session=chat_session,
+        sender="You",
+        content=user_message
+    )
+    
+    decision = "ShowQuoteDetails"
+
+    action_map = get_action_map()
+
+    if decision in action_map:
+        result = action_map[decision](decision, user_message, session_data)
+        
+        agent_message = result.get("message", "")
+
+        for key, value in result.items():
+            if key not in ("message", "session_id"):
+                agent_message += f"\n\n📦 {key}:\n{json.dumps(value, indent=2)}"
+
+        ChatMessage.objects.create(
+            session=chat_session,
+            sender="agent",
+            content=agent_message
+        )
+
+        result["message"] = agent_message
+        result["session_id"] = session_data["session_id"]
+
+        return result
+    
+    logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
+    return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
+
 
 
 def handle_general_query(decision, user_message, session_data):
