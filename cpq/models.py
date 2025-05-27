@@ -57,6 +57,10 @@ class Opportunity(models.Model):
         null=True, blank=True
     )
     oppid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+<<<<<<< Updated upstream
+=======
+    hs_deal_id = models.CharField(max_length=18, unique=True, db_index=True, editable=False, null=True, blank=True)
+>>>>>>> Stashed changes
     
 
     def save(self, *args, **kwargs):

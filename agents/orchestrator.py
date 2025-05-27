@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.DEBUG)
 openai.log = "warning"
 
 def handle_user_request(user_message, session_data):
-    user = User.objects.get(username="jahirrivera") 
+    user = User.objects.get(username="Admin") 
     print(session_data); #MODIFICACION
 
     if should_reset_session(user_message):
@@ -50,7 +50,7 @@ def orchestrate_request(user_message, session_data):
     
     session_id = session_data.get("session_id")
     # ⚠️ Use a real user later; hardcode for now
-    user = User.objects.get(username="jahirrivera")
+    user = User.objects.get(username="Admin")
 
     if not session_id:
         chat_session = ChatSession.objects.create(
@@ -62,11 +62,26 @@ def orchestrate_request(user_message, session_data):
     else:
         chat_session = ChatSession.objects.get(session_id=session_id)
 
-    ChatMessage.objects.create(
-        session=chat_session,
-        sender="You",
-        content=user_message
-    )
+    #Extract the JSON to give the hidden field (Only for update message)
+    if user_message.startswith("Update Quote Line:"):
+        try:
+            json_str = user_message.replace("Update Quote Line:", "")
+            update_data = json.loads(json_str)
+            hiddenMessage = update_data[0].get("hiddenMessage", False)
+            ChatMessage.objects.create(
+                session=chat_session,
+                sender="user",
+                content=user_message,
+                hiddenMessage = hiddenMessage
+            )
+        except json.JSONDecodeError as e:
+            logging.error(f" Error decoding JSON: {e}")
+    else:
+        ChatMessage.objects.create(
+            session=chat_session,
+            sender="user",
+            content=user_message
+        )
 
     action_prompt = f"""
     You are an AI assistant that classifies user requests into predefined actions.
@@ -99,7 +114,7 @@ def orchestrate_request(user_message, session_data):
             ]
         )
         decision = response.choices[0].message.content.strip().replace('"', '')
-        logging.info(f"🟢 AI Decision Received: {decision} \n")
+        logging.info(f"\n🟢 AI Decision Received: {decision} \n")
 
     except Exception as e:
         logging.error(f"❌ Error in OpenAI call: {e}")
@@ -112,14 +127,17 @@ def orchestrate_request(user_message, session_data):
         
         agent_message = result.get("message", "")
 
+        hiddenMessage = result.get("hiddenMessage", False)
+
         for key, value in result.items():
-            if key not in ("message", "session_id"):
+            if key not in ("message", "session_id", "hiddenMessage"):
                 agent_message += f"\n\n📦 {key}:\n{json.dumps(value, indent=2)}"
 
         ChatMessage.objects.create(
             session=chat_session,
             sender="agent",
-            content=agent_message
+            content=agent_message,
+            hiddenMessage=hiddenMessage
         )
 
         result["message"] = agent_message
@@ -133,11 +151,9 @@ def orchestrate_request(user_message, session_data):
 
 def orchestrate_request_simulation(user_message, session_data):
     
-    session_context = {k: str(v) for k, v in session_data.items() if isinstance(v, (str, int, float, list, dict))}
-    
     session_id = session_data.get("session_id")
     # ⚠️ Use a real user later; hardcode for now
-    user = User.objects.get(username="jahirrivera")
+    user = User.objects.get(username="Admin")
 
     if not session_id:
         chat_session = ChatSession.objects.create(
@@ -151,7 +167,7 @@ def orchestrate_request_simulation(user_message, session_data):
 
     ChatMessage.objects.create(
         session=chat_session,
-        sender="You",
+        sender="user",
         content=user_message
     )
     
@@ -164,14 +180,17 @@ def orchestrate_request_simulation(user_message, session_data):
         
         agent_message = result.get("message", "")
 
+        hiddenMessage = result.get("hiddenMessage", "False")
+
         for key, value in result.items():
-            if key not in ("message", "session_id"):
+            if key not in ("message", "session_id", "hiddenMessage"):
                 agent_message += f"\n\n📦 {key}:\n{json.dumps(value, indent=2)}"
 
         ChatMessage.objects.create(
             session=chat_session,
             sender="agent",
-            content=agent_message
+            content=agent_message,
+            hiddenMessage = hiddenMessage
         )
 
         result["message"] = agent_message

@@ -4,6 +4,15 @@ document.addEventListener("DOMContentLoaded", function () {
   enhanceStructuredAgentMessages(); // 🔥
 });
 
+/**
+* ✅ Get the current session
+*/
+function getCurrentSessionId() {
+  const urlParams = new URLSearchParams(window.location.search);
+  console.log(urlParams.get("session_id"));
+  return urlParams.get("session_id");
+}
+
 function setupSessionSwitching() {
     document.querySelectorAll(".chat-history-item").forEach(item => {
       item.addEventListener("click", function (e) {
@@ -84,15 +93,20 @@ async function sendMessage() {
     if (!userMessage) return;
 
     // Append user message to chat
-    appendMessage("user", `<strong>You:</strong> ${userMessage}`);
+    appendMessage("user", `<div class="sender">You: </div> <div class="message">${userMessage}</div>`)
 
     inputField.value = ""; // Clear input field
 
     try {
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get("session_id");  // 👈 Obtén el session_id desde la URL
+        console.log(sessionId);
+
         const response = await fetch("/agents/chat/", {   
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: userMessage })
+            body: JSON.stringify({ message: userMessage, session_id: sessionId})
         });
 
         console.log("Full Response:", response);
@@ -305,7 +319,7 @@ async function updateQuoteLine(input) {
 
     console.log(`🔄 Field Changed: ${field}, SKU: ${sku}, New Value: ${newValue}, Quote: ${quoteId}`);
 
-    const updateData = [{ sku, field, value: newValue }];
+    const updateData = [{ sku, field, value: newValue, hiddenMessage: true }];
     const userMessage = `Update Quote Line: ${JSON.stringify(updateData)}`;
 
     try {
