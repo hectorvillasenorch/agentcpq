@@ -112,3 +112,24 @@ def save_field_mappings(request):
         })
 
     return JsonResponse({"success": False, "message": "Invalid request."})
+
+
+@csrf_exempt
+def set_primary_quote(request, quote_id):
+    if request.method == "POST":
+        try:
+            quote = Quote.objects.select_related("opportunity").get(id=quote_id)
+            opportunity_id = quote.opportunity_id
+
+            # Clear existing primary flags in the same opportunity
+            Quote.objects.filter(opportunity_id=opportunity_id).update(hs_primary=False)
+
+            # Set this quote as primary
+            quote.hs_primary = True
+            quote.save()
+
+            return JsonResponse({"success": True})
+        except Quote.DoesNotExist:
+            return JsonResponse({"error": "Quote not found"}, status=404)
+
+    return JsonResponse({"error": "Invalid method"}, status=405)

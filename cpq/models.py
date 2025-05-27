@@ -46,7 +46,7 @@ class Contact(models.Model):
     company = models.CharField(max_length=255, blank=True)
     job_title = models.CharField(max_length=100, blank=True)
     notes = models.TextField(blank=True)
-
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -61,6 +61,7 @@ class Account(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     accid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     
 
     def save(self, *args, **kwargs):
@@ -102,7 +103,7 @@ class Opportunity(models.Model):
         null=True, blank=True
     )
     oppid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
-    hs_deal_id = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    hs_deal_id = models.CharField(max_length=255, unique=True, blank=True, null=True)
     
 
     def save(self, *args, **kwargs):
@@ -197,6 +198,7 @@ class QuoteLine(models.Model):
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
     additional_discount = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     parent_quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="parent_quote_lines", blank=True, null=True)
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
 
     def save(self, *args, **kwargs):
         # Auto-calculate price for bundles

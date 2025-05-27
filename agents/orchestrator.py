@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.DEBUG)
 openai.log = "warning"
 
 def handle_user_request(user_message, session_data):
-    user = User.objects.get(username="jahirrivera") 
+    user = User.objects.get(username="admin") 
     print(session_data); #MODIFICACION
 
     if should_reset_session(user_message):
@@ -37,13 +37,13 @@ def handle_user_request(user_message, session_data):
      # 🧠 Shortcut manual: "show quote details for <quote_id>"
     if user_message.lower().startswith("show quote details for "):
 
-        logging.info("NO SE USA GPT\n")
+        logging.info("Do NOT use GPT\n")
         response = orchestrate_request_simulation(user_message, session_data)
         #quote_id = user_message[len("show quote details for "):].strip()
         #session_data["quote_id"] = quote_id
         #return quote_agent("ShowQuoteDetails", user_message, session_data)
     else:
-        logging.info("SE USA GPT\n")
+        logging.info("USE GPT\n")
         response = orchestrate_request(user_message, session_data)
 
     response["chat_sessions"] = list(ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at"))
@@ -55,7 +55,7 @@ def orchestrate_request(user_message, session_data):
     
     session_id = session_data.get("session_id")
     # ⚠️ Use a real user later; hardcode for now
-    user = User.objects.get(username="jahirrivera")
+    user = User.objects.get(username="admin")
 
     if not session_id:
         chat_session = ChatSession.objects.create(
@@ -142,7 +142,7 @@ def orchestrate_request_simulation(user_message, session_data):
     
     session_id = session_data.get("session_id")
     # ⚠️ Use a real user later; hardcode for now
-    user = User.objects.get(username="jahirrivera")
+    user = User.objects.get(username="admin")
 
     if not session_id:
         chat_session = ChatSession.objects.create(
