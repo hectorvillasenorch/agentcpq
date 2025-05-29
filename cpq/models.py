@@ -163,6 +163,9 @@ class Quote(models.Model):
     qteid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     hs_deal_id = models.CharField(max_length=64,blank=True,null=True,help_text="The HubSpot Deal ID linked to this quote")
     hs_primary = models.BooleanField(default=False,help_text="Marks this quote as the primary quote for the HubSpot deal")
+    synced = models.BooleanField(default=False)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+
     def get_total_discount_percentage(self):
         """
         Calculates the total discount percentage for this quote.
@@ -192,6 +195,7 @@ class Quote(models.Model):
 class QuoteLine(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="quote_lines")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="quote_lines")
+    product_name = models.CharField(max_length=255, blank=True, null=True)
     quantity = models.IntegerField(default=1)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     special_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -199,6 +203,23 @@ class QuoteLine(models.Model):
     additional_discount = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     parent_quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="parent_quote_lines", blank=True, null=True)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    is_subscription = models.BooleanField(default=False)
+    billing_frequency = models.CharField(
+        max_length=20,
+        choices=[("monthly", "monthly"), ("quarterly", "quarterly"), ("annual", "annual"), ("one_time", "one_time")],
+        default="One-Time"
+    )
+    term = models.PositiveIntegerField(null=True, blank=True)  # In months
+    billing_start_date = models.DateField(null=True, blank=True)
+    billing_end_date = models.DateField(null=True, blank=True)
+    sku = models.CharField(max_length=100, null=True, blank=True)
+    synced_to_crm = models.BooleanField(default=False)
+    description = models.TextField(null=True, blank=True)
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
 
     def save(self, *args, **kwargs):
         # Auto-calculate price for bundles
@@ -207,6 +228,11 @@ class QuoteLine(models.Model):
                 bundle_item.product.price * bundle_item.quantity for bundle_item in self.product.bundle_items.all()
             )
         self.total_price = self.quantity * self.unit_price
+        if self.product and not self.product_name:
+            self.product_name = self.product.name
+        if self.product and not self.sku:
+            self.sku = self.product.sku
+        
         super().save(*args, **kwargs)
 
     def __str__(self):

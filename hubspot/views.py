@@ -8,7 +8,7 @@ from hubspot.models import HubspotToken
 from django.utils.timezone import now, timedelta
 import requests
 from django.views.decorators.csrf import csrf_exempt 
-from cpq.models import Opportunity, Account, Product, SystemFieldMapping
+from cpq.models import Opportunity, Account, Product, SystemFieldMapping, Quote
 from django.utils import timezone
 from decimal import Decimal
 import re
@@ -153,7 +153,7 @@ def sync_quote_to_hubspot(quote):
     # token = HubspotToken.objects.get(user_id="default")
     token = get_valid_hubspot_token("default")
     headers = {
-        "Authorization": f"Bearer {token.access_token}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
 
@@ -293,52 +293,157 @@ def sync_hubspot_products(user_id="default"):
     print("✅ HubSpot product sync complete.")
 
 
+
 def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
+   from decimal import Decimal
+from django.utils import timezone
+import datetime
+import requests
+
+def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
+    """
+    Syncs an AgentCPQ Opportunity to HubSpot: updates or creates a deal,
+    then creates associated line items and links them to the deal.
+    """
     opportunity = Opportunity.objects.get(id=opportunity_id)
+    quote = Quote.objects.filter(opportunity=opportunity, hs_primary=True).first()
+    print(f"✅ ==========================> Quote {quote} IS THE QUOTE TO SYNC")
     access_token = get_valid_hubspot_token(user_id)
 
-    # ✅ Get field mappings from AgentCPQ → HubSpot
-    field_mappings = {
+    # ✅ Field mappings for Opportunity → Deal
+    opportunity_field_mappings = {
         m.local_field: m.crm_field
         for m in SystemFieldMapping.objects.filter(crm="HubSpot", field_type="Opportunity")
     }
 
-    data = {"properties": {}}
+    deal_properties = {}
+    for local_field, crm_field in opportunity_field_mappings.items():
+        try:
+            value = opportunity
+            for attr in local_field.split("."):
+                value = getattr(value, attr)
 
-    for local_field, crm_field in field_mappings.items():
-      value = getattr(opportunity, local_field, None)
+            if isinstance(value, Decimal):
+                value = str(value)
+            elif isinstance(value, datetime.datetime):
+                value = value.isoformat()
+            elif hasattr(value, '__dict__'):
+                continue  # skip non-serializable objects
 
-      if local_field == "quote" and opportunity.quote:
-          value = opportunity.quote.qteid
+            if value is not None:
+                deal_properties[crm_field] = value
 
-      if isinstance(value, Decimal):
-          value = str(value)
-      elif isinstance(value, datetime.datetime):
-          value = value.isoformat()
+        except Exception as e:
+            print(f"⚠️ Error resolving field '{local_field}': {e}")
 
-      if value is not None:
-          data["properties"][crm_field] = value
+    deal_data = {"properties": deal_properties}
 
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
 
+    # ✅ Create or update the HubSpot Deal
     if opportunity.hs_deal_id:
-        # ✅ Update existing HubSpot Deal
         url = f"https://api.hubapi.com/crm/v3/objects/deals/{opportunity.hs_deal_id}"
-        response = requests.patch(url, headers=headers, json=data)
+        response = requests.patch(url, headers=headers, json=deal_data)
         action = "updated"
     else:
-        # ✅ Create new HubSpot Deal
         url = "https://api.hubapi.com/crm/v3/objects/deals"
-        response = requests.post(url, headers=headers, json=data)
+        response = requests.post(url, headers=headers, json=deal_data)
         action = "created"
 
-    if response.status_code in [200, 201]:
-        hs_deal_id = response.json()["id"]
-        opportunity.hs_deal_id = hs_deal_id
-        opportunity.save()
-        print(f"✅ Successfully {action} HubSpot deal {hs_deal_id} for opportunity {opportunity.id}")
-    else:
+    if response.status_code not in [200, 201]:
         print(f"❌ Failed to sync deal: {response.status_code} — {response.text}")
+        return
+
+    hs_deal_id = response.json()["id"]
+    opportunity.hs_deal_id = hs_deal_id
+    opportunity.save()
+
+    if quote:
+        quote.hs_deal_id = hs_deal_id
+        quote.synced = True
+        quote.last_synced_at = timezone.now()
+        quote.save()
+        print(f"✅ Quote {quote.qteid} marked as synced to HubSpot")
+
+        # ✅ Field mappings for QuoteLine → Line Item
+        quoteline_field_mappings = {
+            m.local_field: m.crm_field
+            for m in SystemFieldMapping.objects.filter(crm="HubSpot", field_type="QuoteLine")
+        }
+        delete_existing_line_items(hs_deal_id, headers)    
+        print(f"✅ DELETING EXISTING LINE ITEMS....")
+
+        for line in quote.quote_lines.all():
+            properties = {}
+
+            for local_field, crm_field in quoteline_field_mappings.items():
+                try:
+                    value = line
+                    for attr in local_field.split("."):
+                        value = getattr(value, attr)
+
+                    if local_field == "term" and value:
+                        value = f"P{int(value)}M"
+
+                    if isinstance(value, Decimal):
+                        value = str(value)
+                    elif isinstance(value, datetime.datetime):
+                        value = value.isoformat()
+                    elif hasattr(value, '__dict__'):
+                        continue  # skip non-serializable objects
+
+                    if value is not None:
+                        properties[crm_field] = value
+
+                except Exception as e:
+                    print(f"⚠️ Error resolving field '{local_field}': {e}")
+
+            line_item_data = {"properties": properties}
+            print(f"✅ line_item_data %%%%%%%%%%%%%%%%%%%%%% {line_item_data}")
+
+
+            line_item_url = "https://api.hubapi.com/crm/v3/objects/line_items"
+            line_item_resp = requests.post(line_item_url, headers=headers, json=line_item_data)
+
+            
+
+            if line_item_resp.status_code in [200, 201]:
+                line_item_id = line_item_resp.json()["id"]
+                print(f"✅ Line item created: {line_item_id}")
+
+                assoc_url = f"https://api.hubapi.com/crm/v3/objects/deals/{hs_deal_id}/associations/line_items/{line_item_id}/deal_to_line_item"
+                assoc_resp = requests.put(assoc_url, headers=headers)
+
+                if assoc_resp.status_code in [200, 201, 204]:
+                    print(f"🔗 Linked line item {line_item_id} to deal {hs_deal_id}")
+                else:
+                    print(f"❌ Failed to link line item: {assoc_resp.status_code} — {assoc_resp.text}")
+            else:
+                print(f"❌ Failed to create line item: {line_item_resp.status_code} — {line_item_resp.text}")
+
+    print(f"✅ Successfully {action} HubSpot deal {hs_deal_id} for opportunity {opportunity.id}")
+
+
+
+
+def delete_existing_line_items(deal_id, headers):
+    # 🔍 Get associated line items
+    assoc_url = f"https://api.hubapi.com/crm/v4/objects/deals/{deal_id}/associations/line_items"
+    response = requests.get(assoc_url, headers=headers)
+
+    if response.status_code == 200:
+        data = response.json()
+        for assoc in data.get("results", []):
+            line_item_id = assoc["toObjectId"]
+            delete_url = f"https://api.hubapi.com/crm/v3/objects/line_items/{line_item_id}"
+            delete_resp = requests.delete(delete_url, headers=headers)
+
+            if delete_resp.status_code in [200, 204]:
+                print(f"🗑️ Deleted line item {line_item_id}")
+            else:
+                print(f"⚠️ Failed to delete line item {line_item_id}: {delete_resp.status_code} — {delete_resp.text}")
+    else:
+        print(f"⚠️ Failed to fetch line item associations: {response.status_code} — {response.text}")
