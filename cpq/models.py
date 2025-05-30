@@ -234,13 +234,13 @@ class QuoteLine(models.Model):
             self.product_name = self.product.name
         if self.product and not self.sku:
 
-        #Auto-calculate discount if exist
-        discount_factor = (Decimal('100.00') - self.additional_discount) / Decimal('100.00')
-        self.total_price = (self.quantity * self.unit_price * discount_factor).quantize(Decimal('100.00'))
-        super().save(*args, **kwargs)
+            #Auto-calculate discount if exist
+            discount_factor = (Decimal('100.00') - self.additional_discount) / Decimal('100.00')
+            self.total_price = (self.quantity * self.unit_price * discount_factor).quantize(Decimal('100.00'))
+            super().save(*args, **kwargs)
 
-         def __str__(self):
-            return f"{self.product.name} ({self.quantity}x)"
+            def __str__(self):
+                return f"{self.product.name} ({self.quantity}x)"
 
 class Subscription(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="subscriptions")
