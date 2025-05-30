@@ -1,5 +1,5 @@
-from django.shortcuts import render, get_object_or_404
-from .models import Product, SystemFieldMapping,Quote
+from django.shortcuts import render, get_object_or_404, redirect
+from .models import Product, SystemFieldMapping,Quote,CustomField
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt 
 from django.apps import apps
@@ -133,3 +133,30 @@ def set_primary_quote(request, quote_id):
             return JsonResponse({"error": "Quote not found"}, status=404)
 
     return JsonResponse({"error": "Invalid method"}, status=405)
+
+
+
+#  ADD LOGIN REQURED
+def custom_fields_view(request):
+    if request.method == "POST":
+        crm = request.POST["crm"]
+        object_type = request.POST["object_type"]
+        name = request.POST["name"]
+        label = request.POST["label"]
+        data_type = request.POST["data_type"]
+        required = "required" in request.POST
+
+        # ✅ Save to DB
+        field = CustomField.objects.create(
+            crm=crm, object_type=object_type,
+            name=name, label=label,
+            data_type=data_type, required=required,
+            created_by=request.user
+        )
+
+        return redirect("custom_fields")
+
+    fields = CustomField.objects.all().order_by("-created_at")
+    return render(request, "custom_fields.html", {"fields": fields})
+
+

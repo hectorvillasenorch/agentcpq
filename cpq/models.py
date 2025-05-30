@@ -3,6 +3,8 @@ from django.db.models import Sum
 from datetime import datetime
 import uuid
 from django.utils import timezone
+from django.contrib.contenttypes.models import ContentType
+from django.contrib.contenttypes.fields import GenericForeignKey
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -499,3 +501,25 @@ class PricebookEntry(models.Model):
 
     def __str__(self):
         return f"{self.product.name} in {self.pricebook.name} - ${self.unit_price}"
+
+class CustomField(models.Model):
+    label = models.CharField(max_length=100, blank=True)
+    name = models.CharField(max_length=100)  # Local field name
+    crm = models.CharField(max_length=50)
+    object_type = models.CharField(max_length=50)
+    data_type = models.CharField(max_length=50)  # text, number, date, etc.
+    required = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.crm}.{self.object_type}.{self.field_name}"
+    
+class CustomFieldValue(models.Model):
+    field = models.ForeignKey(CustomField, on_delete=models.CASCADE, related_name="values")
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)  # Generic relation
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey("content_type", "object_id")
+    value = models.TextField()
+
+    def __str__(self):
+        return f"{self.content_object} - {self.field.field_name}: {self.value}"

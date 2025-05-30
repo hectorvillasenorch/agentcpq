@@ -5,7 +5,7 @@ body {
 
 /* ✅ Quote Container */
 .quote-container {
-  width: 85%;
+  width: 95%;
   margin: 20px auto;
   padding: 20px;
   background: #ffffff;
@@ -139,16 +139,18 @@ h2 {
 }
 
 .user{
-  background-color: #099900;
-  color: #f2f2f2;
+  background-color: #f6f6f6;
+  color: #313133;
   align-self: flex-end;
+  /* border: 1px solid #cccccc; */
 }
 
 .agent {
-  background-color: #ececec;
+  background-color: #ffffff;
   color: black;
   align-self: flex-start;
   width: 100%;
+  /* border: 1px solid #cccccc; */
 }
 
 /* ✅ JSON Response Styling */
@@ -246,13 +248,14 @@ h2 {
 .chat-text {
   border-radius: 12px;
   padding: 8px 12px;
+  border: none;
 }
 
 .sender {
   font-weight: bold;
   font-size: 0.85em;
   margin-bottom: 4px;
-  color: #1b5e20;
+  color: #fc6a3d;
 }
 
 /* .general-message {

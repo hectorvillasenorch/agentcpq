@@ -427,8 +427,6 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
     print(f"✅ Successfully {action} HubSpot deal {hs_deal_id} for opportunity {opportunity.id}")
 
 
-
-
 def delete_existing_line_items(deal_id, headers):
     # 🔍 Get associated line items
     assoc_url = f"https://api.hubapi.com/crm/v4/objects/deals/{deal_id}/associations/line_items"
@@ -447,3 +445,24 @@ def delete_existing_line_items(deal_id, headers):
                 print(f"⚠️ Failed to delete line item {line_item_id}: {delete_resp.status_code} — {delete_resp.text}")
     else:
         print(f"⚠️ Failed to fetch line item associations: {response.status_code} — {response.text}")
+
+
+
+def create_hubspot_property(object_type, name, label, data_type, user_id="default"):
+    access_token = get_valid_hubspot_token(user_id)
+    
+    url = f"https://api.hubapi.com/crm/v3/properties/{object_type}"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    body = {
+        "name": name,
+        "label": label,
+        "groupName": "agentcpq",  # Optional: create a group in HubSpot
+        "type": "string" if data_type == "string" else "number",
+        "fieldType": "text",
+    }
+
+    response = requests.post(url, headers=headers, json=body)
+    return response.status_code == 201, response.json()
