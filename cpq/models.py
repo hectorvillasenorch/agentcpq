@@ -5,6 +5,7 @@ import uuid
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
+from decimal import Decimal
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -232,12 +233,14 @@ class QuoteLine(models.Model):
         if self.product and not self.product_name:
             self.product_name = self.product.name
         if self.product and not self.sku:
-            self.sku = self.product.sku
-        
+
+        #Auto-calculate discount if exist
+        discount_factor = (Decimal('100.00') - self.additional_discount) / Decimal('100.00')
+        self.total_price = (self.quantity * self.unit_price * discount_factor).quantize(Decimal('100.00'))
         super().save(*args, **kwargs)
 
-    def __str__(self):
-        return f"{self.product.name} ({self.quantity}x)"
+         def __str__(self):
+            return f"{self.product.name} ({self.quantity}x)"
 
 class Subscription(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="subscriptions")

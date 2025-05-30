@@ -130,6 +130,10 @@ def orchestrate_request(user_message, session_data):
 
     if decision in action_map:
         result = action_map[decision](decision, user_message, session_data)
+
+        if result is None:
+            logging.error(f"❌ Agent function for '{decision}' returned None.")
+            return {"message": f"⚠️ Error: Agent function for '{decision}' returned nothing."}
         
         agent_message = result.get("message", "")
 

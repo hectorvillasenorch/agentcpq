@@ -18,8 +18,8 @@ urlpatterns = [
     path("save-field-mappings/", save_field_mappings, name="save_field_mappings"),  # ✅ Add this line
     path("hubspot/schema/", get_hubspot_schema, name="get_hubspot_schema"),
     path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote')
+
 ]
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-
