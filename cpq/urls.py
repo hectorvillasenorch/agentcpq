@@ -15,12 +15,8 @@ urlpatterns = [
     path("products/<int:product_id>/", product_detail, name="product_detail"),
     path("field-mapping/", field_mapping_view, name="field_mapping"),
     path("save-field-mappings/", save_field_mappings, name="save_field_mappings"),  # ✅ Add this line
-<<<<<<< Updated upstream
-]
-=======
-    path("hubspot/schema/", get_hubspot_schema, name="get_hubspot_schema")
+    #path("hubspot/schema/", get_hubspot_schema, name="get_hubspot_schema")
 ]
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
->>>>>>> Stashed changes

@@ -30,11 +30,17 @@
                 {% endif %}
 
                 {% if msg.sender == 'agent' and msg.hiddenMessage == False %}
-                  <div class="chat-text agent">{{ msg.content}}</div>
+                  <div class="chat-text agent">
+                    <div class="senderagent">Agent: </div>
+                    <div class="message">{{ msg.content}}</div>
+                  </div>
                 {% endif %}
 
                 {% if msg.sender == 'agent' and 'quote_details' in msg.content %}
-                  <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
+                <div class="chat-text agent">
+                    <div class="senderagent">Agent: </div>
+                    <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
                 {% endif %}
               </div>
             {% endfor %}

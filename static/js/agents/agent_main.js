@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", function () {
   setupChatListeners();
   setupSessionSwitching(); 
-  enhanceStructuredAgentMessages(); // 🔥
+  enhanceStructuredAgentMessagesHistoryChat(); // 🔥
 });
 
 /**
@@ -60,6 +60,9 @@ function unescapeUnicode(str) {
     });
   }
 
+/*
+* ✅ enhanceStructuredAgentMessages in real time, when user send a message
+*/
 function enhanceStructuredAgentMessages() {
     document.querySelectorAll(".agent-json").forEach(div => {
       const raw = div.dataset.raw;
@@ -74,13 +77,44 @@ function enhanceStructuredAgentMessages() {
           div.innerHTML = html;
         } catch (e) {
           console.error("❌ JSON parse failed:", e, jsonStr);
-          div.innerHTML = `<div class="error-message">❌ JSON parsing error</div>`;
+          div.innerHTML = `<div class="error-message">❌ Error trying to display the structured message. (JSON parsing error)</div>`;
         }
       } else {
         div.innerHTML = `<div class="error-message">⚠️ Could not find quote details JSON</div>`;
       }
     });
   }
+
+/*
+* ✅ enhanceStructuredAgentMessages in history chat, NOT in real time
+*/
+function enhanceStructuredAgentMessagesHistoryChat() {
+
+    document.querySelectorAll(".agent-json").forEach(div => {
+      const raw = div.dataset.raw;
+  
+      const startIndex = raw.indexOf('{');
+      if (startIndex !== -1) {
+        const jsonStr = raw.slice(startIndex);
+  
+        try {
+          const quote = JSON.parse(unescapeUnicode(jsonStr));
+          const html = renderReadOnlyQuoteDetails(quote);
+          div.innerHTML = html;
+        } catch (e) {
+          console.error("❌ JSON parse failed:", e, jsonStr);
+          div.innerHTML = `<div class="error-message">❌ Error trying to display the structured message. (JSON parsing error)</div>`;
+        }
+      } else {
+        div.innerHTML = `<div class="error-message">⚠️ Could not find quote details JSON</div>`;
+      }
+    });
+
+    const chatBox = document.getElementById("chat-box");
+
+    // Auto-scroll chat
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
 
 /**
 * ✅ Send user message to the agent and handle response
@@ -97,11 +131,13 @@ async function sendMessage() {
 
     inputField.value = ""; // Clear input field
 
+    // Auto-scroll chat
+    chatBox.scrollTop = chatBox.scrollHeight;
+
     try {
 
         const urlParams = new URLSearchParams(window.location.search);
         const sessionId = urlParams.get("session_id");  // 👈 Obtén el session_id desde la URL
-        console.log(sessionId);
 
         const response = await fetch("/agents/chat/", {   
             method: "POST",
@@ -117,7 +153,6 @@ async function sendMessage() {
         }
 
         const data = await response.json();
-        console.log("Parsed JSON:", data);
 
         let responseMessage = ""; // Initialize message variable
 
@@ -152,7 +187,7 @@ async function sendMessage() {
         }
 
         // ✅ Append the final response message to the chat
-        appendMessage("agent", responseMessage);
+        appendMessage("agent", `<div class="senderagent">Agent: </div> <div class="message">${responseMessage}</div>`);
 
         // Auto-scroll chat
         chatBox.scrollTop = chatBox.scrollHeight;
@@ -194,8 +229,8 @@ function appendMessage(className, message) {
 }
 
 /**
-* ✅ Render quote details as an HTML table with editable fields
-*/
+* ✅ Render quote details as an HTML table with editable fields ||| Function to show Original Price and discount effects |||
+
 function renderQuoteDetails(quote) {
   let html = `
       <div class="quote-container">
@@ -216,6 +251,74 @@ function renderQuoteDetails(quote) {
                       <th>SKU</th>
                       <th>Quantity</th>
                       <th>Unit Price</th>
+                      <th>Original Price</th>
+                      <th>Discount</th>
+                      <th>Total Price</th>
+                  </tr>
+              </thead>
+              <tbody>`;
+
+  quote.line_items.forEach(item => {
+    //console.log("Este es el item", item);
+    const hasDiscount = parseFloat(item.discount.replace('%', '')) > 0;
+    const rowClass = hasDiscount ? 'discounted' : '';
+
+      html += `
+          <tr class="${rowClass}">
+              <td>${item.product}</td>
+              <td>${item.sku}</td>
+              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"></td>
+              <td><input type="number" step="0.01" min="0" value="${item.unit_price.replace('$', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="unit_price" onchange="updateQuoteLine(this)"></td>
+              <td class="original-price" data-sku="${item.sku}">
+              ${(item.quantity * parseFloat(item.unit_price.replace('$', ''))).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+                })}
+              </td>
+              <td><input type="number" min="0" max="100" value="${item.discount.replace('%', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount" onchange="updateQuoteLine(this)"></td>
+              <td class="total-price" data-sku="${item.sku}">
+                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                    style: 'currency',
+                    currency: 'USD'
+                })}
+              </td>
+          </tr>`;
+  });
+
+  html += `</tbody></table>
+    <p class="total-amount">
+        💰 Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+    </p>
+  </div>`;
+
+  return html;
+}
+*/
+
+function renderQuoteDetails(quote) {
+  let html = `
+      <div class="quote-container">
+          <div class="quote-header">
+              <h3>📄 Quote: ${quote.quote_name}</h3>
+              <p><strong>Status:</strong> ${quote.status}</p>
+          </div>
+          <div class="quote-details">
+              <p><strong>Account:</strong> ${quote.account}</p>
+              <p><strong>Opportunity:</strong> ${quote.opportunity}</p>
+              <p><strong>Created At:</strong> ${quote.created_at}</p>
+          </div>
+          <h4>📦 Line Items</h4>
+          <table class="quote-table" data-quote-id="${quote.quote_name}">
+              <thead>
+                  <tr>
+                      <th>Product</th>
+                      <th>SKU</th>
+                      <th>Quantity</th>
+                      <th>Unit Price</th>
+                      <th>Discount</th>
                       <th>Total Price</th>
                   </tr>
               </thead>
@@ -226,18 +329,162 @@ function renderQuoteDetails(quote) {
           <tr>
               <td>${item.product}</td>
               <td>${item.sku}</td>
-              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"></td>
-              <td><input type="number" step="0.01" min="0" value="${item.unit_price.replace('$', '')}" data-quote="${quote.quote_name}" data-sku="${item.sku}" class="editable-field" data-field="unit_price" onchange="updateQuoteLine(this)"></td>
-              <td class="total-price" data-sku="${item.sku}">${item.total_price}</td>
+              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"></td>
+              <td>
+                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                    style: 'currency',
+                    currency: 'USD'
+                })}
+              </td>
+              <td><input type="number" min="0" max="100" value="${item.discount.replace('%', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount" onchange="updateQuoteLine(this)"></td>
+              <td class="total-price" data-sku="${item.sku}">
+                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                    style: 'currency',
+                    currency: 'USD'
+                })}
+              </td>
           </tr>`;
   });
 
   html += `</tbody></table>
-      <p class="total-amount">💰 Net Amount: ${quote.net_amount}</p>
+    <p class="total-amount">
+        💰 Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+    </p>
   </div>`;
 
   return html;
 }
+
+/**
+* ✅ Render quote details as an HTML table with NOT editable fields ||| Function to show Original Price and discount effects |||
+
+function renderReadOnlyQuoteDetails(quote) {
+  let html = `
+      <div class="quote-container">
+          <div class="quote-header">
+              <h3>📄 Quote: ${quote.quote_name}</h3>
+              <p><strong>Status:</strong> ${quote.status}</p>
+          </div>
+          <div class="quote-details">
+              <p><strong>Account:</strong> ${quote.account}</p>
+              <p><strong>Opportunity:</strong> ${quote.opportunity}</p>
+              <p><strong>Created At:</strong> ${quote.created_at}</p>
+          </div>
+          <h4>📦 Line Items</h4>
+          <table class="quote-table-read-only" data-quote-id="${quote.quote_name}">
+              <thead>
+                  <tr>
+                      <th>Product</th>
+                      <th>SKU</th>
+                      <th>Quantity</th>
+                      <th>Unit Price</th>
+                      <th>Original Price</th>
+                      <th>Discount</th>
+                      <th>Total Price</th>
+                  </tr>
+              </thead>
+              <tbody>`;
+
+  quote.line_items.forEach(item => {
+    const hasDiscount = parseFloat(item.discount.replace('%', '')) > 0;
+    const rowClass = hasDiscount ? 'discounted' : '';
+      html += `
+          <tr class="${rowClass}">
+              <td>${item.product}</td>
+              <td>${item.sku}</td>
+              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" disabled></td>
+              <td><input type="number" step="0.01" min="0" value="${item.unit_price.replace('$', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="unit_price" disabled></td>
+              <td class="original-price" data-sku="${item.sku}">
+              ${(item.quantity * parseFloat(item.unit_price.replace('$', ''))).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+                })}
+              </td>
+              <td><input type="number" min="0" max="100" value="${item.discount.replace('%', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount" disabled></td>
+              <td class="total-price" data-sku="${item.sku}">
+                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                    style: 'currency',
+                    currency: 'USD'
+                })}
+              </td>
+          </tr>`;
+  });
+
+  html += `</tbody></table>
+    <p class="total-amount">
+        💰 Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+    </p>
+  </div>`;
+
+  return html;
+}
+*/
+function renderReadOnlyQuoteDetails(quote) {
+  let html = `
+      <div class="quote-container">
+          <div class="quote-header">
+              <h3>📄 Quote: ${quote.quote_name}</h3>
+              <p><strong>Status:</strong> ${quote.status}</p>
+          </div>
+          <div class="quote-details">
+              <p><strong>Account:</strong> ${quote.account}</p>
+              <p><strong>Opportunity:</strong> ${quote.opportunity}</p>
+              <p><strong>Created At:</strong> ${quote.created_at}</p>
+          </div>
+          <h4>📦 Line Items</h4>
+          <table class="quote-table-read-only" data-quote-id="${quote.quote_name}">
+              <thead>
+                  <tr>
+                      <th>Product</th>
+                      <th>SKU</th>
+                      <th>Quantity</th>
+                      <th>Unit Price</th>
+                      <th>Discount</th>
+                      <th>Total Price</th>
+                  </tr>
+              </thead>
+              <tbody>`;
+
+  quote.line_items.forEach(item => {
+      html += `
+          <tr>
+              <td>${item.product}</td>
+              <td>${item.sku}</td>
+              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" disabled></td>
+              <td>
+                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                    style: 'currency',
+                    currency: 'USD'
+                })}
+              </td>
+              <td><input type="number" min="0" max="100" value="${item.discount.replace('%', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount" disabled></td>
+              <td class="total-price" data-sku="${item.sku}">
+                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                    style: 'currency',
+                    currency: 'USD'
+                })}
+              </td>
+          </tr>`;
+  });
+
+  html += `</tbody></table>
+    <p class="total-amount">
+        💰 Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+    </p>
+  </div>`;
+
+  return html;
+}
+
 
 /**
 * ✅ Render Approval History as an HTML table
@@ -311,15 +558,16 @@ async function updateQuoteLine(input) {
     const sku = input.dataset.sku;
     const field = input.dataset.field;
     const newValue = input.value.trim();
+    const quoteLineId = input.dataset.quotelineId;
 
     if (!quoteId || !sku || !field) {
         console.warn("⚠️ Missing data attributes.");
         return;
     }
 
-    console.log(`🔄 Field Changed: ${field}, SKU: ${sku}, New Value: ${newValue}, Quote: ${quoteId}`);
+    console.log(`🔄 Field Changed: ${field}, SKU: ${sku}, New Value: ${newValue}, Quote: ${quoteId}, QuoteLine: ${quoteLineId}`);
 
-    const updateData = [{ sku, field, value: newValue, hiddenMessage: true }];
+    const updateData = [{ sku, field, value: newValue, quote_line_id: quoteLineId, hiddenMessage: true }];
     const userMessage = `Update Quote Line: ${JSON.stringify(updateData)}`;
 
     try {

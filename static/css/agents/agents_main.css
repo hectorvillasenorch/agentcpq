@@ -50,7 +50,14 @@ body {
   background: #0bdc2a;
   color: white;
   padding: 12px;
-  text-align: left;
+  text-align: center;
+}
+
+.quote-table-read-only th {
+  background: #737d74;
+  color: white;
+  padding: 12px;
+  text-align: center;
 }
 
 .quote-table td {
@@ -64,7 +71,7 @@ body {
 
 /* ✅ Editable Fields */
 .editable-field {
-  width: 80px;
+  max-width: 120px;
   padding: 5px;
   border: 1px solid #ccc;
   border-radius: 6px;
@@ -77,6 +84,12 @@ body {
   background: #e0f7fa;
 }
 
+/* ✅ Total Price */
+
+.total-price {
+  text-align: right;
+}
+
 /* ✅ Total Amount */
 .total-amount {
   text-align: right;
@@ -85,6 +98,17 @@ body {
   margin-top: 10px;
   margin-right: 5%;
   color: #333;
+}
+
+/* ✅ Check if have a discount */
+.discounted .original-price {
+  text-decoration: line-through;
+  color: #999;
+}
+
+.discounted .total-price {
+  color: red;
+  font-weight: bold;
 }
 
 /* ✅ Chat Container */
@@ -253,6 +277,13 @@ h2 {
   font-size: 0.85em;
   margin-bottom: 4px;
   color: #1b5e20;
+}
+
+.senderagent {
+  font-weight: bold;
+  font-size: 0.85em;
+  margin-bottom: 4px;
+  color: #393939;
 }
 
 /* .general-message {

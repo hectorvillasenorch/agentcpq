@@ -2,6 +2,7 @@ from django.db import models
 from django.db.models import Sum
 from datetime import datetime
 import uuid
+from decimal import Decimal
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -57,10 +58,8 @@ class Opportunity(models.Model):
         null=True, blank=True
     )
     oppid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
-<<<<<<< Updated upstream
-=======
+
     hs_deal_id = models.CharField(max_length=18, unique=True, db_index=True, editable=False, null=True, blank=True)
->>>>>>> Stashed changes
     
 
     def save(self, *args, **kwargs):
@@ -158,7 +157,10 @@ class QuoteLine(models.Model):
             self.unit_price = sum(
                 bundle_item.product.price * bundle_item.quantity for bundle_item in self.product.bundle_items.all()
             )
-        self.total_price = self.quantity * self.unit_price
+
+        #Auto-calculate discount if exist
+        discount_factor = (Decimal('100.00') - self.additional_discount) / Decimal('100.00')
+        self.total_price = (self.quantity * self.unit_price * discount_factor).quantize(Decimal('100.00'))
         super().save(*args, **kwargs)
 
     def __str__(self):
