@@ -11,3 +11,4 @@ class ChatMessage(models.Model):
     sender = models.CharField(max_length=10)  # 'user' or 'agent'
     content = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
+    hiddenMessage = models.BooleanField(default=False)

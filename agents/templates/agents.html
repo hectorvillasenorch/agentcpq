@@ -15,10 +15,26 @@
         <div id="chat-box" class="chat-box">
             {% for msg in chat_messages %}
               <div class="chat-message {{ msg.sender }}">
+                {% if msg.sender == 'user' and msg.hiddenMessage == False %}
+                  <div class="chat-text user"> 
+                    <div class="sender">You: </div>
+                    <div class="message">{{ msg.content}}</div>
+                  </div>
+                {% endif %}
+                
+                {% if msg.sender == 'user' and msg.hiddenMessage == True and 'Update Quote Line' in msg.content %}
+                  <div class="chat-text user"> 
+                    <div class="sender">You: </div>
+                    <div class="message">✅ You have modified the quote through the UI.</div>
+                  </div>
+                {% endif %}
+
+                {% if msg.sender == 'agent' and msg.hiddenMessage == False %}
+                  <div class="chat-text agent">{{ msg.content}}</div>
+                {% endif %}
+
                 {% if msg.sender == 'agent' and 'quote_details' in msg.content %}
                   <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
-                {% else %}
-                  <div class="chat-text">{{ msg.content}}</div>
                 {% endif %}
               </div>
             {% endfor %}

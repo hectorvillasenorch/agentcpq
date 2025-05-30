@@ -103,8 +103,7 @@ class Opportunity(models.Model):
         null=True, blank=True
     )
     oppid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
-    hs_deal_id = models.CharField(max_length=255, unique=True, blank=True, null=True)
-    
+    hs_deal_id = models.CharField(max_length=18, unique=True, db_index=True, editable=False, null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if not self.oppid:

@@ -45,16 +45,13 @@ def quote_agent(action, user_message, session_data):
 
     return {"message": "🤖 Sorry, I couldn’t understand your request."}
 
-def create_quote(user_message, session_data):
+def create_quote(user_message, session_data): 
     """Handles quote creation while preserving context."""
-    extracted_details = extract_quote_details(user_message)  
-    # extracted_details = parse_gpt_response(gpt_response)
-  
-    logging.warning("❗⚠️⚠️⚠️⚠️⚠️⚠️ extracted_details was None. GPT Response: %s", extracted_details)
-       
-
+    extracted_details = extract_quote_details(user_message)
+    logging.info(f"\n\nDetails: {extracted_details}\n\n")
     account_name = extracted_details.get("account", session_data.get("account", "")).strip()
     opportunity_name = extracted_details.get("opportunity", session_data.get("opportunity", "")).strip()
+    
     #  -------------- MODIFICATION --------------
     extracted_products = extracted_details.get("products", []) # ✅ extraer productos
 
@@ -110,6 +107,7 @@ def create_quote(user_message, session_data):
         }
 
     else:
+        logging.info("🟡 Products provided in initial quote creation.")
         # ✅ Add products to the quote if provided
         total_added_price = Decimal(0)
         added_products = []
@@ -183,8 +181,16 @@ def create_quote(user_message, session_data):
                 f"✅ Added {quantity}x {sku} to quote {quote.name}. Net amount updated to ${quote.net_amount:.2f}."
                 "Would you like to add more products?"
             )
-        
 
+        #Check if no added products (in case GPT model recognizes a product that doesn't exist.)
+        if not added_products:
+            session_data["pending_action"] = "add_product"  # ✅ Ensure we move to the next step
+
+            return {
+                "message": f"✅ Quote `{quote.name}` created for {account_name} under opportunity `{opportunity_name}`. Would you like to add more products now?",
+                "quote_id": quote.id
+            }
+        
         # If an approval suggestion exists, append it to the message
         if "message" in approval_suggestion:
             response_message += f"\n\n{approval_suggestion['message']}"
@@ -328,7 +334,7 @@ def extract_product_details(user_message):
 
     **User Request:** "{user_message}"
 
-    **Return a valid JSON array of product objects. Do not include explanations, just return the JSON.**
+    **Return a valid JSON array only of product objects. Do not include explanations, and do not format the response as Markdown(no triple backticks or ```json) just return the JSON.**
     """
 
     try:
@@ -446,7 +452,8 @@ def update_quote_line(user_message, session_data):
                     }
                     for ql in QuoteLine.objects.filter(quote=quote)
                 ]
-            }
+            },
+            "hiddenMessage": "True"
         }
 
     except Exception as e:
@@ -592,7 +599,7 @@ def show_quote_details(user_message, session_data):
         }
         
 
-        return {"message": "✅ Here are the quote details:", "quote_details": quote_details}
+        return {"message": "✅ Here are the quote details:", "quote_details": quote_details, "hiddenMessage": "True"}
     
     except Quote.DoesNotExist:
         return {"message": "⚠️ Error: Quote not found. Please check the quote name."}

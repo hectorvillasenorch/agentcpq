@@ -29,7 +29,7 @@ def dashboard(request):
     is_authenticated = SalesforceToken.objects.exists()
     is_setup = view == "setup"
 
-    user = User.objects.get(username="admin")  # or request.user
+    user = User.objects.get(username="Admin")
     chat_sessions = ChatSession.objects.filter(user=user).order_by("-created_at")
 
     # ✅ Load chat messages for a selected session
