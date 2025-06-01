@@ -24,10 +24,9 @@ body {
 }
 
 .quote-header h3 {
-  color: #0bdc2a;
+  color: #fc6a3e;
   margin: 0;
 }
-
 /* ✅ Quote Details */
 .quote-details p {
   margin: 5px 0;
@@ -54,7 +53,7 @@ body {
 }
 
 .quote-table-read-only th {
-  background: #737d74;
+  background: #313133;
   color: white;
   padding: 12px;
   text-align: center;

@@ -1,11 +1,12 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from .models import Product, SystemFieldMapping,Quote,CustomField
+from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt 
 from django.apps import apps
 from salesforce.models import SalesforceToken
 from django.core.serializers.json import DjangoJSONEncoder
 import json
+from .forms import CustomFieldForm
 
 def product_list(request):
     """Fetch all products and display them in a table."""
@@ -40,6 +41,7 @@ MODEL_CHOICES = {
     "Account": "Account",
     "Contact": "Contact",
 }
+
 def field_mapping_view(request):
     """Dynamically fetch schema fields for the selected CRM and object type."""
 
@@ -136,8 +138,7 @@ def set_primary_quote(request, quote_id):
 
 
 
-#  ADD LOGIN REQURED
-def custom_fields_view(request):
+def create_custom_field(request):
     if request.method == "POST":
         crm = request.POST["crm"]
         object_type = request.POST["object_type"]
@@ -159,4 +160,81 @@ def custom_fields_view(request):
     fields = CustomField.objects.all().order_by("-created_at")
     return render(request, "custom_fields.html", {"fields": fields})
 
+def get_standard_fields(model_name):
+    mapping = {
+        "Lead": [{"name": "name", "data_type": "Text"}, {"name": "price", "data_type": "Number"}],
+        "Contact": [{"name": "name", "data_type": "Text"}, {"name": "price", "data_type": "Number"}],
+        "Account": [{"name": "name", "data_type": "Text"}],
+        "Opportunity": [{"name": "stage", "data_type": "Picklist"}, {"name": "amount", "data_type": "Currency"}],
+        "Product": [{"name": "name", "data_type": "Text"}, {"name": "price", "data_type": "Number"}],
+        "Quote": [{"name": "net_amount", "data_type": "Currency"}, {"name": "status", "data_type": "Picklist"}],
+        "QuoteLine": [{"name": "net_amount", "data_type": "Currency"}, {"name": "status", "data_type": "Picklist"}]
+    }
+    return mapping.get(model_name, [])
 
+def custom_fields_view(request):
+    object_types = ['Lead', 'Contact', 'Account', 'Opportunity', 'Product', 'Quote', 'QuoteLine']
+
+    fields_by_object_type = {}
+
+    for obj_type in object_types:
+        model_class = apps.get_model('cpq', obj_type)  # Adjust app name if needed
+        standard_fields = [
+            {"name": f.name, "data_type": f.get_internal_type()}
+            for f in model_class._meta.get_fields()
+            if not f.is_relation and not f.auto_created
+        ]
+
+        custom_fields = CustomField.objects.filter(object_type=obj_type)
+
+        fields_by_object_type[obj_type] = {
+            "standard": standard_fields,
+            "custom": custom_fields,
+        }
+
+    return render(request, "custom_fields.html", {
+        "fields_by_object_type": fields_by_object_type,
+        "models": object_types,
+    })
+
+
+
+def create_custom_field(request):
+    if request.method == 'POST':
+        form = CustomFieldForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect('cpq:custom_fields')  # or wherever you want to go after save
+    else:
+        form = CustomFieldForm()
+    return render(request, 'create_custom_field.html', {'form': form})
+
+def get_company_information(request):
+    company = Tenant.objects.first()  # Always work with the first (or only) tenant
+
+    if request.method == 'POST':
+        if not company:
+            company = Tenant()
+
+        company.name = request.POST.get('name', '')
+        company.contact_email = request.POST.get('contact_email', '')
+        company.phone_number = request.POST.get('phone_number', '')
+        company.address = request.POST.get('address', '')
+        
+        # company.plan = request.POST.get('plan', '')
+
+        # actions_limit_raw = request.POST.get('actions_limit', '')
+        # try:
+        #     company.actions_limit = int(actions_limit_raw) if actions_limit_raw else None
+        # except ValueError:
+        #     company.actions_limit = None
+
+        if 'logo' in request.FILES:
+            company.logo = request.FILES['logo']
+
+        company.save()
+        return redirect('cpq:get_company_information')
+
+    return render(request, 'company_information.html', {
+        'company': company or Tenant()
+    })

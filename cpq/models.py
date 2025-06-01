@@ -526,3 +526,34 @@ class CustomFieldValue(models.Model):
 
     def __str__(self):
         return f"{self.content_object} - {self.field.field_name}: {self.value}"
+
+
+class Tenant(models.Model):
+    PLAN_CHOICES = [
+        ('solo', 'Solo'),
+        ('team', 'Team'),
+        ('pro', 'Pro'),
+        ('business', 'Business'),
+        ('enterprise', 'Enterprise'),
+    ]
+    tenant_id = models.CharField(max_length=20, unique=True, blank=True)
+    name = models.CharField(max_length=255)
+    domain = models.CharField(max_length=255, blank=True, null=True)
+    contact_email = models.EmailField(blank=True, null=True)
+    phone_number = models.CharField(max_length=50, blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
+    version = models.CharField(max_length=50, default='1.0.0')
+    logo = models.ImageField(upload_to='tenant_logos/', blank=True, null=True)
+    billing_contact = models.EmailField(blank=True, null=True)
+    plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default='solo')
+    actions_limit = models.IntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)  # Save first to get auto-incremented ID
+        if not self.tenant_id:
+            self.tenant_id = generate_agentcpq_id()
+            super().save(update_fields=['tenant_id'])  # Only update the tenant_id
+
+    def __str__(self):
+        return self.name
