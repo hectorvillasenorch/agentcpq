@@ -6,7 +6,7 @@ import logging
 import re
 import locale
 from dotenv import load_dotenv
-from cpq.models import Quote, Account, Opportunity, QuoteLine, Product
+from cpq.models import Quote, Account, Opportunity, QuoteLine, Product, QuoteDocument
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
@@ -628,7 +628,7 @@ def update_quote_line(user_message, session_data):
                     quote_line.quantity = int(new_value)
                 elif field == "unit_price":
                     quote_line.unit_price = Decimal(new_value)
-                elif field =="discount":
+                elif field =="discount" or field == "additional_discount":
                     quote_line.additional_discount = Decimal(new_value)
 
                 quote_line.save()
@@ -645,14 +645,22 @@ def update_quote_line(user_message, session_data):
                     "quote_id": quote.id,
                     "quote_name": quote.name,
                     "net_amount": str(quote.net_amount),
+                    "status": quote.status,
+                    "account": quote.account.name if quote.account else "N/A",
+                    "opportunity": quote.opportunity.name if quote.opportunity else "N/A",
                     "quote_line_total_price": str(quote_line.total_price),
+                    "created_at": quote.created_at,
                     "line_items": [
                         {
+                            "id": ql.id,
+                            "product": ql.product.name,
                             "sku": ql.product.sku,
                             "quantity": ql.quantity,
                             "unit_price": str(ql.unit_price),
                             "total_price": str(ql.total_price),
                             "discount": f"{ql.additional_discount}%" if ql.additional_discount else "0%",
+                            "is_subscription": ql.product.is_subscription,
+                            "term": ql.product.term,
                         }
                         for ql in QuoteLine.objects.filter(quote=quote)
                     ]
@@ -697,14 +705,14 @@ def update_quote_line(user_message, session_data):
                 product = Product.objects.get(sku=item['sku'])
             except Product.DoesNotExist:
                 response_message_alerts += show_details_message
-                response_message_alerts += f"⚠️ Error: The product with SKU \"{item['sku']}\" was not found in the database.<br>"
+                response_message_alerts += f"⚠️ Error: The product with SKU \"{item['sku']}\" was not found in the database.<br><br>"
                 continue
 
             #Validate if product exist in actual quote line item
             quote_line = QuoteLine.objects.filter(quote=quote, product__sku=item['sku']).first()
             if not quote_line:
                 response_message_alerts += show_details_message
-                response_message_alerts += f"⚠️ Error: The product with SKU \"{item['sku']}\" is not in the current quote.<br>"
+                response_message_alerts += f"⚠️ Error: The product with SKU \"{item['sku']}\" is not in the current quote.<br><br>"
                 continue
 
             # Add quote_line_id to item
@@ -713,17 +721,17 @@ def update_quote_line(user_message, session_data):
             # General validations
             if item['sku'] == 'NoneAppear':
                 response_message_alerts += show_details_message
-                response_message_alerts += f"⚠️ Error: No SKU was detected in your request. Please specify the product code(s) to update.<br>"
+                response_message_alerts += f"⚠️ Error: No SKU was detected in your request. Please specify the product code(s) to update.<br><br>"
                 continue
 
             if item['field'] == 'NoneAppear':
                 response_message_alerts += show_details_message
-                response_message_alerts += f"⚠️ Error: No field to update was detected in your request. Please specify which attribute (e.g., quantity, unit_price) you want to modify.<br>"
+                response_message_alerts += f"⚠️ Error: No field to update was detected in your request. Please specify which attribute (e.g., quantity, unit_price) you want to modify.<br><br>"
                 continue
 
             if item['value'] == "NoneAppear":
                 response_message_alerts += show_details_message
-                response_message_alerts += f"⚠️ Error: No value was detected in your request. Please specify the new value for the update.<br>"
+                response_message_alerts += f"⚠️ Error: No value was detected in your request. Please specify the new value for the update.<br><br>"
                 continue 
 
             if item['field'] != "discount":
@@ -731,11 +739,11 @@ def update_quote_line(user_message, session_data):
                     numeric_value = Decimal(item['value'])
                     if numeric_value < 0:
                         response_message_alerts += show_details_message
-                        response_message_alerts += f"⚠️ Error: The value for SKU \"{item['sku']}\" cannot be less than 0. Please provide a valid number.<br>"
+                        response_message_alerts += f"⚠️ Error: The value for SKU \"{item['sku']}\" cannot be less than 0. Please provide a valid number.<br><br>"
                         continue
                 except (InvalidOperation, ValueError, TypeError):
                     response_message_alerts += show_details_message
-                    response_message_alerts += f"⚠️ Error: The value \"{item['value']}\" is not a valid number. Please enter a valid numeric value.<br>"
+                    response_message_alerts += f"⚠️ Error: The value \"{item['value']}\" is not a valid number. Please enter a valid numeric value.<br><br>"
                     continue
 
             response_message_alerts += show_details_message
@@ -759,7 +767,10 @@ def update_quote_line(user_message, session_data):
                 logging.warning("⚠️ Update Failed")
 
         return {
-            "message": response_message_alerts
+            "message": response_message_alerts,
+            "update_details": response["quote_details"],
+            "temporaryMessage": True,
+            "iterations": index
         }
             
         
@@ -1013,6 +1024,8 @@ def show_quote_details(user_message, session_data):
                     "unit_price": f"${line.unit_price:.2f}",
                     "total_price": f"${line.total_price:.2f}",
                     "discount": f"{line.additional_discount}%" if line.additional_discount else "0%",
+                    "is_subscription": line.product.is_subscription,
+                    "term": line.product.term,
                 } for line in quote_lines
             ]
         }
@@ -1106,8 +1119,11 @@ def generate_quote_pdf(user_message, session_data):
         quote_lines = QuoteLine.objects.filter(quote=quote)
 
         # ✅ Generate file name
-        pdf_filename = f"Quote_{quote.name}.pdf"
-        pdf_path = os.path.join(settings.MEDIA_ROOT, pdf_filename)
+        last_doc = QuoteDocument.objects.filter(quote=quote).order_by('-version').first()
+        next_version = (last_doc.version if last_doc else 0) + 1
+
+        pdf_filename = f"Quote_{quote.name}_v{next_version}.pdf"
+        pdf_path = os.path.join(settings.MEDIA_ROOT, "quote_documents", pdf_filename)
 
         # ✅ Create PDF in memory
         buffer = BytesIO()
@@ -1172,15 +1188,33 @@ def generate_quote_pdf(user_message, session_data):
         pdf.showPage()
         pdf.save()
 
+        # ✅ Ensure target folder exists before writing the PDF
+        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+
+        # ✅ Save the buffer content to the file
+        with open(pdf_path, "wb") as f:
+            f.write(buffer.getvalue())
+
+
         # ✅ Save the buffer content to the file
         with open(pdf_path, "wb") as f:
             f.write(buffer.getvalue())
 
         buffer.close()
 
+        # ✅ Save record in QuoteDocument
+        QuoteDocument.objects.create(
+            quote=quote,
+            version=next_version,
+            name=pdf_filename,
+            file=f"quote_documents/{pdf_filename}",
+            generated_by="system"
+        )
+
         return {
-            "message": "📄 Quote PDF generated successfully!",
-            "download_url": f"{settings.MEDIA_URL}{pdf_filename}"
+            "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
+            "download_url": f"{settings.MEDIA_URL}quote_documents/{pdf_filename}",
+            "document_version": next_version
             }
 
     except Quote.DoesNotExist:

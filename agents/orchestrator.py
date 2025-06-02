@@ -136,7 +136,7 @@ def orchestrate_request(user_message, session_data):
         hiddenMessage = result.get("hiddenMessage", False)
 
         for key, value in result.items():
-            if key not in ("message", "session_id", "hiddenMessage"):
+            if key not in ("message", "session_id", "hiddenMessage", "temporaryMessage", "update_details", "iterations"):
                 agent_message += f"\n\n📦 {key}:\n{json.dumps(value, indent=2)}"
 
         ChatMessage.objects.create(
@@ -186,7 +186,7 @@ def orchestrate_request_simulation(user_message, session_data):
         
         agent_message = result.get("message", "")
 
-        hiddenMessage = result.get("hiddenMessage", "False")
+        hiddenMessage = result.get("hiddenMessage", False)
 
         for key, value in result.items():
             if key not in ("message", "session_id", "hiddenMessage"):

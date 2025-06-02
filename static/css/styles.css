@@ -232,6 +232,11 @@ tr:hover {
   background-color: rgba(0, 0, 0, 0.05);
 }
 
+.centered-td {
+  text-align: center;
+  vertical-align: middle;
+}
+
 /* ✅ Mobile Adjustments */
 @media screen and (max-width: 768px) {
   .icon-button {

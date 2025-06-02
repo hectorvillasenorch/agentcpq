@@ -427,3 +427,27 @@ class PricebookEntry(models.Model):
 
     def __str__(self):
         return f"{self.product.name} in {self.pricebook.name} - ${self.unit_price}"
+    
+class QuoteDocument(models.Model):
+    quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name='documents')
+    version = models.PositiveIntegerField()
+    name = models.CharField(max_length=255)
+    content = models.TextField(blank=True, null=True, help_text="Optional HTML/text content of the document")
+    file = models.FileField(upload_to='quote_documents/', blank=True, null=True)
+    generated_at = models.DateTimeField(auto_now_add=True)
+    generated_by = models.CharField(max_length=255, blank=True, null=True, help_text="Who generated this version (e.g., system, user email)")
+
+    class Meta:
+        unique_together = ('quote', 'version')
+        ordering = ['-version']  # Most recent version first
+
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            last_version = QuoteDocument.objects.filter(quote=self.quote).aggregate(
+                max_version=models.Max('version')
+            )['max_version'] or 0
+            self.version = last_version + 1
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.quote.name} - v{self.version}"
