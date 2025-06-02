@@ -39,6 +39,7 @@ def quote_agent(action, user_message, session_data):
         "UpdateQuoteLine": update_quote_line,
         "ApplyDiscount": apply_discount_to_quote_line,
         "DeleteQuoteLine": delete_quote_line,
+        "DeleteQuote": delete_quote,
         # "ProvideDates": provide_dates,
     }
 
@@ -1281,3 +1282,42 @@ def get_active_quote(user_message, session_data):
             return quote
         except Quote.DoesNotExist:
             return {"message": f"⚠️ Quote `{quote_name}` not found. Please ensure it exists or create a new one."}
+        
+def delete_quote(user_message, session_data):
+    """Deleting Quote"""
+    response_message = ""
+    try:
+        #Looking for active quote
+        quote = get_active_quote(user_message, session_data)
+
+        # ⚠️ Verify if function return an error
+        if isinstance(quote, dict) and "message" in quote:
+            return quote
+        
+        logging.info(f"Deleting quote with name: {quote.name}...")
+
+        #If quote status is not in Draft Status
+        #print(f"\n\nQuote: {quote.__dict__}\n\n")
+        if quote.status == "Draft":
+            quote_name = quote.name  # Save quote name before to delete
+            quote.delete()
+
+            return {
+                "message": f"✅ Quote '{quote.name}' has been successfully deleted."
+            }
+        else:
+            return {
+                "message": f"⚠️ Quote '{quote.name}' can not be deleted because it's status is '{quote.status}'. Only 'Draft' quotes can be deleted."
+            }
+        
+
+    except Quote.DoesNotExist:
+        return {
+            "message": "⚠️ Quote doesn't exist."
+        }
+    
+    except Exception as e:
+        logging.exception("An unexpected error occurred while deleting the quote.")
+        return {
+            "message": f"❌ An unexpected error occurred: {str(e)}"
+        }

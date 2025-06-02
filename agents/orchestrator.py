@@ -96,6 +96,7 @@ def orchestrate_request(user_message, session_data):
     - "ShowQuoteDetails"
     - "UpdateQuoteLine"
     - "DeleteQuoteLine"
+    - "DeleteQuote"
     - "CreateProductRecord"
     - "UpdateProductRecord"
     - "SubmitForApproval" 
@@ -295,6 +296,7 @@ def get_action_map():
         "ShowQuoteDetails": quote_agent,
         "UpdateQuoteLine": quote_agent,
         "DeleteQuoteLine": quote_agent,
+        "DeleteQuote": quote_agent,
 
         # Product-related actions handled by product_agent
         "CreateProductRecord": product_agent,
