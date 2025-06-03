@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% load custom_filters %}
+
+{% block content %}
+<div class="container">
+  <h4>Custom Field Management</h4>
+
+  <ul class="tabs">
+    {% for object_type in models %}
+      <li class="tab col s2">
+        <a href="#tab-{{ object_type }}" {% if forloop.first %}class="active"{% endif %}>
+          {{ object_type }}
+        </a>
+      </li>
+    {% endfor %}
+  </ul>
+  
+  {% for object_type in models %}
+  <div id="tab-{{ object_type }}" class="col s12" style="{% if not forloop.first %}display: none;{% endif %}">
+    {% with fields_by_object_type|dict_get:object_type as obj_fields %}
+      {% include "partials/custom_fields_section.html" with object_name=object_type standard_fields=obj_fields.standard custom_fields=obj_fields.custom %}
+    {% endwith %}
+  </div>
+{% endfor %}
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const tabLinks = document.querySelectorAll('.tabs .tab a');
+
+    tabLinks.forEach(link => {
+      link.addEventListener('click', function (e) {
+        e.preventDefault();
+
+        // Hide all tab content sections
+        document.querySelectorAll('.col.s12[id^="tab-"]').forEach(div => {
+          div.style.display = 'none';
+        });
+
+        // Show the clicked tab's content
+        const targetId = this.getAttribute('href');
+        const target = document.querySelector(targetId);
+        if (target) {
+          target.style.display = 'block';
+        }
+
+        // Remove 'active' class from all tab links
+        tabLinks.forEach(t => t.classList.remove('active'));
+
+        // Add 'active' class to the clicked tab
+        this.classList.add('active');
+      });
+    });
+  });
+</script>
+{% endblock %}
