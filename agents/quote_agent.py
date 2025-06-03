@@ -27,6 +27,7 @@ from django.db.models import ForeignKey
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-3.5-turbo"
+# OPENAI_MODEL = "gpt-4"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
@@ -482,7 +483,7 @@ def extract_product_details(user_message):
     - discount (integer, percentage, default 0 if not specified)
 
     **Example Input:** 
-    "Add AI-CPQ-001 x 5 with 10% discount, AI-CPQ-002 x 2 with 5% discount, and AI-CPQ-003 x 10 with 15% discount."
+    "Add AI-CPQ-001 x 5 with 10% discount, or Agency PQ Solo x 2 with 5% discount, or Agent CPQ Team x 10 with 15% discount."
 
     **Expected JSON Output:**
     [
