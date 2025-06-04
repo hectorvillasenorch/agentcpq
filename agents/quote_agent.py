@@ -649,7 +649,7 @@ def update_quote_line(user_message, session_data):
                     "account": quote.account.name if quote.account else "N/A",
                     "opportunity": quote.opportunity.name if quote.opportunity else "N/A",
                     "quote_line_total_price": str(quote_line.total_price),
-                    "created_at": quote.created_at,
+                    "created_at": quote.created_at.isoformat(),
                     "line_items": [
                         {
                             "id": ql.id,
@@ -1333,12 +1333,18 @@ def delete_quote(user_message, session_data):
         #If quote status is not in Draft Status
         #print(f"\n\nQuote: {quote.__dict__}\n\n")
         if quote.status == "Draft":
-            quote_name = quote.name  # Save quote name before to delete
-            quote.delete()
+            if session_data["pending_action"] == "delete_quote_confirmed":
+                quote_name = quote.name  # Save quote name before to delete
+                quote.delete()
 
-            return {
-                "message": f"✅ Quote '{quote.name}' has been successfully deleted."
-            }
+                return {
+                    "message": f"✅ Quote '{quote_name}' has been successfully deleted."
+                }
+            else:
+                session_data["pending_action"] = "delete_quote_confirmation"
+                return{
+                    "message": f"⚠️ Are you sure you want to delete the quote <strong>{quote.name}</strong>? (Yes/No)"
+                }
         else:
             return {
                 "message": f"⚠️ Quote '{quote.name}' can not be deleted because it's status is '{quote.status}'. Only 'Draft' quotes can be deleted."

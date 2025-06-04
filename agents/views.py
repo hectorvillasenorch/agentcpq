@@ -30,7 +30,7 @@ def _handle_pending_action(pending_action, user_message, session_data):
         session_data["opportunity_name"] = user_message
         session_data["pending_action"] = None
         return {
-            "response": f"✅ Opportunity `{user_message}` added. "
+            "message": f"✅ Opportunity `{user_message}` added. "
                         "Would you like to add products now?"
         }
 
@@ -38,8 +38,28 @@ def _handle_pending_action(pending_action, user_message, session_data):
         session_data["product_sku"] = user_message
         session_data["pending_action"] = None
         return {
-            "response": f"✅ Product `{user_message}` added to the quote."
+            "message": f"✅ Product `{user_message}` added to the quote."
         }
+
+    if pending_action == "delete_quote_confirmation":
+        normalized_response = user_message.strip().lower()
+
+        if normalized_response == "yes":
+            session_data["pending_action"] = "delete_quote_confirmed"
+            return {
+                "message": "delete quote"
+            }
+        elif normalized_response == "no":
+            session_data["pending_action"] = None
+            return {
+                "message": "🛑 Quote deletion cancelled. The quote was not deleted."
+            }
+        else:
+            session_data["pending_action"] = None
+            return {
+                "message": "❌ Quote deletion process cancelled. Reason: The user did not respond with a valid answer (expected: 'yes' or 'no')"
+            }
+
 
     return None  # Unrecognized or no pending action to handle
 
@@ -84,10 +104,14 @@ def chat_with_gpt(request):
         logger.info(f"🔄 Resuming pending action: {pending_action}")
         result = _handle_pending_action(pending_action, user_message, session_data)
         if result:
-            # If the pending action was fulfilled, update session and return immediately
-            request.session["session_data"] = session_data
-            logger.info(f"[Pending Action Resolved] Response: {result['response']}")
-            return JsonResponse(result)
+            #If user confirmed deletion quote
+            if session_data["pending_action"] == "delete_quote_confirmed":
+                user_message = result["message"]
+            else:
+                # If the pending action was fulfilled, update session and return immediately
+                request.session["session_data"] = session_data
+                logger.info(f"[Pending Action Resolved] Response: {result['message']}")
+                return JsonResponse({"response": result})
 
     # --- 6. No pending action -> Orchestrate new user request ---
     try:

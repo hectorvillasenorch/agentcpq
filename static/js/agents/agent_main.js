@@ -318,6 +318,7 @@ function renderQuoteDetails(quote) {
 
   const formattedDate = `${month}/${day}/${year} ${hours}:${minutes}:${seconds}`;
 
+
   let html = `
       <div class="quote-container">
           <div class="quote-header">
@@ -333,11 +334,11 @@ function renderQuoteDetails(quote) {
           <table class="quote-table" data-quote-id="${quote.quote_name}">
               <thead>
                   <tr>
-                      <th>Product</th>
-                      <th>SKU</th>
+                      <th>SKU/Product</th>
                       <th>Quantity</th>
                       <th>Unit Price</th>
-                      <th>Discount</th>
+                      <th>Discount (%)</th>
+                      <th>Discount (USD)</th>
                       <th>Subscription</th>
                       <th>Term</th>
                       <th>Total Price</th>
@@ -348,10 +349,19 @@ function renderQuoteDetails(quote) {
   quote.line_items.forEach(item => {
     //console.log(item);
     //console.log(item.product);
+
+    //Convert percentage to USD
+    const unitPrice = parseFloat(item.unit_price.replace('$', ''));
+    const discountPercent = parseFloat(item.discount.replace('%', ''));
+
+    //Calculate value in dollars
+    const discountAmountUSD = ((unitPrice * discountPercent)/100).toFixed(2);
       html += `
           <tr>
-              <td>${item.product}</td>
-              <td>${item.sku}</td>
+              <td>
+                <div class="centered-td">${item.sku}</div>
+                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
+              </td>
               <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"></td>
               <td>
                 ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
@@ -359,7 +369,12 @@ function renderQuoteDetails(quote) {
                     currency: 'USD'
                 })}
               </td>
-              <td><input type="number" min="0" max="100" value="${item.discount.replace('%', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount" onchange="updateQuoteLine(this)"></td>
+              <td class="centered-td">
+               <input name="discountPercentage" type="number" min="0" max="100" value="${item.discount.replace('%', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount" onchange="updateQuoteLine(this)">
+              </td>
+              <td class="centered-td">
+               <input name="discountUSD" type="number" min="0" max="100" value="${discountAmountUSD}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount" data-quantity="${item.quantity}" data-unit_price="${item.unit_price}" data-discount="${item.discount}" onchange="updateQuoteLineDiscountUSD(this)">
+              </td>
               <td class="centered-td">
                 ${item.is_subscription ? '✅' : '❌'}
               </td>
@@ -483,11 +498,11 @@ function renderReadOnlyQuoteDetails(quote) {
           <table class="quote-table-read-only" data-quote-id="${quote.quote_name}">
               <thead>
                   <tr>
-                      <th>Product</th>
-                      <th>SKU</th>
+                      <th>SKU/Product</th>
                       <th>Quantity</th>
                       <th>Unit Price</th>
-                      <th>Discount</th>
+                      <th>Discount (%)</th>
+                      <th>Discount (USD)</th>
                       <th>Subscription</th>
                       <th>Term</th>
                       <th>Total Price</th>
@@ -496,10 +511,18 @@ function renderReadOnlyQuoteDetails(quote) {
               <tbody>`;
 
   quote.line_items.forEach(item => {
+    //Convert percentage to USD
+    const unitPrice = parseFloat(item.unit_price.replace('$', ''));
+    const discountPercent = parseFloat(item.discount.replace('%', ''));
+
+    //Calculate value in dollars
+    const discountAmountUSD = ((unitPrice * discountPercent)/100).toFixed(2);
       html += `
           <tr>
-              <td>${item.product}</td>
-              <td>${item.sku}</td>
+              <td>
+                <div class="centered-td">${item.sku}</div>
+                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
+              </td>
               <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" disabled></td>
               <td>
                 ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
@@ -507,7 +530,12 @@ function renderReadOnlyQuoteDetails(quote) {
                     currency: 'USD'
                 })}
               </td>
-              <td><input type="number" min="0" max="100" value="${item.discount.replace('%', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount" disabled></td>
+              <td class="centered-td">
+               <input name="discountPercentage" type="number" min="0" max="100" value="${item.discount.replace('%', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount" onchange="updateQuoteLine(this)" disabled>
+              </td>
+              <td class="centered-td">
+               <input name="discountUSD" type="number" min="0" max="100" value="${discountAmountUSD}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount" data-quantity="${item.quantity}" data-unit_price="${item.unit_price}" data-discount="${item.discount}" onchange="updateQuoteLineDiscountUSD(this)" disabled>
+              </td>
               <td class="centered-td">
                 ${item.is_subscription ? '✅' : '❌'}
               </td>
@@ -602,13 +630,16 @@ document.addEventListener("change", (event) => {
 /**
 * ✅ Update quote line and reflect changes in UI
 */
-
 async function updateQuoteLine(input) {
     const quoteId = input.dataset.quote;
     const sku = input.dataset.sku;
     const field = input.dataset.field;
-    const newValue = input.value.trim();
+    let newValue = input.value.trim();
     const quoteLineId = input.dataset.quotelineId;
+
+    if (newValue <= 0){
+      alert("⚠️ Invalid quantity or unit price.");
+    }
 
     if (!quoteId || !sku || !field) {
         console.warn("⚠️ Missing data attributes.");
@@ -647,6 +678,117 @@ async function updateQuoteLine(input) {
 
                     //3. Upgrade the DOM immediately
                     totalCell.textContent = formattedTotal;
+                }
+
+                //Update discountUSD input
+                const discountUSDInput = row.querySelector(`input[name="discountUSD"][data-sku="${item.sku}"]`);
+                if (discountUSDInput) {
+                    const unitPrice = parseFloat(discountUSDInput.dataset.unit_price.replace('$', ''));
+
+                    const discountPercentStr = item.discount || "0%";
+                    const discountPercent = parseFloat(discountPercentStr.replace('%', ''));
+
+                    // Calculate discount
+                    const discountUSD = (discountPercent / 100) * unitPrice;
+
+                    discountUSDInput.value = discountUSD.toFixed(2);
+                }
+            });
+
+            //Finally we update the Net Amount
+            
+            const quoteContainer = input.closest(".quote-container");
+            const netAmountParagraph = quoteContainer.querySelector(".total-amount");
+
+            if (netAmountParagraph) {
+
+                //1. Get the Net Amount from quote
+                const totalNetAmount = parseFloat(updatedQuote.net_amount);
+
+                //2. Formatted
+                const formattedTotalNetAmount = `$${totalNetAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+                netAmountParagraph.textContent = `💰 Net Amount: ${formattedTotalNetAmount}`;
+                console.log("Se actualiza el Net Amount");
+            }
+            alert("✅ Quote updated successfully!");
+        } else {
+            alert("⚠️ Failed to update quote.");
+        }
+    } catch (error) {
+        console.error("❌ Error updating quote line:", error);
+        alert("❌ Failed to update quote.");
+    }
+}
+
+/*
+* Update Quote Line when discount USD input is modified
+*/
+async function updateQuoteLineDiscountUSD(input) {
+    const quoteId = input.dataset.quote;
+    const sku = input.dataset.sku;
+    const field = input.dataset.field;
+    let newValue = input.value.trim();
+    const quoteLineId = input.dataset.quotelineId;
+    const unitPrice = parseFloat(input.dataset.unit_price.replace('$', '')); // por si viene como string tipo "$150"
+
+    if ((newValue <= 0) || (newValue > unitPrice)){
+      alert("⚠️ Invalid quantity or unit price.");
+    }
+
+    if (input.name == "discountUSD"){
+      
+      const discountUSD = parseFloat(input.value);
+
+      const newPercentage = (discountUSD / unitPrice) * 100;
+
+      newValue = newPercentage.toFixed(2);
+    }
+
+    if (!quoteId || !sku || !field) {
+        console.warn("⚠️ Missing data attributes.");
+        return;
+    }
+
+    console.log(`🔄 Field Changed: ${field}, SKU: ${sku}, New Value: ${newValue}, Quote: ${quoteId}, QuoteLine: ${quoteLineId}`);
+
+    const updateData = [{ sku, field, value: newValue, quote_line_id: quoteLineId, hiddenMessage: true }];
+    const userMessage = `Update Quote Line: ${JSON.stringify(updateData)}`;
+
+    try {
+        const response = await fetch("/agents/chat/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: userMessage })
+        });
+
+        const data = await response.json();
+        console.log("✅ Server Response:", data);
+
+        if (data.response && data.response.quote_details) {
+            const updatedQuote = data.response.quote_details;
+
+            //First we update very single quote line total price
+            const row =input.closest("tr");
+
+            updatedQuote.line_items.forEach(item => {
+                const totalCell = row.querySelector(`.total-price[data-sku="${sku}"]`);
+                if (totalCell) {
+                    //1. Get the total price from quote line
+                    const total = parseFloat(item.total_price);
+
+                    //2. Formatted
+                    const formattedTotal = `$${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+                    //3. Upgrade the DOM immediately
+                    totalCell.textContent = formattedTotal;
+                }
+                
+                if (row) {
+                  const discountPercentInput = row.querySelector(`input[name^="discountPercentage"][data-sku="${sku}"]`);
+                  if (discountPercentInput) {
+                    discountPercentInput.value = newValue;
+                  }
                 }
             });
 
@@ -757,11 +899,11 @@ function showTemporaryQuoteDetails(quote) {
           <table class="quote-table" data-quote-id="${quote.quote_name}">
               <thead>
                   <tr>
-                      <th>Product</th>
-                      <th>SKU</th>
+                      <th>SKU/Product</th>
                       <th>Quantity</th>
                       <th>Unit Price</th>
-                      <th>Discount</th>
+                      <th>Discount (%)</th>
+                      <th>Discount (USD)</th>
                       <th>Subscription</th>
                       <th>Term</th>
                       <th>Total Price</th>
@@ -772,25 +914,38 @@ function showTemporaryQuoteDetails(quote) {
   quote.line_items.forEach(item => {
     //console.log(item);
     //console.log(item.product);
+    //Convert percentage to USD
+    const unitPrice = parseFloat(item.unit_price.replace('$', ''));
+    const discountPercent = parseFloat(item.discount.replace('%', ''));
+
+    //Calculate value in dollars
+    const discountAmountUSD = ((unitPrice * discountPercent)/100).toFixed(2);
       html += `
           <tr>
-              <td>${item.product}</td>
-              <td>${item.sku}</td>
-              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"></td>
               <td>
+                <div class="centered-td">${item.sku}</div>
+                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
+              </td>
+              <td class="centered-td">${item.quantity}</td>
+              <td class="centered-td">
                 ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
                     style: 'currency',
                     currency: 'USD'
                 })}
               </td>
-              <td><input type="number" min="0" max="100" value="${item.discount.replace('%', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount" onchange="updateQuoteLine(this)"></td>
+              <td class="centered-td">
+              ${item.discount}
+              </td>
+              <td class="centered-td">
+              $${discountAmountUSD}
+              </td>
               <td class="centered-td">
                 ${item.is_subscription ? '✅' : '❌'}
               </td>
               <td class="centered-td">
                 ${item.term || '---'}
               </td>
-              <td class="total-price" data-sku="${item.sku}">
+              <td class="centered-td" class="total-price" data-sku="${item.sku}">
                 ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
                     style: 'currency',
                     currency: 'USD'
