@@ -23,8 +23,7 @@ logging.basicConfig(level=logging.DEBUG)
 openai.log = "warning"
 
 def handle_user_request(user_message, session_data):
-    user = User.objects.get(username="Admin") 
-
+    user = User.objects.get(username="admin") 
     print(session_data); #MODIFICACION
 
     if should_reset_session(user_message):
@@ -56,7 +55,8 @@ def orchestrate_request(user_message, session_data):
     
     session_id = session_data.get("session_id")
     # ⚠️ Use a real user later; hardcode for now
-    user = User.objects.get(username="Admin")
+
+    user = User.objects.get(username="admin")
 
     if not session_id:
         chat_session = ChatSession.objects.create(
@@ -101,6 +101,8 @@ def orchestrate_request(user_message, session_data):
     - "ProvideDates"
     - "ShowQuoteDetails"
     - "UpdateQuoteLine"
+    - "DeleteQuoteLine"
+    - "DeleteQuote"
     - "CreateProductRecord"
     - "UpdateProductRecord"
     - "SubmitForApproval" 
@@ -140,7 +142,7 @@ def orchestrate_request(user_message, session_data):
         hiddenMessage = result.get("hiddenMessage", False)
 
         for key, value in result.items():
-            if key not in ("message", "session_id", "hiddenMessage"):
+            if key not in ("message", "session_id", "hiddenMessage", "temporaryMessage", "update_details", "iterations"):
                 agent_message += f"\n\n📦 {key}:\n{json.dumps(value, indent=2)}"
 
         ChatMessage.objects.create(
@@ -163,7 +165,7 @@ def orchestrate_request_simulation(user_message, session_data):
     
     session_id = session_data.get("session_id")
     # ⚠️ Use a real user later; hardcode for now
-    user = User.objects.get(username="Admin")
+    user = User.objects.get(username="admin")
 
     if not session_id:
         chat_session = ChatSession.objects.create(
@@ -190,7 +192,7 @@ def orchestrate_request_simulation(user_message, session_data):
         
         agent_message = result.get("message", "")
 
-        hiddenMessage = result.get("hiddenMessage", "False")
+        hiddenMessage = result.get("hiddenMessage", False)
 
         for key, value in result.items():
             if key not in ("message", "session_id", "hiddenMessage"):
@@ -299,6 +301,8 @@ def get_action_map():
         "ProvideDates": quote_agent,
         "ShowQuoteDetails": quote_agent,
         "UpdateQuoteLine": quote_agent,
+        "DeleteQuoteLine": quote_agent,
+        "DeleteQuote": quote_agent,
 
         # Product-related actions handled by product_agent
         "CreateProductRecord": product_agent,

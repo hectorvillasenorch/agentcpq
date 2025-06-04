@@ -22,8 +22,10 @@ urlpatterns = [
     path("admin/custom-fields/", custom_fields_view, name="custom_fields"),
     path('admin/custom-fields/create/', create_custom_field, name='create_custom_field'),
     path('admin/company-information', get_company_information, name='get_company_information')
-
+    path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote')
 ]
+
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
