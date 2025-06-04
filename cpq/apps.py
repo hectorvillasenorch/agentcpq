@@ -4,3 +4,6 @@ from django.apps import AppConfig
 class CpqConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "cpq"
+    
+    def ready(self):
+        import cpq.signals 

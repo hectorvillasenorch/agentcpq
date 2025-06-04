@@ -1,8 +1,23 @@
+@font-face {
+  font-family: 'Euclid Circular A';
+  src: url('../fonts/Euclid\ Circular\ A\ Bold.ttf') format('truetype');
+  font-weight: bold;
+  font-style: normal;
+}
 /* === Dashboard Layout === */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&display=swap');
+
 .dashboard-container {
   display: flex;
   height: 100vh;
   overflow: hidden;
+}
+h2{
+  font-family: "Euclid Circular A", sans-serif !important;
+  font-optical-sizing: auto;
+  font-weight: 700;
+  font-style: normal;
+  color: #fc6a3d !important;
 }
 
 /* === Sidebar (Responsive) === */
@@ -19,7 +34,9 @@
   transition: transform 0.3s ease-in-out;
 
   /* ✅ Gradient from black to dark blue */
-  background: linear-gradient(to bottom, #464646, #1c1c1c, #292929);
+  /* background: linear-gradient(135deg, #4b58b7, #182848); */
+  background: #182848;
+ 
 }
 /* === Chat Session List === */
 .session-list {

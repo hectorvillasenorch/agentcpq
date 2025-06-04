@@ -21,7 +21,7 @@
                 <i class="material-icons">dashboard</i> AgentCPQ
             </div>
             <a href="{% url 'dashboard' %}?view=agents">
-                <i class="material-icons">smart_toy</i> Agents
+                <i class="material-icons">smart_toy</i> AgentCPQ
             </a>
             <a href="{% url 'dashboard' %}?view=products">
                 <i class="material-icons">inventory_2</i> Products
@@ -36,7 +36,7 @@
             <div class="session-list">
                 <p class="session-list-title">Chat History</p>
                 {% for chat in chat_sessions %}
-                    <a href="#" class="chat-history-item" data-session-id="{{ chat.session_id }}">
+                    <a href="{% url 'dashboard' %}?view=agents&session_id={{ chat.session_id }}" class="chat-history-item" data-session-id="{{ chat.session_id }}">
                         <i class="material-icons">chat</i>
                         {{ chat.title|default:"Untitled"|truncatechars:24 }}
                     </a>

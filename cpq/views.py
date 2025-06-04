@@ -4,6 +4,8 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt 
 from django.apps import apps
 from salesforce.models import SalesforceToken
+from django.core.serializers.json import DjangoJSONEncoder
+import json
 
 def product_list(request):
     """Fetch all products and display them in a table."""
@@ -34,6 +36,9 @@ MODEL_CHOICES = {
     "Opportunity": "Opportunity",  # ✅ Use class name, not table name
     "Quote": "Quote",
     "QuoteLine": "QuoteLine",
+    "Product": "Product",
+    "Account": "Account",
+    "Contact": "Contact",
 }
 def field_mapping_view(request):
     """Dynamically fetch schema fields for the selected CRM and object type."""
@@ -44,6 +49,8 @@ def field_mapping_view(request):
 
     if selected_model not in MODEL_CHOICES:
         return JsonResponse({"error": "Invalid object type"}, status=400)
+    
+    print("🔍 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> selected_model =", selected_model)
 
     # ✅ Get the correct model class dynamically
     ModelClass = apps.get_model('cpq', MODEL_CHOICES[selected_model])
@@ -54,10 +61,22 @@ def field_mapping_view(request):
         m.local_field: m.crm_field
         for m in SystemFieldMapping.objects.filter(crm=selected_crm, field_type=selected_model)
     }
+    alias_map = {
+        "Deal": "Opportunity",
+        "Company": "Account",
+        "Contact": "Contact",
+        "Product": "Product",
+        "Opportunity": "Opportunity",
+        "Account": "Account",
+        "line_items": "line_items",
+    }
+    selected_model_raw = request.GET.get("object_type", "Opportunity")
+    selected_model = alias_map.get(selected_model_raw, selected_model_raw)
 
     return render(request, "field_mapping.html", {
-        "local_fields": local_fields,
-        "mappings": mappings,
+        "local_fields": json.dumps(local_fields, cls=DjangoJSONEncoder),
+        "mappings": mappings,  # ✅ Raw dict for get_item filter
+        "mappings_json": json.dumps(mappings, cls=DjangoJSONEncoder),  # ✅ For JS
         "selected_crm": selected_crm,
         "selected_model": selected_model,
         "available_models": MODEL_CHOICES.keys(),
@@ -93,3 +112,24 @@ def save_field_mappings(request):
         })
 
     return JsonResponse({"success": False, "message": "Invalid request."})
+
+
+@csrf_exempt
+def set_primary_quote(request, quote_id):
+    if request.method == "POST":
+        try:
+            quote = Quote.objects.select_related("opportunity").get(id=quote_id)
+            opportunity_id = quote.opportunity_id
+
+            # Clear existing primary flags in the same opportunity
+            Quote.objects.filter(opportunity_id=opportunity_id).update(hs_primary=False)
+
+            # Set this quote as primary
+            quote.hs_primary = True
+            quote.save()
+
+            return JsonResponse({"success": True})
+        except Quote.DoesNotExist:
+            return JsonResponse({"error": "Quote not found"}, status=404)
+
+    return JsonResponse({"error": "Invalid method"}, status=405)

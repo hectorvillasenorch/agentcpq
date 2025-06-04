@@ -18,8 +18,9 @@ from django.http import JsonResponse
 from django.db import models
 from agents.approvals_agent import get_approval_status
 from django.db.models import Max
+
 from django.forms.models import model_to_dict
-from django.db.models import ForeignKey
+from django.db.models import ForeignKey, Q
 
 
 # ✅ Load environment variables
@@ -51,8 +52,12 @@ def quote_agent(action, user_message, session_data):
 
 def create_quote(user_message, session_data): 
     """Handles quote creation while preserving context."""
-    extracted_details = extract_quote_details(user_message)
-    logging.info(f"\n\nDetails: {extracted_details}\n\n")
+
+
+    extracted_details = extract_quote_details(user_message)  
+    # extracted_details = parse_gpt_response(gpt_response)
+    logging.warning("❗⚠️⚠️⚠️⚠️⚠️⚠️ extracted_details was None. GPT Response: %s", extracted_details)
+       
     account_name = extracted_details.get("account", session_data.get("account", "")).strip()
     opportunity_name = extracted_details.get("opportunity", session_data.get("opportunity", "")).strip()
     
@@ -69,7 +74,7 @@ def create_quote(user_message, session_data):
     if session_data.get("pending_action") == "confirm_opportunity":
         session_data["opportunity"] = opportunity_name
         session_data["pending_action"] = "add_product"  
-        return {"message": f"✅ Opportunity `{opportunity_name}` added. Would you like to add more products now?"}
+        return {"message": f"✅ Opportunity {opportunity_name} added. Would you like to add more products now?"}
 
     if not opportunity_name:
         return {"message": "📝 Please provide an opportunity name before creating the quote."}
@@ -103,10 +108,10 @@ def create_quote(user_message, session_data):
     if not extracted_products:
         logging.info("🟡 No products provided in initial quote creation.")
 
-        session_data["pending_action"] = "add_product"  # ✅ Ensure we move to the next step
+        session_data["pending_action"] = "add_product"
 
         return {
-            "message": f"✅ Quote `{quote.name}` created for {account_name} under opportunity `{opportunity_name}`. Would you like to add more products now?",
+            "message": f"✅ Quote {quote.name} created for {account_name} under opportunity {opportunity_name}. Would you like to add more products now?",
             "quote_id": quote.id
         }
 
@@ -118,14 +123,16 @@ def create_quote(user_message, session_data):
 
         for product_data in extracted_products:
             sku = product_data.get("sku")
+            name = product_data.get("name")
             quantity = product_data.get("quantity", 1)
             discount = product_data.get("discount", 0)
 
             # ✅ Validate product exists
             try:
-                product = Product.objects.get(sku=sku)
+                # product = Product.objects.get(sku=sku)
+                product = Product.objects.filter(Q(sku=sku) | Q(name=name)).first()
             except Product.DoesNotExist:
-                logging.warning(f"⚠️ Product `{sku}` not found. Skipping...")
+                logging.warning(f"⚠️ Product {sku} not found. Skipping...")
                 continue  # Skip this product and move to the next
 
             # ✅ Ensure proper rounding for calculations
@@ -160,7 +167,7 @@ def create_quote(user_message, session_data):
                 logging.info(f"✅ Total Price Updated in DB: {quote_line.total_price}")
 
             total_added_price += total_price
-            added_products.append(f"{quantity}x `{sku}` with {discount}% discount")
+            added_products.append(f"{quantity}x {sku} with {discount}% discount")
 
         # ✅ Update quote net amount
         quote.net_amount += total_added_price
@@ -177,10 +184,10 @@ def create_quote(user_message, session_data):
         approval_suggestion = get_approval_status("", "", quote.id, "")
 
         if added_products:
-            #response_message = f"✅ Added {quantity}x {sku} to quote `{quote.name}`. Net amount updated to ${quote.net_amount:.2f}. Would you like to add more products?"
+            #response_message = f"✅ Added {quantity}x {sku} to quote {quote.name}. Net amount updated to ${quote.net_amount:.2f}. Would you like to add more products?"
             response_message = (
-                f"✅ Quote `{quote.name}` created for {account_name} under opportunity `{opportunity_name}`.\n"
-                f"✅ Added {quantity}x {sku} to quote `{quote.name}`. Net amount updated to ${quote.net_amount:.2f}."
+                f"✅ Quote {quote.name} created for {account_name} under deal {opportunity_name}.\n"
+                f"✅ Added {quantity}x {sku} to quote {quote.name}. Net amount updated to ${quote.net_amount:.2f}."
                 "Would you like to add more products?"
             )
 
@@ -215,9 +222,11 @@ def add_product_to_quote(user_message, session_data):
     # Looking for active quote
     quote = get_active_quote(user_message, session_data)
 
+
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
         return quote
+    
 
     # ✅ Extract multiple product details
     extracted_products = extract_product_details(user_message)
@@ -246,7 +255,7 @@ def add_product_to_quote(user_message, session_data):
         try:
             product = Product.objects.get(sku=sku)
         except Product.DoesNotExist:
-            logging.warning(f"⚠️ Product `{sku}` not found. Skipping...")
+            logging.warning(f"⚠️ Product {sku} not found. Skipping...")
             continue  # Skip this product and move to the next
 
         # ✅ Check if product already exists in the quote
@@ -319,7 +328,7 @@ def add_product_to_quote(user_message, session_data):
             logging.info(f"✅ Total Price Updated in DB: {quote_line.total_price}")
 
         total_added_price += total_price
-        added_products.append(f"{quantity}x `{sku}` with {discount}% discount")
+        added_products.append(f"{quantity}x {sku} with {discount}% discount")
 
     #If AI Model indetify a product but it does not exist
     if not added_products:
@@ -346,6 +355,7 @@ def add_product_to_quote(user_message, session_data):
             response_message += f"✅ Added {product} to quote `{quote.name}`.<br>"
         
         response_message += f"<br><br>💰 Net amount updated to ${quote.net_amount:,.2f}. Would you like to add more products?"
+
     
     # If an approval suggestion exists, append it to the message
     if "message" in approval_suggestion:
@@ -473,6 +483,7 @@ def extract_product_details(user_message):
     
     **Expected fields per product:**
     - sku (string, unique identifier)
+    - name (string, product name)
     - quantity (integer, default 1 if not specified)
     - discount (integer, percentage, default 0 if not specified)
 
@@ -481,9 +492,9 @@ def extract_product_details(user_message):
 
     **Expected JSON Output:**
     [
-        {{"sku": "AI-CPQ-001", "quantity": 5, "discount": 10}},
-        {{"sku": "AI-CPQ-002", "quantity": 2, "discount": 5}},
-        {{"sku": "AI-CPQ-003", "quantity": 10, "discount": 15}}
+        {{"sku": "SYM-AGCPQ-SOLO","name": "AgentCPQ Solo", "quantity": 5, "discount": 10}},
+        {{"sku": "SYM-AGCPQ-TEAM ","name": "AgentCPQ Team", "quantity": 2, "discount": 5}},
+        {{"sku": "SYM-ACTFEE-STANDARD","name": "AgentCPQ Activation Fee", "quantity": 10, "discount": 15}}
     ]
 
     **User Request:** "{user_message}"
@@ -507,7 +518,7 @@ def extract_product_details(user_message):
         # ✅ Ensure valid JSON response
         try:
             extracted_products = json.loads(raw_response)
-            if isinstance(extracted_products, list) and all("sku" in p and "quantity" in p and "discount" in p for p in extracted_products):
+            if isinstance(extracted_products, list) and all("sku" in p and "name" in p and "quantity" in p and "discount" in p for p in extracted_products):
                 return extracted_products
             else:
                 logging.warning("⚠️ GPT response is not in expected format.")
@@ -605,7 +616,7 @@ def extract_quote_details(user_message):
     - Subscription Start/End Dates (if applicable)
     
     Return a JSON object with these keys:
-    {{"account": "", "opportunity": "", "products": [{{"sku": "", "quantity": 1, "discount": 0}}], "start_date": "", "end_date": ""}}.
+    {{"account": "", "opportunity": "", "products": [{{"sku": "","name": "", "quantity": 1, "discount": 0}}], "start_date": "", "end_date": ""}}.
     
     User Request: "{user_message}"
     """

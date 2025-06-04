@@ -1,23 +1,37 @@
 from django.shortcuts import render
-from cpq.models import Product, Quote  # ✅ Importing models, NOT views
+from cpq.models import Product, Quote,QuoteLine # ✅ Importing models, NOT views
+from cpq.views import set_primary_quote
 from salesforce.models import SalesforceToken
 from hubspot.models import HubspotToken
 from django.contrib.auth.models import User
 from agents.models import ChatSession, ChatMessage
 from django.utils.timezone import now
 import requests
+from collections import defaultdict
+from django.db.models import Prefetch
 
 def dashboard(request):
     view = request.GET.get("view", "agents")
     session_id = request.GET.get("session_id")
 
     products = Product.objects.all() if view == "products" else None
-    quotes = Quote.objects.select_related("opportunity__account").all() if view == "quotes" else None
+
+    quotes = Quote.objects.select_related("opportunity__account").prefetch_related(
+    Prefetch("quote_lines", queryset=QuoteLine.objects.select_related("product"), to_attr="lines")
+    )
+
+    grouped_quotes = defaultdict(list)
+    for quote in quotes:
+        grouped_quotes[quote.opportunity].append(quote)
+
+    
 
     is_authenticated = SalesforceToken.objects.exists()
     is_setup = view == "setup"
 
-    user = User.objects.get(username="Admin")  # or request.user
+
+    user = User.objects.get(username="admin")  # or request.user
+    
     chat_sessions = ChatSession.objects.filter(user=user).order_by("-created_at")
 
     # ✅ Load chat messages for a selected session
@@ -45,7 +59,7 @@ def dashboard(request):
 
     return render(request, "dashboard.html", {
         "products": products,
-        "quotes": quotes,
+        "grouped_quotes": grouped_quotes.items(),
         "is_setup": is_setup,
         "is_authenticated": is_authenticated,
         "hubspot_connected": hubspot_connected,

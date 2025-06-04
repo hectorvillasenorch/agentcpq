@@ -245,8 +245,8 @@ function renderQuoteDetails(quote) {
               <p><strong>Status:</strong> ${quote.status}</p>
           </div>
           <div class="quote-details">
-              <p><strong>Account:</strong> ${quote.account}</p>
-              <p><strong>Opportunity:</strong> ${quote.opportunity}</p>
+              <p><strong>Company:</strong> ${quote.account}</p>
+              <p><strong>Deal:</strong> ${quote.opportunity}</p>
               <p><strong>Created At:</strong> ${quote.created_at}</p>
           </div>
           <h4>📦 Line Items</h4>
