@@ -227,10 +227,20 @@ def add_product_to_quote(user_message, session_data):
     total_added_price = Decimal(0)
     added_products = []
 
-    for product_data in extracted_products:
+    for index, product_data in enumerate(extracted_products, start=1):
         sku = product_data.get("sku")
         quantity = product_data.get("quantity", 1)
         discount = product_data.get("discount", 0)
+
+        if int(quantity) <= 0:
+            return {
+                "message": "⚠️ Quantity cannot be less than or equal to 0. Please enter a valid quantity."
+            }
+        
+        if float(discount) < 0:
+            return {
+                "message": "⚠️ Discount can not be less than 0. Please enter a valid discount"
+            }
 
         # ✅ Validate product exists
         try:
@@ -240,7 +250,7 @@ def add_product_to_quote(user_message, session_data):
             continue  # Skip this product and move to the next
 
         # ✅ Check if product already exists in the quote
-        existing_line = QuoteLine.objects.filter(quote=quote, product=product, additional_discount=Decimal(discount).quantize(Decimal("0.01"))).first()
+        existing_line = QuoteLine.objects.filter(quote=quote, product=product).first()
 
         if existing_line:
             logging.info(f"🔁 Product `{sku}` already in quote. Updating instead of creating.")
@@ -255,13 +265,25 @@ def add_product_to_quote(user_message, session_data):
                 "hiddenMessage": True
             }]
 
+            # Only add discount if discount is different than 0
+            if discount != 0:
+                update_payload.append({
+                    "sku": sku,
+                    "field": "discount",
+                    "value": str(discount),
+                    "quote_line_id": str(existing_line.id),
+                    "hiddenMessage": True
+                })
+
             user_message = f"Update Quote Line: {json.dumps(update_payload)}"
 
-            add_existing_product_to_quote_line(user_message ,session_data)
+            add_existing_product_to_quote_line(user_message, session_data)
+
             added_products.append(f"{quantity}x `{sku}` with {discount}% discount")
 
-            # ✅ Refrescar el quote para traer el nuevo net_amount de la base de datos
+            # ✅ Refresh quote to get new net_amount from database
             quote.refresh_from_db()
+            existing_line.refresh_from_db()
 
             continue
 
@@ -329,7 +351,11 @@ def add_product_to_quote(user_message, session_data):
     if "message" in approval_suggestion:
         response_message += f"\n\n{approval_suggestion['message']}"
     
-        return {"message": response_message
+        return {
+            "message": response_message,
+            "update_details": get_quote_details(quote),
+            "temporaryMessage": True,
+            "iterations": index
         }
     else:
         return {
@@ -361,7 +387,7 @@ def apply_discount_to_quote_line(user_message, session_data):
 
     added_discounts = []
 
-    for discount_data in extracted_discounts:
+    for index, discount_data in enumerate(extracted_discounts, start=1):
         sku = discount_data.get("sku")
         discount = discount_data.get("discount", 0)
 
@@ -431,10 +457,12 @@ def apply_discount_to_quote_line(user_message, session_data):
     if "message" in approval_suggestion:
         response_message += f"\n\n{approval_suggestion['message']}"
     
-    return {"message": response_message
-        }
-
-
+    return {
+        "message": response_message,
+        "update_details": response["quote_details"],
+        "temporaryMessage": True,
+        "iterations": index
+    }
 
 
     
@@ -976,9 +1004,9 @@ def get_editable_quoteline_fields():
     editable_fields = []
     for field in QuoteLine._meta.fields:
         if (
-            not isinstance(field, ForeignKey)  # Excluir claves foráneas
-            and field.editable  # Solo campos editables
-            and field.name not in ["id", "total_price"]  # Excluir campos calculados o claves
+            not isinstance(field, ForeignKey)  # No foreign keys
+            and field.editable  # Only editable fields
+            and field.name not in ["id", "total_price"]  # Not id or total_price
         ):
             editable_fields.append(field.name)
     return editable_fields
@@ -1060,7 +1088,7 @@ def delete_quote_line(user_message, session_data):
                 "message": "⚠️ GPT did not work well."
             }
         
-        for item in extracted_sku:
+        for index, item in enumerate(extracted_sku, start=1):
         
             sku = item["sku"]
             print(f"\n\n SKU: {sku}\n")
@@ -1094,7 +1122,10 @@ def delete_quote_line(user_message, session_data):
     set_active_quote_to_session_data(session_data, quote)
 
     return {
-        "message": response_message
+        "message": response_message,
+        "update_details": get_quote_details(quote),
+        "temporaryMessage": True,
+        "iterations": index
     }
 
 def format_currency(value):
@@ -1361,3 +1392,30 @@ def delete_quote(user_message, session_data):
         return {
             "message": f"❌ An unexpected error occurred: {str(e)}"
         }
+    
+
+def get_quote_details(quote):
+
+    return {
+        "quote_id": quote.id,
+        "quote_name": quote.name,
+        "net_amount": str(quote.net_amount),
+        "status": quote.status,
+        "account": quote.account.name if quote.account else "N/A",
+        "opportunity": quote.opportunity.name if quote.opportunity else "N/A",
+        "created_at": quote.created_at.isoformat(),
+        "line_items": [
+            {
+                "id": ql.id,
+                "product": ql.product.name,
+                "sku": ql.product.sku,
+                "quantity": ql.quantity,
+                "unit_price": str(ql.unit_price),
+                "total_price": str(ql.total_price),
+                "discount": f"{ql.additional_discount}%" if ql.additional_discount else "0%",
+                "is_subscription": ql.product.is_subscription,
+                "term": ql.product.term,
+            }
+            for ql in QuoteLine.objects.filter(quote=quote)
+        ]
+    }

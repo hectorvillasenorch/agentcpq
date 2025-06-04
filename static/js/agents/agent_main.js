@@ -189,7 +189,7 @@ async function sendMessage() {
         // ✅ Append the final response message to the chat
         appendMessage("agent", `<div class="senderagent">Agent: </div> <div class="message">${responseMessage}</div>`);
 
-        // ✅ Handle Temporary Quote Details After Update Quote Line
+        // ✅ Handle Temporary Quote Details After Update Quote Line, Add Product And Delete Quote Line Item
         if (data.response && data.response.update_details && data.response.temporaryMessage){
           const tempHtml = showTemporaryQuoteDetails(data.response.update_details);
           renderTemporaryMessage("agent", tempHtml, data.response.iterations);
@@ -328,7 +328,7 @@ function renderQuoteDetails(quote) {
           <div class="quote-details">
               <p><strong>Account:</strong> ${quote.account}</p>
               <p><strong>Opportunity:</strong> ${quote.opportunity}</p>
-              <p><strong>Created At:</strong>${formattedDate}</p>
+              <p><strong>Created At:</strong> ${formattedDate}</p>
           </div>
           <h4>📦 Line Items</h4>
           <table class="quote-table" data-quote-id="${quote.quote_name}">
@@ -857,7 +857,10 @@ function renderTemporaryMessage(className, htmlContent, iterations) {
 
     chatBox.scrollTop = chatBox.scrollHeight;
 
-    let time_to_set = iterations * 5000;
+    let time_to_set = 5000;
+    if (iterations) {
+        time_to_set = iterations * 5000;
+    }
 
     setTimeout(() => {
         tempMessage.remove();
