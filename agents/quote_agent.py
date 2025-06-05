@@ -38,7 +38,8 @@ def quote_agent(action, user_message, session_data):
         "AddProduct": add_product_to_quote,
         "GenerateQuoteDocument": generate_quote_pdf,
         "UpdateQuoteLine": update_quote_line,
-        "ApplyDiscount": apply_discount_to_quote_line,
+        "ApplyQuoteLineDiscount": apply_discount_to_quote_line,
+        "ApplyQuoteDiscount": apply_discount_to_quote,
         "DeleteQuoteLine": delete_quote_line,
         "DeleteQuote": delete_quote,
         # "ProvideDates": provide_dates,
@@ -474,7 +475,6 @@ def apply_discount_to_quote_line(user_message, session_data):
         "iterations": index
     }
 
-
     
 def extract_product_details(user_message):
     """Extract multiple product SKUs, quantities, and discounts from user input using GPT."""
@@ -603,6 +603,224 @@ def extract_discount_details(user_message):
 
     except Exception as e:
         logging.error(f"❌ Error extracting discount details: {str(e)}")
+        return None    
+    
+def apply_discount_to_quote(user_message, session_data):
+    """Applies a discount to quote based on the user message."""
+    logging.info("🔧 Applying discount to quote level...\n\n")
+
+    # Looking for active quote
+    quote = get_active_quote(user_message, session_data)
+
+    # ⚠️ Verify if function return an error
+    if isinstance(quote, dict) and "message" in quote:
+        return quote
+    
+    # ✅ Save quote in session data
+    set_active_quote_to_session_data(session_data, quote)
+
+    # ✅ Check if quote has quote line items
+    quote_lines = quote.quote_lines.all()
+
+    if not quote_lines.exists():
+        return {
+            "message": "⚠️ Error: The selected quote has no line items. Please add products to the quote before applying a discount."
+        }
+
+    response_message = ""
+        
+    # ✅ Extract multiple discount details
+    extracted_discounts = extract_quote_level_discount(user_message)
+    if not extracted_discounts or not isinstance(extracted_discounts, list):
+        return {"message": "⚠️ Error: Could not extract discount details. Please specify the discount."}
+
+    added_discounts = []
+
+    for index, discount_data in enumerate(extracted_discounts, start=1):
+        discount_value = discount_data.get("discount")
+        discount_type = discount_data.get("discount_type", 0)
+
+        #If LLM did not find a discount
+        if discount_value == "None":
+            return {
+                "message": "⚠️ Error: No discount was detected in your request. Please specify the discount to apply."
+            }
+        
+        #If LLM did not find a discount type
+        if discount_type == "None":
+            return {
+                "message": "⚠️ Error: No discount type was detected in your request. Please specify the type of discount you'd like to apply (e.g., percentage or dollars)."
+            }
+        
+        #Convert from string to numeric for validations
+        discount_numeric_value = Decimal(discount_value)
+        
+        if discount_type == "percentage" and not (0 < discount_numeric_value <= 100):
+            return {
+                "message": "⚠️ Error: Percentage discounts must be between 0 and 100."
+            }
+
+        if discount_type == "amount" and discount_numeric_value <= 0:
+            return {
+                "message": "⚠️ Error: Discount amount must be greater than 0."
+            }
+        
+        if discount_type not in ["percentage", "amount"]:
+            return {
+                "message": "⚠️ Error: Invalid discount type. Please use 'percentage' or 'amount'."
+            }
+    
+        quote_total = quote_lines.aggregate(total=Sum('total_price'))['total'] or 0
+
+        if quote_total == 0:
+            return {
+                "message": "⚠️ Error: Cannot apply amount-based discount. The quote total is zero."
+            }
+
+        if discount_type == "amount":
+            #SSave both values
+            discount_amount = Decimal(discount_value)
+            discount_percentage = (discount_amount / Decimal(quote_total)) * 100
+            discount_percentage = discount_percentage.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        
+        else:
+            #Discount_type = "percentage"
+            discount_percentage = Decimal(discount_value)
+            discount_amount = (discount_percentage / Decimal(100)) * Decimal(quote_total)
+            discount_amount = discount_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        # ✅ Apply the discount to the quote
+        quote.discount_type = discount_type
+        quote.discount_percentage = discount_percentage
+        quote.discount_amount = discount_amount
+        quote.save()
+
+        # ✅ Update net amount
+        update_quote_net_amount(quote)
+
+        # ✅ Update related opportunity
+        if quote.opportunity:
+            update_opportunity_net_amount(quote.opportunity)
+
+        added_discounts.append(f"Discount #{index}: {discount_value}% applied to Quote {quote.id}")
+
+    if not added_discounts:
+        response_message += "⚠️ Error: Something went wrong while trying to apply the discount."
+        return {
+            "message": response_message
+        }
+    
+    quote.refresh_from_db()
+    
+    response_message = ""
+
+    for discount in added_discounts:
+        response_message += f"✅ {discount} to quote `{quote.name}`.<br>"
+    
+    response_message += f"<br><br>💰 Net amount updated to ${quote.net_amount:,.2f}."
+
+    # ✅ Check if the quote requires approval after adding the product
+    approval_suggestion = get_approval_status("", "", quote.id, "")
+
+    response = get_quote_details(quote)
+    
+    # If an approval suggestion exists, append it to the message
+    if "message" in approval_suggestion:
+        response_message += f"\n\n{approval_suggestion['message']}"
+    
+    return {
+        "message": response_message,
+        "update_details": response,
+        "temporaryMessage": True,
+        "iterations": index
+    }
+    
+def extract_quote_level_discount(user_message):
+    """Extract discount for quote level discount."""
+
+    prompt = f"""
+    Extract only the discount amount from the user's request, which can be expressed either as a percentage (%) or a dollar value (USD or $).
+
+    **Expected discount fields:**
+    - discount (integer or float): The numeric value of the discount specified by the user (e.g., 10 for "10%" or 50 for "$50").
+    - discount_type (string): Indicates the type of discount. ("percentage"  if the user specified the discount as a percentage (e.g., "10%"). "amount"  if the user specified the discount in dollars (e.g., "$50", "USD 50"). "None" if the type cannot be determined.)
+
+    [If no discount is found in the message, return None]
+    [If no discount_type is found in the message, return None]
+
+    **Example Input:**
+    "Apply a 5% discount to the quote."
+
+    **Expected JSON Output:**
+    [
+        {{"discount": "5", "discount_type": "percentage"}}
+    ]
+
+    **Example Input:**
+    "Apply a $40 discount."
+
+    **Expected JSON Output:**
+    [
+        {{"discount": "40", "discount_type": "amount"}}
+    ]
+
+    **Example Input:**
+    "Update a 15% off to this quote."
+
+    **Expected JSON Output:**
+    [
+        {{"discount": "15", "discount_type": "percentage"}}
+    ]
+
+    **Example Input with no discount:**
+    "Apply a discount to quote."
+    
+    **Expected JSON Output:**
+    [
+        {{"discount": "None", "discount_type": "amount"}}
+    ]
+
+    **Example Input with no discount type:**
+    "Apply a 30 discount to the quote."
+
+    **Expected JSON Output:**
+    [
+        {{"discount": "30", "discount_type": "None"}}
+    ]
+
+
+    **User Request:** "{user_message}"
+
+    **Return a valid JSON array only of discount objects. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Extract structured discount details applied at the quote level (not per product line)."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        # ✅ Extract raw response
+        raw_response = response.choices[0].message.content.strip()
+        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+
+        # ✅ Ensure valid JSON response
+        try:
+            extracted_discounts = json.loads(raw_response)
+            if isinstance(extracted_discounts, list) and all("discount" in p and "discount_type" in p for p in extracted_discounts):
+                return extracted_discounts
+            else:
+                logging.warning("⚠️ GPT response is not in expected format.")
+                return None
+        except json.JSONDecodeError:
+            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
+            return None
+
+    except Exception as e:
+        logging.error(f"❌ Error extracting discount quote details: {str(e)}")
         return None    
 
 def extract_quote_details(user_message):
@@ -819,11 +1037,19 @@ def update_quote_net_amount(quote):
     """Recalculate and update the quote's net amount based on all quote lines."""
     try:
         # ✅ Fetch total from all related QuoteLines
-        total_net_amount = QuoteLine.objects.filter(quote=quote).aggregate(total=Sum('total_price'))['total']
-        #print(f"\n\nTotal Net Amount: {total_net_amount}")
+        quote_total = quote.get_total_amount()
+
+        if quote.discount_type == "percentage":
+            discount = quote.discount_percentage / Decimal(100)
+            quote.net_amount = quote_total * (1 - discount)
+        elif quote.discount_type == "amount":
+            quote.net_amount = quote_total - quote.discount_amount
+        else:
+            quote.net_amount = quote_total # Fallback without discount
 
         # ✅ Ensure we round to 2 decimal places
-        quote.net_amount = Decimal(total_net_amount or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        quote.net_amount = max(quote.net_amount, Decimal(0)) #Avoid negative values
+        quote.save()
 
         # ✅ Ensure the value is saved correctly
         Quote.objects.filter(id=quote.id).update(net_amount=quote.net_amount)
@@ -1043,13 +1269,11 @@ def show_quote_details(user_message, session_data):
         # ✅ Fetch related quote lines
         quote_lines = QuoteLine.objects.filter(quote=quote)
 
-        # ✅ Calculate the net amount dynamically
-        net_amount = quote_lines.aggregate(total=Sum(F('total_price')))['total'] or 0
-
         # ✅ Format the response
-        quote_details = {
+        quote_details = get_quote_details(quote)
+        quote_details2 = {
             "quote_name": quote.name,
-            "net_amount": f"${net_amount:.2f}",
+            "net_amount": f"${quote.net_amount:.2f}",
             "status": quote.status,
             "account": quote.account.name if quote.account else "N/A",
             "opportunity": quote.opportunity.name if quote.opportunity else "N/A",
