@@ -97,7 +97,8 @@ def orchestrate_request(user_message, session_data):
     - "CreateQuote"
     - "AddProduct"
     - "GenerateQuoteDocument"
-    - "ApplyDiscount"
+    - "ApplyQuoteDiscount"  # Apply discount to the entire quote
+    - "ApplyQuoteLineDiscount"   # Apply discount to a specific quote line item
     - "ProvideDates"
     - "ShowQuoteDetails"
     - "UpdateQuoteLine"
@@ -297,7 +298,8 @@ def get_action_map():
         "CreateQuote": quote_agent,
         "AddProduct": quote_agent,
         "GenerateQuoteDocument": quote_agent,
-        "ApplyDiscount": quote_agent,
+        "ApplyQuoteDiscount": quote_agent,
+        "ApplyQuoteLineDiscount": quote_agent,
         "ProvideDates": quote_agent,
         "ShowQuoteDetails": quote_agent,
         "UpdateQuoteLine": quote_agent,

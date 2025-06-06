@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 from decimal import Decimal
+from django.core.validators import MinValueValidator
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -159,7 +160,9 @@ class Quote(models.Model):
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Draft')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    additional_discount = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage")
+    discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
     expiration_date = models.DateField(null=True, blank=True) 
     notes = models.TextField(blank=True, null=True) 
     qteid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
@@ -202,7 +205,9 @@ class QuoteLine(models.Model):
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     special_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
+    discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage")
     additional_discount = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
     parent_quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="parent_quote_lines", blank=True, null=True)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     is_subscription = models.BooleanField(default=False)
