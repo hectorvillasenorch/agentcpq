@@ -359,8 +359,8 @@ function renderQuoteDetails(quote) {
       html += `
           <tr>
               <td>
-                <div class="centered-td">${item.sku}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
+                <div class="centered-td">${item.product}</div>
+                <div class="centered-td" style="color: gray; font-size: 0.65em">${item.sku}</div>
               </td>
               <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"></td>
               <td>
