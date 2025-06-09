@@ -97,8 +97,7 @@ def orchestrate_request(user_message, session_data):
     - "CreateQuote"
     - "AddProduct"
     - "GenerateQuoteDocument"
-    - "ApplyQuoteDiscount"  # Apply discount to the entire quote
-    - "ApplyQuoteLineDiscount"   # Apply discount to a specific quote line item
+    - "ApplyQuoteDiscount" (Use this when the user wants to apply a discount to the entire quote. These requests do **not** include a SKU like AICPQ-043.)
     - "ProvideDates"
     - "ShowQuoteDetails"
     - "UpdateQuoteLine"

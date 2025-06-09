@@ -21,7 +21,7 @@ urlpatterns = [
     path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote'),
     path("admin/custom-fields/", custom_fields_view, name="custom_fields"),
     path('admin/custom-fields/create/', create_custom_field, name='create_custom_field'),
-    path('admin/company-information', get_company_information, name='get_company_information')
+    path('admin/company-information', get_company_information, name='get_company_information'),
     path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote')
 ]
 
