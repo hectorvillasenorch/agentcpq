@@ -18,15 +18,16 @@ from django.http import JsonResponse
 from django.db import models
 from agents.approvals_agent import get_approval_status
 from django.db.models import Max
-
+from django.db.models import Q
 from django.forms.models import model_to_dict
-from django.db.models import ForeignKey, Q
+from django.db.models import ForeignKey
 
 
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-3.5-turbo"
+# OPENAI_MODEL = "gpt-4"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
@@ -53,12 +54,8 @@ def quote_agent(action, user_message, session_data):
 
 def create_quote(user_message, session_data): 
     """Handles quote creation while preserving context."""
-
-
-    extracted_details = extract_quote_details(user_message)  
-    # extracted_details = parse_gpt_response(gpt_response)
-    logging.warning("❗⚠️⚠️⚠️⚠️⚠️⚠️ extracted_details was None. GPT Response: %s", extracted_details)
-       
+    extracted_details = extract_quote_details(user_message)
+    logging.info(f"\n\nDetails: {extracted_details}\n\n")
     account_name = extracted_details.get("account", session_data.get("account", "")).strip()
     opportunity_name = extracted_details.get("opportunity", session_data.get("opportunity", "")).strip()
     
@@ -350,13 +347,11 @@ def add_product_to_quote(user_message, session_data):
 
     if added_products:
         response_message = ""
-
         for product in added_products:
             print(f"\n\n Products: {added_products}\n\n")
             response_message += f"✅ Added {product} to quote `{quote.name}`.<br>"
         
         response_message += f"<br><br>💰 Net amount updated to ${quote.net_amount:,.2f}. Would you like to add more products?"
-
     
     # If an approval suggestion exists, append it to the message
     if "message" in approval_suggestion:
@@ -488,7 +483,7 @@ def extract_product_details(user_message):
     - discount (integer, percentage, default 0 if not specified)
 
     **Example Input:** 
-    "Add AI-CPQ-001 x 5 with 10% discount, AI-CPQ-002 x 2 with 5% discount, and AI-CPQ-003 x 10 with 15% discount."
+    "Add AI-CPQ-001 x 5 with 10% discount, or Agency PQ Solo x 2 with 5% discount, or Agent CPQ Team x 10 with 15% discount."
 
     **Expected JSON Output:**
     [

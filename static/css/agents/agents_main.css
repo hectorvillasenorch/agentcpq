@@ -5,7 +5,7 @@ body {
 
 /* ✅ Quote Container */
 .quote-container {
-  width: 85%;
+  width: 95%;
   margin: 20px auto;
   padding: 20px;
   background: #ffffff;
@@ -24,10 +24,9 @@ body {
 }
 
 .quote-header h3 {
-  color: #0bdc2a;
+  color: #fc6a3e;
   margin: 0;
 }
-
 /* ✅ Quote Details */
 .quote-details p {
   margin: 5px 0;
@@ -47,14 +46,14 @@ body {
 }
 
 .quote-table th {
-  background: #0bdc2a;
+  background: #313133;
   color: white;
   padding: 12px;
   text-align: center;
 }
 
 .quote-table-read-only th {
-  background: #737d74;
+  background: #313133;
   color: white;
   padding: 12px;
   text-align: center;
@@ -163,16 +162,18 @@ h2 {
 }
 
 .user{
-  background-color: #099900;
-  color: #f2f2f2;
+  background-color: #f6f6f6;
+  color: #313133;
   align-self: flex-end;
+  /* border: 1px solid #cccccc; */
 }
 
 .agent {
-  background-color: #ececec;
+  background-color: #ffffff;
   color: black;
   align-self: flex-start;
   width: 100%;
+  /* border: 1px solid #cccccc; */
 }
 
 /* ✅ JSON Response Styling */
@@ -270,13 +271,14 @@ h2 {
 .chat-text {
   border-radius: 12px;
   padding: 8px 12px;
+  border: none;
 }
 
 .sender {
   font-weight: bold;
   font-size: 0.85em;
   margin-bottom: 4px;
-  color: #1b5e20;
+  color: #fc6a3d;
 }
 
 .senderagent {

@@ -166,7 +166,6 @@ def orchestrate_request_simulation(user_message, session_data):
     
     session_id = session_data.get("session_id")
     # ⚠️ Use a real user later; hardcode for now
-    
     user = User.objects.get(username="admin")
 
     if not session_id:

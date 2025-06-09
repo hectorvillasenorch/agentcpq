@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  input:hover,
+  textarea:hover,
+  select:hover {
+    background-color: transparent !important;
+  }
+
+  input,
+  textarea,
+  select {
+    cursor: pointer;
+  }
+  input:focus,
+textarea:focus,
+select:focus {
+  border-bottom: 1px solid #fc6a3d !important;
+  box-shadow: 0 1px 0 0 #fc6a3d !important;
+}
+
+input:focus + label,
+textarea:focus + label,
+select:focus + label {
+  color: #fc6a3d !important;
+}
+</style>
+<div class="container">
+  <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
+    <i class="material-icons left" style="vertical-align: middle;">business</i>
+    Company Information
+  </h4>
+
+  <div class="card-panel white z-depth-1">
+    <form method="post" action="{% url 'cpq:get_company_information' %}" enctype="multipart/form-data">
+      {% csrf_token %}
+    
+      <div class="row">
+        <div class="input-field col s6">
+          <input id="company_name" name="name" type="text" value="{{ company.name }}">
+          <label for="company_name" class="active">Company Name</label>
+        </div>
+        <div class="input-field col s6">
+          <input id="company_email" name="contact_email" type="email" value="{{ company.contact_email }}">
+          <label for="company_email" class="active">Company Email</label>
+        </div>
+      </div>
+    
+      <div class="row">
+        <div class="input-field col s6">
+          <input id="phone_number" name="phone_number" type="text" value="{{ company.phone_number }}">
+          <label for="phone_number" class="active">Phone Number</label>
+          
+        </div>
+    
+      <div class="row">
+        <div class="input-field col s12">
+          <textarea id="address" name="address" class="materialize-textarea">{{ company.address }}</textarea>
+          <label for="address" class="active">Address</label>
+        </div>
+      </div>
+      
+      <div class="row">
+        <div class="file-field input-field col s6">
+          <div class="btn orange darken-2">
+            <span>Upload Logo</span>
+            <input type="file" name="logo">
+          </div>
+          <div class="file-path-wrapper">
+            <input class="file-path validate" type="text" placeholder="Upload a company logo">
+          </div>
+          
+        </div>
+        {% if company.logo %}
+          <div class="col s6">
+            <label>Current Logo:</label><br>
+            <img src="{{ company.logo.url }}" alt="Company Logo" style="max-height: 80px; margin-top: 10px;">
+          </div>
+        {% endif %}
+      </div>
+    
+      <div class="right-align">
+        <button type="submit" class="btn orange darken-2">
+          <i class="material-icons left">save</i> Save
+        </button>
+      </div>
+    </form>
+
+    
+  </div>
+  <div class="row">
+    <div class="input-field col s6">
+      <label class="active">Plan</label>
+      <p style="margin-top: 0.5rem;">{{ company.plan }}</p>
+    </div>
+    <div class="input-field col s6">
+      <label class="active">Actions Limit</label>
+      <p style="margin-top: 0.5rem;">{{ company.actions_limit }}</p>
+    </div>
+    <div class="input-field col s6">
+      <label class="active">Tenanat Id</label>
+      <p style="margin-top: 0.5rem;">{{ company.tenant_id }}</p>
+    </div>
+    <div class="input-field col s6">
+      <label class="active">Version</label>
+      <p style="margin-top: 0.5rem;">{{ company.version }}</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

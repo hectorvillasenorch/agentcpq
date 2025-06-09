@@ -18,6 +18,7 @@ h2{
   font-weight: 700;
   font-style: normal;
   color: #fc6a3d !important;
+  font-size: 2.3rem !important;
 }
 
 /* === Sidebar (Responsive) === */
@@ -35,7 +36,7 @@ h2{
 
   /* ✅ Gradient from black to dark blue */
   /* background: linear-gradient(135deg, #4b58b7, #182848); */
-  background: #182848;
+  background: #313133;
  
 }
 /* === Chat Session List === */
@@ -179,7 +180,7 @@ h2{
   background-color: white;
   padding: 20px;
   width: 100%;
-  margin: 0 auto;
+  margin: 10px auto;
   overflow-y: auto;
   border-radius: 5px;
 }

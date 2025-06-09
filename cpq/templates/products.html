@@ -1,63 +1,77 @@
+{% load static %}
+<link rel="stylesheet" href="{% static 'css/styles.css' %}">
 <style>
-  .icon-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 5px;
-    margin-right: 5px;
-    cursor: pointer;
-    text-decoration: none;
-    border-radius: 50%;
-    transition: background-color 0.2s;
-}
-
-.icon-button:hover {
-    background-color: rgba(0, 0, 0, 0.05);
-}
-table{
-  font-size: 20px;
-}
-</style>
-<div class="container-fluid" style="width: 100%;">
-  <h2 class="blue-text text-darken-3 center-align">
+    .icon-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      margin-right: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      border-radius: 50%;
+      transition: background-color 0.2s ease;
+    }
+  
+    .icon-button:hover {
+      background-color: rgba(0, 0, 0, 0.06);
+    }
+  
+    table.striped.highlight th,
+    table.striped.highlight td {
+      font-size: 18px;
+      padding: 14px 12px;
+    }
+  
+    table.striped.highlight {
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.06);
+    }
+  
+   
+  </style>
+  
+  <div class="container-fluid" style="width: 100%;">
+    <h2>
       <i class="material-icons">inventory_2</i> Products
-  </h2>
-
-  <table class="striped highlight responsive-table" style="width: 100%;">
-      <thead>
-          <tr>
-              <th>SKU</th>
-              <th>Name</th>
-              <th>Price</th>
-              <th>Subscription</th>
-              <th>Term</th>
-              <th>Bundle</th>
-              <th>Actions</th>
-          </tr>
+    </h2>
+  
+    <table class="striped highlight responsive-table white">
+      <thead class="blue lighten-5">
+        <tr>
+          <th>SKU</th>
+          <th>Name</th>
+          <th>Price</th>
+          <th>Subscription</th>
+          <th>Term</th>
+          <th>Bundle</th>
+          <th>Actions</th>
+        </tr>
       </thead>
       <tbody>
-          {% for product in products %}
-              <tr>
-                  <td>{{ product.sku }}</td>
-                  <td>{{ product.name }}</td>
-                  <td>${{ product.price }}</td>
-                  <td>{{ product.is_subscription|yesno:"✅,❌" }}</td>
-                  <td>{{ product.term|default:"N/A" }}</td>
-                  <td>{{ product.is_bundle|yesno:"✅,❌" }}</td>
-                  <td>
-                      <a href="#" class="icon-button">
-                          <i class="material-icons blue-text">edit</i>
-                      </a>
-                      <a href="#" class="icon-button">
-                          <i class="material-icons red-text">delete</i>
-                      </a>
-                  </td>
-              </tr>
-          {% empty %}
-              <tr>
-                  <td colspan="7" class="center-align">No products found.</td>
-              </tr>
-          {% endfor %}
+        {% for product in products %}
+          <tr>
+            <td>{{ product.sku }}</td>
+            <td>{{ product.name }}</td>
+            <td>${{ product.price }}</td>
+            <td>{{ product.is_subscription|yesno:"✅,❌" }}</td>
+            <td>{{ product.term|default:"N/A" }}</td>
+            <td>{{ product.is_bundle|yesno:"✅,❌" }}</td>
+            <td>
+              <a href="#" class="icon-button">
+                <i class="material-icons blue-text">edit</i>
+              </a>
+              <a href="#" class="icon-button">
+                <i class="material-icons red-text">delete</i>
+              </a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="7" class="center-align grey-text">No products found.</td>
+          </tr>
+        {% endfor %}
       </tbody>
-  </table>
-</div>
+    </table>
+  </div>

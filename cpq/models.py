@@ -2,10 +2,11 @@ from django.db import models
 from django.db.models import Sum
 from datetime import datetime
 import uuid
-
-from decimal import Decimal
 from django.utils import timezone
 from django.core.validators import MinValueValidator
+from django.contrib.contenttypes.models import ContentType
+from django.contrib.contenttypes.fields import GenericForeignKey
+from decimal import Decimal
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -106,9 +107,7 @@ class Opportunity(models.Model):
         null=True, blank=True
     )
     oppid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
-
-    hs_deal_id = models.CharField(max_length=255, unique=True, blank=True, null=True)
-    
+    hs_deal_id = models.CharField(max_length=18, unique=True, db_index=True, editable=False, null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if not self.oppid:
@@ -169,6 +168,9 @@ class Quote(models.Model):
     qteid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     hs_deal_id = models.CharField(max_length=64,blank=True,null=True,help_text="The HubSpot Deal ID linked to this quote")
     hs_primary = models.BooleanField(default=False,help_text="Marks this quote as the primary quote for the HubSpot deal")
+    synced = models.BooleanField(default=False)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+
     def get_total_discount_percentage(self):
         """
         Calculates the total discount percentage for this quote.
@@ -198,6 +200,7 @@ class Quote(models.Model):
 class QuoteLine(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="quote_lines")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="quote_lines")
+    product_name = models.CharField(max_length=255, blank=True, null=True)
     quantity = models.IntegerField(default=1)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     special_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -207,6 +210,23 @@ class QuoteLine(models.Model):
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
     parent_quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="parent_quote_lines", blank=True, null=True)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    is_subscription = models.BooleanField(default=False)
+    billing_frequency = models.CharField(
+        max_length=20,
+        choices=[("monthly", "monthly"), ("quarterly", "quarterly"), ("annual", "annual"), ("one_time", "one_time")],
+        default="One-Time"
+    )
+    term = models.PositiveIntegerField(null=True, blank=True)  # In months
+    billing_start_date = models.DateField(null=True, blank=True)
+    billing_end_date = models.DateField(null=True, blank=True)
+    sku = models.CharField(max_length=100, null=True, blank=True)
+    synced_to_crm = models.BooleanField(default=False)
+    description = models.TextField(null=True, blank=True)
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
 
     def save(self, *args, **kwargs):
         # Auto-calculate price for bundles
@@ -214,14 +234,18 @@ class QuoteLine(models.Model):
             self.unit_price = sum(
                 bundle_item.product.price * bundle_item.quantity for bundle_item in self.product.bundle_items.all()
             )
+        self.total_price = self.quantity * self.unit_price
+        if self.product and not self.product_name:
+            self.product_name = self.product.name
+        if self.product and not self.sku:
 
-        #Auto-calculate discount if exist
-        discount_factor = (Decimal('100.00') - self.additional_discount) / Decimal('100.00')
-        self.total_price = (self.quantity * self.unit_price * discount_factor).quantize(Decimal('100.00'))
-        super().save(*args, **kwargs)
+            #Auto-calculate discount if exist
+            discount_factor = (Decimal('100.00') - self.additional_discount) / Decimal('100.00')
+            self.total_price = (self.quantity * self.unit_price * discount_factor).quantize(Decimal('100.00'))
+            super().save(*args, **kwargs)
 
-    def __str__(self):
-        return f"{self.product.name} ({self.quantity}x)"
+            def __str__(self):
+                return f"{self.product.name} ({self.quantity}x)"
 
 class Subscription(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="subscriptions")
@@ -485,6 +509,59 @@ class PricebookEntry(models.Model):
 
     def __str__(self):
         return f"{self.product.name} in {self.pricebook.name} - ${self.unit_price}"
+
+class CustomField(models.Model):
+    label = models.CharField(max_length=100, blank=True)
+    name = models.CharField(max_length=100)  # Local field name
+    crm = models.CharField(max_length=50)
+    object_type = models.CharField(max_length=50)
+    data_type = models.CharField(max_length=50)  # text, number, date, etc.
+    required = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.crm}.{self.object_type}.{self.field_name}"
+    
+class CustomFieldValue(models.Model):
+    field = models.ForeignKey(CustomField, on_delete=models.CASCADE, related_name="values")
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)  # Generic relation
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey("content_type", "object_id")
+    value = models.TextField()
+
+    def __str__(self):
+        return f"{self.content_object} - {self.field.field_name}: {self.value}"
+
+
+class Tenant(models.Model):
+    PLAN_CHOICES = [
+        ('solo', 'Solo'),
+        ('team', 'Team'),
+        ('pro', 'Pro'),
+        ('business', 'Business'),
+        ('enterprise', 'Enterprise'),
+    ]
+    tenant_id = models.CharField(max_length=20, unique=True, blank=True)
+    name = models.CharField(max_length=255)
+    domain = models.CharField(max_length=255, blank=True, null=True)
+    contact_email = models.EmailField(blank=True, null=True)
+    phone_number = models.CharField(max_length=50, blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
+    version = models.CharField(max_length=50, default='1.0.0')
+    logo = models.ImageField(upload_to='tenant_logos/', blank=True, null=True)
+    billing_contact = models.EmailField(blank=True, null=True)
+    plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default='solo')
+    actions_limit = models.IntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)  # Save first to get auto-incremented ID
+        if not self.tenant_id:
+            self.tenant_id = generate_agentcpq_id()
+            super().save(update_fields=['tenant_id'])  # Only update the tenant_id
+
+    def __str__(self):
+        return self.name
     
 class QuoteDocument(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name='documents')
