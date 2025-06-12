@@ -244,19 +244,28 @@ def get_company_information(request):
         'company': company or Tenant()
     })
 
-def get_document_templates(request):
+def get_document_template(request):
 
     try:
         company = Tenant.objects.first()
-        document_settings = QuoteDocumentSettings.objects.get(tenant=company)
+    except ObjectDoesNotExist:
+        company = None
+
+    if company is None:
+        return render(request, 'document_template.html', {
+            'company': None,
+            'settings': None,
+            'rendered_fields': [],
+            'ommited_fields': [],
+        })
+    
+    try:
+        document_settings = QuoteDocumentSettings.objects.first()
     except ObjectDoesNotExist:
         document_settings = None
 
     if request.method == 'POST':
-        if document_settings is None:
-            settings = QuoteDocumentSettings()
-        else:
-            settings = document_settings
+        settings = document_settings or QuoteDocumentSettings()
 
         #Template Style
         template_style = 'modern' if request.POST.get('template_style') == 'on' else 'classic'
@@ -289,9 +298,15 @@ def get_document_templates(request):
         settings.terms_and_conditions = request.POST.get("terms_conditions", "")
 
         settings.save()
-        return redirect('cpq:get_document_templates')
+        return redirect('cpq:get_document_template')
+    
+    if document_settings is None:
+        document_settings = QuoteDocumentSettings.objects.create(
+            rendered_fields=QuoteDocumentSettings.default_rendered_fields(),
+            omitted_fields=QuoteDocumentSettings.default_omitted_fields()
+        )
 
-    return render(request, 'document_templates.html', {
+    return render(request, 'document_template.html', {
         'company': company,
         'settings': document_settings,
         'rendered_fields': document_settings.rendered_fields if document_settings else [],

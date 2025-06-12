@@ -78,12 +78,12 @@ input[type="checkbox"] + span {
 <div class="container">
   <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
     <i class="material-icons left" style="vertical-align: middle;">note_alt</i>
-    Document Templates
+    Manage Document
   </h4>
 
   <div class="card-panel white z-depth-1">
-    {% if settings %}
-    <form method="post" action="{% url 'cpq:get_document_templates' %}" enctype="multipart/form-data">
+    {% if company %}
+    <form method="post" action="{% url 'cpq:get_document_template' %}" enctype="multipart/form-data">
       {% csrf_token %}
 
       <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Template Design Style</h6>
@@ -124,6 +124,13 @@ input[type="checkbox"] + span {
 
         <div class="col s2">
           <label>
+            <input type="checkbox" name="show_company_address" {% if settings.show_company_address %}checked{% endif %} />
+            <span>Address</span>
+          </label>
+        </div>
+
+        <div class="col s2">
+          <label>
             <input type="checkbox" name="show_company_phone" {% if settings.show_company_phone %}checked{% endif %} />
             <span>Phone</span>
           </label>
@@ -140,13 +147,6 @@ input[type="checkbox"] + span {
           <label>
             <input type="checkbox" name="show_company_logo" {% if settings.show_company_logo %}checked{% endif %} />
             <span>Logo</span>
-          </label>
-        </div>
-
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_company_address" {% if settings.show_company_address %}checked{% endif %} />
-            <span>Address</span>
           </label>
         </div>
       </div>
@@ -239,7 +239,7 @@ input[type="checkbox"] + span {
         </div>
 
         <div class="col s4">
-          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Discount Fields</h6>
+          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Show Discount</h6>
           <label>
             <input type="checkbox" name="show_line_discount" {% if settings.show_line_discount %}checked{% endif %} />
             <span>Show Quote Line Item Discount</span>
