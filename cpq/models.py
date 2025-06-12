@@ -7,6 +7,8 @@ from django.core.validators import MinValueValidator
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 from decimal import Decimal, ROUND_HALF_UP
+from django.contrib.postgres.fields import JSONField
+from django.db.models import JSONField
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -248,10 +250,11 @@ class QuoteLine(models.Model):
     quantity = models.IntegerField(default=1)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     special_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    total_price = models.DecimalField(max_digits=10, decimal_places=2)
     discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage")
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    total_price = models.DecimalField(max_digits=10, decimal_places=2)
     parent_quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="parent_quote_lines", blank=True, null=True)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     is_subscription = models.BooleanField(default=False)
@@ -290,6 +293,21 @@ class QuoteLine(models.Model):
                 ).quantize(Decimal("0.01"))
             else:
                 self.discount_percentage = Decimal("0.00")
+
+    def update_subtotal(self):
+        """Calculate subtotal = unit_price - discount_per_unit"""
+        if self.discount_type == "amount":
+            discount_per_unit = self.discount_amount
+        elif self.discount_type == "percentage":
+            discount_per_unit = (
+                self.unit_price * self.discount_percentage / Decimal("100.00")
+            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        else:
+            discount_per_unit = Decimal("0.00")
+
+        discount_per_unit = min(discount_per_unit, self.unit_price)
+
+        self.subtotal = (self.unit_price - discount_per_unit).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     
     def update_total_price(self):
         """Calculate total_price = quantity * unit_price - discount according to discount_type"""
@@ -332,6 +350,8 @@ class QuoteLine(models.Model):
 
         #Update discount fields
         self.update_discount_fields()
+        #Update subtotal
+        self.update_subtotal()
         #Update total price
         self.update_total_price()
         
@@ -639,13 +659,17 @@ class Tenant(models.Model):
     domain = models.CharField(max_length=255, blank=True, null=True)
     contact_email = models.EmailField(blank=True, null=True)
     phone_number = models.CharField(max_length=50, blank=True, null=True)
-    address = models.TextField(blank=True, null=True)
+    street_address = models.CharField(max_length=255, blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
     version = models.CharField(max_length=50, default='1.0.0')
     logo = models.ImageField(upload_to='tenant_logos/', blank=True, null=True)
     billing_contact = models.EmailField(blank=True, null=True)
     plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default='solo')
     actions_limit = models.IntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    primary_color = models.CharField(max_length=7, blank=True, null=True)
+    secondary_color = models.CharField(max_length=7, blank=True, null=True)
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)  # Save first to get auto-incremented ID
@@ -679,3 +703,66 @@ class QuoteDocument(models.Model):
 
     def __str__(self):
         return f"{self.quote.name} - v{self.version}"
+    
+class QuoteDocumentSettings(models.Model):
+    DESIGN_CHOICES = [
+        ('classic', 'Classic'),
+        ('modern', 'Modern'),
+    ]
+    
+    def default_rendered_fields():
+        return ['Product And SKU', 'Description', 'Quantity', 'Unit Price', 'Total Price']
+
+    def default_omitted_fields():
+        return ['Product', 'SKU', 'Discount Percentage', 'Discount Amount']
+    
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="pdf_settings")
+
+    # Company information
+    show_company_name = models.BooleanField(default=True)
+    show_company_address = models.BooleanField(default=True)
+    show_company_phone = models.BooleanField(default=False)
+    show_company_email = models.BooleanField(default=True)
+    show_company_domain = models.BooleanField(default=False)
+    show_company_logo = models.BooleanField(default=True)
+
+    # Account information
+    show_account_name = models.BooleanField(default=True)
+    show_account_website = models.BooleanField(default=False)
+    show_account_phone = models.BooleanField(default=False)
+
+    # Quote information
+    show_quote_opportunity = models.BooleanField(default=True)
+    show_quote_status = models.BooleanField(default=True)
+    show_quote_created_at = models.BooleanField(default=True)
+    show_quote_expires_at = models.BooleanField(default=True)
+    show_quote_notes = models.BooleanField(default=True)
+
+    # Quote Line Items
+    show_line_discount_percentage = models.BooleanField(default=False)
+    show_line_discount_amount = models.BooleanField(default=False)
+    show_line_discount = models.BooleanField(default=True)
+    rendered_fields = JSONField(default=default_rendered_fields, blank=True)
+    omitted_fields = JSONField(default=default_omitted_fields, blank=True)
+
+    # Quote Line Items - Subscriptions
+    show_subscription_term = models.BooleanField(default=True)
+
+    # General PDF
+    show_sign = models.BooleanField(default=True)
+    template_style = models.CharField(
+        max_length=20,
+        choices=DESIGN_CHOICES,
+        default='modern',
+        help_text="Select the design style of the PDF template"
+    )
+
+    # Terms and conditions
+    terms_and_conditions = models.TextField(blank=True, default="")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        accid = self.account.accid if self.account else "General"
+        return f"PDF Settings for Tenant {self.tenant.name} - Account {accid}"

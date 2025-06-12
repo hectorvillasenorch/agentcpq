@@ -6,7 +6,7 @@ import logging
 import re
 import locale
 from dotenv import load_dotenv
-from cpq.models import Quote, Account, Opportunity, QuoteLine, Product, QuoteDocument
+from cpq.models import Quote, Account, Opportunity, QuoteLine, Product, QuoteDocument, Tenant
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
@@ -21,6 +21,7 @@ from django.db.models import Max
 from django.db.models import Q
 from django.forms.models import model_to_dict
 from django.db.models import ForeignKey
+from datetime import datetime
 
 
 # ✅ Load environment variables
@@ -100,6 +101,7 @@ def create_quote(user_message, session_data):
 
     # ✅ Assign formatted name after creation using quote.id
     quote.name = f"Q-{quote.id:05d}"
+    quote.save()
 
     # ✅ Store quote context in session & clear pending actions
     session_data["active_quote"] = {
@@ -1377,7 +1379,7 @@ def show_quote_details(user_message, session_data):
 
         set_active_quote_to_session_data(session_data, quote)
 
-        return {"message": "✅ Here are the quote details:", "quote_details": quote_details, "hiddenMessage": "True"}
+        return {"message": "Here are the quote details:", "quote_details": quote_details, "hiddenMessage": "True"}
     
     except Quote.DoesNotExist:
         return {"message": "⚠️ Error: Quote not found. Please check the quote name."}
@@ -1455,19 +1457,20 @@ def format_currency(value):
 def generate_quote_pdf(user_message, session_data):
     """Generates a sleek PDF document for the specified quote."""
     try:
-        # ✅ Ensure we have an active quote
-        active_quote = session_data.get("active_quote", {})
-        if not active_quote:
-            return {"message": "⚠️ No active quote found. Please specify a quote name."}
+        # Looking for active quote
+        quote = get_active_quote(user_message, session_data)
 
-        # ✅ Retrieve quote using session data
-        try:
-            quote = Quote.objects.get(id=active_quote['quote_id'])
-        except Quote.DoesNotExist:
-            return {"message": "⚠️ Session references a non-existent quote. Please provide a valid quote name."}
+        print(f"\n\nSession data === : {session_data}\n\n")
+
+        # ⚠️ Verify if function return an error
+        if isinstance(quote, dict) and "message" in quote:
+            return quote
 
         # ✅ Fetch related quote lines
         quote_lines = QuoteLine.objects.filter(quote=quote)
+
+        # ✅ Fetch related company
+        company = Tenant.objects.first()
 
         # ✅ Generate file name
         last_doc = QuoteDocument.objects.filter(quote=quote).order_by('-version').first()
@@ -1482,29 +1485,43 @@ def generate_quote_pdf(user_message, session_data):
         pdf.setTitle(f"Quote {quote.name}")
 
         # ✅ Add Logo (Update path if needed)
-        logo_path = os.path.join(settings.MEDIA_ROOT, "company_logo.png")  
-        if os.path.exists(logo_path):
-            pdf.drawImage(logo_path, 50, 700, width=150, height=60, preserveAspectRatio=True, mask='auto')
+        if company and company.logo:
+            logo_path = company.logo.path
+            if os.path.exists(logo_path):
+                pdf.drawImage(logo_path, 50, 680, width=150, height=60, preserveAspectRatio=True, mask='auto')
 
         # ✅ Quote Header
         pdf.setFont("Helvetica-Bold", 16)
         pdf.drawString(400, 750, f"Quote: {quote.name}")
 
+        # ✅ Letterhead
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(20, 770, f"{datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}")
+
         # ✅ Company & Quote Information
+        pdf.setFont("Helvetica-Bold", 12)
+        pdf.drawString(50, 660, f"{company.name}")
         pdf.setFont("Helvetica", 12)
-        pdf.drawString(50, 660, "Company Name")
-        pdf.drawString(50, 640, f"Opportunity: {quote.opportunity.name if quote.opportunity else 'N/A'}")
-        pdf.drawString(50, 620, f"Status: {quote.status}")
-        pdf.drawString(50, 600, f"Created At: {quote.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        # ✅ Company email with hyperlink
+        pdf.setFillColor(HexColor("#888888"))
+        x = 50
+        y = 645
+        email = company.contact_email
+        pdf.drawString(x, y, email)
+        pdf.linkURL(f"mailto:{email}", (x, y - 2, x + pdf.stringWidth(email), y + 10), relative=0)
+        pdf.setFillColor(HexColor("#000000"))
     
         # ✅ Account Information
         pdf.drawString(350, 660, f"Account: {quote.account.name if quote.account else 'N/A'}")
         pdf.drawString(350, 640, f"Opportunity: {quote.opportunity.name if quote.opportunity else 'N/A'}")
         pdf.drawString(350, 620, f"Status: {quote.status}")
-        pdf.drawString(350, 600, f"Created At: {quote.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        pdf.drawString(350, 600, f"Quote Created At: {quote.created_at.strftime('%m/%d/%Y, %H:%M:%S')}")
+        pdf.drawString(350, 580, f"Quote Expires At: {quote.expiration_date}")
+
+        # ✅ Table header Information
 
         pdf.setFillColor(HexColor("#5c5c5c"))
-        # pdf.rect(50, 560, 520, 30, fill=False, stroke=True)  # Background color for header
         pdf.setLineWidth(0.5)
         pdf.setStrokeColor(HexColor("#cccccc"))  # light gray color
         pdf.rect(47, 540, 520, 30, fill=False, stroke=True)
@@ -1565,13 +1582,15 @@ def generate_quote_pdf(user_message, session_data):
         return {
             "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
             "download_url": f"{settings.MEDIA_URL}quote_documents/{pdf_filename}",
-            "document_version": next_version
+            "document_version": next_version,
+            "hiddenMessage": True
             }
 
     except Quote.DoesNotExist:
         return {"message": "⚠️ Error: Quote not found."}
     except Exception as e:
         return {"message": f"⚠️ Error generating PDF: {str(e)}"}
+    
     
 
 def set_active_quote_to_session_data(session_data, quote):

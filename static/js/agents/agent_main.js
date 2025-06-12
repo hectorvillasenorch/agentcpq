@@ -101,13 +101,38 @@ function enhanceStructuredAgentMessagesHistoryChat() {
           const quote = JSON.parse(unescapeUnicode(jsonStr));
           const html = renderReadOnlyQuoteDetails(quote);
           div.innerHTML = html;
+          return;
         } catch (e) {
           console.error("❌ JSON parse failed:", e, jsonStr);
           div.innerHTML = `<div class="error-message">❌ Error trying to display the structured message. (JSON parsing error)</div>`;
         }
-      } else {
-        div.innerHTML = `<div class="error-message">⚠️ Could not find quote details JSON</div>`;
       }
+
+      // Desescapamos unicode para manejar caracteres especiales y saltos de línea
+      let unescapedRaw = unescapeUnicode(raw);
+
+      // Ejemplo patrón para mensaje PDF (puedes añadir más patrones similares)
+      const pdfPatternUrl = /download_url:\s*"?([^"\s]+)"?/i;
+      const pdfPatternVersion = /document_version:\s*(\d+)/i;
+
+      const downloadUrlMatch = unescapedRaw.match(pdfPatternUrl);
+      const versionMatch = unescapedRaw.match(pdfPatternVersion);
+
+      if (downloadUrlMatch && versionMatch) {
+        const url = downloadUrlMatch[1].trim();
+        const version = versionMatch[1].trim();
+        const message = unescapedRaw.split("download_url:")[0].trim();
+
+        div.innerHTML = `
+          <div class="general-message">
+            <p>${message}<a href="${url}" target="_blank" class="download-link"> Download Here</a></p>
+          </div>
+        `;
+        return;
+      }
+
+      div.innerHTML = `<pre class="plain-text-message">${escapeHtml(unescapedRaw)}</pre>`;
+
     });
 
     const chatBox = document.getElementById("chat-box");
@@ -115,6 +140,18 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     // Auto-scroll chat
     chatBox.scrollTop = chatBox.scrollHeight;
 }
+
+function escapeHtml(text) {
+  const map = {
+    '&': "&amp;",
+    '<': "&lt;",
+    '>': "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  };
+  return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+}
+
 
 /**
 * ✅ Send user message to the agent and handle response
@@ -175,6 +212,7 @@ async function sendMessage() {
         } 
         // ✅ Handle Quote PDF Response
         else if (data.response.download_url) {
+            console.log(data.response);
             responseMessage += `📄 Quote PDF (v${data.response.document_version}) generated successfully! <a href="${data.response.download_url}" target="_blank">Download Here</a>`;
         } 
         // ✅ Default Response (Handle General Messages)
