@@ -122,6 +122,6 @@ def chat_with_gpt(request):
 
     # --- 7. Save updated session data ---
     request.session["session_data"] = session_data
-    logger.info(f"[Orchestrator] AI Response: {ai_response}")
+    #logger.info(f"[Orchestrator] AI Response: {ai_response}")
 
     return JsonResponse({"response": ai_response})

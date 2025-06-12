@@ -34,14 +34,21 @@ def handle_user_request(user_message, session_data):
             "chat_sessions": list(ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at"))
         }
     
-     # 🧠 Shortcut manual: "show quote details for <quote_id>"
-    if user_message.lower().startswith("show quote details for "):
+    # 🧠 Shortcut manual
+    message = user_message.lower()
 
+    trigger_phrases = get_trigger_phrases()
+
+    # 🧠 Shortcut manual: "show quote details for <quote_id>"
+    if user_message.lower().startswith("show quote details for "):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_simulation(user_message, session_data)
-        #quote_id = user_message[len("show quote details for "):].strip()
-        #session_data["quote_id"] = quote_id
-        #return quote_agent("ShowQuoteDetails", user_message, session_data)
+        response = orchestrate_request_trigger(user_message, session_data, decision="ShowQuoteDetails")
+
+    # 🧠 Shortcut manual: "generate pdf"
+    elif any(message.startswith(trigger) for trigger in trigger_phrases):
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(message, session_data, decision="GenerateQuoteDocument")
+
     else:
         logging.info("USE GPT\n")
         response = orchestrate_request(user_message, session_data)
@@ -97,8 +104,7 @@ def orchestrate_request(user_message, session_data):
     - "CreateQuote"
     - "AddProduct"
     - "GenerateQuoteDocument"
-    - "ApplyQuoteDiscount"  # Apply discount to the entire quote
-    - "ApplyQuoteLineDiscount"   # Apply discount to a specific quote line item
+    - "ApplyQuoteDiscount" (Use this when the user wants to apply a discount to the entire quote. These requests do **not** include a SKU like AICPQ-043.)
     - "ProvideDates"
     - "ShowQuoteDetails"
     - "UpdateQuoteLine"
@@ -143,8 +149,8 @@ def orchestrate_request(user_message, session_data):
         hiddenMessage = result.get("hiddenMessage", False)
 
         for key, value in result.items():
-            if key not in ("message", "session_id", "hiddenMessage", "temporaryMessage", "update_details", "iterations"):
-                agent_message += f"\n\n📦 {key}:\n{json.dumps(value, indent=2)}"
+            if key not in ("message", "session_id", "hiddenMessage", "temporaryMessage", "update_details", "iterations", "success", "quote_id"):
+                agent_message += f"\n\n{key}:\n{json.dumps(value, indent=2)}"
 
         ChatMessage.objects.create(
             session=chat_session,
@@ -162,8 +168,8 @@ def orchestrate_request(user_message, session_data):
     return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
 
 
-def orchestrate_request_simulation(user_message, session_data):
-    
+def orchestrate_request_trigger(user_message, session_data, decision):
+    logging.info(f"\n🟢 AI Decision Trigger: {decision} \n")
     session_id = session_data.get("session_id")
     # ⚠️ Use a real user later; hardcode for now
     user = User.objects.get(username="admin")
@@ -183,8 +189,6 @@ def orchestrate_request_simulation(user_message, session_data):
         sender="user",
         content=user_message
     )
-    
-    decision = "ShowQuoteDetails"
 
     action_map = get_action_map()
 
@@ -320,3 +324,12 @@ def get_action_map():
         # General query handling
         "GeneralQuery": handle_general_query
     }
+
+
+def get_trigger_phrases():
+    return [
+        "generate doc",
+        "generate document",
+        "generate pdf",
+        "create quote pdf",
+    ]

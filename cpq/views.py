@@ -1,10 +1,11 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,CustomObject
+from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt 
 from django.apps import apps
 from salesforce.models import SalesforceToken
 from django.core.serializers.json import DjangoJSONEncoder
+from django.core.exceptions import ObjectDoesNotExist
 import json
 from .forms import CustomFieldForm, CustomObjectForm
 
@@ -296,7 +297,11 @@ def get_company_information(request):
         company.name = request.POST.get('name', '')
         company.contact_email = request.POST.get('contact_email', '')
         company.phone_number = request.POST.get('phone_number', '')
-        company.address = request.POST.get('address', '')
+        company.primary_color = request.POST.get('primary_color', '')
+        company.secondary_color = request.POST.get('secondary_color', '')
+        company.street_address = request.POST.get('street_address', '')
+        company.city = request.POST.get('city', '')
+        company.state = request.POST.get('state', '')
         
         # company.plan = request.POST.get('plan', '')
 
@@ -327,3 +332,57 @@ def create_custom_object(request):
         form = CustomObjectForm()
     
     return render(request, 'create_custom_object.html', {'form': form})
+
+def get_document_templates(request):
+
+    try:
+        company = Tenant.objects.first()
+        document_settings = QuoteDocumentSettings.objects.get(tenant=company)
+    except ObjectDoesNotExist:
+        document_settings = None
+
+    if request.method == 'POST':
+        if document_settings is None:
+            settings = QuoteDocumentSettings()
+        else:
+            settings = document_settings
+
+        #Template Style
+        template_style = 'modern' if request.POST.get('template_style') == 'on' else 'classic'
+        settings.template_style = template_style
+
+        # Checkboxes
+        boolean_fields = [
+            'show_company_name', 'show_company_email', 'show_company_phone', 'show_company_domain',
+            'show_company_logo', 'show_company_address',
+            'show_account_name', 'show_account_website', 'show_account_phone',
+            'show_quote_opportunity', 'show_quote_status', 'show_quote_created_at',
+            'show_quote_expires_at', 'show_quote_notes',
+            'show_line_discount', 'show_subscription_term', 'show_sign'
+        ]
+        
+        for field in boolean_fields:
+            setattr(settings, field, field in request.POST)
+
+        # Rendered & omitted fields
+        rendered_fields_raw = request.POST.get("rendered_fields", "[]")
+        omitted_fields_raw = request.POST.get("omitted_fields", "[]")
+        try:
+            settings.rendered_fields = json.loads(rendered_fields_raw)
+            settings.omitted_fields = json.loads(omitted_fields_raw)
+        except json.JSONDecodeError:
+            settings.rendered_fields = []
+            settings.omitted_fields = []
+        
+        # Terms and conditions
+        settings.terms_and_conditions = request.POST.get("terms_conditions", "")
+
+        settings.save()
+        return redirect('cpq:get_document_templates')
+
+    return render(request, 'document_templates.html', {
+        'company': company,
+        'settings': document_settings,
+        'rendered_fields': document_settings.rendered_fields if document_settings else [],
+        'omitted_fields': document_settings.omitted_fields if document_settings else []
+    })
