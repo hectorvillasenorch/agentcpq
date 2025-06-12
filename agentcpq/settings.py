@@ -113,7 +113,7 @@ WSGI_APPLICATION = "agentcpq.wsgi.application"
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'agentcpq',
+        'NAME': 'serenityllc',
         'USER': 'root',
         'PASSWORD': 'agentcpq2025!',  # If set
         'HOST': 'localhost',

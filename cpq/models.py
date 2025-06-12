@@ -42,21 +42,6 @@ class Lead(models.Model):
     def __str__(self):
         return f"Lead: {self.contact} ({self.get_status_display()})"
 
-class Contact(models.Model):
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100, blank=True)
-    email = models.EmailField(unique=True)
-    phone = models.CharField(max_length=20, blank=True)
-    company = models.CharField(max_length=255, blank=True)
-    job_title = models.CharField(max_length=100, blank=True)
-    notes = models.TextField(blank=True)
-    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"{self.first_name} {self.last_name or ''}".strip()
-
 class Account(models.Model):
     name = models.CharField(max_length=255)
     industry = models.CharField(max_length=255, blank=True, null=True)
@@ -72,6 +57,24 @@ class Account(models.Model):
         if not self.accid:
             self.accid = generate_agentcpq_id()
         super().save(*args, **kwargs)
+
+class Contact(models.Model):
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100, blank=True)
+    email = models.EmailField(unique=True)
+    phone = models.CharField(max_length=20, blank=True)
+    company = models.CharField(max_length=255, blank=True)
+    job_title = models.CharField(max_length=100, blank=True)
+    notes = models.TextField(blank=True)
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='contacts')
+
+    def __str__(self):
+        return f"{self.first_name} {self.last_name or ''}".strip()
+
+
 
 class Opportunity(models.Model):
     """Represents a sales opportunity linked to an Account."""
@@ -510,28 +513,6 @@ class PricebookEntry(models.Model):
     def __str__(self):
         return f"{self.product.name} in {self.pricebook.name} - ${self.unit_price}"
 
-class CustomField(models.Model):
-    label = models.CharField(max_length=100, blank=True)
-    name = models.CharField(max_length=100)  # Local field name
-    crm = models.CharField(max_length=50)
-    object_type = models.CharField(max_length=50)
-    data_type = models.CharField(max_length=50)  # text, number, date, etc.
-    required = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.crm}.{self.object_type}.{self.field_name}"
-    
-class CustomFieldValue(models.Model):
-    field = models.ForeignKey(CustomField, on_delete=models.CASCADE, related_name="values")
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)  # Generic relation
-    object_id = models.PositiveIntegerField()
-    content_object = GenericForeignKey("content_type", "object_id")
-    value = models.TextField()
-
-    def __str__(self):
-        return f"{self.content_object} - {self.field.field_name}: {self.value}"
-
 
 class Tenant(models.Model):
     PLAN_CHOICES = [
@@ -586,3 +567,42 @@ class QuoteDocument(models.Model):
 
     def __str__(self):
         return f"{self.quote.name} - v{self.version}"
+
+#dummy model for all custom objects
+class CustomRecord(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class CustomObject(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+    label = models.CharField(max_length=255)              
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.label or self.name
+
+
+class CustomField(models.Model):
+    label = models.CharField(max_length=100, blank=True)
+    name = models.CharField(max_length=100)  # Local field name
+    crm = models.CharField(max_length=50)
+    object_type = models.CharField(max_length=50)
+    data_type = models.CharField(max_length=50)  # text, number, date, etc.
+    required = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    custom_object = models.ForeignKey(CustomObject, on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.crm}.{self.object_type}.{self.field_name}"
+
+
+class CustomFieldValue(models.Model):
+    field = models.ForeignKey(CustomField, on_delete=models.CASCADE, related_name="values")
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)  # Generic relation
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey("content_type", "object_id")
+    value = models.TextField()
+
+    def __str__(self):
+        return f"{self.content_object} - {self.field.field_name}: {self.value}"
+    

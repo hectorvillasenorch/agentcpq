@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h4 class="center-align" style="color: #fc6a3d;">Create New Custom Object</h4>
+
+  <div class="card-panel white z-depth-1" style="border: 1px solid #e0e0e0; border-radius: 10px;">
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <div class="center-align">
+        <button class="btn waves-effect waves-light" type="submit" style="background-color: #fc6a3d;">
+          Save
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

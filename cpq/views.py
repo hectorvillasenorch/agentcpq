@@ -1,12 +1,12 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant
+from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,CustomObject
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt 
 from django.apps import apps
 from salesforce.models import SalesforceToken
 from django.core.serializers.json import DjangoJSONEncoder
 import json
-from .forms import CustomFieldForm
+from .forms import CustomFieldForm, CustomObjectForm
 
 def product_list(request):
     """Fetch all products and display them in a table."""
@@ -172,20 +172,99 @@ def get_standard_fields(model_name):
     }
     return mapping.get(model_name, [])
 
+# def custom_fields_view(request):
+#     object_types = ['Lead', 'Contact', 'Account', 'Opportunity', 'Product', 'Quote', 'QuoteLine']
+
+#     fields_by_object_type = {}
+
+#     for obj_type in object_types:
+#         model_class = apps.get_model('cpq', obj_type)  # Adjust app name if needed
+#         standard_fields = [
+#             {"name": f.name, "data_type": f.get_internal_type()}
+#             for f in model_class._meta.get_fields()
+#             if not f.is_relation and not f.auto_created
+#         ]
+
+#         custom_fields = CustomField.objects.filter(object_type=obj_type)
+
+#         fields_by_object_type[obj_type] = {
+#             "standard": standard_fields,
+#             "custom": custom_fields,
+#         }
+
+#     return render(request, "custom_fields.html", {
+#         "fields_by_object_type": fields_by_object_type,
+#         "models": object_types,
+#     })
+
+# def custom_fields_view(request):
+#     # 1. Start with core CRM object types
+#     object_types = ['Lead', 'Contact', 'Account', 'Opportunity', 'Product', 'Quote', 'QuoteLine']
+
+#     # 2. Fetch custom objects from the DB and extend the list
+#     custom_objects = CustomObject.objects.all()
+#     custom_object_names = [obj.name for obj in custom_objects]
+#     all_object_types = object_types + custom_object_names
+
+#     fields_by_object_type = {}
+
+#     # 3. Loop through all types (built-in and custom)
+#     for obj_type in all_object_types:
+#         try:
+#             model_class = apps.get_model('cpq', obj_type)
+#             standard_fields = [
+#                 {"name": f.name, "data_type": f.get_internal_type()}
+#                 for f in model_class._meta.get_fields()
+#                 if not f.is_relation and not f.auto_created
+#             ]
+#         except LookupError:
+#             standard_fields = []
+
+#         # 4. Get all custom fields attached to this object type
+#         custom_fields = CustomField.objects.filter(object_type=obj_type)
+
+#         fields_by_object_type[obj_type] = {
+#             "standard": standard_fields,
+#             "custom": custom_fields,
+#         }
+
+#     return render(request, "custom_fields.html", {
+#         "fields_by_object_type": fields_by_object_type,
+#         "models": all_object_types,
+#     })
 def custom_fields_view(request):
+    # Built-in models
     object_types = ['Lead', 'Contact', 'Account', 'Opportunity', 'Product', 'Quote', 'QuoteLine']
+
+    # Custom objects
+    custom_objects = CustomObject.objects.all()
+    custom_object_names = [obj.name for obj in custom_objects]
+    all_object_types = object_types + custom_object_names
 
     fields_by_object_type = {}
 
-    for obj_type in object_types:
-        model_class = apps.get_model('cpq', obj_type)  # Adjust app name if needed
-        standard_fields = [
-            {"name": f.name, "data_type": f.get_internal_type()}
-            for f in model_class._meta.get_fields()
-            if not f.is_relation and not f.auto_created
-        ]
+    for obj_type in all_object_types:
+        # Try to fetch standard fields for built-in models
+        try:
+            model_class = apps.get_model('cpq', obj_type)
+            standard_fields = [
+                {"name": f.name, "data_type": f.get_internal_type()}
+                for f in model_class._meta.get_fields()
+                if not f.is_relation and not f.auto_created
+            ]
+        except LookupError:
+            standard_fields = []
 
-        custom_fields = CustomField.objects.filter(object_type=obj_type)
+        # 🔥 FIXED: Get custom fields by object_type OR linked custom_object
+        if obj_type in object_types:
+            custom_fields = CustomField.objects.filter(object_type=obj_type, custom_object__isnull=True)
+        else:
+            # Match the custom object by name
+            try:
+                custom_obj = CustomObject.objects.get(name=obj_type)
+                custom_fields = CustomField.objects.filter(custom_object=custom_obj)
+            except CustomObject.DoesNotExist:
+                custom_fields = []
 
         fields_by_object_type[obj_type] = {
             "standard": standard_fields,
@@ -194,10 +273,8 @@ def custom_fields_view(request):
 
     return render(request, "custom_fields.html", {
         "fields_by_object_type": fields_by_object_type,
-        "models": object_types,
+        "models": all_object_types,
     })
-
-
 
 def create_custom_field(request):
     if request.method == 'POST':
@@ -238,3 +315,15 @@ def get_company_information(request):
     return render(request, 'company_information.html', {
         'company': company or Tenant()
     })
+
+
+def create_custom_object(request):
+    if request.method == 'POST':
+        form = CustomObjectForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect('cpq:custom_object_list')  # or some success view
+    else:
+        form = CustomObjectForm()
+    
+    return render(request, 'create_custom_object.html', {'form': form})
