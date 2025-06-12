@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  input:hover,
+  textarea:hover,
+  select:hover {
+    background-color: transparent !important;
+  }
+
+  input,
+  textarea,
+  select {
+    cursor: pointer;
+  }
+  input:focus,
+textarea:focus,
+select:focus {
+  border-bottom: 1px solid #fc6a3d !important;
+  box-shadow: 0 1px 0 0 #fc6a3d !important;
+}
+
+input:focus + label,
+textarea:focus + label,
+select:focus + label {
+  color: #fc6a3d !important;
+}
+
+.field-list .collection-item {
+  background-color: #f2f2f2;
+  border: 1px solid #ddd;
+  font-family: 'Roboto', sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: move;
+  line-height: 1.5;
+}
+
+.drag-icon {
+  color: #9e9e9e;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.green-highlight {
+  background-color: #d4edda !important;
+  transition: background-color 0.3s ease;
+}
+
+.red-highlight {
+  background-color: #f8d7da !important;
+  transition: background-color 0.3s ease;
+}
+
+/* Change checkboxes color when it is activated */
+input[type="checkbox"]:checked + span:before {
+  border-bottom: 2px solid {{ company.secondary_color }} !important;
+  border-right: 2px solid {{ company.secondary_color }} !important;
+}
+
+/* Switch color when it is activated */
+#template_style_switch:checked + .lever {
+  background-color: {{ company.secondary_color }};
+}
+#template_style_switch:checked + .lever:after {
+  background-color: {{ company.secondary_color }};
+}
+
+/* Change the span color for checkbox */
+input[type="checkbox"] + span {
+  color: #212121 !important;  /* o el color que prefieras */
+}
+
+</style>
+
+<div class="container">
+  <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
+    <i class="material-icons left" style="vertical-align: middle;">note_alt</i>
+    Document Templates
+  </h4>
+
+  <div class="card-panel white z-depth-1">
+    {% if settings %}
+    <form method="post" action="{% url 'cpq:get_document_templates' %}" enctype="multipart/form-data">
+      {% csrf_token %}
+
+      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Template Design Style</h6>
+
+      <div class="row" style="margin-bottom: 2rem;">
+        <div class="col s12">
+          <div class="switch">
+            <label>
+              Classic
+              <input type="checkbox" name="template_style" id="template_style_switch" {% if settings.template_style == 'modern' %}checked{% endif %}>
+              <span class="lever"></span>
+              Modern
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <style>
+        
+      </style>
+
+      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Company Information</h6>
+    
+      <div class="row">
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_company_name" {% if settings.show_company_name %}checked{% endif %} />
+            <span>Name</span>
+          </label>
+        </div>
+
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_company_email" {% if settings.show_company_email %}checked{% endif %} />
+            <span>Email</span>
+          </label>
+        </div>
+
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_company_phone" {% if settings.show_company_phone %}checked{% endif %} />
+            <span>Phone</span>
+          </label>
+        </div>
+
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_company_domain" {% if settings.show_company_domain %}checked{% endif %} />
+            <span>Domain</span>
+          </label>
+        </div>
+
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_company_logo" {% if settings.show_company_logo %}checked{% endif %} />
+            <span>Logo</span>
+          </label>
+        </div>
+
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_company_address" {% if settings.show_company_address %}checked{% endif %} />
+            <span>Address</span>
+          </label>
+        </div>
+      </div>
+
+      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Account Information</h6>
+
+      <div class="row">
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_account_name" {% if settings.show_account_name %}checked{% endif %} />
+            <span>Name</span>
+          </label>
+        </div>
+
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_account_website" {% if settings.show_account_website %}checked{% endif %} />
+            <span>Website</span>
+          </label>
+        </div>
+
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_account_phone" {% if settings.show_account_phone %}checked{% endif %} />
+            <span>Phone</span>
+          </label>
+        </div>
+
+      </div>
+
+      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Quote Information</h6>
+
+      <div class="row">
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_quote_opportunity" {% if settings.show_quote_opportunity %}checked{% endif %} />
+            <span>Opportunity</span>
+          </label>
+        </div>
+
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_quote_status" {% if settings.show_quote_status %}checked{% endif %} />
+            <span>Status</span>
+          </label>
+        </div>
+
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_quote_created_at" {% if settings.show_quote_created_at %}checked{% endif %} />
+            <span>Created Date</span>
+          </label>
+        </div>
+
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_quote_expires_at" {% if settings.show_quote_expires_at %}checked{% endif %} />
+            <span>Expiration Date</span>
+          </label>
+        </div>
+
+        <div class="col s2">
+          <label>
+            <input type="checkbox" name="show_quote_notes" {% if settings.show_quote_notes %}checked{% endif %} />
+            <span>Notes</span>
+          </label>
+        </div>
+      </div>
+
+      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Line Item Information</h6>
+
+      <div class="row">
+
+        <div class="col s12">
+          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Rendered Fields (max 5)</h6>
+          <ul id="visible-fields" class="collection field-list">
+            {% for field in rendered_fields %}
+              <li class="collection-item"><i class="material-icons drag-icon">drag_indicator</i> {{ field }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <div class="col s12">
+          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Omitted Fields</h6>
+          <ul id="available-fields" class="collection field-list">
+            {% for field in omitted_fields %}
+              <li class="collection-item"><i class="material-icons drag-icon">drag_indicator</i> {{ field }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <div class="col s4">
+          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Discount Fields</h6>
+          <label>
+            <input type="checkbox" name="show_line_discount" {% if settings.show_line_discount %}checked{% endif %} />
+            <span>Show Quote Line Item Discount</span>
+          </label>
+        </div>
+
+        <div class="col s4">
+          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Show Term (Subscriptions)</h6>
+          <label>
+            <input type="checkbox" name="show_subscription_term" {% if settings.show_subscription_term %}checked{% endif %} />
+            <span>Show Term</span>
+          </label>
+        </div>
+
+        <div class="col s4">
+          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Show Sign</h6>
+          <label>
+            <input type="checkbox" name="show_sign" {% if settings.show_sign %}checked{% endif %} />
+            <span>Show Term</span>
+          </label>
+        </div>
+
+      </div>
+
+      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Terms and Conditions</h6>
+
+      <div class="input-field">
+        <textarea id="terms_conditions" name="terms_conditions" class="materialize-textarea">{{ settings.terms_and_conditions }}</textarea>
+        <label for="terms_conditions">Terms and Conditions</label>
+      </div>
+      
+      <script>
+        document.addEventListener("DOMContentLoaded", function () {
+          const MAX_VISIBLE = 5;
+
+          const visible = document.getElementById("visible-fields");
+          const available = document.getElementById("available-fields");
+
+          const highlight = (element, className) => {
+            element.classList.add(className);
+            setTimeout(() => element.classList.remove(className), 1000);
+          };
+
+          new Sortable(visible, {
+            group: "fields",
+            animation: 150,
+            onAdd: function (evt) {
+              if (visible.children.length > MAX_VISIBLE) {
+                const addedItem = evt.item;
+                const removedItem = visible.lastElementChild;
+
+                available.appendChild(removedItem);
+
+                highlight(addedItem, "green-highlight");
+                highlight(removedItem, "red-highlight");
+              }
+            }
+          });
+
+          new Sortable(available, {
+            group: "fields",
+            animation: 150,
+          });
+
+          const form = document.querySelector("form");
+          form.addEventListener("submit", function (e) {
+            const getFieldNames = (container) =>
+              Array.from(container.children).map(li =>
+                li.textContent.trim().replace('drag_indicator', '').trim()
+              );
+
+            const renderedFields = getFieldNames(visible);
+            const omittedFields = getFieldNames(available);
+
+            document.getElementById("rendered_fields_input").value = JSON.stringify(renderedFields);
+            document.getElementById("omitted_fields_input").value = JSON.stringify(omittedFields);
+          });
+        });
+      </script>
+
+      <input type="hidden" name="rendered_fields" id="rendered_fields_input" />
+      <input type="hidden" name="omitted_fields" id="omitted_fields_input" />
+    
+      <div class="right-align">
+        <button type="submit" class="btn orange darken-2">
+          <i class="material-icons left">save</i> Save
+        </button>
+      </div>
+    </form>
+
+    {% else %}
+    <p style="font-family: 'Euclid Circular A', sans-serif; font-size: 1.1rem; color: #ff6f00;">
+      Tenant information is missing. Please complete the "Company Information" section.
+    </p>
+    {% endif %}
+    
+  </div>
+
+  {% if company %}
+    <div class="row">
+      <div class="input-field col s6">
+        <label class="active">Plan</label>
+        <p style="margin-top: 0.5rem;">{{ company.plan }}</p>
+      </div>
+      <div class="input-field col s6">
+        <label class="active">Actions Limit</label>
+        <p style="margin-top: 0.5rem;">{{ company.actions_limit }}</p>
+      </div>
+      <div class="input-field col s6">
+        <label class="active">Tenanat Id</label>
+        <p style="margin-top: 0.5rem;">{{ company.tenant_id }}</p>
+      </div>
+      <div class="input-field col s6">
+        <label class="active">Version</label>
+        <p style="margin-top: 0.5rem;">{{ company.version }}</p>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -6,7 +6,7 @@ import logging
 import re
 import locale
 from dotenv import load_dotenv
-from cpq.models import Quote, Account, Opportunity, QuoteLine, Product, QuoteDocument
+from cpq.models import Quote, Account, Opportunity, QuoteLine, Product, QuoteDocument, Tenant
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
@@ -21,6 +21,7 @@ from django.db.models import Max
 from django.db.models import Q
 from django.forms.models import model_to_dict
 from django.db.models import ForeignKey
+from datetime import datetime
 
 
 # ✅ Load environment variables
@@ -52,7 +53,7 @@ def quote_agent(action, user_message, session_data):
 
     return {"message": "🤖 Sorry, I couldn’t understand your request."}
 
-def create_quote(user_message, session_data): 
+def create_quote(user_message, session_data):
     """Handles quote creation while preserving context."""
     extracted_details = extract_quote_details(user_message)
     logging.info(f"\n\nDetails: {extracted_details}\n\n")
@@ -60,22 +61,29 @@ def create_quote(user_message, session_data):
     opportunity_name = extracted_details.get("opportunity", session_data.get("opportunity", "")).strip()
     
     #  -------------- MODIFICATION --------------
-    extracted_products = extracted_details.get("products", []) # ✅ extraer productos
+    extracted_products = extracted_details.get("products", []) # ✅ Extract products
 
     if not account_name:
-        return {"message": "⚠️ Error: Could not determine the account. Please specify an account name."}
+        return {
+            "message": "⚠️ Error: Could not determine the account. Please specify an account name."
+        }
 
     opportunity = Opportunity.objects.filter(name=opportunity_name, account__name=account_name).first()
+
     if not opportunity:
         opportunity_name = f"Opportunity {account_name}"
     
     if session_data.get("pending_action") == "confirm_opportunity":
         session_data["opportunity"] = opportunity_name
         session_data["pending_action"] = "add_product"  
-        return {"message": f"✅ Opportunity {opportunity_name} added. Would you like to add more products now?"}
+        return {
+            "message": f"✅ Opportunity {opportunity_name} added. Would you like to add more products now?"
+            }
 
     if not opportunity_name:
-        return {"message": "📝 Please provide an opportunity name before creating the quote."}
+        return {
+            "message": "📝 Please provide an opportunity name before creating the quote."
+        }
     
     # ✅ Create or retrieve Account
     account, _ = Account.objects.get_or_create(name=account_name)
@@ -88,7 +96,7 @@ def create_quote(user_message, session_data):
         account=account,
         opportunity=opportunity,
         status="Draft",
-        net_amount=0
+        net_amount=Decimal("0.00")
     )
 
     # ✅ Assign formatted name after creation using quote.id
@@ -109,66 +117,105 @@ def create_quote(user_message, session_data):
         session_data["pending_action"] = "add_product"
 
         return {
-            "message": f"✅ Quote {quote.name} created for {account_name} under opportunity {opportunity_name}. Would you like to add more products now?",
-            "quote_id": quote.id
+            "message": f"✅ Quote {quote.name} created for {account_name} under opportunity {opportunity_name}. Would you like to add more products now?"
         }
-
     else:
         logging.info("🟡 Products provided in initial quote creation.")
+
         # ✅ Add products to the quote if provided
-        total_added_price = Decimal(0)
         added_products = []
+
+        response_message = f"✅ Quote {quote.name} created for {account_name} under deal {opportunity_name}.<br><br>"
 
         for product_data in extracted_products:
             sku = product_data.get("sku")
             name = product_data.get("name")
             quantity = product_data.get("quantity", 1)
-            discount = product_data.get("discount", 0)
+            discount_type = product_data.get("discount_type", "None")
+            discount_value = Decimal(product_data.get("discount_value", "0.00"))
+
+            logging.info(f"=>>>>>>>>>>>>>>>>>>>> For product: {sku}")
+
+            # Validate if quantity is be able to converto to int and is bigger than 0
+            raw_quantity = product_data.get("quantity", 1)
+
+            try:
+                quantity = int(raw_quantity)
+                if quantity <= 0:
+                    logging.warning(f"⚠️ Invalid quantity '{quantity}' for product {sku or name}. Skipping...")
+                    response_message += f"⚠️ Invalid quantity '{quantity}' for product {sku or name}. Skipping...<br>"
+                    continue
+            except (ValueError, TypeError):
+                logging.warning(f"⚠️ Quantity '{raw_quantity}' is not a valid integer for product {sku or name}. Skipping...")
+                response_message += f"⚠️ Quantity '{raw_quantity}' is not a valid integer for product {sku or name}. Skipping...<br>"
+                continue
 
             # ✅ Validate product exists
             try:
-                # product = Product.objects.get(sku=sku)
-                product = Product.objects.filter(Q(sku=sku) | Q(name=name)).first()
+                product = Product.objects.get(Q(sku=sku) | Q(name=name))
             except Product.DoesNotExist:
                 logging.warning(f"⚠️ Product {sku} not found. Skipping...")
+                response_message += f"⚠️ Product {sku} not found. Skipping...<br>"
                 continue  # Skip this product and move to the next
 
             # ✅ Ensure proper rounding for calculations
             unit_price = Decimal(product.price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            discount_multiplier = Decimal((100 - discount) / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            total_price = (unit_price * Decimal(quantity) * discount_multiplier).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-            logging.info(f"=>>>>>>>>>>>>>>>>>>>> Discount Multiplier: {discount_multiplier}")
             logging.info(f"=>>>>>>>>>>>>>>>>>>>> Unit Price: {unit_price}")
             logging.info(f"=>>>>>>>>>>>>>>>>>>>> Quantity: {quantity}")
-            logging.info(f"=>>>>>>>>>>>>>>>>>>>> Total Price Calculated: {total_price}")
 
-            # ✅ Create Quote Line Item
-            quote_line = QuoteLine.objects.create(
-                quote=quote,
-                product=product,
-                quantity=quantity,
-                unit_price=unit_price,
-                additional_discount=Decimal(discount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                total_price=total_price
-            )
+
+            if discount_type == "percentage":
+                # ✅ Create Quote Line Item for discount percentage
+                quote_line = QuoteLine.objects.create(
+                    quote=quote,
+                    product=product,
+                    quantity=quantity,
+                    unit_price=unit_price,
+                    discount_type=discount_type,
+                    discount_percentage=Decimal(discount_value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                )
+            elif discount_type == "amount":
+                # ✅ Create Quote Line Item for discount amount
+                quote_line = QuoteLine.objects.create(
+                    quote=quote,
+                    product=product,
+                    quantity=quantity,
+                    unit_price=unit_price,
+                    discount_type=discount_type,
+                    discount_amount=Decimal(discount_value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                )
+            else:
+                # ✅ Create Quote Line Item if no discount was provided
+                quote_line = QuoteLine.objects.create(
+                    quote=quote,
+                    product=product,
+                    quantity=quantity,
+                    unit_price=unit_price,
+                    discount_type="None",
+                    discount_amount=Decimal("0").quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                    discount_percentage=Decimal("0").quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                )
+
 
             # ✅ Force saving and reloading from DB to verify
             quote_line.refresh_from_db()
             logging.info(f"=>>>>>>>>>>>>>>>>>>>> Saved Total Price in DB: {quote_line.total_price}")
 
-            # ✅ Manually update the total_price if it does not match
-            if quote_line.total_price != total_price:
-                logging.warning(f"⚠️ Mismatch detected! Expected: {total_price}, but DB saved: {quote_line.total_price}")
-                QuoteLine.objects.filter(id=quote_line.id).update(total_price=total_price)
-                quote_line.refresh_from_db()
-                logging.info(f"✅ Total Price Updated in DB: {quote_line.total_price}")
 
-            total_added_price += total_price
-            added_products.append(f"{quantity}x {sku} with {discount}% discount")
+            
+            if discount_type == "percentage":
+                added_products.append(f"{quantity}x {sku} with {discount_value}% discount.")
+                response_message += f"✅ Added {quantity}x {sku} to quote {quote.name} with a {discount_value}% discount.<br>"
+            elif discount_type == "amount":
+                added_products.append(f"{quantity}x {sku} with ${discount_value} discount.")
+                response_message += f"✅ Added {quantity}x {sku} to quote {quote.name} with a ${discount_value} discount.<br>"
+            else:
+                added_products.append(f"{quantity}x {sku}.")
+                response_message += f"✅ Added {quantity}x {sku} to quote {quote.name}.<br>"
 
-        # ✅ Update quote net amount
-        quote.net_amount += total_added_price
+
+        # ✅ Update quote (subtotal, discounts fields and net amount)
         quote.save()
 
         # ✅ Update amount in Opportunity
@@ -182,20 +229,16 @@ def create_quote(user_message, session_data):
         approval_suggestion = get_approval_status("", "", quote.id, "")
 
         if added_products:
-            #response_message = f"✅ Added {quantity}x {sku} to quote {quote.name}. Net amount updated to ${quote.net_amount:.2f}. Would you like to add more products?"
-            response_message = (
-                f"✅ Quote {quote.name} created for {account_name} under deal {opportunity_name}.\n"
-                f"✅ Added {quantity}x {sku} to quote {quote.name}. Net amount updated to ${quote.net_amount:.2f}."
+            response_message += (
+                f"<br>Net amount updated to ${quote.net_amount:.2f}."
                 "Would you like to add more products?"
             )
-
-        #Check if no added products (in case GPT model recognizes a product that doesn't exist.)
-        if not added_products:
+        else:
+            #Check if no added products (in case GPT model recognizes a product that doesn't exist.)
             session_data["pending_action"] = "add_product"  # ✅ Ensure we move to the next step
 
             return {
-                "message": f"✅ Quote `{quote.name}` created for {account_name} under opportunity `{opportunity_name}`. Would you like to add more products now?",
-                "quote_id": quote.id
+                "message": f"✅ Quote `{quote.name}` created for {account_name} under opportunity `{opportunity_name}`.<br> Would you like to add more products now?"
             }
         
         # If an approval suggestion exists, append it to the message
@@ -207,7 +250,7 @@ def create_quote(user_message, session_data):
             }
         else:
             return {
-                "message": "⚠️ No valid products were added. Please check the SKUs and try again."
+                "message": "⚠️ No approval suggestion."
             }
 
 
@@ -231,30 +274,52 @@ def add_product_to_quote(user_message, session_data):
     if not extracted_products or not isinstance(extracted_products, list):
         return {"message": "⚠️ Error: Could not extract product details. Please specify SKU, quantity, and discount for each product."}
 
-    total_added_price = Decimal(0)
     added_products = []
+    response_message = ""
 
     for index, product_data in enumerate(extracted_products, start=1):
         sku = product_data.get("sku")
         quantity = product_data.get("quantity", 1)
-        discount = product_data.get("discount", 0)
-
-        if int(quantity) <= 0:
-            return {
-                "message": "⚠️ Quantity cannot be less than or equal to 0. Please enter a valid quantity."
-            }
-        
-        if float(discount) < 0:
-            return {
-                "message": "⚠️ Discount can not be less than 0. Please enter a valid discount"
-            }
+        name = product_data.get("name", "None")
+        discount_type = product_data.get("discount_type", 0)
+        discount_amount = product_data.get("discount_amount", 0)
 
         # ✅ Validate product exists
-        try:
-            product = Product.objects.get(sku=sku)
-        except Product.DoesNotExist:
-            logging.warning(f"⚠️ Product {sku} not found. Skipping...")
-            continue  # Skip this product and move to the next
+        product = None
+
+        if sku and sku != "Null":
+            try:
+                product = Product.objects.get(sku=sku)
+            except Product.DoesNotExist:
+                msg = f"⚠️ Product {index} (SKU: {sku}) not found. Trying to find by name...<br>"
+                logging.warning(msg)
+
+        if not product and name and name != "Null":
+            try:
+                product = Product.objects.get(name__iexact=name)
+            except Product.DoesNotExist:
+                msg = f"⚠️ Product {index} (Name: {name}) not found. Skipping...<br><br>"
+                response_message += msg
+                logging.warning(msg)
+                continue
+
+        if not product:
+            msg = f"⚠️ Product '{sku}' could not be identified by SKU or name. Skipping...<br>"
+            response_message += msg
+            logging.warning(msg)
+            continue
+
+        # Descriptive prefix for messages
+        product_label = f"Product {index} ({name if name != 'Null' else sku})"
+
+        if int(quantity) <= 0:
+            response_message += f"⚠️ {product_label}: Quantity cannot be less than or equal to 0. Please enter a valid quantity.<br><br>"
+            continue
+
+        if float(discount_amount) < 0:
+            response_message += f"⚠️ {product_label}: Discount cannot be less than 0. Please enter a valid discount.<br><br>"
+            continue
+
 
         # ✅ Check if product already exists in the quote
         existing_line = QuoteLine.objects.filter(quote=quote, product=product).first()
@@ -273,60 +338,82 @@ def add_product_to_quote(user_message, session_data):
             }]
 
             # Only add discount if discount is different than 0
-            if discount != 0:
+            if Decimal(discount_amount) != 0 and discount_type in ["percentage", "amount"]:
                 update_payload.append({
                     "sku": sku,
-                    "field": "discount",
-                    "value": str(discount),
+                    "field": "discount_percentage" if discount_type == "percentage" else "discount_amount",
+                    "value": str(discount_amount),
                     "quote_line_id": str(existing_line.id),
                     "hiddenMessage": True
                 })
 
             user_message = f"Update Quote Line: {json.dumps(update_payload)}"
 
-            add_existing_product_to_quote_line(user_message, session_data)
+            
+            response = update_quote_line(user_message, session_data)
 
-            added_products.append(f"{quantity}x `{sku}` with {discount}% discount")
+            if (
+                response.get("message") == "✅ Quote line(s) updated successfully." and
+                "quote_details" in response and
+                "line_items" in response["quote_details"]
+            ):
+                if discount_type == "percentage":
+                    added_products.append(f"{quantity}x `{sku}` with {discount_amount}% discount")
+                elif discount_type == "amount":
+                    added_products.append(f"{quantity}x `{sku}` with ${discount_amount} discount")
+                else:
+                    added_products.append(f"{quantity}x `{sku}`")
+            else:
+                response_message+= "⚠️ Error: While updating quote line {sku}.<br><br>"
+                logging.warning("⚠️ Update Failed")
+
 
             # ✅ Refresh quote to get new net_amount from database
             quote.refresh_from_db()
             existing_line.refresh_from_db()
 
             continue
-
-        # ✅ Ensure proper rounding for calculations
-        unit_price = Decimal(product.price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        discount_multiplier = Decimal((100 - discount) / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        total_price = (unit_price * Decimal(quantity) * discount_multiplier).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-        logging.info(f"=>>>>>>>>>>>>>>>>>>>> Discount Multiplier: {discount_multiplier}")
-        logging.info(f"=>>>>>>>>>>>>>>>>>>>> Unit Price: {unit_price}")
-        logging.info(f"=>>>>>>>>>>>>>>>>>>>> Quantity: {quantity}")
-        logging.info(f"=>>>>>>>>>>>>>>>>>>>> Total Price Calculated: {total_price}")
-
+        
+        # Add product where quote line hasn't been added
         # ✅ Create Quote Line Item
-        quote_line = QuoteLine.objects.create(
-            quote=quote,
-            product=product,
-            quantity=quantity,
-            unit_price=unit_price,
-            additional_discount=Decimal(discount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-            total_price=total_price
-        )
+        
+        if discount_type == "percentage":
+            quote_line = QuoteLine.objects.create(
+                quote=quote,
+                product=product,
+                quantity=quantity,
+                discount_type="percentage",
+                discount_percentage=discount_amount,
+                discount_amount=0
+            )
+            added_products.append(f"{quantity}x `{sku}` with {discount_amount}% discount")
+        elif discount_type == "amount":
+            quote_line = QuoteLine.objects.create(
+                quote=quote,
+                product=product,
+                quantity=quantity,
+                discount_type="amount",
+                discount_amount=discount_amount,
+                discount_percentage=0
+            )
+            added_products.append(f"{quantity}x `{sku}` with ${discount_amount} discount")
+        else:
+            quote_line = QuoteLine.objects.create(
+                quote=quote,
+                product=product,
+                quantity=quantity,
+                discount_type="None",
+                discount_amount=0,
+                discount_percentage=0
+            )
+            added_products.append(f"{quantity}x `{sku}`")
 
         # ✅ Force saving and reloading from DB to verify
         quote_line.refresh_from_db()
         logging.info(f"=>>>>>>>>>>>>>>>>>>>> Saved Total Price in DB: {quote_line.total_price}")
 
-        # ✅ Manually update the total_price if it does not match
-        if quote_line.total_price != total_price:
-            logging.warning(f"⚠️ Mismatch detected! Expected: {total_price}, but DB saved: {quote_line.total_price}")
-            QuoteLine.objects.filter(id=quote_line.id).update(total_price=total_price)
-            quote_line.refresh_from_db()
-            logging.info(f"✅ Total Price Updated in DB: {quote_line.total_price}")
-
-        total_added_price += total_price
-        added_products.append(f"{quantity}x {sku} with {discount}% discount")
+        #response_message += "✅ Added product successfully.<br><br>"
+        continue
 
     #If AI Model indetify a product but it does not exist
     if not added_products:
@@ -334,8 +421,7 @@ def add_product_to_quote(user_message, session_data):
             "message": "⚠️ Error: The product does not exist or you did not specify one. Please specify SKU, quantity, and discount for each product. <br> E"
         }
     
-    # ✅ Update quote net amount
-    quote.net_amount += total_added_price
+    # ✅ Update quote (subtotal, discounts fields and net amount)
     quote.save()
 
     # ✅ Reset pending action and update session
@@ -346,12 +432,11 @@ def add_product_to_quote(user_message, session_data):
     approval_suggestion = get_approval_status("", "", quote.id, "")
 
     if added_products:
-        response_message = ""
         for product in added_products:
             print(f"\n\n Products: {added_products}\n\n")
             response_message += f"✅ Added {product} to quote `{quote.name}`.<br>"
         
-        response_message += f"<br><br>💰 Net amount updated to ${quote.net_amount:,.2f}. Would you like to add more products?"
+        response_message += f"<br>💰 Net amount updated to ${quote.net_amount:,.2f}. Would you like to add more products?"
     
     # If an approval suggestion exists, append it to the message
     if "message" in approval_suggestion:
@@ -447,6 +532,8 @@ def apply_discount_to_quote_line(user_message, session_data):
             "message": response_message
         }
     
+    # ✅ Update quote (subtotal, discounts fields and net amount)
+    quote.save()
     quote.refresh_from_db()
     
     response_message = ""
@@ -475,26 +562,33 @@ def extract_product_details(user_message):
     """Extract multiple product SKUs, quantities, and discounts from user input using GPT."""
     prompt = f"""
     Extract all product details from the user's request. The user may specify multiple products in a single message.
-    
+
     **Expected fields per product:**
     - sku (string, unique identifier)
     - name (string, product name)
     - quantity (integer, default 1 if not specified)
-    - discount (integer, percentage, default 0 if not specified)
+    - discount_type ("percentage" or "amount", based on how the user specifies the discount)
+    - discount_amount (integer, default 0 if not specified)
+
+    **Instructions for discounts:**
+    - Use `"percentage"` for `discount_type` if the user specifies a percentage (e.g., "15%", "15 percent").
+    - Use `"amount"` for `discount_type` if the user specifies a fixed amount (e.g., "$15", "15 dollars", "15 USD").
+    - Extract the numeric part and set it as `discount_amount` (e.g., "15%" → 15, "$15" → 15).
+    - If no discount is mentioned, set `"discount_type": "None"` and `"discount_amount": "0"`.
 
     **Example Input:** 
-    "Add AI-CPQ-001 x 5 with 10% discount, or Agency PQ Solo x 2 with 5% discount, or Agent CPQ Team x 10 with 15% discount."
+    "Add AI-CPQ-001 x 5 with 10% discount, Agency PQ Solo x 2 with $20 discount, and AI-CPQ-004 x 10."
 
     **Expected JSON Output:**
     [
-        {{"sku": "SYM-AGCPQ-SOLO","name": "AgentCPQ Solo", "quantity": 5, "discount": 10}},
-        {{"sku": "SYM-AGCPQ-TEAM ","name": "AgentCPQ Team", "quantity": 2, "discount": 5}},
-        {{"sku": "SYM-ACTFEE-STANDARD","name": "AgentCPQ Activation Fee", "quantity": 10, "discount": 15}}
+        {{"sku": "AI-CPQ-001", "name": "Null", "quantity": "5", "discount_type": "percentage", "discount_amount": "10"}},
+        {{"sku": "Null", "name": "Agency PQ Solo", "quantity": "2", "discount_type": "amount", "discount_amount": "20"}},
+        {{"sku": "AI-CPQ-004", "name": "Null", "quantity": "1", "discount_type": "None", "discount_amount": "0"}}
     ]
 
     **User Request:** "{user_message}"
 
-    **Return a valid JSON array only of product objects. Do not include explanations, and do not format the response as Markdown(no triple backticks or ```json) just return the JSON.**
+    **Return a valid JSON array only of product objects. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json) — just return the JSON.**
     """
 
     try:
@@ -513,7 +607,7 @@ def extract_product_details(user_message):
         # ✅ Ensure valid JSON response
         try:
             extracted_products = json.loads(raw_response)
-            if isinstance(extracted_products, list) and all("sku" in p and "name" in p and "quantity" in p and "discount" in p for p in extracted_products):
+            if isinstance(extracted_products, list) and all("sku" in p and "name" in p and "quantity" in p and "discount_type" in p and "discount_amount" in p for p in extracted_products):
                 return extracted_products
             else:
                 logging.warning("⚠️ GPT response is not in expected format.")
@@ -677,27 +771,29 @@ def apply_discount_to_quote(user_message, session_data):
             discount_amount = Decimal(discount_value)
             discount_percentage = (discount_amount / Decimal(quote_total)) * 100
             discount_percentage = discount_percentage.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            added_discounts.append(f"Discount #{index}: ${discount_value} applied to Quote {quote.name}")
         
         else:
             #Discount_type = "percentage"
             discount_percentage = Decimal(discount_value)
             discount_amount = (discount_percentage / Decimal(100)) * Decimal(quote_total)
+            print(f"\n\n Discount before quantize: {discount_amount}\n\n")
             discount_amount = discount_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            print(f"\n\n Discount after quantize: {discount_amount}\n\n")
+            added_discounts.append(f"Discount #{index}: {discount_value}% applied to Quote {quote.name}")
 
         # ✅ Apply the discount to the quote
         quote.discount_type = discount_type
         quote.discount_percentage = discount_percentage
         quote.discount_amount = discount_amount
-        quote.save()
 
-        # ✅ Update net amount
-        update_quote_net_amount(quote)
+        # ✅ Update quote (subtotal, discounts fields and net amount)
+        quote.save()
 
         # ✅ Update related opportunity
         if quote.opportunity:
             update_opportunity_net_amount(quote.opportunity)
 
-        added_discounts.append(f"Discount #{index}: {discount_value}% applied to Quote {quote.id}")
 
     if not added_discounts:
         response_message += "⚠️ Error: Something went wrong while trying to apply the discount."
@@ -710,7 +806,7 @@ def apply_discount_to_quote(user_message, session_data):
     response_message = ""
 
     for discount in added_discounts:
-        response_message += f"✅ {discount} to quote `{quote.name}`.<br>"
+        response_message += f"✅ {discount}.<br>"
     
     response_message += f"<br><br>💰 Net amount updated to ${quote.net_amount:,.2f}."
 
@@ -827,10 +923,18 @@ def extract_quote_details(user_message):
     - Products and Quantities
     - Discounts (if mentioned)
     - Subscription Start/End Dates (if applicable)
-    
+
+    For discounts:
+    - If the user specifies a percentage discount (e.g. "15%"), set discount_type to "percentage" and discount_value to the numeric value (e.g. "15").
+    - If the user specifies a discount in dollars, with symbols or the word "dollar(s)" (e.g. "$100" or "100 dollars"), set discount_type to "amount" and discount_value to the numeric amount (e.g. "100").
+    - If no discount is specified, set discount_type to "None" and discount_value to "0".
+
     Return a JSON object with these keys:
-    {{"account": "", "opportunity": "", "products": [{{"sku": "","name": "", "quantity": 1, "discount": 0}}], "start_date": "", "end_date": ""}}.
-    
+    {{"account": "", "opportunity": "", "products": [{{"sku": "", "name": "", "quantity": "", "discount_type": "", "discount_value": ""}}], "start_date": "", "end_date": ""}}.
+
+    If no products are provided in the request, return a JSON object with these keys:
+    {{"account": "", "opportunity": "", "products": [], "start_date": "", "end_date": ""}}.
+
     User Request: "{user_message}"
     """
     
@@ -880,12 +984,17 @@ def update_quote_line(user_message, session_data):
                     quote_line.quantity = int(new_value)
                 elif field == "unit_price":
                     quote_line.unit_price = Decimal(new_value)
-                elif field =="discount" or field == "additional_discount":
-                    quote_line.additional_discount = Decimal(new_value)
+                elif field == "discount_percentage":
+                    quote_line.discount_type = "percentage"
+                    quote_line.discount_percentage = Decimal(new_value)
+                elif field == "discount_amount":
+                    quote_line.discount_type = "amount"
+                    quote_line.discount_amount = Decimal(new_value)
 
                 quote_line.save()
 
-            update_quote_net_amount(quote)
+            # ✅ Update quote (subtotal, discounts fields and net amount)
+            quote.save()
             update_opportunity_net_amount(quote.opportunity)
 
             # ✅ Save quote in session data
@@ -893,30 +1002,7 @@ def update_quote_line(user_message, session_data):
             
             return {
                 "message": "✅ Quote line(s) updated successfully.",
-                "quote_details": {
-                    "quote_id": quote.id,
-                    "quote_name": quote.name,
-                    "net_amount": str(quote.net_amount),
-                    "status": quote.status,
-                    "account": quote.account.name if quote.account else "N/A",
-                    "opportunity": quote.opportunity.name if quote.opportunity else "N/A",
-                    "quote_line_total_price": str(quote_line.total_price),
-                    "created_at": quote.created_at.isoformat(),
-                    "line_items": [
-                        {
-                            "id": ql.id,
-                            "product": ql.product.name,
-                            "sku": ql.product.sku,
-                            "quantity": ql.quantity,
-                            "unit_price": str(ql.unit_price),
-                            "total_price": str(ql.total_price),
-                            "discount": f"{ql.additional_discount}%" if ql.additional_discount else "0%",
-                            "is_subscription": ql.product.is_subscription,
-                            "term": ql.product.term,
-                        }
-                        for ql in QuoteLine.objects.filter(quote=quote)
-                    ]
-                },
+                "quote_details": get_quote_details(quote),
                 "hiddenMessage": "True"
             }
         except Exception as e:
@@ -931,8 +1017,8 @@ def update_quote_line(user_message, session_data):
         if isinstance(quote, dict) and "message" in quote:
             return quote
             
-        allowed_fields = get_editable_quoteline_fields()
-        extracted_updates = extract_quote_line_updates(user_message, allowed_fields)
+
+        extracted_updates = extract_quote_line_updates(user_message)
 
         if not extracted_updates:
             # ✅ Save quote in session data
@@ -944,12 +1030,21 @@ def update_quote_line(user_message, session_data):
 
         # Check if exist the product and any (sku, field or value) is NoneAppear
         response_message_alerts = ""
+        response = None
         for index, item in enumerate(extracted_updates, start=1):
+
+            field_labels = {
+                "quantity": "Quantity",
+                "discount_percentage": "Discount Percentage",
+                "discount_amount": "Discount Amount",
+            }
+
+            item_field = field_labels.get(item["field"], item["field"].capitalize())
 
             #print(f"\n\nItem : {item}")
             show_details_message = f"<b>🔄 <u>Update Request #{index} in quote {quote.name}</u> 🔄</b><br>"
             show_details_message += f"🔢 SKU: {item['sku']}<br>"
-            show_details_message += f"🏷️ Field: {item['field']}<br>"
+            show_details_message += f"🏷️ Field: {item_field}<br>"
             show_details_message += f"✏️ Value: {item['value']}<br><br>"
 
             # Does the product exist?
@@ -978,7 +1073,12 @@ def update_quote_line(user_message, session_data):
 
             if item['field'] == 'NoneAppear':
                 response_message_alerts += show_details_message
-                response_message_alerts += f"⚠️ Error: No field to update was detected in your request. Please specify which attribute (e.g., quantity, unit_price) you want to modify.<br><br>"
+                response_message_alerts += f"⚠️ Error: No field to update was detected in your request. Please specify which attribute (e.g., quantity or discount) you want to modify.<br><br>"
+                continue
+
+            if item['field'] not in field_labels:
+                response_message_alerts += show_details_message
+                response_message_alerts += f"⚠️ Error: No valid field to update was detected in your request. Please specify which attribute (e.g., quantity or discount) you want to modify.<br><br>"
                 continue
 
             if item['value'] == "NoneAppear":
@@ -1018,12 +1118,22 @@ def update_quote_line(user_message, session_data):
                 response_message_alerts += "⚠️ Error: While updating quote line.<br>"
                 logging.warning("⚠️ Update Failed")
 
+        # ✅ Update quote (subtotal, discounts fields and net amount)
+        quote.save()
+
+        if response == None:
+            return {
+            "message": response_message_alerts,
+            "temporaryMessage": True,
+            "iterations": index
+            }
+        
         return {
             "message": response_message_alerts,
             "update_details": response["quote_details"],
             "temporaryMessage": True,
             "iterations": index
-        }
+            }
             
         
 
@@ -1032,7 +1142,7 @@ def update_quote_net_amount(quote):
     """Recalculate and update the quote's net amount based on all quote lines."""
     try:
         # ✅ Fetch total from all related QuoteLines
-        quote_total = quote.get_total_amount()
+        quote_total = quote.get_subtotal_amount()
 
         if quote.discount_type == "percentage":
             discount = quote.discount_percentage / Decimal(100)
@@ -1044,6 +1154,8 @@ def update_quote_net_amount(quote):
 
         # ✅ Ensure we round to 2 decimal places
         quote.net_amount = max(quote.net_amount, Decimal(0)) #Avoid negative values
+
+        # ✅ Update quote (subtotal, discounts fields and net amount)
         quote.save()
 
         # ✅ Ensure the value is saved correctly
@@ -1071,13 +1183,10 @@ def update_opportunity_net_amount(opportunity):
     except Exception as e:
         print(f"⚠️ Error updating amount for Opportunity {opportunity.id}: {str(e)}")
     
-def extract_quote_line_updates(user_message, allowed_fields=None):
+def extract_quote_line_updates(user_message):
     """Uses GPT to extract SKU, field, and new value for quote line updates."""
 
-    if allowed_fields is None:
-            allowed_fields = ["quantity", "discount"] #fallback
-
-    allowed_fields_str = '", "'.join(allowed_fields)
+    allowed_fields_str = '", "'.join(["quantity", "discount_amount", "discount_percentage"])
 
     prompt = f"""
     Extract structured update details from the following request.
@@ -1087,20 +1196,21 @@ def extract_quote_line_updates(user_message, allowed_fields=None):
     - "value" (string or number, new value)
 
     **Example Input & Output:**
-    User: "Update AI-10 quantity to 600 and price to 49.99"
+    User: "Update AI-10 quantity to 600 and discount to 5%, then update AIACPQ-003 discount to $100."
     Response:
     [
         {{"sku": "AI-10", "field": "quantity", "value": "600"}},
-        {{"sku": "AI-10", "field": "unit_price", "value": "49.99"}}
+        {{"sku": "AI-10", "field": "discount_percentage", "value": "5"}},
+        {{"sku": "AIACPQ-003", "field": "discount_amount", "value": "100"}}
     ]
 
     **Requirements:**
-    - For discounts, return only the numeric value. Remove percentage signs (%), the word "off", and any surrounding text. For example, "50% off" → "50".
+    - For discounts, if the user specifies a percentage (e.g., "15% discount"), return field: "discount_percentage" and value: "15". If the user specifies a dollar amount (e.g., "$150 off" or "150 dollars discount"), return field: "discount_amount" and value: "150". Always extract only the numeric value — remove symbols like % or $, and ignore words like "off", "discount", or "dollars".
     - Always normalize discount values to plain numbers.
-    ' If no SKUs are found in the message, return NoneAppear as SKU]
-    ' If no field are found in the message, return NoneAppear as field]
-    ' If no value are found in the message, return NoneAppear as value]
-    ' If discount are found in the message
+    - If no SKUs are found in the message, return NoneAppear as SKU
+    - If no field are found in the message, return NoneAppear as field
+    - If no value are found in the message, return NoneAppear as value
+    - If no discount are found in the message, return NoneAppear as value
 
     **Example Input with no SKU:**
     "modify the product quantity to 200 and price to 10"
@@ -1266,31 +1376,10 @@ def show_quote_details(user_message, session_data):
 
         # ✅ Format the response
         quote_details = get_quote_details(quote)
-        quote_details2 = {
-            "quote_name": quote.name,
-            "net_amount": f"${quote.net_amount:.2f}",
-            "status": quote.status,
-            "account": quote.account.name if quote.account else "N/A",
-            "opportunity": quote.opportunity.name if quote.opportunity else "N/A",
-            "created_at": quote.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "line_items": [
-                {
-                    "id": line.id,
-                    "product": line.product.name,
-                    "sku": line.product.sku,
-                    "quantity": line.quantity,
-                    "unit_price": f"${line.unit_price:.2f}",
-                    "total_price": f"${line.total_price:.2f}",
-                    "discount": f"{line.additional_discount}%" if line.additional_discount else "0%",
-                    "is_subscription": line.product.is_subscription,
-                    "term": line.product.term,
-                } for line in quote_lines
-            ]
-        }
 
         set_active_quote_to_session_data(session_data, quote)
 
-        return {"message": "✅ Here are the quote details:", "quote_details": quote_details, "hiddenMessage": "True"}
+        return {"message": "Here are the quote details:", "quote_details": quote_details, "hiddenMessage": "True"}
     
     except Quote.DoesNotExist:
         return {"message": "⚠️ Error: Quote not found. Please check the quote name."}
@@ -1351,6 +1440,9 @@ def delete_quote_line(user_message, session_data):
     # ✅ Save quote in session data
     set_active_quote_to_session_data(session_data, quote)
 
+    # ✅ Update quote (subtotal, discounts fields and net amount)
+    quote.save()
+
     return {
         "message": response_message,
         "update_details": get_quote_details(quote),
@@ -1365,19 +1457,20 @@ def format_currency(value):
 def generate_quote_pdf(user_message, session_data):
     """Generates a sleek PDF document for the specified quote."""
     try:
-        # ✅ Ensure we have an active quote
-        active_quote = session_data.get("active_quote", {})
-        if not active_quote:
-            return {"message": "⚠️ No active quote found. Please specify a quote name."}
+        # Looking for active quote
+        quote = get_active_quote(user_message, session_data)
 
-        # ✅ Retrieve quote using session data
-        try:
-            quote = Quote.objects.get(id=active_quote['quote_id'])
-        except Quote.DoesNotExist:
-            return {"message": "⚠️ Session references a non-existent quote. Please provide a valid quote name."}
+        print(f"\n\nSession data === : {session_data}\n\n")
+
+        # ⚠️ Verify if function return an error
+        if isinstance(quote, dict) and "message" in quote:
+            return quote
 
         # ✅ Fetch related quote lines
         quote_lines = QuoteLine.objects.filter(quote=quote)
+
+        # ✅ Fetch related company
+        company = Tenant.objects.first()
 
         # ✅ Generate file name
         last_doc = QuoteDocument.objects.filter(quote=quote).order_by('-version').first()
@@ -1392,29 +1485,43 @@ def generate_quote_pdf(user_message, session_data):
         pdf.setTitle(f"Quote {quote.name}")
 
         # ✅ Add Logo (Update path if needed)
-        logo_path = os.path.join(settings.MEDIA_ROOT, "company_logo.png")  
-        if os.path.exists(logo_path):
-            pdf.drawImage(logo_path, 50, 700, width=150, height=60, preserveAspectRatio=True, mask='auto')
+        if company and company.logo:
+            logo_path = company.logo.path
+            if os.path.exists(logo_path):
+                pdf.drawImage(logo_path, 50, 680, width=150, height=60, preserveAspectRatio=True, mask='auto')
 
         # ✅ Quote Header
         pdf.setFont("Helvetica-Bold", 16)
         pdf.drawString(400, 750, f"Quote: {quote.name}")
 
+        # ✅ Letterhead
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(20, 770, f"{datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}")
+
         # ✅ Company & Quote Information
+        pdf.setFont("Helvetica-Bold", 12)
+        pdf.drawString(50, 660, f"{company.name}")
         pdf.setFont("Helvetica", 12)
-        pdf.drawString(50, 660, "Company Name")
-        pdf.drawString(50, 640, f"Opportunity: {quote.opportunity.name if quote.opportunity else 'N/A'}")
-        pdf.drawString(50, 620, f"Status: {quote.status}")
-        pdf.drawString(50, 600, f"Created At: {quote.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        # ✅ Company email with hyperlink
+        pdf.setFillColor(HexColor("#888888"))
+        x = 50
+        y = 645
+        email = company.contact_email
+        pdf.drawString(x, y, email)
+        pdf.linkURL(f"mailto:{email}", (x, y - 2, x + pdf.stringWidth(email), y + 10), relative=0)
+        pdf.setFillColor(HexColor("#000000"))
     
         # ✅ Account Information
         pdf.drawString(350, 660, f"Account: {quote.account.name if quote.account else 'N/A'}")
         pdf.drawString(350, 640, f"Opportunity: {quote.opportunity.name if quote.opportunity else 'N/A'}")
         pdf.drawString(350, 620, f"Status: {quote.status}")
-        pdf.drawString(350, 600, f"Created At: {quote.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        pdf.drawString(350, 600, f"Quote Created At: {quote.created_at.strftime('%m/%d/%Y, %H:%M:%S')}")
+        pdf.drawString(350, 580, f"Quote Expires At: {quote.expiration_date}")
+
+        # ✅ Table header Information
 
         pdf.setFillColor(HexColor("#5c5c5c"))
-        # pdf.rect(50, 560, 520, 30, fill=False, stroke=True)  # Background color for header
         pdf.setLineWidth(0.5)
         pdf.setStrokeColor(HexColor("#cccccc"))  # light gray color
         pdf.rect(47, 540, 520, 30, fill=False, stroke=True)
@@ -1475,70 +1582,15 @@ def generate_quote_pdf(user_message, session_data):
         return {
             "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
             "download_url": f"{settings.MEDIA_URL}quote_documents/{pdf_filename}",
-            "document_version": next_version
+            "document_version": next_version,
+            "hiddenMessage": True
             }
 
     except Quote.DoesNotExist:
         return {"message": "⚠️ Error: Quote not found."}
     except Exception as e:
         return {"message": f"⚠️ Error generating PDF: {str(e)}"}
-
-
-def add_existing_product_to_quote_line(user_message, session_data):
-    """Updates only the modified fields in quote lines."""
     
-    try:
-        updates = json.loads(user_message.replace("Update Quote Line: ", ""))  # Extract JSON array
-
-        active_quote = session_data.get("active_quote")
-
-        if not active_quote:
-            logging.warning("⚠️ No active quote found in session. Attempting to extract from message...")
-            extracted_quote_name = extract_quote_name(user_message)
-
-            if extracted_quote_name:
-                try:
-                    quote = Quote.objects.get(name=extracted_quote_name)
-                    session_data["active_quote"] = {"quote_id": quote.id, "quote_name": quote.name}  # Store in session
-                except Quote.DoesNotExist:
-                    return {"message": f"⚠️ No quote found with name {extracted_quote_name}."}
-            else:
-                return {"message": "⚠️ No active quote found. Please specify a quote name."}
-        else:
-            quote = Quote.objects.get(id=session_data["active_quote"]["quote_id"])
-
-        for update in updates:
-            sku = update["sku"]
-            field = update["field"]
-            new_value = update["value"]
-            quote_line_id = update["quote_line_id"]
-
-            try:
-                quote_line = QuoteLine.objects.get(id=quote_line_id, quote=quote, product__sku=sku)
-            except QuoteLine.DoesNotExist:
-                return {"message": f"⚠️ Error: No line item found for SKU {sku} in this quote."}
-
-            # ✅ Update based on the field dynamically
-            if field == "quantity":
-                quote_line.quantity = int(new_value)
-            elif field == "unit_price":
-                quote_line.unit_price = Decimal(new_value)
-            elif field =="discount":
-                quote_line.additional_discount = Decimal(new_value)
-
-            quote_line.save()
-
-        
-        quote_dict = model_to_dict(quote)
-        print(f"Quote data: {quote_dict}")
-
-        update_quote_net_amount(quote)
-        update_opportunity_net_amount(quote.opportunity)
-        
-        return
-
-    except Exception as e:
-        return {"message": f"⚠️ Error updating quote line: {str(e)}"}
     
 
 def set_active_quote_to_session_data(session_data, quote):
@@ -1629,11 +1681,15 @@ def get_quote_details(quote):
     return {
         "quote_id": quote.id,
         "quote_name": quote.name,
+        "subtotal": str(quote.subtotal),
         "net_amount": str(quote.net_amount),
         "status": quote.status,
         "account": quote.account.name if quote.account else "N/A",
         "opportunity": quote.opportunity.name if quote.opportunity else "N/A",
         "created_at": quote.created_at.isoformat(),
+        "discount_type": str(quote.discount_type),
+        "discount_amount": str(quote.discount_amount),
+        "discount_percentage": str(quote.discount_percentage),
         "line_items": [
             {
                 "id": ql.id,
@@ -1642,9 +1698,11 @@ def get_quote_details(quote):
                 "quantity": ql.quantity,
                 "unit_price": str(ql.unit_price),
                 "total_price": str(ql.total_price),
-                "discount": f"{ql.additional_discount}%" if ql.additional_discount else "0%",
-                "is_subscription": ql.product.is_subscription,
-                "term": ql.product.term,
+                "discount_type": ql.discount_type,
+                "discount_percentage": str(f"{ql.discount_percentage}%" if ql.discount_percentage else "0%"),
+                "discount_amount": str(f"${ql.discount_amount}" if ql.discount_amount else "$0"),
+                "is_subscription": ql.is_subscription,
+                "term": ql.term,
             }
             for ql in QuoteLine.objects.filter(quote=quote)
         ]
