@@ -6,10 +6,11 @@ import logging
 import re
 import locale
 from dotenv import load_dotenv
-from cpq.models import Quote, Account, Opportunity, QuoteLine, Product, QuoteDocument, Tenant
+from cpq.models import Quote, Account, Opportunity, QuoteLine, Product, QuoteDocument, Tenant, QuoteDocumentSettings
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
+from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
 from django.http import FileResponse
 from django.conf import settings
@@ -1460,8 +1461,6 @@ def generate_quote_pdf(user_message, session_data):
         # Looking for active quote
         quote = get_active_quote(user_message, session_data)
 
-        print(f"\n\nSession data === : {session_data}\n\n")
-
         # ⚠️ Verify if function return an error
         if isinstance(quote, dict) and "message" in quote:
             return quote
@@ -1471,6 +1470,12 @@ def generate_quote_pdf(user_message, session_data):
 
         # ✅ Fetch related company
         company = Tenant.objects.first()
+
+        # ✅ Fetch related quote document settings (template)
+        template = QuoteDocumentSettings.objects.first()
+
+        # ✅ Fetch related account
+        account = quote.account
 
         # ✅ Generate file name
         last_doc = QuoteDocument.objects.filter(quote=quote).order_by('-version').first()
@@ -1483,92 +1488,265 @@ def generate_quote_pdf(user_message, session_data):
         buffer = BytesIO()
         pdf = canvas.Canvas(buffer, pagesize=letter)
         pdf.setTitle(f"Quote {quote.name}")
-
-        # ✅ Add Logo (Update path if needed)
-        if company and company.logo:
-            logo_path = company.logo.path
-            if os.path.exists(logo_path):
-                pdf.drawImage(logo_path, 50, 680, width=150, height=60, preserveAspectRatio=True, mask='auto')
-
-        # ✅ Quote Header
-        pdf.setFont("Helvetica-Bold", 16)
-        pdf.drawString(400, 750, f"Quote: {quote.name}")
-
-        # ✅ Letterhead
-        pdf.setFont("Helvetica", 8)
-        pdf.drawString(20, 770, f"{datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}")
-
-        # ✅ Company & Quote Information
-        pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawString(50, 660, f"{company.name}")
-        pdf.setFont("Helvetica", 12)
-
-        # ✅ Company email with hyperlink
-        pdf.setFillColor(HexColor("#888888"))
-        x = 50
-        y = 645
-        email = company.contact_email
-        pdf.drawString(x, y, email)
-        pdf.linkURL(f"mailto:{email}", (x, y - 2, x + pdf.stringWidth(email), y + 10), relative=0)
-        pdf.setFillColor(HexColor("#000000"))
-    
-        # ✅ Account Information
-        pdf.drawString(350, 660, f"Account: {quote.account.name if quote.account else 'N/A'}")
-        pdf.drawString(350, 640, f"Opportunity: {quote.opportunity.name if quote.opportunity else 'N/A'}")
-        pdf.drawString(350, 620, f"Status: {quote.status}")
-        pdf.drawString(350, 600, f"Quote Created At: {quote.created_at.strftime('%m/%d/%Y, %H:%M:%S')}")
-        pdf.drawString(350, 580, f"Quote Expires At: {quote.expiration_date}")
-
-        # ✅ Table header Information
-
-        pdf.setFillColor(HexColor("#5c5c5c"))
-        pdf.setLineWidth(0.5)
-        pdf.setStrokeColor(HexColor("#cccccc"))  # light gray color
-        pdf.rect(47, 540, 520, 30, fill=False, stroke=True)
+        CBLACK = "#000000"
         
-        pdf.setFillColor(HexColor("#000000"))  # White text
-        pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawString(55, 550, "Product")
-        pdf.drawString(200, 550, "SKU")
-        pdf.drawString(300, 550, "Quantity")
-        pdf.drawString(400, 550, "Unit Price")
-        pdf.drawString(500, 550, "Total Price")
 
-        # ✅ Line Items
-        y_position = 520
-        pdf.setFont("Helvetica", 10)
-
-        for line in quote_lines:
-            pdf.drawString(50, y_position, line.product.name)
-            pdf.drawString(200, y_position, line.product.sku)
-            pdf.drawString(300, y_position, str(line.quantity))
-            pdf.drawString(400, y_position, f"${format_currency(line.unit_price)}")
-            pdf.drawString(500, y_position, f"${format_currency(line.total_price)}")
-            y_position -= 20  # Move to the next line
-
-        # ✅ Net Amount - Display at Bottom Right
-        formatted_net_amount = f"${format_currency(quote.net_amount)}"
-        pdf.setFont("Helvetica-Bold", 14)
-        pdf.drawString(300, y_position - 30, "Total Quote Amount:")
-        pdf.drawString(500, y_position - 30, formatted_net_amount)
-
-        # ✅ Save PDF to buffer
-        pdf.showPage()
-        pdf.save()
-
-        # ✅ Ensure target folder exists before writing the PDF
-        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
-
-        # ✅ Save the buffer content to the file
-        with open(pdf_path, "wb") as f:
-            f.write(buffer.getvalue())
+        # MODERN TEMPLATE
+        if template.template_style == 'modern':
+            PCOLOR = company.primary_color
+            SCOLOR = company.secondary_color
 
 
-        # ✅ Save the buffer content to the file
-        with open(pdf_path, "wb") as f:
-            f.write(buffer.getvalue())
+            # ✅ Letterhead
+            pdf.setFont("Helvetica", 8)
+            pdf.drawString(20, 770, f"{datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}")
 
-        buffer.close()
+            # ✅ Quote Header
+            pdf.setFont("Helvetica-Bold", 26)
+            pdf.setFillColor(HexColor(SCOLOR))
+            pdf.drawString(50, 730, f"Quote: {quote.name}")
+            pdf.setFillColor(HexColor(CBLACK))
+
+            # ✅ Add Logo (Update path if needed)
+            if template.show_company_logo:
+                if company and company.logo:
+                    logo_path = company.logo.path
+                    if os.path.exists(logo_path):
+                        pdf.drawImage(logo_path, 430, 710, width=150, height=60, preserveAspectRatio=True, mask='auto')
+
+            # ------------------------------------
+            pdf.setStrokeColor(HexColor(SCOLOR))
+            pdf.setLineWidth(3)
+            pdf.line(32, 700, 580, 700) 
+
+            # ✅ Set Y and X position for Company Information
+            y_position = 660
+            x_position = 50
+            company_count = 0
+            pdf.setFont("Helvetica-Bold", 12)
+            
+            # ✅ Company Information
+            if template.show_company_name and company.name:
+                pdf.drawString(x_position, y_position, f"{company.name}")
+                company_count += 1
+                y_position -= 15
+
+            # ✅ Company email with hyperlink
+            if template.show_company_email and company.contact_email:
+                pdf.setFillColor(HexColor("#888888"))
+                x = x_position
+                y = y_position
+                email = company.contact_email
+                pdf.drawString(x_position, y_position, email)
+                pdf.linkURL(f"mailto:{email}", (x_position, y_position - 2, x + pdf.stringWidth(email), y + 10), relative=0)
+                pdf.setFillColor(HexColor(CBLACK))
+                company_count += 1
+                y_position -= 15
+
+            # ✅ Company addres
+            if template.show_company_address and company.street_address and company.city and company.state:
+                pdf.setFillColor(HexColor("#888888"))
+                pdf.drawString(x_position, y_position, company.street_address)
+                y_position -= 15
+                pdf.drawString(x_position, y_position, f"{company.city}, {company.state}")
+                pdf.setFillColor(HexColor(CBLACK))
+                company_count += 1
+                y_position -= 15
+            
+            # ✅ Company phone
+            if template.show_company_phone and company.phone_number:
+                pdf.setFillColor(HexColor("#888888"))
+                pdf.drawString(x_position, y_position, f"Phone: {company.phone_number}")
+                pdf.setFillColor(HexColor(CBLACK))
+                company_count += 1
+                y_position -= 15
+
+            # ✅ Company domain
+            if template.show_company_domain and company.domain:
+                pdf.setFillColor(HexColor("#888888"))
+                pdf.drawString(x_position, y_position, company.domain)
+                pdf.setFillColor(HexColor(CBLACK))
+                company_count += 1
+                y_position -= 15
+
+            # ✅ Set Y and X position for Account Information
+            y_position = 660
+            x_position = 350
+            account_count = 0
+        
+            # ✅ Account Name
+            if template.show_account_name and account.name:
+                pdf.setFillColor(HexColor(CBLACK))
+                pdf.drawString(x_position, y_position, "Account:")
+                y_position -= 15
+                pdf.drawString(x_position, y_position, account.name)
+                y_position -= 15
+                account_count += 1
+
+            # ✅ Account Website
+            if template.show_account_website and account.website:
+                pdf.setFillColor(HexColor("#888888"))
+                pdf.drawString(x_position, y_position, account.website)
+                pdf.setFillColor(HexColor(CBLACK))
+                y_position -= 15
+                account_count += 1
+
+            # ✅ Account Website
+            if template.show_account_phone and account.phone:
+                pdf.setFillColor(HexColor("#888888"))
+                pdf.drawString(x_position, y_position, account.phone)
+                pdf.setFillColor(HexColor(CBLACK))
+                y_position -= 15
+                account_count += 1
+
+            # ✅ Set Y and X position for General Quote Information
+            y_position = 660 - (max(company_count, account_count) * 15) - 30
+            x_position = 350
+
+            # ✅ Quote Opportunity Name
+            if template.show_quote_opportunity and quote.opportunity.name:
+                pdf.setFillColor(HexColor(CBLACK))
+                pdf.drawString(x_position, y_position, quote.opportunity.name)
+                y_position -= 15
+
+            # ✅ Quote Status
+            if template.show_quote_status and quote.status:
+                pdf.setFillColor(HexColor(CBLACK))
+                pdf.drawString(x_position, y_position, f"Status: {quote.status}")
+                y_position -= 15
+
+            # ✅ Quote Created Date
+            if template.show_quote_created_at and quote.created_at:
+                pdf.setFillColor(HexColor(CBLACK))
+                pdf.drawString(x_position, y_position, f"Created at: {quote.created_at.strftime('%m/%d/%Y')}")
+                y_position -= 15
+
+            # ✅ Quote Expiration Date
+            if template.show_quote_expires_at: #and quote.expiration_date:
+                pdf.setFillColor(HexColor(CBLACK))
+                pdf.drawString(x_position, y_position, f"Jahir is working on this :)")
+                y_position -= 15
+
+            # ✅ Quote Notes
+            if template.show_quote_notes and quote.notes:
+                x_position = 50
+                lines_count = 15
+                y_position -= 15
+                pdf.drawString(x_position + 5, y_position, f"Quote Notes:")
+                # Pre settings and draw notes
+                max_width = 500
+                font_name = "Helvetica"
+                font_size = 10
+                pdf.setFont(font_name, font_size)
+                lines = simpleSplit(quote.notes, font_name, font_size, max_width)
+
+                text = pdf.beginText()
+                y_position -= 15
+                lines_count += 15
+                text.setTextOrigin(x_position + 5, y_position)
+                text.setFont(font_name, font_size)
+
+                for line in lines:
+                    text.textLine(line)
+
+                pdf.drawText(text)
+                #-----------------
+
+                y_position -= 12 * len(lines)
+                lines_count += 12 * len(lines)
+
+                pdf.setFillColor(HexColor(PCOLOR))
+                pdf.setLineWidth(1)
+                pdf.setStrokeColor(HexColor(PCOLOR))
+                pdf.rect(x_position, y_position, 510, lines_count, fill=False, stroke=True)
+
+                # Set all up back again
+                pdf.setFont("Helvetica-Bold", 12)
+                pdf.setFillColor(HexColor(CBLACK))
+            
+            x_position = 50
+            y_position -= 30
+            # ✅ Products and Services
+            if template.rendered_fields:
+                pdf.drawString(x_position, y_position, "Products and Services")
+                y_position -= 25
+
+                # ✅ Table header Information
+                pdf.setFont("Helvetica-Bold", 10)
+                pdf.setFillColor(HexColor(CBLACK))
+                column_spacing = 512 / len(template.rendered_fields)
+
+                for index, field in enumerate(template.rendered_fields):
+                    column_x = x_position + index * column_spacing
+                    text_width = pdf.stringWidth(field, "Helvetica-Bold", 10)
+                    last_index = len(template.rendered_fields) - 1
+
+                    if index == 0:
+                        aligned_x = column_x
+                    elif index == last_index:
+                        aligned_x = column_x + column_spacing - text_width
+                    else:
+                        aligned_x = column_x + (column_spacing - text_width) / 2
+
+                    pdf.drawString(aligned_x, y_position, field)
+                
+                y_position -= 15
+                # ------------------------------------
+                pdf.setStrokeColor(HexColor(SCOLOR))
+                pdf.setLineWidth(2)
+                pdf.line(50, y_position, 562, y_position) 
+                y_position -= 27
+                pdf.drawString(x_position, y_position, "Here are the products")
+            
+            '''
+            pdf.setFillColor(HexColor("#000000"))  # White text
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.drawString(55, 550, "Product")
+            pdf.drawString(200, 550, "SKU")
+            pdf.drawString(300, 550, "Quantity")
+            pdf.drawString(400, 550, "Unit Price")
+            pdf.drawString(500, 550, "Total Price")
+
+            # ✅ Line Items
+            y_position = 520
+            pdf.setFont("Helvetica", 10)
+
+            for line in quote_lines:
+                pdf.drawString(50, y_position, line.product.name)
+                pdf.drawString(200, y_position, line.product.sku)
+                pdf.drawString(300, y_position, str(line.quantity))
+                pdf.drawString(400, y_position, f"${format_currency(line.unit_price)}")
+                pdf.drawString(500, y_position, f"${format_currency(line.total_price)}")
+                y_position -= 20  # Move to the next line
+
+            # ✅ Net Amount - Display at Bottom Right
+            formatted_net_amount = f"${format_currency(quote.net_amount)}"
+            pdf.setFont("Helvetica-Bold", 14)
+            pdf.drawString(300, y_position - 30, "Total Quote Amount:")
+            pdf.drawString(500, y_position - 30, formatted_net_amount)
+
+            '''
+
+            # ✅ Save PDF to buffer
+            pdf.showPage()
+            pdf.save()
+
+            # ✅ Ensure target folder exists before writing the PDF
+            os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+
+            # ✅ Save the buffer content to the file
+            with open(pdf_path, "wb") as f:
+                f.write(buffer.getvalue())
+
+
+            # ✅ Save the buffer content to the file
+            with open(pdf_path, "wb") as f:
+                f.write(buffer.getvalue())
+
+            buffer.close()
+
+        elif template.template_style == 'classic':
+            print("Nothing") 
 
         # ✅ Save record in QuoteDocument
         QuoteDocument.objects.create(

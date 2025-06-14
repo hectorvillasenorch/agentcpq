@@ -736,7 +736,6 @@ class QuoteDocumentSettings(models.Model):
     def default_omitted_fields():
         return ['Product', 'SKU', 'Discount Percentage', 'Discount Amount']
     
-    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="pdf_settings")
 
     # Company information
     show_company_name = models.BooleanField(default=True)
@@ -784,5 +783,4 @@ class QuoteDocumentSettings(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        accid = self.account.accid if self.account else "General"
-        return f"PDF Settings for Tenant {self.tenant.name} - Account {accid}"
+        return f"PDF Settings"
