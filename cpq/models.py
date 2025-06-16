@@ -709,6 +709,11 @@ class QuoteDocumentSettings(models.Model):
         ('classic', 'Classic'),
         ('modern', 'Modern'),
     ]
+
+    DESCRIPTION_DETAIL_DHOICES = [
+        ('short', 'Short'),
+        ('long', 'Modern'),
+    ]
     
     def default_rendered_fields():
         return ['Product And SKU', 'Description', 'Quantity', 'Unit Price', 'Total Price']
@@ -743,6 +748,14 @@ class QuoteDocumentSettings(models.Model):
     show_line_discount = models.BooleanField(default=True)
     rendered_fields = JSONField(default=default_rendered_fields, blank=True)
     omitted_fields = JSONField(default=default_omitted_fields, blank=True)
+
+    #Quote Line Description
+    line_description_detail_level = models.CharField(
+        max_length=20,
+        choices=DESCRIPTION_DETAIL_DHOICES,
+        default='long',
+        help_text="Select the quote line description detail level."
+    )
 
     # Quote Line Items - Subscriptions
     show_subscription_term = models.BooleanField(default=True)

@@ -271,6 +271,10 @@ def get_document_template(request):
         template_style = 'modern' if request.POST.get('template_style') == 'on' else 'classic'
         settings.template_style = template_style
 
+        #Description Detail Level
+        description_detail = 'long' if request.POST.get('description_detail_level') == 'on' else 'short'
+        settings.line_description_detail_level = description_detail
+
         # Checkboxes
         boolean_fields = [
             'show_company_name', 'show_company_email', 'show_company_phone', 'show_company_domain',
