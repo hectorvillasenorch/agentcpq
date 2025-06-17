@@ -14,7 +14,7 @@ from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
 from django.http import FileResponse
 from django.conf import settings
-from reportlab.lib.colors import HexColor
+from reportlab.lib.colors import HexColor, red
 from django.http import JsonResponse
 from django.db import models
 from agents.approvals_agent import get_approval_status
@@ -1681,7 +1681,9 @@ def generate_quote_pdf(user_message, session_data):
                     text_width = pdf.stringWidth(field, "Helvetica-Bold", 10)
                     last_index = len(template.rendered_fields) - 1
 
-                    if index == 0:
+                    if field == "Product And SKU" and index == 0:
+                        aligned_x = column_x + 2  # margen interno opcional
+                    elif index == 0:
                         aligned_x = column_x
                     elif index == last_index:
                         aligned_x = column_x + column_spacing - text_width
@@ -1696,7 +1698,353 @@ def generate_quote_pdf(user_message, session_data):
                 pdf.setLineWidth(2)
                 pdf.line(50, y_position, 562, y_position) 
                 y_position -= 27
-                pdf.drawString(x_position, y_position, "Here are the products")
+
+                FIELD_MAP = {
+                    "Product And SKU": lambda line: f"{line.product_name} ({line.sku})" if line.sku else line.product_name,
+                    "Product": lambda line: line.product_name,
+                    "SKU": lambda line: line.sku,
+                    "Description": lambda line: line.description,
+                    "Quantity": lambda line: str(line.quantity),
+                    "Unit Price": lambda line: f"${line.unit_price:,.2f}",
+                    "Special Price": lambda line: f"${line.special_price:,.2f}",
+                    "Discount Percentage": lambda line: f"{line.discount_percentage:.2f}%",
+                    "Discount Amount": lambda line: f"${line.discount_amount:,.2f}",
+                    "Subtotal": lambda line: f"${line.subtotal:,.2f}",
+                    "Total Price": lambda line: f"${line.total_price:,.2f}",
+                }
+
+                for line in quote.quote_lines.all():
+                    set_y_position = y_position
+                    for index, field_title in enumerate(template.rendered_fields):
+                        column_x = x_position + index * column_spacing
+                        last_index = len(template.rendered_fields) - 1
+
+                        if field_title == "Product And SKU":
+                            if index == 0:
+                                aligned_x = column_x
+                            else:
+                                aligned_x = column_x + column_spacing / 2
+                        else:
+                            if index == 0:
+                                aligned_x = column_x
+                            elif index == last_index:
+                                aligned_x = column_x + column_spacing - 1
+                            else:
+                                aligned_x = column_x + column_spacing / 2
+
+                        if field_title == "Product And SKU":
+                            sku = line.sku or ""
+                            product = line.product_name or ""
+
+                            max_width = column_spacing - 5 
+                            sku_font_size = 10
+                            product_font_size = 9
+
+                            sku_text_width = pdf.stringWidth(sku, "Helvetica-Bold", sku_font_size)
+                            if sku_text_width > max_width:
+                                sku_font_size = max(6, int(sku_font_size * max_width / sku_text_width))
+
+                            product_text_width = pdf.stringWidth(product, "Helvetica", product_font_size)
+                            if product_text_width > max_width:
+                                product_font_size = max(6, int(product_font_size * max_width / product_text_width))
+
+                            if index == 0:
+                                pdf.setFont("Helvetica-Bold", sku_font_size)
+                                pdf.setFillColor(HexColor("#000000"))
+                                pdf.drawString(column_x + 2, set_y_position, sku)
+                                pdf.setFont("Helvetica", product_font_size)
+                                pdf.setFillColor(HexColor("#666666"))  
+                                pdf.drawString(column_x + 2, set_y_position - 10, product)
+                            else:
+                                pdf.setFont("Helvetica-Bold", sku_font_size)
+                                pdf.setFillColor(HexColor("#000000"))
+                                pdf.drawCentredString(aligned_x, set_y_position, sku)
+                                pdf.setFont("Helvetica", product_font_size)
+                                pdf.setFillColor(HexColor("#666666"))
+                                pdf.drawCentredString(aligned_x, set_y_position - 10, product)
+
+                        else:
+                            value_func = FIELD_MAP.get(field_title, lambda l: "")
+                            if field_title == "Total Price" and template.show_subscription_term and line.term is not None:
+                                monthly_total = line.subtotal * line.quantity
+                                text = f"${monthly_total:,.2f} /mo"
+                            else:
+                                text = value_func(line) or ""
+
+
+                            if field_title == "Description":
+                                max_font_size = 9
+                                min_font_size = 8
+                                font_name = "Helvetica"
+                                max_width = column_spacing - 5
+                                line_spacing = 10 
+
+                                is_short = template.line_description_detail_level == 'short'
+                                max_lines = 3 if is_short else 100
+
+                                font_size = max_font_size
+                                wrapped_lines = []
+
+                                while font_size >= min_font_size:
+                                    words = text.split()
+                                    lines = []
+                                    current_line = ""
+                                    for word in words:
+                                        test_line = f"{current_line} {word}".strip()
+                                        line_width = pdf.stringWidth(test_line, font_name, font_size)
+                                        if line_width <= max_width:
+                                            current_line = test_line
+                                        else:
+                                            lines.append(current_line)
+                                            current_line = word
+                                    if current_line:
+                                        lines.append(current_line)
+
+                                    wrapped_lines = lines
+                                    if not is_short or len(wrapped_lines) <= max_lines:
+                                        break
+
+                                    font_size -= 1
+
+                                if is_short and len(wrapped_lines) > max_lines:
+                                    wrapped_lines = wrapped_lines[:max_lines]
+                                    last_line = wrapped_lines[-1]
+                                    ellipsis = "..."
+                                    while pdf.stringWidth(last_line + ellipsis, font_name, font_size) > max_width and len(last_line) > 0:
+                                        last_line = last_line[:-1]
+                                    wrapped_lines[-1] = last_line.strip() + ellipsis
+
+                                start_y = set_y_position
+
+                                pdf.setFont(font_name, font_size)
+                                pdf.setFillColor(HexColor(CBLACK))
+
+                                for i, wrapped_line in enumerate(wrapped_lines):
+                                    y = start_y - i * line_spacing
+                                    text_width = pdf.stringWidth(wrapped_line, font_name, font_size)
+                                    aligned_x = column_x + (column_spacing - text_width) / 2
+                                    pdf.drawString(aligned_x, y, wrapped_line)
+
+                                used_lines = len(wrapped_lines)
+                                y_position -= used_lines * line_spacing + 10
+
+
+                            else:
+                                font_size = 9
+                                text_width = pdf.stringWidth(text, "Helvetica", font_size)
+                                if text_width > column_spacing - 5:
+                                    font_size = max(6, int(font_size * (column_spacing - 5) / text_width))
+
+                                text_width = pdf.stringWidth(text, "Helvetica", font_size)
+                                if index == 0:
+                                    aligned_x = column_x
+                                elif index == last_index:
+                                    aligned_x = column_x + column_spacing - text_width
+                                else:
+                                    aligned_x = column_x + (column_spacing - text_width) / 2
+
+                                pdf.setFont("Helvetica", font_size)
+                                pdf.setFillColor(HexColor("#000000"))
+                                pdf.drawString(aligned_x, set_y_position, text)
+
+                                if field_title == "Total Price" and template.show_line_discount and line.discount_type != "None":
+                                    set_y_position -= 13
+                                    pdf.setFillColor(HexColor("#666666"))
+
+                                    # Obtener el texto del descuento
+                                    discount_text = (
+                                        f"after a {line.discount_percentage:.2f}% discount"
+                                        if line.discount_type == "percentage"
+                                        else f"after a ${line.discount_amount:,.2f} discount"
+                                    )
+
+                                    # Medir el ancho del texto
+                                    discount_text_width = pdf.stringWidth(discount_text, "Helvetica", font_size)
+
+                                    # Alinear dependiendo si es el último campo
+                                    if index == last_index:
+                                        discount_x = column_x + column_spacing - discount_text_width  # alineado a la derecha
+                                    else:
+                                        discount_x = column_x + (column_spacing - discount_text_width) / 2  # centrado
+
+                                    pdf.setFont("Helvetica", font_size)
+                                    pdf.drawString(discount_x, set_y_position, discount_text)
+                                    y_position -= 10
+
+                                if field_title == "Total Price" and template.show_subscription_term and line.term is not None:
+                                    set_y_position -= 13
+                                    pdf.setFillColor(HexColor("#666666"))
+
+                                    # Obtener el texto del descuento
+                                    term_text = f"for {line.term} months"
+
+                                    # Medir el ancho del texto
+                                    term_text_width = pdf.stringWidth(term_text, "Helvetica", font_size)
+
+                                    # Alinear dependiendo si es el último campo
+                                    if index == last_index:
+                                        term_x = column_x + column_spacing - term_text_width  # alineado a la derecha
+                                    else:
+                                        term_x = column_x + (column_spacing - term_text_width) / 2  # centrado
+
+                                    pdf.setFont("Helvetica", font_size)
+                                    pdf.drawString(term_x, set_y_position, term_text)
+                                    y_position -= 10
+
+                    y_position -= 30 
+
+                #Aqui continua
+                # ------------------------------------
+                right_margin = 562
+                pdf.setStrokeColor(HexColor(SCOLOR))
+                pdf.setLineWidth(2)
+                pdf.line(50, y_position, right_margin, y_position) 
+
+                y_position -= 27
+
+                label_font = "Helvetica-Bold"
+                label_size = 12
+                value_font = "Helvetica"
+                value_size = 10
+                spacing = 100
+
+                # === Subtotal ===
+                subtotal_label = "Subtotal:"
+                subtotal_value = f"${format_currency(quote.subtotal)}"
+
+                subtotal_label_width = pdf.stringWidth(subtotal_label, label_font, label_size)
+                subtotal_value_width = pdf.stringWidth(subtotal_value, value_font, value_size)
+
+                start_x = right_margin - 150 - subtotal_label_width
+
+                pdf.setFont(label_font, label_size)
+                pdf.setFillColor(HexColor(CBLACK))
+                #Render subtotal label
+                pdf.setFont(label_font, label_size)
+                pdf.drawString(start_x, y_position, subtotal_label)
+                #Render subtotal value
+                pdf.setFont(value_font, value_size)
+                pdf.drawString(right_margin - subtotal_value_width, y_position, subtotal_value)
+
+                y_position -= 30
+
+                # === Discount ===
+                discount_label = "Discount:"
+                discount_value = f"{quote.discount_percentage:.2f}% (-{format_currency(quote.discount_amount)})"
+
+                discount_label_width = pdf.stringWidth(discount_label, label_font, label_size)
+                discount_value_width = pdf.stringWidth(discount_value, value_font, value_size)
+
+                start_x = right_margin - 150 - discount_label_width
+
+                pdf.setFont(label_font, label_size)
+                pdf.setFillColor(HexColor(CBLACK))
+                pdf.drawString(start_x, y_position, discount_label)
+
+                pdf.setFont(value_font, value_size)
+                pdf.setFillColor(red)
+                pdf.drawString(right_margin - discount_value_width, y_position, discount_value)
+
+                y_position -= 30
+
+                # === Net Amount ===
+                net_label = "Net Amount:"
+                net_value = f"${format_currency(quote.net_amount)}"
+
+                net_label_width = pdf.stringWidth(net_label, label_font, label_size)
+                net_value_width = pdf.stringWidth(net_value, value_font, value_size)
+
+                start_x = right_margin - 150 - net_label_width
+
+                pdf.setFont(label_font, label_size)
+                pdf.setFillColor(HexColor(CBLACK))
+                pdf.drawString(start_x, y_position, net_label)
+
+                pdf.setFont(value_font, value_size)
+                pdf.drawString(right_margin - net_value_width, y_position, net_value)
+
+                y_position -= 30
+                x_position = 50
+
+                #Terms and conditions
+                tac_value = "Terms And Conditions"
+                value_font = "Helvetica-Bold"
+                value_size = 12
+                terms_and_conditions_width = pdf.stringWidth(tac_value, value_font, value_size)
+
+                if template.terms_and_conditions:
+                    left_margin = 50
+                    right_margin = 50
+                    usable_width = letter[0] - left_margin - right_margin  # 612 - 100 = 512
+
+                    font_name = "Helvetica"
+                    font_size = 10
+                    line_spacing = 12
+
+                    # Título
+                    pdf.setFont("Helvetica-Bold", 12)
+                    pdf.setFillColor(HexColor(CBLACK))
+                    pdf.drawString(left_margin, y_position, "Terms And Conditions")
+                    y_position -= 15
+
+                    # Texto
+                    pdf.setFont(font_name, font_size)
+                    pdf.setFillColor(HexColor(CBLACK))
+
+                    lines = wrap_text(template.terms_and_conditions, font_name, font_size, usable_width, pdf)
+
+                    for line in lines:
+                        if y_position < 50:  # Si nos acercamos al final de la hoja
+                            pdf.showPage()
+                            y_position = letter[1] - 50  # Reinicia desde arriba con margen
+                            pdf.setFont(font_name, font_size)
+                            pdf.setFillColor(HexColor(CBLACK))
+                        
+                        pdf.drawString(left_margin, y_position, line)
+                        y_position -= line_spacing
+                    
+                    y_position -= 18
+                
+                #Show sign
+                x_position = 50
+                if template.show_sign:
+                    pdf.setFont("Helvetica-Bold", 12)
+                    pdf.setFillColor(HexColor(CBLACK))
+                    pdf.drawString(x_position, y_position, "Sign")
+
+                    y_position -= 40
+
+                    pdf.setStrokeColor(HexColor(CBLACK))
+                    pdf.setLineWidth(1)
+                    line_width = 150
+                    spacing = 50
+                    pdf.line(x_position, y_position, x_position + line_width, y_position)
+                    pdf.line(x_position + line_width + spacing, y_position, x_position + line_width + spacing + line_width, y_position)
+
+                    y_position -= 15
+                    pdf.setFont("Helvetica", 10)
+                    pdf.setFillColor(HexColor(CBLACK))
+                    pdf.drawString(x_position, y_position, "Sign")
+                    pdf.drawString(x_position + line_width + spacing, y_position, "Date")
+
+                    y_position -= 40
+
+                    pdf.setStrokeColor(HexColor(CBLACK))
+                    pdf.setLineWidth(1)
+                    line_width = 150
+                    spacing = 50
+                    pdf.line(x_position, y_position, x_position + line_width, y_position)
+
+                    y_position -= 15
+                    pdf.setFont("Helvetica", 10)
+                    pdf.setFillColor(HexColor(CBLACK))
+                    pdf.drawString(x_position, y_position, "Sign")
+                    
+
+
+
+                
+
             
             '''
             pdf.setFillColor(HexColor("#000000"))  # White text
@@ -1770,6 +2118,22 @@ def generate_quote_pdf(user_message, session_data):
         return {"message": f"⚠️ Error generating PDF: {str(e)}"}
     
     
+def wrap_text(text, font_name, font_size, max_width, pdf_canvas):
+    words = text.split()
+    lines = []
+    current_line = ""
+
+    for word in words:
+        test_line = f"{current_line} {word}".strip()
+        if pdf_canvas.stringWidth(test_line, font_name, font_size) <= max_width:
+            current_line = test_line
+        else:
+            lines.append(current_line)
+            current_line = word
+    if current_line:
+        lines.append(current_line)
+
+    return lines
 
 def set_active_quote_to_session_data(session_data, quote):
     session_data["active_quote"] = {

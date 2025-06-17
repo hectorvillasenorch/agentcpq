@@ -68,6 +68,14 @@ input[type="checkbox"]:checked + span:before {
   background-color: {{ company.secondary_color }};
 }
 
+/* Switch color when it is activated */
+#description_detail_level_switch:checked + .lever {
+  background-color: {{ company.secondary_color }};
+}
+#description_detail_level_switch:checked + .lever:after {
+  background-color: {{ company.secondary_color }};
+}
+
 /* Change the span color for checkbox */
 input[type="checkbox"] + span {
   color: #212121 !important;  /* o el color que prefieras */
@@ -238,6 +246,18 @@ input[type="checkbox"] + span {
           </ul>
         </div>
 
+        <div class="col s12">
+          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Description Detail Level</h6>
+          <div class="switch">
+            <label>
+              Short
+              <input type="checkbox" name="description_detail_level" id="description_detail_level_switch" {% if settings.line_description_detail_level == 'long' %}checked{% endif %}>
+              <span class="lever"></span>
+              Long
+            </label>
+          </div>
+        </div>
+
         <div class="col s4">
           <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Show Discount</h6>
           <label>
@@ -258,7 +278,7 @@ input[type="checkbox"] + span {
           <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Show Sign</h6>
           <label>
             <input type="checkbox" name="show_sign" {% if settings.show_sign %}checked{% endif %} />
-            <span>Show Term</span>
+            <span>Show Sign</span>
           </label>
         </div>
 
