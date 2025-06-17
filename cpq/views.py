@@ -333,7 +333,7 @@ def create_custom_object(request):
     
     return render(request, 'create_custom_object.html', {'form': form})
 
-def get_document_templates(request):
+def get_document_template(request):
 
     try:
         company = Tenant.objects.first()
