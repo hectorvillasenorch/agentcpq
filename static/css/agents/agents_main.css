@@ -3,6 +3,17 @@ body {
   font-family: 'Arial', sans-serif;
 }
 
+/* ✅ Quitar spinners de input type="number" */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield; /* Firefox */
+}
+
 /* ✅ Quote Container */
 .quote-container {
   width: 95%;
@@ -27,11 +38,38 @@ body {
   color: #fc6a3e;
   margin: 0;
 }
+
+
 /* ✅ Quote Details */
-.quote-details p {
-  margin: 5px 0;
+.quote-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  grid-auto-rows: auto;
+  column-gap: 1rem;
+  row-gap: 1rem;
+}
+
+/* Row 1 */
+.quote-details .account    { grid-column: 1; grid-row: 1; text-align: left; }
+.quote-details .created    { grid-column: 2; grid-row: 1; text-align: left; }
+.quote-details .discount   { grid-column: 3; grid-row: 1; text-align: left; }
+
+/* Row 2 */
+.quote-details .opportunity { grid-column: 1; grid-row: 2; text-align: left; }
+.quote-details .expiration  { grid-column: 2; grid-row: 2; text-align: left; }
+
+/* Row 3 */
+
+
+
+.quote-details div {
+  display: flex;
+  align-items: center;
+  margin: 0.5rem 0;
+  height: 2rem;
   font-size: 16px;
   color: #555;
+  margin: 0;
 }
 
 .quote-details strong {
@@ -91,16 +129,6 @@ body {
 
 /* ✅ Subtotal Amount */
 .subtotal-amount {
-  text-align: right;
-  font-size: 22px;
-  font-weight: bold;
-  margin-top: 10px;
-  margin-right: 5%;
-  color: #333;
-}
-
-/* ✅ Discount Amount */
-.discount-amount {
   text-align: right;
   font-size: 22px;
   font-weight: bold;
@@ -194,7 +222,7 @@ h2 {
 }
 
 .agent {
-  background-color: #dfdfdf;
+  background-color: #ffffff;
   color: black;
   align-self: flex-start;
   width: 100%;

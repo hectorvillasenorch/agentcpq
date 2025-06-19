@@ -9,6 +9,7 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from decimal import Decimal, ROUND_HALF_UP
 from django.contrib.postgres.fields import JSONField
 from django.db.models import JSONField
+from dateutil.relativedelta import relativedelta
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -153,6 +154,9 @@ class Quote(models.Model):
         ('Closed', 'Closed'),
     ]
 
+    def default_expiration_date():
+        return timezone.now().date() + relativedelta(months=1)
+
     name = models.CharField(max_length=255)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="quotes")
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, related_name="quotes")
@@ -166,13 +170,14 @@ class Quote(models.Model):
     discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage")
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
-    expiration_date = models.DateField(null=True, blank=True) 
+    expiration_date = models.DateTimeField(default=default_expiration_date, blank=True, null=True)
     notes = models.TextField(blank=True, null=True) 
     qteid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     hs_deal_id = models.CharField(max_length=64,blank=True,null=True,help_text="The HubSpot Deal ID linked to this quote")
     hs_primary = models.BooleanField(default=False,help_text="Marks this quote as the primary quote for the HubSpot deal")
     synced = models.BooleanField(default=False)
     last_synced_at = models.DateTimeField(null=True, blank=True)
+
 
     def get_total_discount_percentage(self):
         """
@@ -337,8 +342,9 @@ class QuoteLine(models.Model):
         # Auto-calculate price for bundles
         if self.product.is_bundle:
             self.unit_price = sum(
-                bundle_item.product.price * bundle_item.quantity for bundle_item in self.product.bundle_items.all()
-            )
+                bundle_item.product.price * bundle_item.quantity
+                for bundle_item in self.product.bundle_items.all()
+            ), Decimal("0.00")
         elif self.unit_price is None:
             self.unit_price = self.product.price
 
@@ -719,7 +725,7 @@ class QuoteDocumentSettings(models.Model):
         return ['Product And SKU', 'Description', 'Quantity', 'Unit Price', 'Total Price']
 
     def default_omitted_fields():
-        return ['Product', 'SKU', 'Discount Percentage', 'Discount Amount']
+        return ['Product', 'SKU', 'Discount']
     
 
     # Company information
@@ -753,7 +759,7 @@ class QuoteDocumentSettings(models.Model):
     line_description_detail_level = models.CharField(
         max_length=20,
         choices=DESCRIPTION_DETAIL_DHOICES,
-        default='long',
+        default='short',
         help_text="Select the quote line description detail level."
     )
 
