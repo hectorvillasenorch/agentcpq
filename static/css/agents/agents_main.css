@@ -58,8 +58,6 @@ input[type="number"] {
 .quote-details .opportunity { grid-column: 1; grid-row: 2; text-align: left; }
 .quote-details .expiration  { grid-column: 2; grid-row: 2; text-align: left; }
 
-/* Row 3 */
-
 
 
 .quote-details div {

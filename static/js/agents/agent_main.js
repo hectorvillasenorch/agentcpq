@@ -108,10 +108,8 @@ function enhanceStructuredAgentMessagesHistoryChat() {
         }
       }
 
-      // Desescapamos unicode para manejar caracteres especiales y saltos de línea
       let unescapedRaw = unescapeUnicode(raw);
 
-      // Ejemplo patrón para mensaje PDF (puedes añadir más patrones similares)
       const pdfPatternUrl = /download_url:\s*"?([^"\s]+)"?/i;
       const pdfPatternVersion = /document_version:\s*(\d+)/i;
 
@@ -207,9 +205,15 @@ async function sendMessage() {
             responseMessage += renderApprovalHistory(data.response);
         } 
         // ✅ Handle Quote Details Response
-        else if (data.response && data.response.quote_details) {
-            responseMessage += renderQuoteDetails(data.response.quote_details);
-        } 
+        else if (data.response && data.response.quote_details && !data.response.quote_notes) {
+          console.log("Quote Details");
+          responseMessage += renderQuoteDetails(data.response.quote_details);
+        }
+        // ✅ Handle Quote Notes Response
+        else if (data.response && data.response.quote_notes) {
+          console.log("Quote Notes");
+          responseMessage += renderQuoteNotes(data.response.quote_details, data.response.quote_notes);
+        }
         // ✅ Handle Quote PDF Response
         else if (data.response.download_url) {
             console.log(data.response);
@@ -257,6 +261,20 @@ function appendMessage(className, message) {
         if (match && match[1]) {
           const quote = JSON.parse(match[1]);
           message = renderQuoteDetails(quote);  // Use your nice formatter
+        }
+      } catch (e) {
+        console.warn("Failed to parse quote_details JSON:", e);
+      }
+    }
+
+    // ✅ Detect stored notes as string
+    if (className === "agent" && message.includes("quote_details: {") && message.includes("notes: {")) {
+      try {
+        // Extract JSON from string
+        const match = message.match(/quote_details:\s({.+})/);
+        if (match && match[1]) {
+          const quote = JSON.parse(match[1]);
+          message = renderQuoteNotes(quote);  // Use your nice formatter
         }
       } catch (e) {
         console.warn("Failed to parse quote_details JSON:", e);
@@ -341,7 +359,7 @@ function renderQuoteDetails(quote) {
                           data-field="expiration_date"
                           data-quote="${quote.quote_name}"
                           placeholder="MM/DD/YYYY"
-                          style="display: inline-block; width: 5rem; margin-top: 0px; color: black;"
+                          style="display: inline-block; width: 7rem; margin-top: 0px; color: black;"
                           value="${formattedDate_e}"/>
                   </p>
                 </div>
@@ -701,6 +719,32 @@ function renderReadOnlyQuoteDetails(quote) {
       })}
     </p>
   </div>`;
+
+  return html;
+}
+
+/*
+*
+*/
+function renderQuoteNotes(quote, notes) {
+
+  var html = `<div class="">
+              <div class="quote-header">
+                  <h3>${quote.quote_name} Notes:</h3>
+              </div>`;
+
+  html += `
+          <div class="row">
+            <div class="input-field">
+              <textarea id="quote-notes" class="materialize-textarea" 
+                        oninput="autoResize(this); updateQuoteNotes(this)">
+                ${notes || ''}
+              </textarea>
+              <label for="quote-notes" class="active">Quote Notes</label>
+            </div>
+          </div>
+        </div>
+          `;
 
   return html;
 }

@@ -165,7 +165,7 @@ def orchestrate_request(user_message, session_data):
         hiddenMessage = result.get("hiddenMessage", False)
 
         for key, value in result.items():
-            if key not in ("message", "session_id", "hiddenMessage", "temporaryMessage", "update_details", "iterations", "success", "quote_id"):
+            if key not in ("message", "session_id", "hiddenMessage", "temporaryMessage", "update_details", "iterations", "success", "quote_id", "notes"):
                 agent_message += f"\n\n{key}:\n{json.dumps(value, indent=2)}"
 
         ChatMessage.objects.create(

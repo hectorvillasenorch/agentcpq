@@ -1101,7 +1101,7 @@ def update_quote_line(user_message, session_data):
                     product = Product.objects.get(Q(name=item['sku']) | Q(name=item['name']))
 
                     show_details_message = f"<b>🔄 <u>Update Request #{index} in quote {quote.name}</u> 🔄</b><br>"
-                    show_details_message += f"🔢 Name: {item['sku']}<br>"
+                    show_details_message += f"🔢 Name: {item['name']}<br>"
                     show_details_message += f"🏷️ Field: {item_field}<br>"
                     show_details_message += f"✏️ Value: {item['value']}<br><br>"
                 except Product.DoesNotExist:
@@ -1755,7 +1755,7 @@ def generate_quote_pdf(user_message, session_data):
         # ✅ Quote Expiration Date
         if template.show_quote_expires_at: #and quote.expiration_date:
             pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, f"Jahir is working on this :)")
+            pdf.drawString(x_position, y_position, f"Expiration Date: {quote.expiration_date.strftime('%m/%d/%Y')}")
             y_position -= 15
 
         # ✅ Quote Notes
@@ -1763,28 +1763,47 @@ def generate_quote_pdf(user_message, session_data):
             x_position = 50
             lines_count = 15
             y_position -= 15
-            pdf.drawString(x_position + 5, y_position, f"Quote Notes:")
+            line_spacing = 12
+            left_margin = x_position + 5
+            pdf.drawString(left_margin, y_position, f"Quote Notes:")
             # Pre settings and draw notes
             max_width = 500
             font_name = "Helvetica"
             font_size = 10
             pdf.setFont(font_name, font_size)
-            lines = simpleSplit(quote.notes, font_name, font_size, max_width)
 
-            text = pdf.beginText()
+            lines = wrap_text(quote.notes, font_name, font_size, max_width, pdf)
+
             y_position -= 15
-            lines_count += 15
-            text.setTextOrigin(x_position + 5, y_position)
-            text.setFont(font_name, font_size)
+            new_page_bool = False
 
-            for line in lines:
-                text.textLine(line)
+            for index, line in enumerate(lines, start=1):
+                if y_position < 50:  # Si nos acercamos al final de la hoja
+                    lines_count += 12 * index
 
-            pdf.drawText(text)
+                    pdf.setFillColor(HexColor(PCOLOR))
+                    pdf.setLineWidth(1)
+                    pdf.setStrokeColor(HexColor(PCOLOR))
+                    pdf.rect(x_position, y_position, 510, lines_count, fill=False, stroke=True)
+
+                    pdf.showPage()
+                    y_position = letter[1] - 50  # Reinicia desde arriba con margen
+                    pdf.setFont(font_name, font_size)
+                    pdf.setFillColor(HexColor(CBLACK))
+
+                    new_page_bool = True
+                    lines_before_new_page = index
+                    
+                    lines_count = 15
+                else:
+                    pdf.drawString(left_margin, y_position, line)
+                    y_position -= line_spacing
+            
             #-----------------
-
-            y_position -= 12 * len(lines)
-            lines_count += 12 * len(lines)
+            if new_page_bool:
+                lines_count += line_spacing * (len(lines) - lines_before_new_page)
+            else:
+                lines_count += line_spacing * (len(lines) + 1)
 
             pdf.setFillColor(HexColor(PCOLOR))
             pdf.setLineWidth(1)
@@ -1797,6 +1816,15 @@ def generate_quote_pdf(user_message, session_data):
         
         x_position = 50
         y_position -= 30
+        font_name = "Helvetica-Bold"
+        font_size = 12
+
+        if y_position < 100:  # Si nos acercamos al final de la hoja
+            pdf.showPage()
+            y_position = letter[1] - 50  # Reinicia desde arriba con margen
+            pdf.setFont(font_name, font_size)
+            pdf.setFillColor(HexColor(CBLACK))
+
         # ✅ Products and Services
         if template.rendered_fields:
             pdf.drawString(x_position, y_position, "Products and Services")
@@ -1848,6 +1876,43 @@ def generate_quote_pdf(user_message, session_data):
             }
 
             for line in quote.quote_lines.all():
+                if y_position < 70:  # Si nos acercamos al final de la hoja
+                    right_margin = 562
+                    y_position += 15
+                    pdf.setStrokeColor(HexColor(SCOLOR))
+                    pdf.setLineWidth(2)
+                    pdf.line(50, y_position, right_margin, y_position) 
+                    pdf.showPage()
+                    y_position = letter[1] - 50  # Reinicia desde arriba con margen
+
+                    # ✅ Table header Information
+                    pdf.setFont("Helvetica-Bold", 10)
+                    pdf.setFillColor(HexColor(CBLACK))
+                    column_spacing = 512 / len(template.rendered_fields)
+
+                    for index, field in enumerate(template.rendered_fields):
+                        column_x = x_position + index * column_spacing
+                        text_width = pdf.stringWidth(field, "Helvetica-Bold", 10)
+                        last_index = len(template.rendered_fields) - 1
+
+                        if field == "Product And SKU" and index == 0:
+                            aligned_x = column_x + 2 
+                        elif index == 0:
+                            aligned_x = column_x
+                        elif index == last_index:
+                            aligned_x = column_x + column_spacing - text_width
+                        else:
+                            aligned_x = column_x + (column_spacing - text_width) / 2
+
+                        pdf.drawString(aligned_x, y_position, field)
+                    
+                    y_position -= 15
+                    # ------------------------------------
+                    pdf.setStrokeColor(HexColor(SCOLOR))
+                    pdf.setLineWidth(2)
+                    pdf.line(50, y_position, 562, y_position) 
+                    y_position -= 27
+            
                 set_y_position = y_position
                 for index, field_title in enumerate(template.rendered_fields):
                     column_x = x_position + index * column_spacing
@@ -2027,11 +2092,18 @@ def generate_quote_pdf(user_message, session_data):
 
             # ------------------------------------
             right_margin = 562
+            y_position += 15
             pdf.setStrokeColor(HexColor(SCOLOR))
             pdf.setLineWidth(2)
-            pdf.line(50, y_position, right_margin, y_position) 
+            pdf.line(50, y_position, right_margin, y_position)
 
             y_position -= 27
+
+            if y_position < 100:  # Si nos acercamos al final de la hoja
+                pdf.showPage()
+                y_position = letter[1] - 50  # Reinicia desde arriba con margen
+                pdf.setFont(font_name, font_size)
+                pdf.setFillColor(HexColor(CBLACK))
 
             label_font = "Helvetica-Bold"
             label_size = 12
@@ -2097,9 +2169,12 @@ def generate_quote_pdf(user_message, session_data):
             y_position -= 30
             x_position = 50
 
-            
+        
 
         if template.terms_and_conditions:
+            if y_position < 50:  # Si nos acercamos al final de la hoja
+                pdf.showPage()
+                y_position = letter[1] - 50  # Reinicia desde arriba con margen
             #Terms and conditions
             tac_value = "Terms And Conditions"
             value_font = "Helvetica-Bold"
@@ -2141,6 +2216,10 @@ def generate_quote_pdf(user_message, session_data):
         #Show sign
         x_position = 50
         if template.show_sign:
+            if y_position < 160:  # Si nos acercamos al final de la hoja
+                pdf.showPage()
+                y_position = letter[1] - 50  # Reinicia desde arriba con margen
+
             pdf.setFont("Helvetica-Bold", 12)
             pdf.setFillColor(HexColor(CBLACK))
             pdf.drawString(x_position, y_position, "Signature")
@@ -2171,7 +2250,7 @@ def generate_quote_pdf(user_message, session_data):
             y_position -= 15
             pdf.setFont("Helvetica", 10)
             pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, "Sign")
+            pdf.drawString(x_position, y_position, "Name")
                 
 
         # ✅ Save PDF to buffer
@@ -2329,6 +2408,40 @@ def update_quote_notes(user_message, session_data):
 
         extracted_notes = get_quote_notes_details(user_message)
 
+        if not extracted_notes:
+            # ✅ Save quote in session data
+            set_active_quote_to_session_data(session_data, quote)
+            
+            return {
+                "message": "⚠️ Sorry, I couldn't recognize a quote note from your message."
+            }
+        
+        for index, item in enumerate(extracted_notes, start=1):
+            notes = item['notes']
+
+            if not isinstance(notes, str) or not notes.strip():
+                return {
+                    "message": "⚠️ Sorry, an error occurred. I couldn't extract a valid note from your message. Please try again or modify your input."
+                }
+
+            if notes is None or notes == "Null":
+                return {
+                    "message": "⚠️ Sorry, an error occurred. I couldn't extract a quote note from your message. Please try again or modify your input."
+                }
+            
+            if quote.notes != notes:
+                try:
+                    quote.notes = notes
+                    quote.save()
+                except Exception as e:
+                    return {
+                        "message": "⚠️ An error occurred while trying to save the notes to the quote. Please try again."
+                    }
+                
+            return {
+                "message": "✅ Quote notes have been successfully updated."
+            }
+
     except Quote.DoesNotExist:
         return {
             "message": "⚠️ Quote doesn't exist."
@@ -2340,22 +2453,28 @@ def update_quote_notes(user_message, session_data):
             "message": f"❌ An unexpected error occurred: {str(e)}"
         }
     
+    
 def get_quote_notes_details(user_message):
     """Uses GPT to extract quote notes."""
 
     prompt = f"""
-    Extract the SKU (product code) or name mentioned in the following user request.
     Extract the quote notes in the following user request.
 
     Return only the text of notes inside a JSON object like this:
     [{{"notes": "This is a note."}}]
+
+    "Look for phrases such as:
+    - 'quote notes to:'
+    - 'quote note should be'
+    - 'set the note to'
+    - 'make the quote note:'"
 
     **Rules:**
     - If no notes are found in the message, return Null as notes.
 
     **Examples:**
 
-    User: "Update quote notes to: This is a symple notes for this quote."
+    User: "Update quote notes to: This is a simple note for this quote."
     **Expected JSON Output:**
     [
         {{"notes": "This is a symple notes for this quote."}}
@@ -2416,7 +2535,7 @@ def show_quote_notes(user_message, session_data):
         notes = quote.notes
 
         if notes is None:
-            msg = "📝 There are no notes on the current quote. You can add or update them by typing: “Update quote notes to: your message”."
+            msg = "📝 There are no notes on the current quote. You can add or update it by typing: “Update quote notes to: your message”."
             return {
                 "message": msg
             }
@@ -2424,7 +2543,10 @@ def show_quote_notes(user_message, session_data):
         msg = f"<b>Quote Notes:</b><br><br>{notes}"
         
         return {
-            "message": msg
+            "message": msg#,
+            #"quote_details": get_quote_details(quote),
+            #"quote_notes": quote.notes,
+            #"hiddenMessage": True
         }
 
     except Quote.DoesNotExist:
