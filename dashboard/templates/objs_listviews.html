@@ -1,0 +1,75 @@
+{% load custom_filters %}
+
+{% if custom_list_view %}
+  <h4 class="center-align orange-text text-darken-2">
+    {{ custom_list_view.label }} Records
+  </h4>
+
+  {% if custom_list_view.is_grouped_by_account %}
+    {% for group in custom_list_view.groups %}
+      <div class="card white z-depth-1" style="margin-bottom: 20px;">
+        <div class="card-content">
+          <span class="card-title orange-text text-darken-2">
+            {{ group.account.name|default:"Unknown Account" }}
+          </span>
+
+          <p><strong>Total Amount:</strong> {{ group.total_amount }}</p>
+
+          <table class="striped responsive-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                {% for field in custom_list_view.fields %}
+                  <th>{{ field.label }}</th>
+                {% endfor %}
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for record in group.records %}
+                <tr>
+                  <td>{{ forloop.counter }}</td>
+                  {% for field in custom_list_view.fields %}
+                    <td>{{ record.fields|get_item:field.name }}</td>
+                  {% endfor %}
+                  <td>{{ record.created_at|date:"Y-m-d H:i" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="card white z-depth-1">
+      <div class="card-content">
+        <table class="striped responsive-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              {% for field in custom_list_view.fields %}
+                <th>{{ field.label }}</th>
+              {% endfor %}
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for record in custom_list_view.records %}
+              <tr>
+                <td>{{ forloop.counter }}</td>
+                {% for field in custom_list_view.fields %}
+                  <td>{{ record.fields|get_item:field.name }}</td>
+                {% endfor %}
+                <td>{{ record.created_at|date:"Y-m-d H:i" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+{% else %}
+  <div class="card-panel yellow lighten-4 center-align">
+    <strong>No records found for this object.</strong>
+  </div>
+{% endif %}
