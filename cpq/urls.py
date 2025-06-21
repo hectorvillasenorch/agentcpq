@@ -17,6 +17,7 @@ urlpatterns = [
     path("save-field-mappings/", save_field_mappings, name="save_field_mappings"),  # ✅ Add this line
     path("hubspot/schema/", get_hubspot_schema, name="get_hubspot_schema"),
     path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote'),
+    
     # ADMIN URLS
     path("admin/custom-fields/", custom_fields_view, name="custom_fields"),
     path('admin/custom-fields/create/', create_custom_field, name='create_custom_field'),

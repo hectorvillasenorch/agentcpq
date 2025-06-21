@@ -173,67 +173,18 @@ def get_standard_fields(model_name):
     }
     return mapping.get(model_name, [])
 
-# def custom_fields_view(request):
-#     object_types = ['Lead', 'Contact', 'Account', 'Opportunity', 'Product', 'Quote', 'QuoteLine']
 
-#     fields_by_object_type = {}
-
-#     for obj_type in object_types:
-#         model_class = apps.get_model('cpq', obj_type)  # Adjust app name if needed
-#         standard_fields = [
-#             {"name": f.name, "data_type": f.get_internal_type()}
-#             for f in model_class._meta.get_fields()
-#             if not f.is_relation and not f.auto_created
-#         ]
-
-#         custom_fields = CustomField.objects.filter(object_type=obj_type)
-
-#         fields_by_object_type[obj_type] = {
-#             "standard": standard_fields,
-#             "custom": custom_fields,
-#         }
-
-#     return render(request, "custom_fields.html", {
-#         "fields_by_object_type": fields_by_object_type,
-#         "models": object_types,
-#     })
-
-# def custom_fields_view(request):
-#     # 1. Start with core CRM object types
-#     object_types = ['Lead', 'Contact', 'Account', 'Opportunity', 'Product', 'Quote', 'QuoteLine']
-
-#     # 2. Fetch custom objects from the DB and extend the list
-#     custom_objects = CustomObject.objects.all()
-#     custom_object_names = [obj.name for obj in custom_objects]
-#     all_object_types = object_types + custom_object_names
-
-#     fields_by_object_type = {}
-
-#     # 3. Loop through all types (built-in and custom)
-#     for obj_type in all_object_types:
-#         try:
-#             model_class = apps.get_model('cpq', obj_type)
-#             standard_fields = [
-#                 {"name": f.name, "data_type": f.get_internal_type()}
-#                 for f in model_class._meta.get_fields()
-#                 if not f.is_relation and not f.auto_created
-#             ]
-#         except LookupError:
-#             standard_fields = []
-
-#         # 4. Get all custom fields attached to this object type
-#         custom_fields = CustomField.objects.filter(object_type=obj_type)
-
-#         fields_by_object_type[obj_type] = {
-#             "standard": standard_fields,
-#             "custom": custom_fields,
-#         }
-
-#     return render(request, "custom_fields.html", {
-#         "fields_by_object_type": fields_by_object_type,
-#         "models": all_object_types,
-#     })
 def custom_fields_view(request):
+
+    if request.method == 'POST':
+        form = CustomObjectForm(request.POST)
+        if form.is_valid():
+            form.save()
+            request.session['custom_object_success'] = True
+            return redirect('cpq:custom_fields')
+    else:
+        form = CustomObjectForm()
+
     # Built-in models
     object_types = ['Lead', 'Contact', 'Account', 'Opportunity', 'Product', 'Quote', 'QuoteLine']
 
@@ -245,7 +196,6 @@ def custom_fields_view(request):
     fields_by_object_type = {}
 
     for obj_type in all_object_types:
-        # Try to fetch standard fields for built-in models
         try:
             model_class = apps.get_model('cpq', obj_type)
             standard_fields = [
@@ -256,11 +206,9 @@ def custom_fields_view(request):
         except LookupError:
             standard_fields = []
 
-        # 🔥 FIXED: Get custom fields by object_type OR linked custom_object
         if obj_type in object_types:
             custom_fields = CustomField.objects.filter(object_type=obj_type, custom_object__isnull=True)
         else:
-            # Match the custom object by name
             try:
                 custom_obj = CustomObject.objects.get(name=obj_type)
                 custom_fields = CustomField.objects.filter(custom_object=custom_obj)
@@ -271,10 +219,12 @@ def custom_fields_view(request):
             "standard": standard_fields,
             "custom": custom_fields,
         }
-
+    success = request.session.pop('custom_object_success', False)
     return render(request, "custom_fields.html", {
         "fields_by_object_type": fields_by_object_type,
         "models": all_object_types,
+        "form": form,  # ✅ Pass the form to the template
+        "success": success  # ✅ Add to context
     })
 
 def create_custom_field(request):
@@ -404,4 +354,28 @@ def get_document_template(request):
         'settings': document_settings,
         'rendered_fields': document_settings.rendered_fields if document_settings else [],
         'omitted_fields': document_settings.omitted_fields if document_settings else []
+    })
+
+def create_payment(request):
+    custom_fields = CustomField.objects.filter(object_type="Payment")
+
+    if request.method == 'POST':
+        # Create the Payment record (can be extended if you have actual fields)
+        payment = Payment.objects.create()  # You may want to populate actual fields if defined
+
+        # Save custom field values
+        for field in custom_fields:
+            form_value = request.POST.get(f'custom_{field.name}')
+            if form_value:
+                CustomFieldValue.objects.create(
+                    field=field,
+                    content_type=ContentType.objects.get_for_model(Payment),
+                    object_id=payment.id,
+                    value=form_value
+                )
+
+        return redirect('cpq:some_payment_list_or_success_view')  # Redirect as needed
+
+    return render(request, 'payment_create.html', {
+        'custom_fields': custom_fields
     })
