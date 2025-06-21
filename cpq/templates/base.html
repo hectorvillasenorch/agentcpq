@@ -16,43 +16,62 @@
   
 </head>
 <body class="grey lighten-5">
-<div class="dashboard-container">
-  <!-- Sidebar -->
-  <div class="sidebar-toggle" onclick="toggleSidebar()">☰</div>
-  <div class="sidenav sidenav-fixed">
-      <div class="brand">
-          <img width="90%" src="/media/img/logo-small.png" alt="AgentCPQ Logo">
-      </div>
-      <a href="{% url 'cpq:custom_fields' %}">
-        <i class="material-icons">view_list</i> Manage Metadata
-      </a>
-    
-      <a href="{% url 'dashboard' %}?view=setup">
-        <i class="material-icons">arrow_back</i> Setup
-      </a>
-      <div class="divider"></div>
-      <div class="session-list">
-          <p class="session-list-title">Account</p>
-          <a href="{% url 'cpq:get_company_information' %}">
-            <i class="material-icons">business</i> Company Information
-          </a>
-          <a href="#">
-            <i class="material-icons">receipt_long</i> Billing
-          </a>
-          <p class="session-list-title">Document</p>
-          <a href="{% url 'cpq:get_document_template' %}">
-            <i class="material-icons">note_alt</i> Manage Document
-          </a>
-      </div>
+  <div class="admin-flag" style="    margin: 0px 16px 10px;
+    padding: 6px 12px;
+    /* background: #fc6a3d; */
+    color: #fc6a3d;
+    z-index: 100;
+    font-size: 16px;
+    font-weight: bold;
+    text-align: center;
+    font-family: 'Euclid Circular A', sans-serif;
+    width: 100%;
+    border-bottom: 1px solid #f8f8f8;
+    position: fixed;">
+    Admin
   </div>
-
-  <!-- Main Content -->
-  <main class="main-content">
-    <div id="content-area">
-      {% block content %}
-      {% endblock %}
+  <div class="dashboard-container">
+    <!-- Sidebar -->
+    <div class="sidebar-toggle" onclick="toggleSidebar()">☰</div>
+    <div class="sidenav sidenav-fixed">
+        <div class="brand">
+            <img width="90%" src="/media/img/logo-small.png" alt="AgentCPQ Logo">
+        </div>
+        <a href="{% url 'cpq:custom_fields' %}">
+          <i class="material-icons">view_list</i> Manage Custom Fields
+        </a>
+        <a href="{% url 'dashboard' %}?view=products">
+            <i class="material-icons">inventory_2</i> Account
+        </a>
+        <a href="{% url 'dashboard' %}?view=quotes">
+            <i class="material-icons">request_quote</i> Quotes
+        </a>
+        <a href="{% url 'dashboard' %}?view=setup">
+          <i class="material-icons">arrow_back</i> Setup
+        </a>
+        <div class="divider"></div>
+        <div class="session-list">
+            <p class="session-list-title">Account</p>
+            <a href="{% url 'cpq:get_company_information' %}">
+              <i class="material-icons">business</i> Company Information
+            </a>
+            <a href="{% url 'dashboard' %}?view=setup">
+              <i class="material-icons">receipt_long</i> Billing
+            </a>
+            <p class="session-list-title">Document</p>
+            <a href="{% url 'cpq:get_document_template' %}">
+              <i class="material-icons">note_alt</i> Manage Document
+            </a>
+        </div>
     </div>
-  </main>
-</div>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <div id="content-area">
+        {% block content %}
+        {% endblock %}
+      </div>
+    </main>
+  </div>
 </body>
 </html>

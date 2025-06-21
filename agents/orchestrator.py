@@ -89,6 +89,19 @@ def orchestrate_request(user_message, session_data):
             )
         except json.JSONDecodeError as e:
             logging.error(f" Error decoding JSON: {e}")
+    elif user_message.startswith("Update Quote:"):
+        try:
+            json_str = user_message.replace("Update Quote:", "")
+            update_data = json.loads(json_str)
+            hiddenMessage = update_data[0].get("hiddenMessage", False)
+            ChatMessage.objects.create(
+                session=chat_session,
+                sender="user",
+                content=user_message,
+                hiddenMessage = hiddenMessage
+            )
+        except json.JSONDecodeError as e:
+            logging.error(f" Error decoding JSON: {e}")
     else:
         ChatMessage.objects.create(
             session=chat_session,
@@ -104,12 +117,15 @@ def orchestrate_request(user_message, session_data):
     - "CreateQuote"
     - "AddProduct"
     - "GenerateQuoteDocument"
-    - "ApplyQuoteDiscount" (Use this when the user wants to apply a discount to the entire quote. These requests do **not** include a SKU like AICPQ-043.)
+    - "ApplyQuoteDiscount" (Use this when the user wants to apply a discount to the entire quote. These requests do **not** include a SKU like AICPQ-043 or a product name.)
     - "ProvideDates"
     - "ShowQuoteDetails"
-    - "UpdateQuoteLine"
+    - "UpdateQuoteLine" (Use this when the user wants to update a quote line item. The fields that can be updated at the quote line level are: quantity, discount_amount, discount_percentage, and term.)
+    - "UpdateQuote" (Use this only for messages that starts with 'Update Quote:')
+    - "ShowQuoteNotes"
+    - "UpdateQuoteNotes"
     - "DeleteQuoteLine"
-    - "DeleteQuote"
+    - "DeleteQuote" (Use this ONLY for messages that not includes SKU or product's names)
     - "CreateProductRecord"
     - "UpdateProductRecord"
     - "SubmitForApproval" 
@@ -149,7 +165,7 @@ def orchestrate_request(user_message, session_data):
         hiddenMessage = result.get("hiddenMessage", False)
 
         for key, value in result.items():
-            if key not in ("message", "session_id", "hiddenMessage", "temporaryMessage", "update_details", "iterations", "success", "quote_id"):
+            if key not in ("message", "session_id", "hiddenMessage", "temporaryMessage", "update_details", "iterations", "success", "quote_id", "notes"):
                 agent_message += f"\n\n{key}:\n{json.dumps(value, indent=2)}"
 
         ChatMessage.objects.create(
@@ -307,8 +323,11 @@ def get_action_map():
         "ProvideDates": quote_agent,
         "ShowQuoteDetails": quote_agent,
         "UpdateQuoteLine": quote_agent,
+        "UpdateQuote": quote_agent,
         "DeleteQuoteLine": quote_agent,
         "DeleteQuote": quote_agent,
+        "UpdateQuoteNotes": quote_agent,
+        "ShowQuoteNotes": quote_agent,
 
         # Product-related actions handled by product_agent
         "CreateProductRecord": product_agent,

@@ -113,7 +113,7 @@ input[type="checkbox"] + span {
         
       </style>
 
-      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Company Information</h6>
+      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Tenant Information</h6>
     
       <div class="row">
         <div class="col s2">
@@ -229,7 +229,7 @@ input[type="checkbox"] + span {
       <div class="row">
 
         <div class="col s12">
-          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Rendered Fields (max 5)</h6>
+          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Rendered Fields (max 6)</h6>
           <ul id="visible-fields" class="collection field-list">
             {% for field in rendered_fields %}
               <li class="collection-item"><i class="material-icons drag-icon">drag_indicator</i> {{ field }}</li>
@@ -293,7 +293,7 @@ input[type="checkbox"] + span {
       
       <script>
         document.addEventListener("DOMContentLoaded", function () {
-          const MAX_VISIBLE = 5;
+          const MAX_VISIBLE = 6;
 
           const visible = document.getElementById("visible-fields");
           const available = document.getElementById("available-fields");
