@@ -505,7 +505,32 @@ class ApprovalRule(models.Model):
             if not condition.matches(quote):
                 return False
         return True
+    
+class BusinessRule(models.Model):
+    RULE_TYPES = [
+        ("validation", "Validation"),
+        ("inclusion", "Inclusion"),
+        ("exclusion", "Exclusion"),
+        ("general", "General"),
+    ]
 
+    TARGET_TYPES = [
+        ("quote", "Quote"),
+        ("quote_line", "Quote Line"),
+        ("product", "Product"),
+    ]
+
+    name = models.CharField(max_length=255)
+    rule_type = models.CharField(max_length=20, choices=RULE_TYPES, default="validation")
+    target_type = models.CharField(max_length=20, choices=TARGET_TYPES, default="quote_line")
+    priority = models.IntegerField(default=0, help_text="Higher priority rules run first.")
+    error_message = models.TextField(blank=True, help_text="Message shown when the rule is triggered.")
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.rule_type}, Priority {self.priority})"
+    
 class RuleCondition(models.Model):
     OPERATORS = [
         ('>=', 'Greater Than or Equal'),
@@ -516,12 +541,13 @@ class RuleCondition(models.Model):
         ('!=', 'Not Equal'),
     ]
 
-    rule = models.ForeignKey(
-        'ApprovalRule',
-        on_delete=models.CASCADE,
-        null=True, 
-        related_name='conditions'
-    )
+    #rule = models.ForeignKey(
+    #    'ApprovalRule',
+    #    on_delete=models.CASCADE,
+    #    null=True, 
+    #    related_name='conditions'
+    #)
+    rule = models.ForeignKey(BusinessRule, on_delete=models.CASCADE)
     field_name = models.CharField(max_length=255)  # e.g. "discount_percentage"
     operator = models.CharField(max_length=2, choices=OPERATORS)
     value = models.DecimalField(max_digits=12, decimal_places=2)
