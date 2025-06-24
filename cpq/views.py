@@ -1,5 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings
+from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings, BusinessRule
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt 
 from django.apps import apps
@@ -7,7 +7,9 @@ from salesforce.models import SalesforceToken
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.exceptions import ObjectDoesNotExist
 import json
-from .forms import CustomFieldForm
+from .forms import CustomFieldForm, BusinessRuleForm, get_rule_condition_formset
+from .forms import QUOTE_FIELDS, QUOTE_LINE_FIELDS, PRODUCT_FIELDS
+from django.utils.safestring import mark_safe
 
 def product_list(request):
     """Fetch all products and display them in a table."""
@@ -315,4 +317,64 @@ def get_document_template(request):
         'settings': document_settings,
         'rendered_fields': document_settings.rendered_fields if document_settings else [],
         'omitted_fields': document_settings.omitted_fields if document_settings else []
+    })
+
+def business_rules_view(request):
+
+    try:
+        company = Tenant.objects.first()
+    except ObjectDoesNotExist:
+        company = None
+
+    rule_types = ['general', 'validation', 'inclusion', 'exclusion']
+    rules_by_type = {}
+
+    for rule_type in rule_types:
+        rules = BusinessRule.objects.filter(rule_type=rule_type).order_by("priority")
+        rules_by_type[rule_type] = rules
+
+    return render(request, 'manage_rules.html', {
+        'company': company,
+        "rules_by_type": rules_by_type
+    })
+
+def create_business_rule(request):
+    rule_type = request.GET.get("type", "validation")
+    target_type = request.GET.get("target_type", "quote_line")
+
+    if request.method == "POST":
+        print(f"\n\nSi llega al POST\n\n")
+        form = BusinessRuleForm(request.POST)
+        target_type = request.POST.get("target_type", "quote_line")
+        formset = get_rule_condition_formset(target_type, request.POST)
+
+        if form.is_valid() and formset.is_valid():
+            rule = form.save(commit=False)
+            rule.rule_type = rule_type
+            rule.save()
+
+            for condition in formset.save(commit=False):
+                condition.rule = rule
+                condition.save()
+
+            return redirect("cpq:business_rules")
+        else:
+            print("Form errors:", form.errors)
+            print("Formset errors:")
+            for f in formset.forms:
+                print(f.errors)
+
+    else:
+        form = BusinessRuleForm(initial={"rule_type": rule_type})
+        target_type = request.GET.get("target_type", "quote_line")
+        formset = get_rule_condition_formset(target_type)
+
+
+    return render(request, "create_business_rule.html", {
+        "form": form,
+        "formset": formset,
+        "rule_type": rule_type,
+        "QUOTE_FIELDS": mark_safe(json.dumps(QUOTE_FIELDS)),
+        "QUOTE_LINE_FIELDS": mark_safe(json.dumps(QUOTE_LINE_FIELDS)),
+        "PRODUCT_FIELDS": mark_safe(json.dumps(PRODUCT_FIELDS)),
     })
