@@ -136,6 +136,7 @@ def orchestrate_request(user_message, session_data):
     - "RecallQuote"
     - "ShowAccountDetails"
     - "GeneralQuery"
+    - "CreateValidationRule"
     """
     try:
         response = client.chat.completions.create(
@@ -342,7 +343,10 @@ def get_action_map():
         "RecallQuote": approval_agent,
 
         # General query handling
-        "GeneralQuery": handle_general_query
+        "GeneralQuery": handle_general_query,
+
+        # Rules
+        "CreateValidationRule": admin_agent,
     }
 
 
