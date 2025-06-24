@@ -2,14 +2,21 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.contrib.auth import views as auth_views
+from django.shortcuts import redirect
+from django.contrib.auth.decorators import login_required
+from cpq.views import root_redirect
 
 urlpatterns = [
+    path('', root_redirect),
     path('dashboard/', include('dashboard.urls')),
     path('agents/', include('agents.urls')),  
     path('cpq/', include('cpq.urls')), 
     path("salesforce/", include("salesforce.urls")),
     path('admin/', admin.site.urls),
     path('hubspot/', include('hubspot.urls')),
+    path('login/', auth_views.LoginView.as_view(template_name='auth/login.html'), name='login'),
+    path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
 ]
 
 if settings.DEBUG:

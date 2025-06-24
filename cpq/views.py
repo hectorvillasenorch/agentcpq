@@ -8,6 +8,12 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.core.exceptions import ObjectDoesNotExist
 import json
 from .forms import CustomFieldForm, CustomObjectForm
+from django.contrib.auth.decorators import login_required
+
+def root_redirect(request):
+    if request.user.is_authenticated:
+        return redirect('dashboard')  # or any logged-in home view
+    return redirect('login')
 
 def product_list(request):
     """Fetch all products and display them in a table."""
@@ -173,7 +179,7 @@ def get_standard_fields(model_name):
     }
     return mapping.get(model_name, [])
 
-
+@login_required
 def custom_fields_view(request):
 
     if request.method == 'POST':
@@ -186,7 +192,7 @@ def custom_fields_view(request):
         form = CustomObjectForm()
 
     # Built-in models
-    object_types = ['Lead', 'Contact', 'Account', 'Opportunity', 'Product', 'Quote', 'QuoteLine']
+    object_types = ['Activity', 'Lead', 'Contact', 'Account', 'Opportunity', 'Product', 'Quote', 'QuoteLine']
 
     # Custom objects
     custom_objects = CustomObject.objects.all()
@@ -237,6 +243,7 @@ def create_custom_field(request):
         form = CustomFieldForm()
     return render(request, 'create_custom_field.html', {'form': form})
 
+@login_required
 def get_company_information(request):
     company = Tenant.objects.first()  # Always work with the first (or only) tenant
 

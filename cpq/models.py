@@ -10,6 +10,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.contrib.postgres.fields import JSONField
 from django.db.models import JSONField
 from dateutil.relativedelta import relativedelta
+from django.contrib.auth.models import User
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -34,16 +35,38 @@ class Lead(models.Model):
         ('disqualified', 'Disqualified'),
     ]
 
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    phone = models.CharField(max_length=20, blank=True)
+    email = models.EmailField(blank=True)
+    leadId = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     source = models.CharField(max_length=100, blank=True, help_text="e.g., Website, Referral, LinkedIn")
-    contact = models.ForeignKey('Contact', on_delete=models.CASCADE, related_name='leads')
+    contact = models.ForeignKey('Contact', on_delete=models.SET_NULL, null=True, blank=True, related_name='leads')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
     notes = models.TextField(blank=True)
     assigned_to = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+    def save(self, *args, **kwargs):
+        if not self.leadId:
+            self.leadId = generate_agentcpq_id()
+        super().save(*args, **kwargs)
 
+    def convert_to_contact(self):
+        if not self.contact:
+            contact = Contact.objects.create(
+                first_name=self.first_name,
+                last_name=self.last_name,
+                phone=self.phone,
+                email=self.email,
+            )
+            self.contact = contact
+            self.status = 'converted'
+            self.save()
+        return self.contact
     def __str__(self):
-        return f"Lead: {self.contact} ({self.get_status_display()})"
+        return self.first_name + ' ' + self.last_name
+    
 
 class Account(models.Model):
     name = models.CharField(max_length=255)
@@ -54,6 +77,7 @@ class Account(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     accid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='accounts')
     
 
     def save(self, *args, **kwargs):
@@ -73,6 +97,12 @@ class Contact(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='contacts')
+    contactId = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+
+    def save(self, *args, **kwargs):
+        if not self.contactId:
+            self.contactId = generate_agentcpq_id()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.first_name} {self.last_name or ''}".strip()
@@ -104,6 +134,7 @@ class Opportunity(models.Model):
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="opportunities")
     amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
     stage = models.CharField(max_length=50, choices=STAGE_CHOICES, default='appointmentscheduled')
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     expected_close_date = models.DateField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     primary_quote = models.ForeignKey(
@@ -114,11 +145,49 @@ class Opportunity(models.Model):
     )
     oppid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     hs_deal_id = models.CharField(max_length=18, unique=True, db_index=True, editable=False, null=True, blank=True)
+    class Meta:
+        verbose_name = "Opportunity"
+        verbose_name_plural = "Opportunities"
 
     def save(self, *args, **kwargs):
         if not self.oppid:
             self.oppid = generate_agentcpq_id()
         super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return self.name
+
+class Activity(models.Model):
+    ACTIVITY_TYPE_CHOICES = [
+        ('call', 'Call'),
+        ('email', 'Email'),
+        ('meeting', 'Meeting'),
+        ('task', 'Task'),
+    ]
+
+    STATUS_CHOICES = [
+        ('not_started', 'Not Started'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
+        ('deferred', 'Deferred'),
+    ]
+
+    subject = models.CharField(max_length=255)
+    activity_type = models.CharField(max_length=50, choices=ACTIVITY_TYPE_CHOICES)
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='not_started')
+    due_date = models.DateField(null=True, blank=True)
+    lead = models.ForeignKey('Lead', on_delete=models.SET_NULL, null=True, blank=True, related_name='activities')
+    opportunity = models.ForeignKey('Opportunity', on_delete=models.SET_NULL, null=True, blank=True, related_name='activities')
+    contact = models.ForeignKey('Contact', on_delete=models.SET_NULL, null=True, blank=True, related_name='activities')
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    class Meta:
+        verbose_name = "Activity"
+        verbose_name_plural = "Activities"
+
+    def __str__(self):
+        return f"{self.subject} ({self.get_activity_type_display()})"
 
 class Product(models.Model):
     

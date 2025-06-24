@@ -11,11 +11,19 @@ import requests
 from collections import defaultdict
 from django.db.models import Prefetch
 from django.contrib.contenttypes.models import ContentType
+from django.contrib.auth.decorators import login_required
+from django.http import HttpResponseForbidden
 
+@login_required
 def dashboard(request):
     view = request.GET.get("view", "agents")
     session_id = request.GET.get("session_id")
-
+    user = request.user
+    accounts = get_user_accounts(user)
+    
+    if view == "setup" and not user.is_staff:
+        return HttpResponseForbidden("You do not have access to the setup view.")
+    
     products = Product.objects.all() if view == "products" else None
 
     quotes = Quote.objects.select_related("opportunity__account").prefetch_related(
@@ -122,3 +130,8 @@ def dashboard(request):
         "selected_session_id": session_id,
         "custom_list_view": custom_list_view,
 })
+
+def get_user_accounts(user):
+    if user.is_superuser:
+        return Account.objects.all()
+    return Account.objects.filter(owner=user)
