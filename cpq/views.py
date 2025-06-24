@@ -388,6 +388,8 @@ def create_payment(request):
 
     return render(request, 'payment_create.html', {
         'custom_fields': custom_fields
+    })
+
 def business_rules_view(request):
 
     try:

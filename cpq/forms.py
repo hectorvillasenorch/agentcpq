@@ -1,5 +1,5 @@
 from django import forms
-from .models import CustomField, BusinessRule, RuleCondition
+from .models import CustomField, BusinessRule, RuleCondition, CustomObject
 from django.forms import modelformset_factory
 
 
@@ -68,9 +68,6 @@ class CustomFieldForm(forms.ModelForm):
         return cleaned_data
 
 
-
-
-
 class CustomObjectForm(forms.ModelForm):
     class Meta:
         model = CustomObject
@@ -78,7 +75,7 @@ class CustomObjectForm(forms.ModelForm):
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3}),
         }
-        fields = ['label', 'name', 'crm', 'object_type', 'data_type', 'required']
+        fields = ['label', 'name', 'description']
 
 class BusinessRuleForm(forms.ModelForm):
     class Meta:
