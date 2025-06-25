@@ -14,6 +14,8 @@ from pathlib import Path
 import os
 import logging
 from dotenv import load_dotenv
+from decouple import config
+import dj_database_url
 
 NGROK_FULL_URL = "https://b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.ngrok-free.app"
 NGROK_URI = "b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.ngrok-free.app"
@@ -27,17 +29,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-bub3zw@!0=_wdp43tnesi*7!j5&yw3n4ejp(q5fni87n_2lc5%"
+
+SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 # ALLOWED_HOSTS = []
-ALLOWED_HOSTS = [
-    '127.0.0.1', 
-    'localhost', 
-    NGROK_URI,
-]
+# ALLOWED_HOSTS = [
+#     '127.0.0.1', 
+#     'localhost', 
+#     NGROK_URI,
+# ]
+
+ALLOWED_HOSTS = ['.herokuapp.com', 'localhost', '127.0.0.1']
+
 
 # Allow Django to be embedded in an IFrame (required for Salesforce)
 X_FRAME_OPTIONS = 'ALLOWALL'
@@ -75,8 +81,10 @@ INSTALLED_APPS = [
     "hubspot",
 ]
 
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -108,20 +116,8 @@ WSGI_APPLICATION = "agentcpq.wsgi.application"
 
 
 # Database
-# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'agentcpq',
-        'USER': 'root',
-        'PASSWORD': 'agentcpq2025!',  # If set
-        'HOST': 'localhost',
-        'PORT': '3306',
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-        },
-    }
+    'default': dj_database_url.config(default=config('DATABASE_URL'))
 }
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
@@ -159,11 +155,16 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATIC_URL = '/static/'
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
 
 STATICFILES_DIRS = [
      BASE_DIR / 'static'
 ]
+
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field

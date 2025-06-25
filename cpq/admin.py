@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity
+from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, Tenant
 
 admin.site.register(Quote)
 admin.site.register(QuoteLine)
