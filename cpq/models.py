@@ -510,8 +510,7 @@ class BusinessRule(models.Model):
     RULE_TYPES = [
         ("validation", "Validation"),
         ("inclusion", "Inclusion"),
-        ("exclusion", "Exclusion"),
-        ("general", "General"),
+        ("exclusion", "Exclusion")
     ]
 
     TARGET_TYPES = [
@@ -527,6 +526,7 @@ class BusinessRule(models.Model):
     error_message = models.TextField(blank=True, help_text="Message shown when the rule is triggered.")
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    conditions = models.JSONField(default=list, blank=True, help_text="List of conditions for the rule.")
 
     def __str__(self):
         return f"{self.name} ({self.rule_type}, Priority {self.priority})"
