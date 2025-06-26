@@ -2475,12 +2475,10 @@ def update_quote_notes(user_message, session_data):
             return {
                 "message": "✅ Quote notes have been successfully updated."
             }
-
     except Quote.DoesNotExist:
         return {
             "message": "⚠️ Quote doesn't exist."
         }
-    
     except Exception as e:
         logging.exception("An unexpected error occurred while showing the quote.")
         return {

@@ -15,8 +15,8 @@ import os
 import logging
 from dotenv import load_dotenv
 
-NGROK_FULL_URL = "https://b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.ngrok-free.app"
-NGROK_URI = "b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.ngrok-free.app"
+NGROK_FULL_URL = "https://3a0a-2607-fb91-a06-c34d-2d6f-dab-e81f-fb51.ngrok-free.app/"
+NGROK_URI = "3a0a-2607-fb91-a06-c34d-2d6f-dab-e81f-fb51.ngrok-free.app"
 
 load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -41,10 +41,6 @@ ALLOWED_HOSTS = [
 
 # Allow Django to be embedded in an IFrame (required for Salesforce)
 X_FRAME_OPTIONS = 'ALLOWALL'
-CSRF_TRUSTED_ORIGINS = [
-    NGROK_FULL_URL,
-    'https://agente001.lightning.force.com'
-]
 
 CSRF_COOKIE_SECURE = True 
 SESSION_COOKIE_SECURE = True
@@ -57,7 +53,12 @@ CORS_ALLOWED_ORIGINS = [
 
 # ✅ Allow all domains in development (Use only for testing)
 CSRF_COOKIE_DOMAIN = None
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://3a0a-2607-fb91-a06-c34d-2d6f-dab-e81f-fb51.ngrok-free.app"
+]
 
 # Application definition
 
