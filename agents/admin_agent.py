@@ -4,6 +4,9 @@ import logging
 import json
 from dotenv import load_dotenv
 from cpq.models import Quote, BusinessRule
+from decimal import Decimal
+from django.db.models import Q
+from django.forms.models import model_to_dict
 
 
 # ✅ Load environment variables
@@ -49,13 +52,19 @@ def create_validation_rule(user_message, session_data):
     response_message = []
     
     for index, item in enumerate(extracted_rules, start=1):
-        name = item["name"]
-        rule_type = item["rule_type"]
-        target_type = item["target_type"]
-        priority = item["priority"]
-        error_message = item["error_message"]
-        conditions = item["conditions"]
-        conflicts = item["conflicts"]
+        try:
+            name = item["name"]
+            rule_type = item["rule_type"]
+            target_type = item["target_type"]
+            priority = item["priority"]
+            error_message = item["error_message"]
+            active = item["active"]
+            conditions = item["conditions"]
+            #conflicts = item["conflicts"]
+        except Exception as e:
+            return {
+                "message": f"🚫 Error: {e}"
+            }
 
         content_message = {
             "index": index,
@@ -64,13 +73,14 @@ def create_validation_rule(user_message, session_data):
             "target_type": target_type,
             "priority": priority,
             "error_message": error_message,
+            "active": active,
             "conditions": conditions
         }
 
-        if conflicts:
-            content_message["error"] = conflicts
-            response_message.append(content_message)
-            continue
+        #if conflicts:
+        #    content_message["error"] = conflicts
+        #    response_message.append(content_message)
+        #    continue
 
         # NAME: must be a string
         if not name:
@@ -192,6 +202,9 @@ def create_validation_rule(user_message, session_data):
             operator = item.get("operator")
             value = item.get("value")
 
+            if not field or not operator or not value:
+                continue
+
             valid_fields = {
                 "quote": {"net_amount", "tax_amount", "status", "discount_percentage", "expiration_date", "discount_amount", "discount_type", "subtotal"},
                 "quote_line": {"quantity", "unit_price", "special_price", "total_price", "discount_percentage", "discount_type", "discount_amount", "billing_frequency", "billing_end_date", "billing_start_date", "is_subscription", "product_name", "sku", "term", "subtotal"},
@@ -202,7 +215,7 @@ def create_validation_rule(user_message, session_data):
 
             # Validate fieldName is string
             if not isinstance(field, str):
-                content_message["error"] = f"⚠️ Invalid type for fieldName: expected text (string), but got {type(field).__name__}."
+                content_message["error"] = f"⚠️ Invalid type for fieldName: expected text (string), but got {type(field).__name__} for field: {field}."
                 response_message.append(content_message)
                 error_found = True
                 break
@@ -268,8 +281,8 @@ def create_validation_rule(user_message, session_data):
                 target_type=target_type,
                 priority=priority,
                 error_message=error_message,
-                conditions=conditions,  # condiciones JSON
-                active=True
+                active=active,
+                conditions=conditions,  # conditions JSON
             )
             logging.info(f"✅ BusinessRule '{rule.name}' saved successfully with ID {rule.id}.")
             content_message["success"] = True
@@ -311,6 +324,7 @@ def extract_validation_rules(user_message):
         If the user specifies a target but the rule clearly involves fields from more than one level, set this to "multiple", even if the user suggested otherwise.
     - priority (integer): The rule's priority. If specified, use it. If not, default to 10.
     - error_message (string): The message to display when the rule is triggered. Use the user-provided message if available; otherwise, create a clear, professional message based on the intent of the rule.
+    - active (boolean): If user doesn't explicitly specify active (True or False), set active as True. If the user uses indirect language like "do not activate", "leave inactive", "but not active", "shouldn't be active", etc., set active as False.
     - conditions (object): The condition logic that triggers the rule. Must follow this strict JSON structure:
 
     Response:
@@ -358,6 +372,7 @@ def extract_validation_rules(user_message):
         "target_type": "quote_line",
         "priority": 10,
         "error_message": "Discount amount cannot exceed $100 for any quote line item.",
+        "active": True,
         "conditions": {{
             "logic": "AND",
             "items": [
@@ -375,38 +390,29 @@ def extract_validation_rules(user_message):
     Example #2:
 
     User:
-    "Add a rule that applies when the quote region is Guadalajara OR when the product family is Software AND the quote line discount is below 20%."
+    "create a validation rule to prevent discount > 60% for ACPQ-002 line item."
 
     Expected Output:
     [
     {{
-        "name": "Regional or Software Discount Rule Below 20%",
+        "name": "Prevent discount greater than 60% for OK-TG-SHY-034 product.",
         "rule_type": "validation",
-        "target_type": "multiple",
+        "target_type": "quote_line",
         "priority": 10,
-        "error_message": "This quote violates discount policy based on region or product family.",
+        "error_message": "Discount percentage cannot exceed 60% for line item OK-TG-SHY-034.",
+        "active": True,
         "conditions": {{
-            "logic": "OR",
+            "logic": "AND",
             "items": [
                 {{
-                    "fieldName": "quote.region",
-                    "operator": "==",
-                    "value": "Guadalajara"
+                    "fieldName": "quote_line.discount_percentage",
+                    "operator": ">",
+                    "value": 60
                 }},
                 {{
-                    "logic": "AND",
-                    "items": [
-                        {{
-                            "fieldName": "product.family",
-                            "operator": "==",
-                            "value": "Software"
-                        }},
-                        {{
-                            "fieldName": "quote_line.discount_percentage",
-                            "operator": "<=",
-                            "value": 20
-                        }}
-                    ]
+                    "fieldName": "quote_line.sku",
+                    "operator": "==",
+                    "value": "OK-TG-SHY-034"
                 }}
             ]
         }},
@@ -419,7 +425,11 @@ def extract_validation_rules(user_message):
     - Always enclose string values in double quotes, and leave numeric values as raw numbers.
     - Do not return explanations or extra text — only the JSON array of rules.
     - If multiple rules are described in the message, return multiple objects in the array.
-    - If ambiguous fields are used (e.g., discount_percentage without level), include a "conflicts" key explaining the ambiguity and include in the conflicts message the fieldName, Operator Value in the same message.
+    + If ambiguous fields are used (e.g., discount_percentage without level), check for context clues:
+    +   - If the user mentions "line item", infer `quote_line`.
+    +   - If the user mentions "quote", infer `quote`.
+    +   - If the user mentions "product", infer `product`.
+    + If no clear context is present, include a "conflicts" key explaining the ambiguity, including fieldName, operator, and value.
     - Always include "conflicts" key, if you cannot determine the value, set as null
     - If you cannot determine the correct value for any field (e.g., name, rule_type, target_type, priority, error_message, or conditions), set its value to null.
     - If no conditions are provided, set conditions to null (e.g. "conditions": null)
@@ -539,3 +549,117 @@ def set_active_quote_to_session_data(session_data, quote):
 
 
 ########################################################################
+
+
+
+def check_for_rules(target_type, quote, product, quote_line):
+
+    rules = BusinessRule.objects.filter(active=True, rule_type="validation").filter(
+        Q(target_type=target_type) | Q(target_type="multiple")
+    ).order_by('-priority')
+
+
+    violations = []
+
+    #data = model_to_dict(quote_line)
+    #formatted = json.dumps(data, indent=4, default=str)
+    #print(f"\n🧾 Formatted QuoteLine:\n{formatted}")
+
+    for rule in rules:
+        try:
+            conditions = rule.conditions
+        except Exception as e:
+            logging.warning(f"Error: {e}")
+            continue # Skip the rules with conditions bad formed
+
+        print(f"\n📜 Evaluating rule: {rule.name}")
+        if check_conditions(conditions, quote, product, quote_line):
+            logging.warning(f"🚫 Violation: {rule.error_message}")
+            violations.append(rule.error_message)
+        else:
+            logging.info(f"✅ No problems with rule {rule.name}\n\n")
+
+    return violations
+
+def check_conditions(data, quote, product, quote_line, depth=1):
+    indent = "  " * depth  # For console indentation
+
+    if isinstance(data, dict):
+        if "logic" in data and "items" in data:
+            logic = data["logic"]
+
+            results = []
+            for item in data["items"]:
+                result = check_conditions(item, quote, product, quote_line, depth + 1)
+                results.append(result)
+
+            if logic == "AND":
+                return all(results)
+            elif logic == "OR":
+                return any(results)
+            else:
+                logging.warning(f"{indent}❌ Unknown logical operator: {logic}")
+                return False
+
+        elif all(key in data for key in ["fieldName", "operator", "value"]):
+            field = data["fieldName"]
+            operator = data["operator"]
+            value = data["value"]
+
+            model_name, attr = field.split(".", 1)
+            obj = {"quote": quote, "quote_line": quote_line, "product": product}.get(model_name)
+
+            if not obj:
+                logging.warning(f"{indent}❌ Object not found for: {model_name}")
+                return False
+
+            actual_value = getattr(obj, attr, None)
+
+            if actual_value is None:
+                logging.warning(f"{indent}❌ Attribute '{attr}' not found in {model_name}")
+                return False
+
+            logging.info(f"{indent}🔍 Comparing: {actual_value} {operator} {value}")
+
+            try:
+                if operator == "==":
+                    result = actual_value == value
+                    logging.info(f"Result: {result}\n\n")
+                    return result
+                elif operator == "!=":
+                    result = actual_value != value
+                    logging.info(f"Result: {result}\n\n")
+                    return result
+                elif operator == ">":
+                    result = actual_value > value
+                    logging.info(f"Result: {result}\n\n")
+                    return result
+                elif operator == ">=":
+                    result = actual_value >= value
+                    logging.info(f"Result: {result}\n\n")
+                    return result
+                elif operator == "<":
+                    result = actual_value < value
+                    logging.info(f"Result: {result}\n\n")
+                    return result
+                elif operator == "<=":
+                    result = actual_value <= value
+                    logging.info(f"Result: {result}\n\n")
+                    return result
+                else:
+                    logging.warning(f"{indent}❌ Unsupported operator: {operator}")
+                    return False
+            except Exception as e:
+                logging.warning(f"{indent}❌ Error during comparison: {e}")
+                return False
+        else:
+            logging.warning(f"{indent}⚠️ Unknown dictionary structure: {data}")
+            return False
+
+    elif isinstance(data, list):
+        results = [check_conditions(item, quote, product, quote_line, depth) for item in data]
+        return all(results)
+
+    else:
+        logging.warning(f"{indent}❌ Unexpected data type: {type(data).__name__}")
+        return False

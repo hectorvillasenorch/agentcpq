@@ -6,7 +6,7 @@ import logging
 import re
 import locale
 from dotenv import load_dotenv
-from cpq.models import Quote, Account, Opportunity, QuoteLine, Product, QuoteDocument, Tenant, QuoteDocumentSettings
+from cpq.models import Quote, Account, Opportunity, QuoteLine, Product, QuoteDocument, Tenant, QuoteDocumentSettings, BusinessRule
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
@@ -23,6 +23,7 @@ from django.db.models import Q
 from django.forms.models import model_to_dict
 from django.db.models import ForeignKey
 from datetime import datetime
+from agents.admin_agent import check_for_rules
 
 
 # ✅ Load environment variables
@@ -295,6 +296,7 @@ def add_product_to_quote(user_message, session_data):
 
     added_products = []
     response_message = ""
+    violation_products = []
 
     for index, product_data in enumerate(extracted_products, start=1):
         sku = product_data.get("sku")
@@ -307,6 +309,7 @@ def add_product_to_quote(user_message, session_data):
         name = product_data.get("name", "None")
         discount_type = product_data.get("discount_type", 0)
         discount_amount = product_data.get("discount_amount", 0)
+        term = product_data.get("term", 0)
 
         # ✅ Validate product exists
         product = None
@@ -333,6 +336,29 @@ def add_product_to_quote(user_message, session_data):
             response_message += f"⚠️ {product_label}: Discount cannot be less than 0. Please enter a valid discount.<br><br>"
             continue
 
+        # Set term
+        if product.is_subscription and (term == 0 or term == "None" or term == None):
+            term = 1
+        elif not product.is_subscription:
+            term = None
+
+        ################################################# ✅ Checkrules
+
+        temp_quote_line = build_temp_quote_line(quote, product, quantity, discount_type, Decimal(discount_amount), term)
+
+        violations = check_for_rules("quote_line", quote, product, temp_quote_line)
+        #print(f"\n\nViolations: {violations}")
+
+        if violations:
+            violation_message = ""
+            for v in violations:
+                violation_message += f"- {v}<br>"
+            violation_products.append(f"\n\n🛑 Product {product.name}/{product.sku} violated one or more validation rules 🛑<br>{violation_message}")
+            print(f"\n\nViolation with product {product.name}/{product.sku}. Skipping...\n\n")
+            continue
+
+        #################################################
+
 
         # ✅ Check if product already exists in the quote
         existing_line = QuoteLine.objects.filter(quote=quote, product=product).first()
@@ -341,9 +367,6 @@ def add_product_to_quote(user_message, session_data):
             logging.info(f"🔁 Product `{sku}/{name}` already in quote. Updating instead of creating.")
 
             new_quantity = existing_line.quantity + int(quantity)
-
-            sku = product.sku
-            name = product.name
 
             update_payload = [{
                 "sku": sku,
@@ -359,6 +382,15 @@ def add_product_to_quote(user_message, session_data):
                     "sku": sku,
                     "field": "discount_percentage" if discount_type == "percentage" else "discount_amount",
                     "value": str(discount_amount),
+                    "quote_line_id": str(existing_line.id),
+                    "hiddenMessage": True
+                })
+
+            if term:
+                update_payload.append({
+                    "sku": sku,
+                    "field": "term",
+                    "value": str(term),
                     "quote_line_id": str(existing_line.id),
                     "hiddenMessage": True
                 })
@@ -395,11 +427,6 @@ def add_product_to_quote(user_message, session_data):
 
         sku = product.sku
         name = product.name
-
-        if product.is_subscription:
-            term = 1
-        else:
-            term = None
         
         if discount_type == "percentage":
             quote_line = QuoteLine.objects.create(
@@ -452,6 +479,10 @@ def add_product_to_quote(user_message, session_data):
 
     #If AI Model indetify a product but it does not exist
     if not added_products:
+        if violations:
+            return {
+                "message": violation_products
+            }
         return {
             "message": "⚠️ Error: Something went wrong — no product was added to the quote. Please try again or verify your input."
         }
@@ -470,6 +501,9 @@ def add_product_to_quote(user_message, session_data):
         for product in added_products:
             print(f"\n\n Products: {added_products}\n\n")
             response_message += f"✅ Added {product} to quote `{quote.name}`.<br>"
+        
+        if violation_products:
+            response_message += "\n".join(violation_products)
         
         response_message += f"<br>💰 Net amount updated to ${quote.net_amount:,.2f}. Would you like to add more products?"
     
@@ -621,9 +655,9 @@ def extract_product_details(user_message):
 
     **Expected JSON Output:**
     [
-        {{"sku": "AI-CPQ-001", "name": "Null", "quantity": "5", "discount_type": "percentage", "discount_amount": "10", "term": "None"}},
-        {{"sku": "Null", "name": "Agency PQ Solo", "quantity": "2", "discount_type": "amount", "discount_amount": "20"}},
-        {{"sku": "AI-CPQ-004", "name": "Null", "quantity": "1", "discount_type": "None", "discount_amount": "0"}}
+        {{"sku": "AI-CPQ-001", "name": "Null", "quantity": "5", "discount_type": "percentage", "discount_amount": 10, "term": "None"}},
+        {{"sku": "Null", "name": "Agency PQ Solo", "quantity": "2", "discount_type": "amount", "discount_amount": 20}},
+        {{"sku": "AI-CPQ-004", "name": "Null", "quantity": "1", "discount_type": "None", "discount_amount": 0}}
     ]
 
     **User Request:** "{user_message}"
@@ -2593,3 +2627,33 @@ def get_quote_details(quote):
             for ql in QuoteLine.objects.filter(quote=quote)
         ]
     }
+
+
+def build_temp_quote_line(quote, product, quantity, discount_type, discount_amount, term):
+    """
+    Construye una instancia temporal de QuoteLine sin guardarla en DB.
+    Se usa para validar reglas antes de crearla.
+    """
+    temp_line = QuoteLine(
+        quote=quote,
+        product=product,
+        quantity=quantity,
+        discount_type=discount_type,
+        discount_percentage=discount_amount if discount_type == "percentage" else 0,
+        discount_amount=discount_amount if discount_type == "amount" else 0,
+        unit_price=product.price,
+        is_subscription=product.is_subscription,
+        term=term
+    )
+
+    if not temp_line.product_name:
+        temp_line.product_name = product.name
+    if not temp_line.sku:
+        temp_line.sku = product.sku
+
+    # Aplica los cálculos de descuento, subtotal y total
+    temp_line.update_discount_fields()
+    temp_line.update_subtotal()
+    temp_line.update_total_price()
+
+    return temp_line
