@@ -344,7 +344,7 @@ class QuoteLine(models.Model):
             self.unit_price = sum(
                 bundle_item.product.price * bundle_item.quantity
                 for bundle_item in self.product.bundle_items.all()
-            ), Decimal("0.00")
+            ) or Decimal("0.00")
         elif self.unit_price is None:
             self.unit_price = self.product.price
 
