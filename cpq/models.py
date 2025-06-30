@@ -786,9 +786,6 @@ class QuoteDocument(models.Model):
     def __str__(self):
         return f"{self.quote.name} - v{self.version}"
 
-#dummy model for all custom objects
-class CustomRecord(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
 
 class CustomObject(models.Model):
     name = models.CharField(max_length=255, unique=True)
@@ -798,6 +795,12 @@ class CustomObject(models.Model):
 
     def __str__(self):
         return self.label or self.name
+
+#dummy model for all custom objects
+class CustomRecord(models.Model):
+    object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE)
+    record_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class CustomField(models.Model):
@@ -809,6 +812,12 @@ class CustomField(models.Model):
     required = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     custom_object = models.ForeignKey(CustomObject, on_delete=models.SET_NULL, null=True, blank=True)
+    lookup_model = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Format: 'app_label.ModelName' (e.g., 'cpq.Account')"
+    )
 
     def __str__(self):
         return f"{self.crm}.{self.object_type}.{self.field_name}"
@@ -820,6 +829,7 @@ class CustomFieldValue(models.Model):
     object_id = models.PositiveIntegerField()
     content_object = GenericForeignKey("content_type", "object_id")
     value = models.TextField()
+    record = models.ForeignKey(CustomRecord, on_delete=models.CASCADE)
 
     def __str__(self):
         return f"{self.content_object} - {self.field.field_name}: {self.value}"

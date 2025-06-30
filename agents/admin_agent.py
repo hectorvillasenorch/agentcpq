@@ -609,6 +609,8 @@ def check_conditions(data, quote, product, quote_line, depth=1):
             model_name, attr = field.split(".", 1)
             obj = {"quote": quote, "quote_line": quote_line, "product": product}.get(model_name)
 
+            logging.warning(f"OBJECT {obj.discount_amount}❌❌❌ Object")
+
             if not obj:
                 logging.warning(f"{indent}❌ Object not found for: {model_name}")
                 return False
@@ -619,7 +621,7 @@ def check_conditions(data, quote, product, quote_line, depth=1):
                 logging.warning(f"{indent}❌ Attribute '{attr}' not found in {model_name}")
                 return False
 
-            logging.info(f"{indent}🔍 Comparing: {actual_value} {operator} {value}")
+            logging.info(f"{indent}🔍 Comparing: {obj.discount_amount} {operator} {value}")
 
             try:
                 if operator == "==":

@@ -1,0 +1,193 @@
+
+<style>
+/* Form Styling */
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  width: 100%;
+  padding: 0.5rem;
+  font-size: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.error {
+  margin-top: 0.3rem;
+  color: #d9534f;
+  font-size: 0.875rem;
+}
+
+/* Submit Button */
+.submit-button {
+  display: inline-block;
+  padding: 0.6rem 1.25rem;
+  background-color: #007bff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out;
+}
+
+.submit-button:hover {
+  background-color: #0056b3;
+}
+
+/* Success/Error Messages */
+.message-wrapper {
+  margin-top: 1.5rem;
+}
+
+.message {
+  padding: 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  margin-bottom: 1rem;
+  border: 1px solid transparent;
+}
+
+.message.success {
+  background-color: #e6ffed;
+  color: #1a7f37;
+  border-color: #1a7f37;
+}
+
+.message.error,
+.message.danger {
+  background-color: #ffe6e6;
+  color: #b30000;
+  border-color: #b30000;
+}
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.modal-content {
+  background: #fff;
+  padding: 2rem;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 600px;
+  box-shadow: 0 2px 20px rgba(0,0,0,0.2);
+  position: relative;
+}
+
+.close-button {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 1rem;
+}
+
+/* Optional: limit modal height and scroll */
+.modal-content {
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+
+</style>
+
+<button onclick="toggleModal()" class="submit-button">➕ Create {{ custom_object.label }}</button>
+
+<div id="recordModal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <span class="close-button" onclick="toggleModal()">&times;</span>
+    <h2><i class="material-icons">description</i> New {{ custom_object.label }}</h2>
+    {% load custom_filters %}
+
+<form method="post" action="{% url 'cpq:create_custom_record' object_name=custom_object.name %}">
+  {% csrf_token %}
+  <div class="form-grid">
+    {% for field in form %}
+      <div class="form-group">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+
+        {% if field.name in lookup_options %}
+          <input type="text" name="{{ field.name }}" list="{{ field.name }}-options"
+                 class="lookup-input"
+                 placeholder="Search..."
+                 value="{{ field.value|default_if_none:'' }}">
+
+          <datalist id="{{ field.name }}-options">
+            {% for item in lookup_options|get_item:field.name %}
+              <option value="{{ item.id }}">{{ item.label }}</option>
+            {% endfor %}
+          </datalist>
+        {% else %}
+          {{ field }}
+        {% endif %}
+
+        {% if field.errors %}
+          <div class="error">{{ field.errors.0 }}</div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  <button type="submit" class="submit-button">Save</button>
+</form>
+  </div>
+</div>
+
+{% if records_custom_object %}
+  <table class="record-table">
+    <thead>
+      <tr>
+        {% with records_custom_object.0.customfieldvalue_set.all as first_record_fields %}
+          {% for value in first_record_fields %}
+            <th>{{ value.field.label }}</th>
+          {% endfor %}
+        {% endwith %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for record in records_custom_object %}
+        <tr>
+          {% for value in record.customfieldvalue_set.all %}
+            <td>{{ value.value }}</td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p>No records found for this object yet.</p>
+{% endif %}
+<script>
+function toggleModal() {
+  const modal = document.getElementById("recordModal");
+  modal.style.display = modal.style.display === "none" ? "flex" : "none";
+}
+</script>

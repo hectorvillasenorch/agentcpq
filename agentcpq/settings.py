@@ -15,8 +15,8 @@ import os
 import logging
 from dotenv import load_dotenv
 
-NGROK_FULL_URL = "https://3a0a-2607-fb91-a06-c34d-2d6f-dab-e81f-fb51.ngrok-free.app/"
-NGROK_URI = "3a0a-2607-fb91-a06-c34d-2d6f-dab-e81f-fb51.ngrok-free.app"
+NGROK_FULL_URL = "https://4654-2607-fb91-a06-c34d-a456-42ff-648c-3d26.ngrok-free.app/"
+NGROK_URI = "4654-2607-fb91-a06-c34d-a456-42ff-648c-3d26.ngrok-free.app"
 
 load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -57,7 +57,7 @@ CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://3a0a-2607-fb91-a06-c34d-2d6f-dab-e81f-fb51.ngrok-free.app"
+    "https://4654-2607-fb91-a06-c34d-a456-42ff-648c-3d26.ngrok-free.app"
 ]
 
 # Application definition

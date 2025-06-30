@@ -1056,6 +1056,7 @@ def update_quote_line(user_message, session_data):
                     # ✅ Save quote in session data
                     set_active_quote_to_session_data(session_data, quote)
                     return {"message": f"⚠️ Error: No line item found for SKU {sku} in this quote."}
+                
 
                 # ✅ Update based on the field dynamically
                 if field == "quantity":
