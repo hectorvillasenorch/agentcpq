@@ -6,7 +6,7 @@ from django.db.models import Q, Sum
 from agents.admin_agent import check_for_rules
 
 from .db_helpers import find_product_and_normalize_variables, update_opportunity_net_amount
-from .general_helpers import normalize_term_for_product, get_quote_details, build_temp_quote_line
+from .general_helpers import normalize_term_for_product, get_quote_details, build_temp_quote_line, set_active_quote_to_session_data
 
 
 def save_quote_products(products, quote, response_message, allow_updates=False):
@@ -215,6 +215,106 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
             response_message += f"❌ Error adding product {sku}/{name} to quote {quote.name}.<br>"
     
     return quote, response_message, added_products
+
+def handle_quote_line_update_request(extracted_updates, quote, response_message):
+
+    logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🛠️ Creating record for update products 🛠️")
+
+    # ✅ Add products to the quote if provided
+    updated_products = []
+
+    for index, item in enumerate(extracted_updates, start=1):
+            
+        sku = item.get("sku", None)
+        name = item.get("name", None)
+        field = item.get("field", None)
+        value = item.get("term", None)
+
+        field_labels = {
+            "quantity": "Quantity",
+            "discount_percentage": "Discount Percentage",
+            "discount_amount": "Discount Amount",
+            "term": "Term"
+        }
+
+        # General validations
+        if sku is None:
+            response_message += f"⚠️ Error: No SKU/Name was detected in your request. Please specify the product code(s) to update.<br><br>"
+            continue
+
+        if field is None:
+            response_message += f"⚠️ Error: No field to update was detected in your request. Please specify which attribute (e.g., quantity, discount or term) you want to modify.<br><br>"
+            continue
+
+        if field not in field_labels:
+            response_message += f"⚠️ Error: No valid field to update was detected in your request. Please specify which attribute (e.g., quantity, discount or term) you want to modify.<br><br>"
+            continue
+
+        if value is None or value == 0:
+            response_message += f"⚠️ Error: No value was detected in your request. Please specify the new value for the update.<br><br>"
+            continue
+        
+        try:
+            numeric_value = Decimal(value)
+        except (InvalidOperation, ValueError, TypeError):
+            response_message += f"⚠️ Error: The value \"{value}\" is not a valid number. Please enter a valid numeric value.<br><br>"
+
+        if field.startswith("discount") and Decimal(value) <= 0:
+            response_message += f"⚠️ Error: The value for discounts cannot be less than or equals 0. Please provide a valid number.<br><br>"
+
+        if field == "term" and int(value) < 0:
+            response_message += f"⚠️ Error: The value for terms cannot be less than 0. Please provide a valid number.<br><br>"
+
+
+        item_field = field_labels.get(field, field.capitalize())
+        response_message += f"<b>🔄 <u>Update Request #{index} in quote {quote.name}</u> 🔄</b><br>"
+
+        # ✅ Check if the product exists and normalize sku and name variables 
+        #    in case the LLM identified the sku as the name and vice versa
+        product, sku, name = find_product_and_normalize_variables(sku, name)
+
+        if not product:
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Product `{sku if sku else name}` not found in the database. Skipping...")
+            response_message += f"⚠️ Product `{sku if sku else name}` not found. Skipping...<br>"
+            continue  # Skip this product and move to the next
+
+        response_message += f"🔢 SKU: {sku}<br>"
+        response_message += f"🏷️ Field: {field}<br>"
+        response_message += f"✏️ Value: {value}<br><br>"
+
+
+        #Validate if product exist in actual quote line item
+        quote_line = QuoteLine.objects.filter(quote=quote, product=product).first()
+        if not quote_line:
+            response_message += f"⚠️ Error: The product `{sku}/{name}` is not in the current quote.<br><br>"
+            continue
+
+        # Add quote_line_id to item
+        item['quote_line_id'] = quote_line.id
+
+        #Convert list to valid JSON
+        item_json = json.dumps([item])  
+        request_message = f"Update Quote Line: {item_json}"
+
+        logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Trying to update: {item}")
+
+        # Try to update quote line
+        response = save_quote_line_updates(request_message, quote)
+
+        if (
+            response.get("message") == "✅ Quote line(s) updated successfully." and
+            "quote_details" in response and
+            "line_items" in response["quote_details"]
+        ):
+            response_message += "✅ Quote line updated successfully.<br><br>"
+            updated_products.append(item)
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ✅ Quote line updated successfully.")
+        else:
+            error_msg = response.get("message", "Unknown error.")
+            response_message += f"⚠️ {error_msg}<br>"
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
+
+    return quote, response_message, updated_products
 
 
 def save_quote_line_updates(user_message, quote):

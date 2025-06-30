@@ -1,4 +1,5 @@
-from cpq.models import QuoteLine
+import logging
+from cpq.models import Quote, QuoteLine
 
 def normalize_term_for_product(product, term):
     if product.is_subscription:
@@ -70,3 +71,46 @@ def build_temp_quote_line(quote, product, quantity, discount_type, discount_amou
     temp_line.update_total_price()
 
     return temp_line
+
+def get_active_quote(user_message, session_data):
+    logging.info("🔄 Getting active quote.")
+
+    # Looking for active quote
+    quote_name = extract_quote_name(user_message)
+
+    if not quote_name:
+        active_quote = session_data.get('active_quote')
+
+        if not active_quote or "quote_id" not in active_quote:
+            logging.info("🔎 No active quote found in session either in user message.")
+            return {"message": "⚠️ No active quote found. Please provide a quote name (e.g., Q-0019) or create a new quote first."}
+        else:
+            # ✅ Retrieve quote using session data
+            try:
+                quote = Quote.objects.get(id=active_quote['quote_id'])
+                logging.info(f"🟢 Found and set active quote from session: {quote.name}")
+                return quote
+            except Quote.DoesNotExist:
+                return {"message": f"⚠️ Session references a non-existent quote. Please provide a valid quote name."}
+    else:
+        # ✅ Search for the quote by name
+        try:
+            quote = Quote.objects.get(name=quote_name)
+            logging.info(f"🟢 Found and set active quote: {quote.name}")
+            return quote
+        except Quote.DoesNotExist:
+            return {"message": f"⚠️ Quote `{quote_name}` not found. Please ensure it exists or create a new one."}
+
+def set_active_quote_to_session_data(session_data, quote):
+    session_data["active_quote"] = {
+        "quote_id": quote.id,
+        "quote_name": quote.name,
+        "account": quote.account.name if quote.account else "N/A",
+        "opportunity": quote.opportunity.name if quote.opportunity else "N/A"
+    }
+
+def extract_quote_name(user_message):
+    """Extracts the quote name from user input."""
+    import re
+    match = re.search(r"\bQ-\d{4,}\b", user_message, re.IGNORECASE)
+    return match.group(0) if match else None
