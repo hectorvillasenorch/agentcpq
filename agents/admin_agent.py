@@ -12,8 +12,8 @@ from django.forms.models import model_to_dict
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-3.5-turbo"
-# OPENAI_MODEL = "gpt-4"
+#OPENAI_MODEL = "gpt-3.5-turbo"
+OPENAI_MODEL = "gpt-4"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
@@ -32,19 +32,11 @@ def admin_agent(action, user_message, session_data):
 
 def create_validation_rule(user_message, session_data):
     logging.info("🔧 Creating Validation Rule...\n\n")
-    # Looking for active quote
-    quote = get_active_quote(user_message, session_data)
 
-    # ⚠️ Verify if function return an error
-    if isinstance(quote, dict) and "message" in quote:
-        return quote
-        
+    # Extract rule with LLM        
     extracted_rules = extract_validation_rules(user_message)
 
     if not extracted_rules:
-            # ✅ Save quote in session data
-            set_active_quote_to_session_data(session_data, quote)
-            
             return {
                 "message": "⚠️ The AgentCPQ assistant could not correctly extract your rules. Please try again."
             }
@@ -147,8 +139,6 @@ def create_validation_rule(user_message, session_data):
             try:
                 # Try converting numeric strings to int, e.g. "11"
                 if isinstance(priority, str):
-                    # Optional: to convert words like "eleven" to numbers, you would need a mapping or NLP library
-                    # For now, just convert numeric strings
                     priority = int(priority)
                 else:
                     priority = int(priority)
@@ -319,12 +309,11 @@ def extract_validation_rules(user_message):
     - target_type (string): The level where the rule applies. Must be one of:
         - "quote"
         - "quote_line"
-        - "product"
         - "multiple"
         If the user specifies a target but the rule clearly involves fields from more than one level, set this to "multiple", even if the user suggested otherwise.
     - priority (integer): The rule's priority. If specified, use it. If not, default to 10.
     - error_message (string): The message to display when the rule is triggered. Use the user-provided message if available; otherwise, create a clear, professional message based on the intent of the rule.
-    - active (boolean): If user doesn't explicitly specify active (True or False), set active as True. If the user uses indirect language like "do not activate", "leave inactive", "but not active", "shouldn't be active", etc., set active as False.
+    - active (boolean): If user doesn't explicitly specify active (true or false), set active as true. If the user uses indirect language like "do not activate", "leave inactive", "but not active", "shouldn't be active", etc., set active as false. Use only lowercase true or false.
     - conditions (object): The condition logic that triggers the rule. Must follow this strict JSON structure:
 
     Response:
@@ -353,11 +342,9 @@ def extract_validation_rules(user_message):
 
     Allowed field names per level:
 
-    Quote: net_amount, tax_amount, status, discount_percentage, expiration_date, discount_amount, discount_type, subtotal
+    Quote: net_amount, tax_amount, status, discount_percentage, discount_amount, discount_type, subtotal
 
     Quote Line: quantity, unit_price, special_price, total_price, discount_percentage, discount_type, discount_amount, billing_frequency, billing_end_date, billing_start_date, is_subscription, product_name, sku, term, subtotal
-
-    Product: name, sku, price, is_subscription, term, is_bundle, family
 
     Example #1:
 
@@ -372,7 +359,7 @@ def extract_validation_rules(user_message):
         "target_type": "quote_line",
         "priority": 10,
         "error_message": "Discount amount cannot exceed $100 for any quote line item.",
-        "active": True,
+        "active": true,
         "conditions": {{
             "logic": "AND",
             "items": [
@@ -400,7 +387,7 @@ def extract_validation_rules(user_message):
         "target_type": "quote_line",
         "priority": 10,
         "error_message": "Discount percentage cannot exceed 60% for line item OK-TG-SHY-034.",
-        "active": True,
+        "active": true,
         "conditions": {{
             "logic": "AND",
             "items": [
@@ -421,14 +408,13 @@ def extract_validation_rules(user_message):
     ]
 
     Requirements:
-    - Always include fieldName in full format: quote., quote_line., or product.
+    - Always include fieldName in full format: quote. or quote_line.
     - Always enclose string values in double quotes, and leave numeric values as raw numbers.
     - Do not return explanations or extra text — only the JSON array of rules.
     - If multiple rules are described in the message, return multiple objects in the array.
     + If ambiguous fields are used (e.g., discount_percentage without level), check for context clues:
     +   - If the user mentions "line item", infer `quote_line`.
     +   - If the user mentions "quote", infer `quote`.
-    +   - If the user mentions "product", infer `product`.
     + If no clear context is present, include a "conflicts" key explaining the ambiguity, including fieldName, operator, and value.
     - Always include "conflicts" key, if you cannot determine the value, set as null
     - If you cannot determine the correct value for any field (e.g., name, rule_type, target_type, priority, error_message, or conditions), set its value to null.
@@ -499,55 +485,6 @@ def extract_validation_rules(user_message):
 
 
 
-
-
-
-############################# GET/SET ACTIVE QUOTE #############################
-
-def get_active_quote(user_message, session_data):
-    logging.info("🔄 Getting active quote.")
-
-    # Looking for active quote
-    quote_name = extract_quote_name(user_message)
-
-    if not quote_name:
-        active_quote = session_data.get('active_quote')
-
-        if not active_quote or "quote_id" not in active_quote:
-            logging.info("🔎 No active quote found in session either in user message.")
-            return {"message": "⚠️ No active quote found. Please provide a quote name (e.g., Q-0019) or create a new quote first."}
-        else:
-            # ✅ Retrieve quote using session data
-            try:
-                quote = Quote.objects.get(id=active_quote['quote_id'])
-                logging.info(f"🟢 Found and set active quote from session: {quote.name}")
-                return quote
-            except Quote.DoesNotExist:
-                return {"message": f"⚠️ Session references a non-existent quote. Please provide a valid quote name."}
-    else:
-        # ✅ Search for the quote by name
-        try:
-            quote = Quote.objects.get(name=quote_name)
-            logging.info(f"🟢 Found and set active quote: {quote.name}")
-            return quote
-        except Quote.DoesNotExist:
-            return {"message": f"⚠️ Quote `{quote_name}` not found. Please ensure it exists or create a new one."}
-        
-def extract_quote_name(user_message):
-    """Extracts the quote name from user input."""
-    import re
-    match = re.search(r"\bQ-\d{4,}\b", user_message, re.IGNORECASE)
-    return match.group(0) if match else None
-
-def set_active_quote_to_session_data(session_data, quote):
-    session_data["active_quote"] = {
-        "quote_id": quote.id,
-        "quote_name": quote.name,
-        "account": quote.account.name if quote.account else "N/A",
-        "opportunity": quote.opportunity.name if quote.opportunity else "N/A"
-    }
-
-
 ########################################################################
 
 
@@ -559,7 +496,7 @@ def check_for_rules(target_type, quote, product, quote_line):
     ).order_by('-priority')
 
 
-    violations = []
+    validations = []
 
     #data = model_to_dict(quote_line)
     #formatted = json.dumps(data, indent=4, default=str)
@@ -573,15 +510,15 @@ def check_for_rules(target_type, quote, product, quote_line):
             continue # Skip the rules with conditions bad formed
 
         print(f"\n📜 Evaluating rule: {rule.name}")
-        if check_conditions(conditions, quote, product, quote_line):
+        if check_validation_conditions(conditions, quote, product, quote_line):
             logging.warning(f"🚫 Violation: {rule.error_message}")
-            violations.append(rule.error_message)
+            validations.append(rule.error_message)
         else:
             logging.info(f"✅ No problems with rule {rule.name}\n\n")
 
-    return violations
+    return validations
 
-def check_conditions(data, quote, product, quote_line, depth=1):
+def check_validation_conditions(data, quote, product, quote_line, depth=1):
     indent = "  " * depth  # For console indentation
 
     if isinstance(data, dict):
@@ -590,7 +527,7 @@ def check_conditions(data, quote, product, quote_line, depth=1):
 
             results = []
             for item in data["items"]:
-                result = check_conditions(item, quote, product, quote_line, depth + 1)
+                result = check_validation_conditions(item, quote, product, quote_line, depth + 1)
                 results.append(result)
 
             if logic == "AND":
@@ -659,7 +596,7 @@ def check_conditions(data, quote, product, quote_line, depth=1):
             return False
 
     elif isinstance(data, list):
-        results = [check_conditions(item, quote, product, quote_line, depth) for item in data]
+        results = [check_validation_conditions(item, quote, product, quote_line, depth) for item in data]
         return all(results)
 
     else:
