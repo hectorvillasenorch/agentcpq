@@ -69,6 +69,7 @@ function enhanceStructuredAgentMessages() {
       
       const jsonStr = extractJson(raw);
       if (!jsonStr) {
+        console.log("enhanceStructuredAgentMessages")
         div.innerHTML = `<div class="error-message">⚠️ Could not find valid JSON in message</div>`;
         return;
       }
@@ -87,7 +88,6 @@ function enhanceStructuredAgentMessages() {
 * ✅ enhanceStructuredAgentMessages in history chat, NOT in real time
 */
 function extractJson(text) {
-  // Busca el primer '{' o '[' y devuelve el JSON completo (hasta el cierre)
   const startObj = text.indexOf('{');
   const startArr = text.indexOf('[');
 
@@ -98,7 +98,6 @@ function extractJson(text) {
 
   if (start === -1) return null;
 
-  // Para simplificar, asume que JSON va desde start hasta el final del string (puedes mejorar si quieres)
   return text.slice(start).trim();
 }
 
@@ -112,7 +111,6 @@ function enhanceStructuredAgentMessagesHistoryChat() {
   document.querySelectorAll(".agent-json").forEach(div => {
     const raw = div.dataset.raw;
 
-    // Las etiquetas que buscamos dentro del texto
     const keys = ['quote_details:', 'validation_rules_details:'];
 
     let jsonPart = null;
@@ -126,6 +124,7 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     }
 
     if (!jsonPart) {
+      console.log("enhanceStructuredAgentMessagesHistoryChat");
       div.innerHTML = `<div class="error-message">⚠️ Could not find valid JSON in message</div>`;
       return;
     }
@@ -133,7 +132,6 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     try {
       const data = JSON.parse(unescapeUnicode(jsonPart));
 
-      // Procesar según tipo de datos
       if (data.rules || (Array.isArray(data) && data[0]?.rule_type)) {
         const html = renderValidationRuleDetails(data.rules || data);
         div.innerHTML = html;
@@ -149,7 +147,30 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     }
   });
 
-  // Opcional: auto-scroll chat, si lo usas
+  document.querySelectorAll(".agent-pdf").forEach(div => {
+  const raw = unescapeUnicode(div.dataset.raw);
+
+  if (!raw.includes("download_url")) return;
+
+  // Get download_url
+  const urlMatch = raw.match(/download_url:\s*["']?(.*?)["']?\s*(\n|$)/);
+  const versionMatch = raw.match(/document_version:\s*([0-9]+)/);
+
+  const downloadUrl = urlMatch ? urlMatch[1].trim() : null;
+  const version = versionMatch ? versionMatch[1].trim() : null;
+  //console.log("📄 Extracted PDF Info:", { version, downloadUrl });
+
+  if (downloadUrl && version) {
+    div.innerHTML = `
+      📄 Quote PDF (v${version}) generated successfully! 
+      <a href="${downloadUrl}" target="_blank">Download Here</a>
+    `;
+  } else {
+    div.innerHTML = `<div class="error-message">⚠️ Could not extract PDF fields</div>`;
+  }
+});
+
+  // Auto-scroll chat
   const chatBox = document.getElementById("chat-box");
   if (chatBox) {
     chatBox.scrollTop = chatBox.scrollHeight;
@@ -223,12 +244,12 @@ async function sendMessage() {
         } 
         // ✅ Handle Quote Details Response
         else if (data.response && data.response.quote_details && !data.response.quote_notes) {
-          console.log("Quote Details");
+          //console.log("Quote Details");
           responseMessage += renderQuoteDetails(data.response.quote_details);
         }
         // ✅ Handle Quote Notes Response
         else if (data.response && data.response.quote_notes) {
-          console.log("Quote Notes");
+          //console.log("Quote Notes");
           responseMessage += renderQuoteNotes(data.response.quote_details, data.response.quote_notes);
         }
         // ✅ Handle Quote PDF Response
@@ -238,7 +259,9 @@ async function sendMessage() {
         } 
         // ✅ Handle Validation Rules Response
         else if (data.response && data.response.validation_rules_details) {
-          console.log("Validation Rules Details");
+          //console.log("Validation Rules Details");
+          console.log(data.response);
+          console.log(data.response.validation_rules_details)
           responseMessage += renderValidationRuleDetails(data.response.validation_rules_details);
         }
         // ✅ Default Response (Handle General Messages)
@@ -852,11 +875,20 @@ document.addEventListener("change", (event) => {
 /**
 * ✅ Update quote line and reflect changes in UI
 */
+
+/**
+* ✅ First we save the input focus
+*/
+
+/**
+* ✅ Update quote line function
+*/
 async function updateQuoteLine(input) {
     const quoteId = input.dataset.quote;
     const sku = input.dataset.sku;
     const field = input.dataset.field;
     let newValue = input.value.trim();
+  
     if (["quantity", "discount_amount", "discount_percentage", "term"].includes(field)) {
     newValue = parseFloat(newValue);
     }
@@ -873,7 +905,7 @@ async function updateQuoteLine(input) {
 
     console.log(`🔄 Field Changed: ${field}, SKU: ${sku}, New Value: ${newValue}, Quote: ${quoteId}, QuoteLine: ${quoteLineId}`);
 
-    const updateData = [{ sku, field, value: newValue, quote_line_id: quoteLineId, hiddenMessage: true }];
+    const updateData = { sku, field, value: newValue, quote_line_id: quoteLineId, hiddenMessage: true };
     const userMessage = `Update Quote Line: ${JSON.stringify(updateData)}`;
 
     try {
@@ -951,12 +983,16 @@ async function updateQuoteLine(input) {
                 netAmountParagraph.textContent = `Net Amount: ${formattedTotalNetAmount}`;
             }
 
-            alert("✅ Quote updated successfully!");
+            alert("✅ Quote line updated successfully.");
         } else {
-            alert("⚠️ Failed to update quote.");
+            // ⬅️ Restart original value of the input field
+            input.value = data.response.original_value
+            alert(data.response.message.replace(/<br\s*\/?>/gi, '\n'));
         }
     } catch (error) {
         console.error("❌ Error updating quote line:", error);
+        // ⬅️ Restart original value of the input field
+        input.value = data.response.original_value
         alert("❌ Failed to update quote.");
     }
 }
@@ -1270,7 +1306,7 @@ function showTemporaryQuoteDetails(quote) {
 
 function renderValidationRuleDetails(rules) {
   let html = "";
-  console.log(rules);
+  //console.log(rules);
 
   rules.forEach((rule) => {
     if (rule.success){

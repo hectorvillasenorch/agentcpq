@@ -349,8 +349,7 @@ def get_document_template(request):
             settings.rendered_fields = json.loads(rendered_fields_raw)
             settings.omitted_fields = json.loads(omitted_fields_raw)
         except json.JSONDecodeError:
-            settings.rendered_fields = []
-            settings.omitted_fields = []
+            print("Error decodificando los JSON\n\n")
         
         # Terms and conditions
         settings.terms_and_conditions = request.POST.get("terms_conditions", "")

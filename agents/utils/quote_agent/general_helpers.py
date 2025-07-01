@@ -1,4 +1,5 @@
 import logging
+import json
 from cpq.models import Quote, QuoteLine
 
 def normalize_term_for_product(product, term):
@@ -85,3 +86,17 @@ def extract_quote_name(user_message):
     import re
     match = re.search(r"\bQ-\d{4,}\b", user_message, re.IGNORECASE)
     return match.group(0) if match else None
+
+def get_backup_value_from_quote_line(json_payload, quote):
+    # Transform to valid JSON
+    update_line = json.loads(json_payload)
+
+    # Get quote line item from db
+    quote_line = QuoteLine.objects.get(id=update_line["quote_line_id"], quote=quote)
+
+    field = update_line["field"]
+
+    if field in {"quantity", "term", "unit_price", "discount_percentage", "discount_amount"}:
+        value = getattr(quote_line, field)
+
+    return float(value)

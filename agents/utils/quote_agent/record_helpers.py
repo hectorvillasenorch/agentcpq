@@ -3,6 +3,8 @@ import json
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from cpq.models import Product, Opportunity, Account, QuoteLine
 from django.db.models import Q, Sum
+from django.db import transaction
+from copy import deepcopy
 
 # DB Helpers
 from .db_helpers import find_product_and_normalize_variables, update_opportunity_net_amount
@@ -89,7 +91,7 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
             validations_message = ""
             for v in validations:
                 validations_message += f"- {v}<br>"
-            response_message += f"\n\n🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑<br>{validations_message}"
+            response_message += f"🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑<br>{validations_message}"
             added_products.append(f"🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑")
             print(f"\n\nValidation rule was triggered by product {product.name}/{product.sku}. Skipping...\n\n")
             continue
@@ -224,7 +226,6 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
 
     # ✅ Add products to the quote if provided
     updated_products = []
-    response_message = ""
 
     for index, item in enumerate(extracted_updates, start=1):
             
@@ -243,7 +244,7 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
         response_message += f"<b>🔄 <u>Update Request #{index} in quote {quote.name}</u> 🔄</b><br>"
 
         # General validations
-        if sku is None:
+        if sku is None and name is None:
             response_message += f"⚠️ Error: No SKU/Name was detected in your request. Please specify the product code(s) to update.<br><br>"
             continue
 
@@ -296,24 +297,29 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Error: The product `{sku}/{name}` is not in the current quote.")
             continue
 
-        # Add quote_line_id to item
-        item['quote_line_id'] = quote_line.id
+        update_payload = {
+            "sku": sku,
+            "field": field,
+            "value": value,
+            "quote_line_id": str(quote_line.id)
+        }
 
-        logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Trying to update: {item}")
+        logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Trying to update: {update_payload}")
 
         #Convert list to valid JSON
-        item_json = json.dumps([item]) 
+        item_json = json.dumps(update_payload)
 
         # Try to update quote line
+        #logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Entra a la function save_quote_line_update.")
         response = save_quote_line_update(item_json, quote)
 
         if response.get("success"):
-            response_message += response.get("message")
-            updated_products.append(item)
+            response_message += f"{response.get("message")}<br><br>"
+            updated_products.append(update_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
             error_msg = response.get("message", "Unknown error.")
-            response_message += f"⚠️ {error_msg}<br>"
+            response_message += f"{error_msg}<br>"
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
 
     return quote, response_message, updated_products
@@ -328,70 +334,83 @@ def save_quote_line_update(request, quote):
         new_value = update["value"]
         quote_line_id = update["quote_line_id"]
 
-        try:
-            quote_line = QuoteLine.objects.get(id=quote_line_id, quote=quote, product__sku=sku)
-        except QuoteLine.DoesNotExist:
-            return {
-                "error_message": f"⚠️ Error: No line item found for SKU {sku} in this quote."
-            }
+        
+        while transaction.atomic():
+            try:
+                quote_line = QuoteLine.objects.get(id=quote_line_id, quote=quote, product__sku=sku)
+            except QuoteLine.DoesNotExist:
+                return {
+                    "message": f"⚠️ Error: No line item found for SKU {sku} in this quote.",
+                    "success": False
+                }
+            
+            original_quote_line = deepcopy(quote_line)
 
-        # ✅ Update based on the field dynamically
-        if field == "quantity":
-            quote_line.quantity = int(new_value)
-        elif field == "unit_price":
-            quote_line.unit_price = Decimal(new_value)
-        elif field == "discount_percentage":
-            quote_line.discount_type = "percentage"
-            quote_line.discount_percentage = Decimal(new_value)
-        elif field == "discount_amount":
-            quote_line.discount_type = "amount"
-            quote_line.discount_amount = Decimal(new_value)
-        elif field == "term":
-            quote_line.term = int(new_value)
+            # ✅ Update based on the field dynamically
+            if field == "quantity":
+                quote_line.quantity = int(new_value)
+            elif field == "unit_price":
+                quote_line.unit_price = Decimal(new_value)
+            elif field == "discount_percentage":
+                quote_line.discount_type = "percentage"
+                quote_line.discount_percentage = Decimal(new_value)
+            elif field == "discount_amount":
+                quote_line.discount_type = "amount"
+                quote_line.discount_amount = Decimal(new_value)
+            elif field == "term":
+                quote_line.term = int(new_value)
 
-        # Save the quote line to calculate general values of quote line (subtotal, discounts, etc.)
-        quote_line.save()
+            # Get values from quote line to temporary quote line
+            product = quote_line.product
+            quantity = quote_line.quantity
+            discount_type = quote_line.discount_type
+            if discount_type not in ["percentage", "amount"]:
+                discount_value = Decimal("0.00")
+            else:
+                discount_value = quote_line.discount_percentage if discount_type == "percentage" else quote_line.discount_amount
+            term = quote_line.term
 
-        ##################### ✅ Checkrules
-        # Get product from quote line
-        product = quote_line.product
+            # Make a temporary quote line to check for rules
+            temp_quote_line = build_temp_quote_line(quote, product, quantity, discount_type, Decimal(discount_value), term)
 
-        # Validate validations rules
-        validations = check_for_rules("quote_line", quote, product, quote_line)
+            ##################### ✅ Checkrules
+            # Get product from quote line
+            product = quote_line.product
 
-        if validations:
-             # ❌ Revert changes if validation fails
-            quote_line.refresh_from_db()
+            # Validate validations rules
+            validations = check_for_rules("quote_line", quote, product, temp_quote_line)
+
+            if validations:
+                validations_message = "".join(f"- {v}<br>" for v in validations)
+                response_message = f"🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑<br>{validations_message}"
+                print(f"\n\n🛑 Validation rule was triggered by product {product.name}/{product.sku} 🛑. Skipping...\n\n")
+
+                raise ValueError(response_message)
+
+            # Save the quote line to calculate general values of quote line (subtotal, discounts, etc.)
+            quote_line.save()
 
             # ✅ Update quote (subtotal, discounts fields and net amount)
             quote.save()
             update_opportunity_net_amount(quote.opportunity)
-            
-            validations_message = ""
-            for v in validations:
-                validations_message += f"- {v}<br>"
-            response_message = f"<br><br>🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑<br>{validations_message}"
-            print(f"\n\nValidation rule was triggered by product {product.name}/{product.sku}. Skipping...\n\n")
+            #########################################################################################################
+        
+            response_message = "✅ Quote line updated successfully."
 
             return {
-                "error_message": response_message
+                "message": response_message,
+                "success": True
             }
-
-        #########################################################################################################
-        response_message = "✅ Quote line updated successfully."
-
-
-        # ✅ Update quote (subtotal, discounts fields and net amount)
-        quote.save()
-        update_opportunity_net_amount(quote.opportunity)
-        
+    
+    except ValueError as ve:
         return {
-            "message": response_message,
-            "success": True
+            "message": str(ve),
+            "success": False
         }
+
     except Exception as e:
         logging.warning(f"⚠️ Error updating quote line: {str(e)}")
         return {
-            "message": f"⚠️ Error updating quote line: {str(e)}",
+            "message": f"Error updating quote line: {str(e)}",
             "success": False
         }

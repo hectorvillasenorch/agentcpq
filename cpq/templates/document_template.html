@@ -290,19 +290,21 @@ input[type="checkbox"] + span {
         <textarea id="terms_conditions" name="terms_conditions" class="materialize-textarea">{{ settings.terms_and_conditions }}</textarea>
         <label for="terms_conditions">Terms and Conditions</label>
       </div>
-      
+
       <script>
         document.addEventListener("DOMContentLoaded", function () {
           const MAX_VISIBLE = 6;
 
           const visible = document.getElementById("visible-fields");
           const available = document.getElementById("available-fields");
+          const saveButton = document.getElementById("save-button");
 
           const highlight = (element, className) => {
             element.classList.add(className);
             setTimeout(() => element.classList.remove(className), 1000);
           };
 
+          // Inicializa los drag and drop
           new Sortable(visible, {
             group: "fields",
             animation: 150,
@@ -310,7 +312,6 @@ input[type="checkbox"] + span {
               if (visible.children.length > MAX_VISIBLE) {
                 const addedItem = evt.item;
                 const removedItem = visible.lastElementChild;
-
                 available.appendChild(removedItem);
 
                 highlight(addedItem, "green-highlight");
@@ -324,13 +325,18 @@ input[type="checkbox"] + span {
             animation: 150,
           });
 
-          const form = document.querySelector("form");
-          form.addEventListener("submit", function (e) {
-            const getFieldNames = (container) =>
-              Array.from(container.children).map(li =>
-                li.textContent.trim().replace('drag_indicator', '').trim()
-              );
+          function getFieldNames(container) {
+            return Array.from(container.children).map(li => {
+              // Solo toma el texto real, no el ícono
+              return Array.from(li.childNodes)
+                .filter(node => node.nodeType === Node.TEXT_NODE)
+                .map(node => node.textContent.trim())
+                .join(" ");
+            });
+          }
 
+          // Aquí se actualizan los inputs ocultos justo antes del envío
+          saveButton.addEventListener("click", function () {
             const renderedFields = getFieldNames(visible);
             const omittedFields = getFieldNames(available);
 
@@ -338,13 +344,13 @@ input[type="checkbox"] + span {
             document.getElementById("omitted_fields_input").value = JSON.stringify(omittedFields);
           });
         });
-      </script>
+        </script>
 
       <input type="hidden" name="rendered_fields" id="rendered_fields_input" />
       <input type="hidden" name="omitted_fields" id="omitted_fields_input" />
     
       <div class="right-align">
-        <button type="submit" class="btn orange darken-2">
+        <button type="submit" id="save-button" class="btn orange darken-2">
           <i class="material-icons left">save</i> Save
         </button>
       </div>

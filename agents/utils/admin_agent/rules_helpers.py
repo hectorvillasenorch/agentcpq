@@ -7,7 +7,7 @@ from cpq.models import BusinessRule, QuoteLine
 def check_for_rules(target_type, quote, product, quote_line):
 
 
-    rules = BusinessRule.objects.filter(active=True, rule_type="validation").filter(
+    rules = BusinessRule.objects.filter(active=True, rule_type__in=["validation", "inclusion", "exclusion"]).filter(
         Q(target_type=target_type) | Q(target_type="multiple")
     ).order_by('-priority')
 
@@ -26,11 +26,12 @@ def check_for_rules(target_type, quote, product, quote_line):
             continue # Skip the rules with conditions bad formed
 
         print(f"\n📜 Evaluating rule: {rule.name}")
-        if check_validation_conditions(conditions, quote, product, quote_line):
-            logging.warning(f"🚫 Violation: {rule.error_message}")
-            validations.append(rule.error_message)
-        else:
-            logging.info(f"✅ No problems with rule {rule.name}\n\n")
+        if rule.rule_type == "validation":
+            if check_validation_conditions(conditions, quote, product, quote_line):
+                logging.warning(f"🚫 Validation Rule: {rule.error_message}")
+                validations.append(rule.error_message)
+            else:
+                logging.info(f"✅ No problems with rule {rule.name}\n\n")
 
     return validations
 

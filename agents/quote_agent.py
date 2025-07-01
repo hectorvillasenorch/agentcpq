@@ -34,7 +34,7 @@ from .utils.quote_agent.record_helpers import save_quote_products, handle_quote_
 from .utils.quote_agent.db_helpers import get_or_create_account_and_opportunity, update_opportunity_net_amount
 
 # General Helpers
-from .utils.quote_agent.general_helpers import get_active_quote, set_active_quote_to_session_data, get_quote_details
+from .utils.quote_agent.general_helpers import get_active_quote, set_active_quote_to_session_data, get_quote_details, get_backup_value_from_quote_line
 
 
 # ✅ Load environment variables
@@ -242,6 +242,8 @@ def update_quote_line(user_message, session_data):
         return {
         "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
         }
+    
+    response_message = ""
 
     # ✅ Handle quote line update request
     quote, response_message, updated_products = handle_quote_line_update_request(extracted_updates, quote, response_message)
@@ -1567,23 +1569,28 @@ def update_quote_line_from_ui(user_message, session_data):
 
         if user_message.startswith("Update Quote Line: ") and json_match:
             json_payload = user_message.replace("Update Quote Line: ", "", 1).strip()
+            print(f"\n\n{json_payload}\n\n")
+
+            # Save original values in case something went wrong and restart values on UI
+            original_value = get_backup_value_from_quote_line(json_payload, quote)
+
             response = save_quote_line_update(json_payload, quote)
 
-        # ✅ Save quote in session data
-        set_active_quote_to_session_data(session_data, quote)
+            # ✅ Save quote in session data
+            set_active_quote_to_session_data(session_data, quote)
 
-        if response.get("success"):
-            return {
-                "message": response.get("message"),
-                "quote_details": get_quote_details(quote),
-                "hiddenMessage": True
-            }
-        else:
-            return {
-                "message": response.get("message"),
-                "quote_details": get_quote_details(quote),
-                "hiddenMessage": True
-            }
+            if response.get("success") == True:
+                return {
+                    "message": response.get("message"),
+                    "quote_details": get_quote_details(quote),
+                    "hiddenMessage": True
+                }
+            else:
+                return {
+                    "message": response.get("message"),
+                    "original_value": original_value,
+                    "hiddenMessage": True
+                }
     except Exception as e:
         logging.warning(f"⚠️ Error updating quote line: {str(e)}")
         return {"message": f"⚠️ Error updating quote line: {str(e)}"}

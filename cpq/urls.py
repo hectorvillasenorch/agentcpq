@@ -28,7 +28,6 @@ urlpatterns = [
     path('admin/custom-fields/create/', create_custom_field, name='create_custom_field'),
     path('admin/company-information', get_company_information, name='get_company_information'),
     path('admin/custom-object/create/', create_custom_object, name='create_custom_object'),
-    path('admin/document-templates', get_document_template, name='get_document_template'),
     path('admin/manage-document', get_document_template, name='get_document_template'),
     path('admin/manage-rules', business_rules_view, name='business_rules'),
     path("admin/manage-rules/create/", create_business_rule, name="create_business_rule"),
