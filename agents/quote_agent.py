@@ -25,16 +25,16 @@ from django.db.models import ForeignKey
 from datetime import datetime
 
 # LLM Utils
-from .utils.quote_agent.llm_helpers import extract_quote_details, extract_product_details, extract_quote_line_updates
+from .utils.quote_agent.llm_helpers import extract_quote_details, extract_product_details, extract_quote_line_updates, extract_quote_line_items_to_delete, extract_quote_level_discount
 
 # Record Helpers (add products)
-from .utils.quote_agent.record_helpers import save_quote_products, handle_quote_line_update_request
+from .utils.quote_agent.record_helpers import save_quote_products, handle_quote_line_update_request, save_quote_line_update
 
 # DB Helpers (products exists)
 from .utils.quote_agent.db_helpers import get_or_create_account_and_opportunity, update_opportunity_net_amount
 
 # General Helpers
-from .utils.quote_agent.general_helpers import get_active_quote, set_active_quote_to_session_data
+from .utils.quote_agent.general_helpers import get_active_quote, set_active_quote_to_session_data, get_quote_details
 
 
 # ✅ Load environment variables
@@ -48,11 +48,11 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 def quote_agent(action, user_message, session_data):
 
     action_map = {
-        "CreateQuote": create_quote,
-        "AddProduct": add_product_to_quote,
-        "UpdateQuoteLine": update_quote_line,
+        "CreateQuote": create_quote, #HELPERS READY
+        "AddProduct": add_product_to_quote, #HELPERS READY
+        "UpdateQuoteLine": update_quote_line, #HELPERS READY
         "UpdateQuote": update_quote,
-        "ApplyQuoteLineDiscount": apply_discount_to_quote_line,
+        "ApplyQuoteLineDiscount": update_quote_line, #HELPERS READY
         "ApplyQuoteDiscount": apply_discount_to_quote,
         "DeleteQuoteLine": delete_quote_line,
         "DeleteQuote": delete_quote,
@@ -60,6 +60,8 @@ def quote_agent(action, user_message, session_data):
         "UpdateQuoteNotes": update_quote_notes,
         "ShowQuoteNotes": show_quote_notes,
         "GenerateQuoteDocument": generate_quote_pdf,
+        "UpdateQuoteLineFromUI": update_quote_line_from_ui,
+        "UpdateQuoteFromUI": update_quote_from_ui
         # "ProvideDates": provide_dates,
     }
 
@@ -313,190 +315,8 @@ def update_quote(user_message, session_data):
             logging.warning(f"⚠️ Error updating quote expiration date: {str(e)}")
             return {"message": f"⚠️ Error updating quote expiration date: {str(e)}"}
 
-#< ----------------- APPLY DISCOUNT TO QUOTE LINE -------------------- >
 
-def apply_discount_to_quote_line(user_message, session_data):
-    """Applies a discount to a specific product in the quote based on the user message."""
-    logging.info("🔧 Applying discount to product in quote...\n\n")
-    # Looking for active quote
-    quote = get_active_quote(user_message, session_data)
-
-    # ⚠️ Verify if function return an error
-    if isinstance(quote, dict) and "message" in quote:
-        return quote
-    
-    # ✅ Save quote in session data
-    set_active_quote_to_session_data(session_data, quote)
-
-    response_message = ""
-        
-    # ✅ Extract multiple discount details
-    extracted_discounts = extract_discount_details(user_message)
-    if not extracted_discounts or not isinstance(extracted_discounts, list):
-        return {"message": "⚠️ Error: Could not extract discount details. Please specify SKU and discount for each product."}
-
-    added_discounts = []
-
-    for index, discount_data in enumerate(extracted_discounts, start=1):
-        sku = discount_data.get("sku")
-        name = discount_data.get("name")
-        discount = discount_data.get("discount", 0)
-
-        #If LLM did not find a SKU
-        if sku == "NoneAppear" and name == "Null":
-            return {
-                "message": "⚠️ Error: No SKU or name was detected in your request. Please specify the product code(s)/name to apply the discount."
-            }
-        
-        #If LLM did not find a discount percent
-        if discount == -1:
-            return {
-                "message": "⚠️ Error: No discount was detected in your request. Please specify the discount percentage to apply."
-            }
-
-        # ✅ Validate product exists
-        product = None
-        try:
-            product = Product.objects.get(Q(sku=sku) | Q(name=sku) | Q(sku=name) | Q(name=name))
-        except Product.DoesNotExist:
-            response_message += f"⚠️ Error: Product `{sku}` does not exist in the catalog.<br>"
-            logging.warning(f"⚠️ Product `{sku}` not found. Skipping...")
-            continue  # Skip this product and move to the next
-
-        sku = product.sku
-        name = product.name
-
-        # ✅ Check if product already exists in the quote
-        existing_line = QuoteLine.objects.filter(quote=quote, product=product).first()
-
-        if not existing_line:
-            response_message += f"⚠️ Error: Product `{sku}/{name}` exists, but is not part of quote `{quote.name}`.<br>"
-            continue
-        
-        logging.info(f"🔁 Product `{sku}/{name}` is already in quote. Applying a discount.")
-
-        update_payload = [{
-            "sku": sku,
-            "field": "discount",
-            "value": discount,
-            "quote_line_id": str(existing_line.id),
-            "hiddenMessage": True
-        }]
-
-        discount_agent_message = f"Update Quote Line: {json.dumps(update_payload)}"
-
-        response = update_quote_line(discount_agent_message, session_data)
-        if response:
-            added_discounts.append(f"`{sku}/{name}` added/updated with {discount}% discount")
-    
-    if not added_discounts:
-        response_message += "⚠️ Error: Something went wrong while trying to apply the discount."
-        return {
-            "message": response_message
-        }
-    
-    # ✅ Update quote (subtotal, discounts fields and net amount)
-    quote.save()
-    quote.refresh_from_db()
-    
-    response_message = ""
-
-    for discount in added_discounts:
-        response_message += f"✅ {discount} to quote `{quote.name}`.<br>"
-    
-    response_message += f"<br><br>💰 Net amount updated to ${quote.net_amount:,.2f}. Would you like to apply discounts to more products?"
-
-    # ✅ Check if the quote requires approval after adding the product
-    approval_suggestion = get_approval_status("", "", quote.id, "")
-    
-    # If an approval suggestion exists, append it to the message
-    if "message" in approval_suggestion:
-        response_message += f"\n\n{approval_suggestion['message']}"
-    
-    return {
-        "message": response_message,
-        "update_details": response["quote_details"],
-        "temporaryMessage": True,
-        "iterations": index
-    }
-   
-    
-def extract_discount_details(user_message):
-    """Extract multiple SKUs and discounts from user input using GPT."""
-
-    prompt = f"""
-    Extract only the discount and SKU for each product from the user's request. The user may specify multiple products and discounts in a single message.
-
-    **Expected fields per product:**
-    - sku (string, unique identifier, must appear explicitly in the user message)
-    - name (string)
-    - discount (integer, percentage, default 0 if not specified)
-
-    If no SKUs are found in the message, return NoneAppear as SKU]
-    If no name are found in the message, return Null as Name
-    If no discount are found in the message, return -1 as discount]
-
-    **Example Input:**
-    "Apply 20% discount to AI-CPQ-001 and 10% off Python System. Also give 15% discount on AI-CPQ-003."
-
-    **Expected JSON Output:**
-    [
-        {{"sku": "AI-CPQ-001", "name": "Null", "discount": 20}},
-        {{"sku": "NoneAppear", "name": "Python System", "discount": 10}},
-        {{"sku": "AI-CPQ-003", "name": "Null", "discount": 15}}
-    ]
-
-    **Example Input with no SKU:**
-    "Apply a 50% discount."
-
-    **Expected JSON Output:**
-    [
-        {{"sku": "NoneAppear", "name": "Null",  "discount": 50}}
-    ]
-
-    **Example Input with no discount:**
-    "Apply a discount to AI-CPQ-001."
-
-    **Expected JSON Output:**
-    [
-        {{"sku": "AI-CPQ-001", "name": "Null", "discount": -1}}
-    ]
-
-
-    **User Request:** "{user_message}"
-
-    **Return a valid JSON array only of product objects. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
-    """
-
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Extract structured discount details for quote addition."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        # ✅ Extract raw response
-        raw_response = response.choices[0].message.content.strip()
-        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
-
-        # ✅ Ensure valid JSON response
-        try:
-            extracted_discounts = json.loads(raw_response)
-            if isinstance(extracted_discounts, list) and all("sku" in p and "discount" in p for p in extracted_discounts):
-                return extracted_discounts
-            else:
-                logging.warning("⚠️ GPT response is not in expected format.")
-                return None
-        except json.JSONDecodeError:
-            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
-            return None
-
-    except Exception as e:
-        logging.error(f"❌ Error extracting discount details: {str(e)}")
-        return None    
-    
+#< ----------------- APPLY DISCOUNT TO QUOTE -------------------- >
 def apply_discount_to_quote(user_message, session_data):
     """Applies a discount to quote based on the user message."""
     logging.info("🔧 Applying discount to quote level...\n\n")
@@ -628,94 +448,7 @@ def apply_discount_to_quote(user_message, session_data):
         "temporaryMessage": True,
         "iterations": index
     }
-    
-def extract_quote_level_discount(user_message):
-    """Extract discount for quote level discount."""
 
-    prompt = f"""
-    Extract only the discount amount from the user's request, which can be expressed either as a percentage (%) or a dollar value (USD or $).
-
-    **Expected discount fields:**
-    - discount (integer or float): The numeric value of the discount specified by the user (e.g., 10 for "10%" or 50 for "$50").
-    - discount_type (string): Indicates the type of discount. ("percentage"  if the user specified the discount as a percentage (e.g., "10%"). "amount"  if the user specified the discount in dollars (e.g., "$50", "USD 50"). "None" if the type cannot be determined.)
-
-    [If no discount is found in the message, return None]
-    [If no discount_type is found in the message, return None]
-
-    **Example Input:**
-    "Apply a 5% discount to the quote."
-
-    **Expected JSON Output:**
-    [
-        {{"discount": "5", "discount_type": "percentage"}}
-    ]
-
-    **Example Input:**
-    "Apply a $40 discount."
-
-    **Expected JSON Output:**
-    [
-        {{"discount": "40", "discount_type": "amount"}}
-    ]
-
-    **Example Input:**
-    "Update a 15% off to this quote."
-
-    **Expected JSON Output:**
-    [
-        {{"discount": "15", "discount_type": "percentage"}}
-    ]
-
-    **Example Input with no discount:**
-    "Apply a discount to quote."
-    
-    **Expected JSON Output:**
-    [
-        {{"discount": "None", "discount_type": "amount"}}
-    ]
-
-    **Example Input with no discount type:**
-    "Apply a 30 discount to the quote."
-
-    **Expected JSON Output:**
-    [
-        {{"discount": "30", "discount_type": "None"}}
-    ]
-
-
-    **User Request:** "{user_message}"
-
-    **Return a valid JSON array only of discount objects. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
-    """
-
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Extract structured discount details applied at the quote level (not per product line)."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        # ✅ Extract raw response
-        raw_response = response.choices[0].message.content.strip()
-        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
-
-        # ✅ Ensure valid JSON response
-        try:
-            extracted_discounts = json.loads(raw_response)
-            if isinstance(extracted_discounts, list) and all("discount" in p and "discount_type" in p for p in extracted_discounts):
-                return extracted_discounts
-            else:
-                logging.warning("⚠️ GPT response is not in expected format.")
-                return None
-        except json.JSONDecodeError:
-            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
-            return None
-
-    except Exception as e:
-        logging.error(f"❌ Error extracting discount quote details: {str(e)}")
-        return None    
 
 def update_quote_net_amount(quote):
     """Recalculate and update the quote's net amount based on all quote lines."""
@@ -762,79 +495,6 @@ def update_opportunity_net_amount(opportunity):
     except Exception as e:
         print(f"⚠️ Error updating amount for Opportunity {opportunity.id}: {str(e)}")
     
-
-    
-def extract_quote_line_skus(user_message):
-    """Uses GPT to extract quote line name."""
-
-    prompt = f"""
-    Extract the SKU (product code) or name mentioned in the following user request. 
-
-    Return only the SKU and name string inside a JSON object like this:
-     [{{"sku": "<SKU_CODE>", "name": "Null"}}]
-
-    **Rules:**
-    - If no SKU is found in the message, return: {{"sku": "Null"}}
-    - If no name is found in the message, return: {{"name": "Null"}}
-    - Do NOT include explanations.
-    - Do NOT wrap the result in Markdown or use triple backticks.
-    - Return only a single JSON object.
-
-
-    **Examples:**
-
-    User: "Remove AI-CPQ-10 from the quote and remove ProductName1"
-    **Expected JSON Output:**
-    [
-        {{"sku": "AI-CPQ-10", "name": "Null"}},
-        {{"sku": "Null", "name": "ProductName1"}}
-    ]
-
-    User: "Delete product with SKU AI-CPQ-55"
-    **Expected JSON Output:**
-    [
-        {{"sku": "AI-CPQ-55", "name": "Null"}}
-    ]
-
-    User: "Remove the product"
-    **Expected JSON Output:**
-    [
-        {{"sku": "Null", "name": "Null"}}
-    ]
-
-    **IMPORTANT:** **Return a valid JSON array only of SKU and name. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
-
-    User Request: "{user_message}"
-    """
-
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Extract the SKU mentioned in the user's request."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        # ✅ Extract raw response
-        raw_response = response.choices[0].message.content.strip()
-        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
-
-        # ✅ Ensure valid JSON response
-        try:
-            extracted_sku = json.loads(raw_response)
-            if isinstance(extracted_sku, list) and all("sku" in p for p in extracted_sku):
-                return extracted_sku
-            else:
-                logging.warning("⚠️ GPT response is not in expected format.")
-                return None
-        except json.JSONDecodeError:
-            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
-            return None
-
-    except Exception as e:
-        logging.error(f"❌ Error extracting discount details: {str(e)}")
-        return None    
 
 def get_editable_quoteline_fields():
     editable_fields = []
@@ -888,7 +548,7 @@ def delete_quote_line(user_message, session_data):
         
         logging.info(f"🔄 Deleting quote line item from quote {quote}...")
 
-        extracted_sku = extract_quote_line_skus(user_message)
+        extracted_sku = extract_quote_line_items_to_delete(user_message)
 
         if not extracted_sku:
             # ✅ Save quote in session data
@@ -1888,67 +1548,49 @@ def show_quote_notes(user_message, session_data):
         return {
             "message": f"❌ An unexpected error occurred: {str(e)}"
         }
+
+
+
+def update_quote_line_from_ui(user_message, session_data):
+    """Handles updates to quote lines triggered from the UI."""
+    logging.info("📝 Updating quote line(s) from front-end UI...")
+
+    # ✅ Looking for active quote
+    quote = get_active_quote(user_message, session_data)
+
+    # ⚠️ Verify if function return an error
+    if isinstance(quote, dict) and "message" in quote:
+        return quote
+    
+    try:
+        json_match = re.search(r'\{.*\}', user_message)
+
+        if user_message.startswith("Update Quote Line: ") and json_match:
+            json_payload = user_message.replace("Update Quote Line: ", "", 1).strip()
+            response = save_quote_line_update(json_payload, quote)
+
+        # ✅ Save quote in session data
+        set_active_quote_to_session_data(session_data, quote)
+
+        if response.get("success"):
+            return {
+                "message": response.get("message"),
+                "quote_details": get_quote_details(quote),
+                "hiddenMessage": True
+            }
+        else:
+            return {
+                "message": response.get("message"),
+                "quote_details": get_quote_details(quote),
+                "hiddenMessage": True
+            }
+    except Exception as e:
+        logging.warning(f"⚠️ Error updating quote line: {str(e)}")
+        return {"message": f"⚠️ Error updating quote line: {str(e)}"}
+
     
 
-def get_quote_details(quote):
-
+def update_quote_from_ui(user_message, session_data):
     return {
-        "quote_id": quote.id,
-        "quote_name": quote.name,
-        "subtotal": str(quote.subtotal),
-        "net_amount": str(quote.net_amount),
-        "status": quote.status,
-        "account": quote.account.name if quote.account else "N/A",
-        "opportunity": quote.opportunity.name if quote.opportunity else "N/A",
-        "created_at": quote.created_at.isoformat() if quote.created_at else '',
-        "expiration_date": quote.expiration_date.isoformat() if quote.expiration_date else '',
-        "discount_type": str(quote.discount_type),
-        "discount_amount": str(quote.discount_amount),
-        "discount_percentage": str(quote.discount_percentage),
-        "line_items": [
-            {
-                "id": ql.id,
-                "product": ql.product.name,
-                "sku": ql.product.sku,
-                "quantity": ql.quantity,
-                "unit_price": str(ql.unit_price),
-                "total_price": str(ql.total_price),
-                "discount_type": ql.discount_type,
-                "discount_percentage": str(f"{ql.discount_percentage}%" if ql.discount_percentage else "0%"),
-                "discount_amount": str(f"${ql.discount_amount}" if ql.discount_amount else "$0"),
-                "is_subscription": ql.is_subscription,
-                "term": ql.term,
-            }
-            for ql in QuoteLine.objects.filter(quote=quote)
-        ]
+        "message": "Update Quote From UI is working."
     }
-
-
-def build_temp_quote_line(quote, product, quantity, discount_type, discount_amount, term):
-    """
-    Construye una instancia temporal de QuoteLine sin guardarla en DB.
-    Se usa para validar reglas antes de crearla.
-    """
-    temp_line = QuoteLine(
-        quote=quote,
-        product=product,
-        quantity=quantity,
-        discount_type=discount_type,
-        discount_percentage=discount_amount if discount_type == "percentage" else 0,
-        discount_amount=discount_amount if discount_type == "amount" else 0,
-        unit_price=product.price,
-        is_subscription=product.is_subscription,
-        term=term
-    )
-
-    if not temp_line.product_name:
-        temp_line.product_name = product.name
-    if not temp_line.sku:
-        temp_line.sku = product.sku
-
-    # Aplica los cálculos de descuento, subtotal y total
-    temp_line.update_discount_fields()
-    temp_line.update_subtotal()
-    temp_line.update_total_price()
-
-    return temp_line

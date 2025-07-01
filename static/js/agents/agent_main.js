@@ -857,9 +857,12 @@ async function updateQuoteLine(input) {
     const sku = input.dataset.sku;
     const field = input.dataset.field;
     let newValue = input.value.trim();
+    if (["quantity", "discount_amount", "discount_percentage", "term"].includes(field)) {
+    newValue = parseFloat(newValue);
+    }
     const quoteLineId = input.dataset.quotelineId;
 
-    if (newValue <= 0){
+    if (newValue < 0){
       alert("⚠️ Invalid quantity or unit price.");
     }
 
