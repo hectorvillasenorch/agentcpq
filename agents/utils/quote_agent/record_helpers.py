@@ -3,10 +3,15 @@ import json
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from cpq.models import Product, Opportunity, Account, QuoteLine
 from django.db.models import Q, Sum
-from agents.admin_agent import check_for_rules
 
+# DB Helpers
 from .db_helpers import find_product_and_normalize_variables, update_opportunity_net_amount
-from .general_helpers import normalize_term_for_product, get_quote_details, build_temp_quote_line, set_active_quote_to_session_data
+
+# General Helpers
+from .general_helpers import normalize_term_for_product, get_quote_details, set_active_quote_to_session_data
+
+#Rules Helpers
+from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules
 
 
 def save_quote_products(products, quote, response_message, allow_updates=False):
@@ -63,8 +68,6 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
         
         ################ FINAL SET UP VARIABLES ################
 
-
-
         # ✅ Check if the product exists and normalize sku and name variables 
         #    in case the LLM identified the sku as the name and vice versa
         product, sku, name = find_product_and_normalize_variables(sku, name)
@@ -76,17 +79,18 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
 
         ################################################# ✅ Checkrules
 
+        # Make a temporary quote line to check for rules
         temp_quote_line = build_temp_quote_line(quote, product, quantity, discount_type, Decimal(discount_value), term)
 
+        # Validate validations rules
         validations = check_for_rules("quote_line", quote, product, temp_quote_line)
-        #print(f"\n\nViolations: {violations}")
 
         if validations:
             validations_message = ""
             for v in validations:
                 validations_message += f"- {v}<br>"
-            response_message += f"\n\n🛑 Product {product.name}/{product.sku} violated one or more validation rules 🛑<br>{validations_message}"
-            added_products.append(f"🛑 Product {product.name}/{product.sku} violated one or more validation rules 🛑")
+            response_message += f"\n\n🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑<br>{validations_message}"
+            added_products.append(f"🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑")
             print(f"\n\nViolation with product {product.name}/{product.sku}. Skipping...\n\n")
             continue
 
@@ -222,13 +226,14 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
 
     # ✅ Add products to the quote if provided
     updated_products = []
+    response_message = ""
 
     for index, item in enumerate(extracted_updates, start=1):
             
         sku = item.get("sku", None)
         name = item.get("name", None)
         field = item.get("field", None)
-        value = item.get("term", None)
+        value = item.get("value", None)
 
         field_labels = {
             "quantity": "Quantity",
@@ -258,12 +263,15 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
             numeric_value = Decimal(value)
         except (InvalidOperation, ValueError, TypeError):
             response_message += f"⚠️ Error: The value \"{value}\" is not a valid number. Please enter a valid numeric value.<br><br>"
+            continue
 
         if field.startswith("discount") and Decimal(value) <= 0:
             response_message += f"⚠️ Error: The value for discounts cannot be less than or equals 0. Please provide a valid number.<br><br>"
+            continue
 
         if field == "term" and int(value) < 0:
             response_message += f"⚠️ Error: The value for terms cannot be less than 0. Please provide a valid number.<br><br>"
+            continue
 
 
         item_field = field_labels.get(field, field.capitalize())
@@ -278,8 +286,9 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
             response_message += f"⚠️ Product `{sku if sku else name}` not found. Skipping...<br>"
             continue  # Skip this product and move to the next
 
+        # ✅ Format response message
         response_message += f"🔢 SKU: {sku}<br>"
-        response_message += f"🏷️ Field: {field}<br>"
+        response_message += f"🏷️ Field: {item_field}<br>"
         response_message += f"✏️ Value: {value}<br><br>"
 
 
@@ -287,6 +296,7 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
         quote_line = QuoteLine.objects.filter(quote=quote, product=product).first()
         if not quote_line:
             response_message += f"⚠️ Error: The product `{sku}/{name}` is not in the current quote.<br><br>"
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Error: The product `{sku}/{name}` is not in the current quote.")
             continue
 
         # Add quote_line_id to item
@@ -335,6 +345,9 @@ def save_quote_line_updates(user_message, quote):
                 return {
                     "message": f"⚠️ Error: No line item found for SKU {sku} in this quote."
                 }
+            
+            # Save a copy of quote_line in case any rule is triggered
+            prev_quote_line = quote_line
 
             # ✅ Update based on the field dynamically
             if field == "quantity":
@@ -352,12 +365,34 @@ def save_quote_line_updates(user_message, quote):
 
             quote_line.save()
 
+            ##################### ✅ Checkrules
+            # Get product from quote line
+            product = quote_line.product
+
+            # Validate validations rules
+            validations = check_for_rules("quote_line", quote, product, quote_line)
+
+            if validations:
+                # Get quote_line copy
+                quote_line = prev_quote_line
+                
+                validations_message = ""
+                for v in validations:
+                    validations_message += f"- {v}<br>"
+                response_message += f"\n\n🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑<br>{validations_message}"
+                print(f"\n\nViolation with product {product.name}/{product.sku}. Skipping...\n\n")
+                continue
+
+            #########################################################################################################
+            response_message += "✅ Quote line(s) updated successfully."
+
+
         # ✅ Update quote (subtotal, discounts fields and net amount)
         quote.save()
         update_opportunity_net_amount(quote.opportunity)
         
         return {
-            "message": "✅ Quote line(s) updated successfully.",
+            "message": response_message,
             "quote_details": get_quote_details(quote),
             "hiddenMessage": "True"
         }

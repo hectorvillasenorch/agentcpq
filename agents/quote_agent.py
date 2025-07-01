@@ -23,7 +23,6 @@ from django.db.models import Q
 from django.forms.models import model_to_dict
 from django.db.models import ForeignKey
 from datetime import datetime
-from agents.admin_agent import check_for_rules
 
 # LLM Utils
 from .utils.quote_agent.llm_helpers import extract_quote_details, extract_product_details, extract_quote_line_updates
@@ -223,114 +222,96 @@ def add_product_to_quote(user_message, session_data):
 def update_quote_line(user_message, session_data):
     """Updates only the modified fields in quote lines."""
 
+    logging.info("🔧 Updating quote...\n\n")
+    # ✅ Looking for active quote
+    quote = get_active_quote(user_message, session_data)
+
+    # ⚠️ Verify if function return an error
+    if isinstance(quote, dict) and "message" in quote:
+        return quote
+        
+    # ✅ Extract quote line updates with LLM
+    extracted_updates = extract_quote_line_updates(user_message)
+
+    if not extracted_updates:
+        # ✅ Save quote in session data
+        set_active_quote_to_session_data(session_data, quote)
+        
+        return {
+        "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
+        }
+
+    # ✅ Handle quote line update request
+    quote, response_message, updated_products = handle_quote_line_update_request(extracted_updates, quote, response_message)
+
+    # ✅ Update quote (subtotal, discounts fields and net amount)
+    quote.save()
+
+    # ✅ Safe active quote to session data
+    set_active_quote_to_session_data(session_data, quote)
+
+    # ✅ Return
+    if not updated_products:
+        return {
+            "message": f"No products were updated. <br><br>{response_message}",
+            "temporaryMessage": True
+        } 
+    
+    return {
+        "message": response_message,
+        "temporaryMessage": True
+        }
+
+#< ----------------- UPDATE QUOTE -------------------- >
+    
+def update_quote(user_message, session_data):
+    """Updates only the modified fields in quote lines."""
+
     json_is_exist_in_message = re.search(r'\{.*\}', user_message)
 
-    if user_message.startswith("Update Quote Line: ") and json_is_exist_in_message:
+    if user_message.startswith("Update Quote: ") and json_is_exist_in_message:
         try:
-            updates = json.loads(user_message.replace("Update Quote Line: ", ""))  # Extract JSON array
-
-            # Looking for active quote
-            quote = get_active_quote(user_message, session_data)
-
-            # ⚠️ Verify if function return an error
-            if isinstance(quote, dict) and "message" in quote:
-                return quote
-            
-            # Create validation products list
-            validation_products = []
+            updates = json.loads(user_message.replace("Update Quote: ", ""))  # Extract JSON array
 
             for update in updates:
-                sku = update["sku"]
                 field = update["field"]
                 new_value = update["value"]
-                quote_line_id = update["quote_line_id"]
+                quote = update["quote"]
 
                 try:
-                    quote_line = QuoteLine.objects.get(id=quote_line_id, quote=quote, product__sku=sku)
+                    quote = Quote.objects.get(name=quote)
                 except QuoteLine.DoesNotExist:
                     # ✅ Save quote in session data
-                    set_active_quote_to_session_data(session_data, quote)
-                    return {"message": f"⚠️ Error: No line item found for SKU {sku} in this quote."}
-
-                product = quote_line.product
+                    return {"message": f"⚠️ Error: No quote found with name {quote}."}
 
                 # ✅ Update based on the field dynamically
-                if field == "quantity":
-                    quantity = int(new_value)
-                    discount_type = quote_line.discount_type
-                    quote_line.quantity = int(new_value)
-                elif field == "unit_price":
-                    quote_line.unit_price = Decimal(new_value)
+                if field == "expiration_date":
+                    parsed_date = datetime.strptime(new_value, "%m/%d/%Y")
+                    quote.expiration_date = parsed_date
                 elif field == "discount_percentage":
-                    quote_line.discount_type = "percentage"
-                    quote_line.discount_percentage = Decimal(new_value)
+                    quote.discount_type = "percentage"
+                    quote.discount_percentage = Decimal(new_value)
                 elif field == "discount_amount":
-                    quote_line.discount_type = "amount"
-                    quote_line.discount_amount = Decimal(new_value)
-                elif field == "term":
-                    quote_line.term = int(new_value)
+                    quote.discount_type = "amount"
+                    quote.discount_amount = Decimal(new_value)
+                elif field == "status":
+                    quote.status = new_value
 
-                quote_line.save()
 
             # ✅ Update quote (subtotal, discounts fields and net amount)
             quote.save()
-            update_opportunity_net_amount(quote.opportunity)
 
             # ✅ Save quote in session data
             set_active_quote_to_session_data(session_data, quote)
             
             return {
-                "message": "✅ Quote line(s) updated successfully.",
+                "message": "✅ Quote was updated successfully.",
                 "quote_details": get_quote_details(quote),
                 "hiddenMessage": "True"
             }
         except Exception as e:
-            logging.warning(f"⚠️ Error updating quote line: {str(e)}")
-            return {"message": f"⚠️ Error updating quote line: {str(e)}"}
-    else:
-        logging.info("🔧 Updating quote...\n\n")
-        # Looking for active quote
-        quote = get_active_quote(user_message, session_data)
-
-        # ⚠️ Verify if function return an error
-        if isinstance(quote, dict) and "message" in quote:
-            return quote
-            
-
-        extracted_updates = extract_quote_line_updates(user_message)
-
-        if not extracted_updates:
-            # ✅ Save quote in session data
-            set_active_quote_to_session_data(session_data, quote)
-            
-            return {
-            "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
-            }
-
-        # Check if exist the product and any (sku, field or value) is NoneAppear
-        response_message = ""
-
-        quote, response_message, updated_products = handle_quote_line_update_request(extracted_updates, quote, response_message)
-
-        # ✅ Update quote (subtotal, discounts fields and net amount)
-        quote.save()
-
-        #Safe active quote to session data
-        set_active_quote_to_session_data(session_data, quote)
-
-        # 
-        if not updated_products:
-            return {
-                "message": f"No products were updated. <br><br>{response_message}",
-                "temporaryMessage": True
-            } 
-        
-        return {
-            "message": response_message,
-            "update_details": response["quote_details"],
-            "temporaryMessage": True,
-            "iterations": index
-            }
+            logging.warning(f"⚠️ Error updating quote expiration date: {str(e)}")
+            return {"message": f"⚠️ Error updating quote expiration date: {str(e)}"}
 
 #< ----------------- APPLY DISCOUNT TO QUOTE LINE -------------------- >
 
@@ -735,306 +716,6 @@ def extract_quote_level_discount(user_message):
     except Exception as e:
         logging.error(f"❌ Error extracting discount quote details: {str(e)}")
         return None    
-
-def extract_quote_details(user_message):
-    """Use GPT to extract details for quote creation."""
-    prompt = f"""
-    Extract the following details from the user's request for quote creation:
-    - Account Name
-    - Opportunity Name (if applicable)
-    - Products and Quantities
-    - Discounts (if mentioned)
-    - Subscription Start/End Dates (if applicable)
-    - Term (if mentioned)
-
-    For discounts:
-    - If the user specifies a percentage discount (e.g. "15%"), set discount_type to "percentage" and discount_value to the numeric value (e.g. "15").
-    - If the user specifies a discount in dollars, with symbols or the word "dollar(s)" (e.g. "$100" or "100 dollars"), set discount_type to "amount" and discount_value to the numeric amount (e.g. "100").
-    - If no discount is specified, set discount_type to "None" and discount_value to "0".
-    - if no term is specified, set term to "None"
-
-    Return a JSON object with these keys:
-    {{"account": "", "opportunity": "", "products": [{{"sku": "", "name": "", "quantity": "", "discount_type": "", "discount_value": "", "term": "None"}}], "start_date": "", "end_date": ""}}.
-
-    If no products are provided in the request, return a JSON object with these keys:
-    {{"account": "", "opportunity": "", "products": [], "start_date": "", "end_date": ""}}.
-
-    User Request: "{user_message}"
-    """
-    
-    response = client.chat.completions.create(
-        model=OPENAI_MODEL,
-        messages=[{"role": "system", "content": "Extract structured data from the user request."},
-                  {"role": "user", "content": prompt}]
-    )
-    
-    try:
-        extracted_data = json.loads(response.choices[0].message.content)
-        return extracted_data
-    except json.JSONDecodeError:
-        return None
-
-def update_quote_line(user_message, session_data):
-    """Updates only the modified fields in quote lines."""
-
-    json_is_exist_in_message = re.search(r'\{.*\}', user_message)
-
-    if user_message.startswith("Update Quote Line: ") and json_is_exist_in_message:
-        try:
-            updates = json.loads(user_message.replace("Update Quote Line: ", ""))  # Extract JSON array
-
-            # Looking for active quote
-            quote = get_active_quote(user_message, session_data)
-
-            # ⚠️ Verify if function return an error
-            if isinstance(quote, dict) and "message" in quote:
-                return quote
-
-            for update in updates:
-                sku = update["sku"]
-                field = update["field"]
-                new_value = update["value"]
-                quote_line_id = update["quote_line_id"]
-
-                try:
-                    quote_line = QuoteLine.objects.get(id=quote_line_id, quote=quote, product__sku=sku)
-                except QuoteLine.DoesNotExist:
-                    # ✅ Save quote in session data
-                    set_active_quote_to_session_data(session_data, quote)
-                    return {"message": f"⚠️ Error: No line item found for SKU {sku} in this quote."}
-                
-
-                # ✅ Update based on the field dynamically
-                if field == "quantity":
-                    quote_line.quantity = int(new_value)
-                elif field == "unit_price":
-                    quote_line.unit_price = Decimal(new_value)
-                elif field == "discount_percentage":
-                    quote_line.discount_type = "percentage"
-                    quote_line.discount_percentage = Decimal(new_value)
-                elif field == "discount_amount":
-                    quote_line.discount_type = "amount"
-                    quote_line.discount_amount = Decimal(new_value)
-                elif field == "term":
-                    quote_line.term = int(new_value)
-
-                quote_line.save()
-
-            # ✅ Update quote (subtotal, discounts fields and net amount)
-            quote.save()
-            update_opportunity_net_amount(quote.opportunity)
-
-            # ✅ Save quote in session data
-            set_active_quote_to_session_data(session_data, quote)
-            
-            return {
-                "message": "✅ Quote line(s) updated successfully.",
-                "quote_details": get_quote_details(quote),
-                "hiddenMessage": "True"
-            }
-        except Exception as e:
-            logging.warning(f"⚠️ Error updating quote line: {str(e)}")
-            return {"message": f"⚠️ Error updating quote line: {str(e)}"}
-    else:
-        logging.info("🔧 Updating quote...\n\n")
-        # Looking for active quote
-        quote = get_active_quote(user_message, session_data)
-
-        # ⚠️ Verify if function return an error
-        if isinstance(quote, dict) and "message" in quote:
-            return quote
-            
-
-        extracted_updates = extract_quote_line_updates(user_message)
-
-        if not extracted_updates:
-            # ✅ Save quote in session data
-            set_active_quote_to_session_data(session_data, quote)
-            
-            return {
-                "message": "⚠️ AgentCPQ ."
-            }
-
-        # Check if exist the product and any (sku, field or value) is NoneAppear
-        response_message_alerts = ""
-        response = None
-        for index, item in enumerate(extracted_updates, start=1):
-
-            field_labels = {
-                "quantity": "Quantity",
-                "discount_percentage": "Discount Percentage",
-                "discount_amount": "Discount Amount",
-                "term": "Term"
-            }
-
-            item_field = field_labels.get(item["field"], item["field"].capitalize())
-
-            # Does the product exist?
-            try:
-                product = Product.objects.get(Q(sku=item['sku']) | Q(sku=item['name']))
-
-                show_details_message = f"<b>🔄 <u>Update Request #{index} in quote {quote.name}</u> 🔄</b><br>"
-                show_details_message += f"🔢 SKU: {item['sku']}<br>"
-                show_details_message += f"🏷️ Field: {item_field}<br>"
-                show_details_message += f"✏️ Value: {item['value']}<br><br>"
-            except Product.DoesNotExist:
-                try:
-                    product = Product.objects.get(Q(name=item['sku']) | Q(name=item['name']))
-
-                    show_details_message = f"<b>🔄 <u>Update Request #{index} in quote {quote.name}</u> 🔄</b><br>"
-                    show_details_message += f"🔢 Name: {item['name']}<br>"
-                    show_details_message += f"🏷️ Field: {item_field}<br>"
-                    show_details_message += f"✏️ Value: {item['value']}<br><br>"
-                except Product.DoesNotExist:
-                    response_message_alerts += show_details_message
-                    response_message_alerts += f"⚠️ Error: The product with SKU/Name \"{item['sku']}\" was not found in the database.<br><br>"
-                    continue
-
-            item['sku'] = product.sku
-            item['name'] = product.name
-
-            #Validate if product exist in actual quote line item
-            quote_line = QuoteLine.objects.filter(quote=quote, product=product).first()
-            if not quote_line:
-                response_message_alerts += show_details_message
-                response_message_alerts += f"⚠️ Error: The product with SKU/Name \"{item['sku']}\" is not in the current quote.<br><br>"
-                continue
-
-            # Add quote_line_id to item
-            item['quote_line_id'] = quote_line.id
-
-            # General validations
-            if item['sku'] == 'NoneAppear':
-                response_message_alerts += show_details_message
-                response_message_alerts += f"⚠️ Error: No SKU/Name was detected in your request. Please specify the product code(s) to update.<br><br>"
-                continue
-
-            if item['field'] == 'NoneAppear':
-                response_message_alerts += show_details_message
-                response_message_alerts += f"⚠️ Error: No field to update was detected in your request. Please specify which attribute (e.g., quantity, discount or term) you want to modify.<br><br>"
-                continue
-
-            if item['field'] not in field_labels:
-                response_message_alerts += show_details_message
-                response_message_alerts += f"⚠️ Error: No valid field to update was detected in your request. Please specify which attribute (e.g., quantity or discount) you want to modify.<br><br>"
-                continue
-
-            if item['value'] == "NoneAppear":
-                response_message_alerts += show_details_message
-                response_message_alerts += f"⚠️ Error: No value was detected in your request. Please specify the new value for the update.<br><br>"
-                continue 
-
-            if item['field'] != "discount":
-                try:
-                    numeric_value = Decimal(item['value'])
-                    if numeric_value < 0:
-                        response_message_alerts += show_details_message
-                        response_message_alerts += f"⚠️ Error: The value for SKU/Name \"{item['sku']}\" cannot be less than 0. Please provide a valid number.<br><br>"
-                        continue
-                except (InvalidOperation, ValueError, TypeError):
-                    response_message_alerts += show_details_message
-                    response_message_alerts += f"⚠️ Error: The value \"{item['value']}\" is not a valid number. Please enter a valid numeric value.<br><br>"
-                    continue
-            
-            if item['field'] == "term":
-                try:
-                    int(item['value'])
-                except (ValueError, TypeError):
-                    response_message_alerts += show_details_message
-                    response_message_alerts += f"⚠️ Error: The value {item['value']} is not a number.<br><br>"
-                    continue
-
-                if int(item['value']) < 1:
-                    response_message_alerts += show_details_message
-                    response_message_alerts += f"⚠️ Error: The value {item['value']} can not be less than 1.<br><br>"
-                    continue
-
-            response_message_alerts += show_details_message
-
-            item['sku'] = product.sku #Assign sku to item['sku'] in case of product was found by name
-            item_json = json.dumps([item])  #Convert list to valid JSON
-            request_message = f"Update Quote Line: {item_json}"
-
-            #Safe active quote to session data
-            set_active_quote_to_session_data(session_data, quote)
-
-            response = update_quote_line(request_message, session_data)
-
-            if (
-                response.get("message") == "✅ Quote line(s) updated successfully." and
-                "quote_details" in response and
-                "line_items" in response["quote_details"]
-            ):
-                response_message_alerts += "✅ Quote line updated successfully.<br><br>"
-            else:
-                response_message_alerts += "⚠️ Error: While updating quote line.<br>"
-                logging.warning("⚠️ Update Failed")
-
-        # ✅ Update quote (subtotal, discounts fields and net amount)
-        quote.save()
-
-        if response == None:
-            return {
-            "message": response_message_alerts,
-            "temporaryMessage": True,
-            "iterations": index
-            }
-        
-        return {
-            "message": response_message_alerts,
-            "update_details": response["quote_details"],
-            "temporaryMessage": True,
-            "iterations": index
-            }
-            
-def update_quote(user_message, session_data):
-    """Updates only the modified fields in quote lines."""
-
-    json_is_exist_in_message = re.search(r'\{.*\}', user_message)
-
-    if user_message.startswith("Update Quote: ") and json_is_exist_in_message:
-        try:
-            updates = json.loads(user_message.replace("Update Quote: ", ""))  # Extract JSON array
-
-            for update in updates:
-                field = update["field"]
-                new_value = update["value"]
-                quote = update["quote"]
-
-                try:
-                    quote = Quote.objects.get(name=quote)
-                except QuoteLine.DoesNotExist:
-                    # ✅ Save quote in session data
-                    return {"message": f"⚠️ Error: No quote found with name {quote}."}
-
-                # ✅ Update based on the field dynamically
-                if field == "expiration_date":
-                    parsed_date = datetime.strptime(new_value, "%m/%d/%Y")
-                    quote.expiration_date = parsed_date
-                elif field == "discount_percentage":
-                    quote.discount_type = "percentage"
-                    quote.discount_percentage = Decimal(new_value)
-                elif field == "discount_amount":
-                    quote.discount_type = "amount"
-                    quote.discount_amount = Decimal(new_value)
-                elif field == "status":
-                    quote.status = new_value
-
-
-            # ✅ Update quote (subtotal, discounts fields and net amount)
-            quote.save()
-
-            # ✅ Save quote in session data
-            set_active_quote_to_session_data(session_data, quote)
-            
-            return {
-                "message": "✅ Quote was updated successfully.",
-                "quote_details": get_quote_details(quote),
-                "hiddenMessage": "True"
-            }
-        except Exception as e:
-            logging.warning(f"⚠️ Error updating quote expiration date: {str(e)}")
-            return {"message": f"⚠️ Error updating quote expiration date: {str(e)}"}
 
 def update_quote_net_amount(quote):
     """Recalculate and update the quote's net amount based on all quote lines."""

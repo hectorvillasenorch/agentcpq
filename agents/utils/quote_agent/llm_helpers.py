@@ -145,25 +145,25 @@ def extract_quote_line_updates(user_message):
     User: "Update AI-10 quantity to 600 and discount to 5%, then update AgentCPQ3 discount to $100."
     Response:
     [
-        {{"sku": "AI-10", "name": Null, "field": "quantity", "value": 600}},
-        {{"sku": Null, "name": "AgentCPQ3", "field": "discount_amount", "value": 100}}
+        {{"sku": "AI-10", "name": null, "field": "quantity", "value": 600}},
+        {{"sku": null, "name": "AgentCPQ3", "field": "discount_amount", "value": 100}}
     ]
 
     **Requirements:**
     - For discounts, if the user specifies a percentage (e.g., "15% discount"), return field: "discount_percentage" and value: 15. If the user specifies a dollar amount (e.g., "$150 off" or "150 dollars discount"), return field: "discount_amount" and value: 150. Always extract only the numeric value — remove symbols like % or $, and ignore words like "off", "discount", or "dollars".
     - Always normalize discount values to plain numbers.
-    - If no SKUs are found in the message, return Null as SKU
-    - If no name are found in the message, return Null as Name
-    - If no field are found in the message, return Null as field
-    - If no value are found in the message, return Null as value
-    - If no discount are found in the message, return Null as value
+    - If no SKUs are found in the message, return null as SKU
+    - If no name are found in the message, return null as Name
+    - If no field are found in the message, return null as field
+    - If no value are found in the message, return null as value
+    - If no discount are found in the message, return null as value
 
     **Example Input with no SKU:**
     "modify the product quantity to 200 and price to 10"
 
     **Expected JSON Output:**
     [
-        {{"sku": Null, "name": Null, "field": "quantity", "value": 49.99}}
+        {{"sku": null, "name": null, "field": "quantity", "value": 49.99}}
     ]
 
     **Example Input with no field:**
@@ -171,7 +171,7 @@ def extract_quote_line_updates(user_message):
 
     **Expected JSON Output:**
     [
-        {{"sku": "AI-10", "name": Null, "field": Null, "value": 200}}
+        {{"sku": "AI-10", "name": null, "field": null, "value": 200}}
     ]
 
     **Example Input with no value:**
@@ -179,7 +179,7 @@ def extract_quote_line_updates(user_message):
 
     **Expected JSON Output:**
     [
-        {{"sku": "AI-20", "name": Null, "field": "quantity", "value": Null}}
+        {{"sku": "AI-20", "name": null, "field": "quantity", "value": null}}
     ]
 
     **IMPORTANT:** **Return a valid JSON array only of product objects. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
@@ -203,7 +203,7 @@ def extract_quote_line_updates(user_message):
         # ✅ Ensure valid JSON response
         try:
             extracted_updates = json.loads(raw_response)
-            if isinstance(extracted_updates, list) and all("sku" in p and "field" in p and "value" in p for p in extracted_updates):
+            if isinstance(extracted_updates, list) and all("sku" in p and "name" in p and "field" in p and "value" in p for p in extracted_updates):
                 return extracted_updates
             else:
                 logging.warning("⚠️ GPT response is not in expected format.")

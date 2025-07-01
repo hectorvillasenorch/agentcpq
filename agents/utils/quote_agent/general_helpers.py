@@ -43,35 +43,6 @@ def get_quote_details(quote):
     }
 
 
-def build_temp_quote_line(quote, product, quantity, discount_type, discount_amount, term):
-    """
-    Builds a temporary instance of QuoteLine without saving it to the database.
-    Used to validate rules before creating it.
-    """
-    temp_line = QuoteLine(
-        quote=quote,
-        product=product,
-        quantity=quantity,
-        discount_type=discount_type,
-        discount_percentage=discount_amount if discount_type == "percentage" else 0,
-        discount_amount=discount_amount if discount_type == "amount" else 0,
-        unit_price=product.price,
-        is_subscription=product.is_subscription,
-        term=term
-    )
-
-    if not temp_line.product_name:
-        temp_line.product_name = product.name
-    if not temp_line.sku:
-        temp_line.sku = product.sku
-
-    # Aplica los cálculos de descuento, subtotal y total
-    temp_line.update_discount_fields()
-    temp_line.update_subtotal()
-    temp_line.update_total_price()
-
-    return temp_line
-
 def get_active_quote(user_message, session_data):
     logging.info("🔄 Getting active quote.")
 
