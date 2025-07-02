@@ -3,10 +3,17 @@ import json
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from cpq.models import Product, Opportunity, Account, QuoteLine
 from django.db.models import Q, Sum
-from agents.admin_agent import check_for_rules
+from django.db import transaction
+from copy import deepcopy
 
+# DB Helpers
 from .db_helpers import find_product_and_normalize_variables, update_opportunity_net_amount
-from .general_helpers import normalize_term_for_product, get_quote_details, build_temp_quote_line, set_active_quote_to_session_data
+
+# General Helpers
+from .general_helpers import normalize_term_for_product, get_quote_details, set_active_quote_to_session_data
+
+#Rules Helpers
+from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules
 
 
 def save_quote_products(products, quote, response_message, allow_updates=False):
@@ -63,8 +70,6 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
         
         ################ FINAL SET UP VARIABLES ################
 
-
-
         # ✅ Check if the product exists and normalize sku and name variables 
         #    in case the LLM identified the sku as the name and vice versa
         product, sku, name = find_product_and_normalize_variables(sku, name)
@@ -76,18 +81,19 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
 
         ################################################# ✅ Checkrules
 
+        # Make a temporary quote line to check for rules
         temp_quote_line = build_temp_quote_line(quote, product, quantity, discount_type, Decimal(discount_value), term)
 
+        # Validate validations rules
         validations = check_for_rules("quote_line", quote, product, temp_quote_line)
-        #print(f"\n\nViolations: {violations}")
 
         if validations:
             validations_message = ""
             for v in validations:
                 validations_message += f"- {v}<br>"
-            response_message += f"\n\n🛑 Product {product.name}/{product.sku} violated one or more validation rules 🛑<br>{validations_message}"
-            added_products.append(f"🛑 Product {product.name}/{product.sku} violated one or more validation rules 🛑")
-            print(f"\n\nViolation with product {product.name}/{product.sku}. Skipping...\n\n")
+            response_message += f"🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑<br>{validations_message}"
+            added_products.append(f"🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑")
+            print(f"\n\nValidation rule was triggered by product {product.name}/{product.sku}. Skipping...\n\n")
             continue
 
         #################################################
@@ -131,32 +137,30 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
                     "hiddenMessage": True
                 })
 
-            user_message = f"Update Quote Line: {json.dumps(update_payload)}"
+            successful_fields = []
+            failed_fields = []
 
-            
-            response = save_quote_line_updates(user_message, quote)
+            for update in update_payload:
+                request = json.dumps(update)
+                response = save_quote_line_update(request, quote)
 
-            if (
-                response.get("message") == "✅ Quote line(s) updated successfully." and
-                "quote_details" in response and
-                "line_items" in response["quote_details"]
-            ):
-                added_products.append(f"{quantity}x {sku}/{name}.")
-        
-                if discount_type == "percentage":
-                    response_message += f"✅ Updated {quantity}x {sku}/{name} with a {discount_value}% discount.<br>"
-                elif discount_type == "amount":
-                    response_message += f"✅ Updated {quantity}x {sku}/{name} to quote {quote.name} with a ${discount_value} discount.<br>"
+                if response.get("success"):
+                    successful_fields.append(update["field"])
+                    response_message += f"✅ Updated `{update['field']}` to `{update['value']}` for product `{update['sku']}`.<br>"
                 else:
-                    response_message += f"✅ Updated {quantity}x {sku}/{name}.<br>"
-            else:
-                response_message+= "⚠️ Error: While updating quote line {sku}/{name} (Error details: ).<br><br>"
-                logging.warning("⚠️ Update Failed")
+                    failed_fields.append(update["field"])
+                    response_message += (
+                        f"⚠️ Error updating field `{update['field']}` for product `{update['sku']}` "
+                        f"(details: {response.get('message')}).<br>"
+                    )
+                    logging.warning(f"⚠️ Update Failed for field {update['field']}: {response.get('message')}")
 
 
-            # ✅ Refresh quote to get new net_amount from database
-            quote.refresh_from_db()
-            existing_line.refresh_from_db()
+            if successful_fields:
+                added_products.append(f"{quantity}x {sku}/{name}.")
+                 # ✅ Refresh quote to get new net_amount from database
+                quote.refresh_from_db()
+                existing_line.refresh_from_db()
 
             continue
 
@@ -228,7 +232,7 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
         sku = item.get("sku", None)
         name = item.get("name", None)
         field = item.get("field", None)
-        value = item.get("term", None)
+        value = item.get("value", None)
 
         field_labels = {
             "quantity": "Quantity",
@@ -237,8 +241,10 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
             "term": "Term"
         }
 
+        response_message += f"<b>🔄 <u>Update Request #{index} in quote {quote.name}</u> 🔄</b><br>"
+
         # General validations
-        if sku is None:
+        if sku is None and name is None:
             response_message += f"⚠️ Error: No SKU/Name was detected in your request. Please specify the product code(s) to update.<br><br>"
             continue
 
@@ -258,17 +264,17 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
             numeric_value = Decimal(value)
         except (InvalidOperation, ValueError, TypeError):
             response_message += f"⚠️ Error: The value \"{value}\" is not a valid number. Please enter a valid numeric value.<br><br>"
+            continue
 
         if field.startswith("discount") and Decimal(value) <= 0:
             response_message += f"⚠️ Error: The value for discounts cannot be less than or equals 0. Please provide a valid number.<br><br>"
+            continue
 
         if field == "term" and int(value) < 0:
             response_message += f"⚠️ Error: The value for terms cannot be less than 0. Please provide a valid number.<br><br>"
+            continue
 
-
-        item_field = field_labels.get(field, field.capitalize())
-        response_message += f"<b>🔄 <u>Update Request #{index} in quote {quote.name}</u> 🔄</b><br>"
-
+        # After general validations
         # ✅ Check if the product exists and normalize sku and name variables 
         #    in case the LLM identified the sku as the name and vice versa
         product, sku, name = find_product_and_normalize_variables(sku, name)
@@ -278,8 +284,9 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
             response_message += f"⚠️ Product `{sku if sku else name}` not found. Skipping...<br>"
             continue  # Skip this product and move to the next
 
+        # ✅ Format response message
         response_message += f"🔢 SKU: {sku}<br>"
-        response_message += f"🏷️ Field: {field}<br>"
+        response_message += f"🏷️ Field: {field_labels.get(field, field.capitalize())}<br>"
         response_message += f"✏️ Value: {value}<br><br>"
 
 
@@ -287,54 +294,57 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
         quote_line = QuoteLine.objects.filter(quote=quote, product=product).first()
         if not quote_line:
             response_message += f"⚠️ Error: The product `{sku}/{name}` is not in the current quote.<br><br>"
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Error: The product `{sku}/{name}` is not in the current quote.")
             continue
 
-        # Add quote_line_id to item
-        item['quote_line_id'] = quote_line.id
+        update_payload = {
+            "sku": sku,
+            "field": field,
+            "value": value,
+            "quote_line_id": str(quote_line.id)
+        }
+
+        logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Trying to update: {update_payload}")
 
         #Convert list to valid JSON
-        item_json = json.dumps([item])  
-        request_message = f"Update Quote Line: {item_json}"
-
-        logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Trying to update: {item}")
+        item_json = json.dumps(update_payload)
 
         # Try to update quote line
-        response = save_quote_line_updates(request_message, quote)
+        #logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Entra a la function save_quote_line_update.")
+        response = save_quote_line_update(item_json, quote)
 
-        if (
-            response.get("message") == "✅ Quote line(s) updated successfully." and
-            "quote_details" in response and
-            "line_items" in response["quote_details"]
-        ):
-            response_message += "✅ Quote line updated successfully.<br><br>"
-            updated_products.append(item)
-            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ✅ Quote line updated successfully.")
+        if response.get("success"):
+            response_message += f"{response.get("message")}<br><br>"
+            updated_products.append(update_payload)
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
             error_msg = response.get("message", "Unknown error.")
-            response_message += f"⚠️ {error_msg}<br>"
+            response_message += f"{error_msg}<br>"
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
 
     return quote, response_message, updated_products
 
 
-def save_quote_line_updates(user_message, quote):
+def save_quote_line_update(request, quote):
     try:
-        updates = json.loads(user_message.replace("Update Quote Line: ", ""))  # Extract JSON array
+        update = json.loads(request)  # Extract JSON array
 
-        response_message = ""
+        sku = update["sku"]
+        field = update["field"]
+        new_value = update["value"]
+        quote_line_id = update["quote_line_id"]
 
-        for update in updates:
-            sku = update["sku"]
-            field = update["field"]
-            new_value = update["value"]
-            quote_line_id = update["quote_line_id"]
-
+        
+        while transaction.atomic():
             try:
                 quote_line = QuoteLine.objects.get(id=quote_line_id, quote=quote, product__sku=sku)
             except QuoteLine.DoesNotExist:
                 return {
-                    "message": f"⚠️ Error: No line item found for SKU {sku} in this quote."
+                    "message": f"⚠️ Error: No line item found for SKU {sku} in this quote.",
+                    "success": False
                 }
+            
+            original_quote_line = deepcopy(quote_line)
 
             # ✅ Update based on the field dynamically
             if field == "quantity":
@@ -350,17 +360,57 @@ def save_quote_line_updates(user_message, quote):
             elif field == "term":
                 quote_line.term = int(new_value)
 
+            # Get values from quote line to temporary quote line
+            product = quote_line.product
+            quantity = quote_line.quantity
+            discount_type = quote_line.discount_type
+            if discount_type not in ["percentage", "amount"]:
+                discount_value = Decimal("0.00")
+            else:
+                discount_value = quote_line.discount_percentage if discount_type == "percentage" else quote_line.discount_amount
+            term = quote_line.term
+
+            # Make a temporary quote line to check for rules
+            temp_quote_line = build_temp_quote_line(quote, product, quantity, discount_type, Decimal(discount_value), term)
+
+            ##################### ✅ Checkrules
+            # Get product from quote line
+            product = quote_line.product
+
+            # Validate validations rules
+            validations = check_for_rules("quote_line", quote, product, temp_quote_line)
+
+            if validations:
+                validations_message = "".join(f"- {v}<br>" for v in validations)
+                response_message = f"🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑<br>{validations_message}"
+                print(f"\n\n🛑 Validation rule was triggered by product {product.name}/{product.sku} 🛑. Skipping...\n\n")
+
+                raise ValueError(response_message)
+
+            # Save the quote line to calculate general values of quote line (subtotal, discounts, etc.)
             quote_line.save()
 
-        # ✅ Update quote (subtotal, discounts fields and net amount)
-        quote.save()
-        update_opportunity_net_amount(quote.opportunity)
+            # ✅ Update quote (subtotal, discounts fields and net amount)
+            quote.save()
+            update_opportunity_net_amount(quote.opportunity)
+            #########################################################################################################
         
+            response_message = "✅ Quote line updated successfully."
+
+            return {
+                "message": response_message,
+                "success": True
+            }
+    
+    except ValueError as ve:
         return {
-            "message": "✅ Quote line(s) updated successfully.",
-            "quote_details": get_quote_details(quote),
-            "hiddenMessage": "True"
+            "message": str(ve),
+            "success": False
         }
+
     except Exception as e:
         logging.warning(f"⚠️ Error updating quote line: {str(e)}")
-        return {"message": f"⚠️ Error updating quote line: {str(e)}"}
+        return {
+            "message": f"Error updating quote line: {str(e)}",
+            "success": False
+        }

@@ -860,7 +860,7 @@ class QuoteDocumentSettings(models.Model):
         ('modern', 'Modern'),
     ]
 
-    DESCRIPTION_DETAIL_DHOICES = [
+    DESCRIPTION_DETAIL_CHOICES = [
         ('short', 'Short'),
         ('long', 'Modern'),
     ]
@@ -902,7 +902,7 @@ class QuoteDocumentSettings(models.Model):
     #Quote Line Description
     line_description_detail_level = models.CharField(
         max_length=20,
-        choices=DESCRIPTION_DETAIL_DHOICES,
+        choices=DESCRIPTION_DETAIL_CHOICES,
         default='short',
         help_text="Select the quote line description detail level."
     )

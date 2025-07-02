@@ -145,25 +145,25 @@ def extract_quote_line_updates(user_message):
     User: "Update AI-10 quantity to 600 and discount to 5%, then update AgentCPQ3 discount to $100."
     Response:
     [
-        {{"sku": "AI-10", "name": Null, "field": "quantity", "value": 600}},
-        {{"sku": Null, "name": "AgentCPQ3", "field": "discount_amount", "value": 100}}
+        {{"sku": "AI-10", "name": null, "field": "quantity", "value": 600}},
+        {{"sku": null, "name": "AgentCPQ3", "field": "discount_amount", "value": 100}}
     ]
 
     **Requirements:**
     - For discounts, if the user specifies a percentage (e.g., "15% discount"), return field: "discount_percentage" and value: 15. If the user specifies a dollar amount (e.g., "$150 off" or "150 dollars discount"), return field: "discount_amount" and value: 150. Always extract only the numeric value — remove symbols like % or $, and ignore words like "off", "discount", or "dollars".
     - Always normalize discount values to plain numbers.
-    - If no SKUs are found in the message, return Null as SKU
-    - If no name are found in the message, return Null as Name
-    - If no field are found in the message, return Null as field
-    - If no value are found in the message, return Null as value
-    - If no discount are found in the message, return Null as value
+    - If no SKUs are found in the message, return null as SKU
+    - If no name are found in the message, return null as Name
+    - If no field are found in the message, return null as field
+    - If no value are found in the message, return null as value
+    - If no discount are found in the message, return null as value
 
     **Example Input with no SKU:**
     "modify the product quantity to 200 and price to 10"
 
     **Expected JSON Output:**
     [
-        {{"sku": Null, "name": Null, "field": "quantity", "value": 49.99}}
+        {{"sku": null, "name": null, "field": "quantity", "value": 49.99}}
     ]
 
     **Example Input with no field:**
@@ -171,7 +171,7 @@ def extract_quote_line_updates(user_message):
 
     **Expected JSON Output:**
     [
-        {{"sku": "AI-10", "name": Null, "field": Null, "value": 200}}
+        {{"sku": "AI-10", "name": null, "field": null, "value": 200}}
     ]
 
     **Example Input with no value:**
@@ -179,7 +179,7 @@ def extract_quote_line_updates(user_message):
 
     **Expected JSON Output:**
     [
-        {{"sku": "AI-20", "name": Null, "field": "quantity", "value": Null}}
+        {{"sku": "AI-20", "name": null, "field": "quantity", "value": null}}
     ]
 
     **IMPORTANT:** **Return a valid JSON array only of product objects. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
@@ -203,7 +203,7 @@ def extract_quote_line_updates(user_message):
         # ✅ Ensure valid JSON response
         try:
             extracted_updates = json.loads(raw_response)
-            if isinstance(extracted_updates, list) and all("sku" in p and "field" in p and "value" in p for p in extracted_updates):
+            if isinstance(extracted_updates, list) and all("sku" in p and "name" in p and "field" in p and "value" in p for p in extracted_updates):
                 return extracted_updates
             else:
                 logging.warning("⚠️ GPT response is not in expected format.")
@@ -214,4 +214,167 @@ def extract_quote_line_updates(user_message):
 
     except Exception as e:
         logging.error(f"❌ Error extracting discount details: {str(e)}")
+        return None
+    
+
+# FUNCTION TO EXTRACT QUOTE LINE ITEMS TO DELETA (DELETE_QUOTE_LINE)     
+def extract_quote_line_items_to_delete(user_message):
+    """Uses GPT to extract quote line name."""
+
+    prompt = f"""
+    Extract the SKU (product code) or name mentioned in the following user request. 
+
+    Return only the SKU and name string inside a JSON object like this:
+     [{{"sku": "<SKU_CODE>", "name": "<PRODUCT_NAME>"}}]
+
+    **Rules:**
+    - If no SKU is found in the message, return: {{"sku": null}}
+    - If no name is found in the message, return: {{"name": null}}
+    - Do NOT include explanations.
+    - Do NOT wrap the result in Markdown or use triple backticks.
+    - Return only a single JSON object.
+
+
+    **Examples:**
+
+    User: "Remove AI-CPQ-10 from the quote and remove ProductName1"
+    **Expected JSON Output:**
+    [
+        {{"sku": "AI-CPQ-10", "name": null}},
+        {{"sku": null, "name": "ProductName1"}}
+    ]
+
+    User: "Delete product with SKU AI-CPQ-55"
+    **Expected JSON Output:**
+    [
+        {{"sku": "AI-CPQ-55", "name": null}}
+    ]
+
+    User: "Remove the product"
+    **Expected JSON Output:**
+    [
+        {{"sku": null, "name": null}}
+    ]
+
+    **IMPORTANT:** **Return a valid JSON array only of SKU and name. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
+
+    User Request: "{user_message}"
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Extract the SKU or NAME mentioned in the user's request."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        # ✅ Extract raw response
+        raw_response = response.choices[0].message.content.strip()
+        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+
+        # ✅ Ensure valid JSON response
+        try:
+            extracted_sku = json.loads(raw_response)
+            if isinstance(extracted_sku, list) and all("sku" in p and "name" in p for p in extracted_sku):
+                return extracted_sku
+            else:
+                logging.warning("⚠️ GPT response is not in expected format.")
+                return None
+        except json.JSONDecodeError:
+            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
+            return None
+
+    except Exception as e:
+        logging.error(f"❌ Error extracting discount details: {str(e)}")
+        return None
+
+# FUNCTION TO EXTRACT QUOTE LEVEL DISCOUNT (APPLY_DISCOUNT_TO_QUOTE)  
+def extract_quote_level_discount(user_message):
+    """Extract discount for quote level discount."""
+
+    prompt = f"""
+    Extract only the discount amount from the user's request, which can be expressed either as a percentage (%) or a dollar value (USD or $).
+
+    **Expected discount fields:**
+    - discount (integer or float): The numeric value of the discount specified by the user (e.g., 10 for "10%" or 50 for "$50").
+    - discount_type (string): Indicates the type of discount. ("percentage"  if the user specified the discount as a percentage (e.g., "10%"). "amount"  if the user specified the discount in dollars (e.g., "$50", "USD 50"). "None" if the type cannot be determined.)
+
+    [If no discount is found in the message, return None]
+    [If no discount_type is found in the message, return None]
+
+    **Example Input:**
+    "Apply a 5% discount to the quote."
+
+    **Expected JSON Output:**
+    [
+        {{"discount": "5", "discount_type": "percentage"}}
+    ]
+
+    **Example Input:**
+    "Apply a $40 discount."
+
+    **Expected JSON Output:**
+    [
+        {{"discount": "40", "discount_type": "amount"}}
+    ]
+
+    **Example Input:**
+    "Update a 15% off to this quote."
+
+    **Expected JSON Output:**
+    [
+        {{"discount": "15", "discount_type": "percentage"}}
+    ]
+
+    **Example Input with no discount:**
+    "Apply a discount to quote."
+    
+    **Expected JSON Output:**
+    [
+        {{"discount": "None", "discount_type": "amount"}}
+    ]
+
+    **Example Input with no discount type:**
+    "Apply a 30 discount to the quote."
+
+    **Expected JSON Output:**
+    [
+        {{"discount": "30", "discount_type": "None"}}
+    ]
+
+
+    **User Request:** "{user_message}"
+
+    **Return a valid JSON array only of discount objects. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Extract structured discount details applied at the quote level (not per product line)."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        # ✅ Extract raw response
+        raw_response = response.choices[0].message.content.strip()
+        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+
+        # ✅ Ensure valid JSON response
+        try:
+            extracted_discounts = json.loads(raw_response)
+            if isinstance(extracted_discounts, list) and all("discount" in p and "discount_type" in p for p in extracted_discounts):
+                return extracted_discounts
+            else:
+                logging.warning("⚠️ GPT response is not in expected format.")
+                return None
+        except json.JSONDecodeError:
+            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
+            return None
+
+    except Exception as e:
+        logging.error(f"❌ Error extracting discount quote details: {str(e)}")
         return None
