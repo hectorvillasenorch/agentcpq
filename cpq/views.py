@@ -479,3 +479,13 @@ def get_lookup_data_for_form(custom_object):
         except Exception as e:
             lookup_data[field.name] = []
     return lookup_data
+
+def search_accounts(request):
+    q = request.GET.get("q", "")
+    results = []
+
+    if q:
+        matches = Account.objects.filter(name__icontains=q)[:20]
+        results = [{"id": acc.id, "name": acc.name} for acc in matches]
+
+    return JsonResponse({"results": results})

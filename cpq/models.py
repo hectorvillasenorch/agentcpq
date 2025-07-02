@@ -84,6 +84,9 @@ class Account(models.Model):
         if not self.accid:
             self.accid = generate_agentcpq_id()
         super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return self.name
 
 class Contact(models.Model):
     first_name = models.CharField(max_length=100)
@@ -206,15 +209,22 @@ class Product(models.Model):
         if not self.prdid:
             self.prdid = generate_agentcpq_id()
         super().save(*args, **kwargs)
+    def __str__(self):
+        bundle_tag = " - BUNDLE" if self.is_bundle else ""
+        return f"{self.name} ({self.sku}){bundle_tag}"
 
 class Option(models.Model):
     parent_product = models.ForeignKey(Product, related_name="options", on_delete=models.CASCADE)  # 🔗 Parent Bundle
-    product = models.ForeignKey(Product, related_name="included_in", on_delete=models.CASCADE)  # 🔗 Child Product
+    product_option = models.ForeignKey(Product, related_name="included_in", on_delete=models.CASCADE)  # 🔗 Child Product
     quantity = models.PositiveIntegerField(default=1)  # Default quantity
-    required = models.BooleanField(default=False)  # ✅ Is this product required in the bundle?
+    is_required = models.BooleanField(default=False)
+    min_quantity = models.PositiveIntegerField(default=1)
+    max_quantity = models.PositiveIntegerField(default=10)
+    default_selected = models.BooleanField(default=False)
+    group_name = models.CharField(max_length=255, blank=True, null=True)  # Optional grouping (for dynamic)
 
     def __str__(self):
-        return f"{self.parent_product.name} - {self.product.name} (Qty: {self.quantity})"
+        return f"{self.parent_product.name}"
 
 class Quote(models.Model):
     """Now linked to an Opportunity instead of a Customer."""
@@ -325,6 +335,7 @@ class QuoteLine(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="quote_lines")
     product_name = models.CharField(max_length=255, blank=True, null=True)
     quantity = models.IntegerField(default=1)
+    parent_line = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)  # for nesting
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     special_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage")
@@ -335,6 +346,8 @@ class QuoteLine(models.Model):
     parent_quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="parent_quote_lines", blank=True, null=True)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     is_subscription = models.BooleanField(default=False)
+    is_bundle_parent = models.BooleanField(default=False)
+    product_option = models.ForeignKey("Option", null=True, blank=True, on_delete=models.SET_NULL)
     billing_frequency = models.CharField(
         max_length=20,
         choices=[("monthly", "monthly"), ("quarterly", "quarterly"), ("annual", "annual"), ("one_time", "one_time")],
@@ -795,7 +808,10 @@ class CustomObject(models.Model):
 
     def __str__(self):
         return self.label or self.name
-
+    
+    class Meta:
+        verbose_name = "Custom Object"
+        verbose_name_plural = "Custom Objects"
 #dummy model for all custom objects
 class CustomRecord(models.Model):
     object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE)
@@ -818,9 +834,12 @@ class CustomField(models.Model):
         null=True,
         help_text="Format: 'app_label.ModelName' (e.g., 'cpq.Account')"
     )
+    class Meta:
+        verbose_name = "Custom Field"
+        verbose_name_plural = "Custom Fields"
 
     def __str__(self):
-        return f"{self.crm}.{self.object_type}.{self.field_name}"
+        return f"{self.crm}.{self.object_type}.{self.name}"
 
 
 class CustomFieldValue(models.Model):
