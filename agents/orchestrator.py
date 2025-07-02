@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.DEBUG)
 openai.log = "warning"
 
 def handle_user_request(user_message, session_data):
-    user = User.objects.get(username="jahir")
+    user = User.objects.get(username="admin")
     #user_id = session_data.get("user_id")
     #user = User.objects.get(id=user_id)
     #user = request.user
@@ -76,7 +76,7 @@ def orchestrate_request(user_message, session_data):
     session_id = session_data.get("session_id")
 
     # ⚠️ Use a real user later; hardcode for now
-    user = User.objects.get(username="jahir")
+    user = User.objects.get(username="admin")
 
     if not session_id:
         chat_session = ChatSession.objects.create(
@@ -175,7 +175,7 @@ def orchestrate_request_trigger(user_message, session_data, decision):
     logging.info(f"\n🟢 AI Decision Trigger: {decision} \n")
     session_id = session_data.get("session_id")
     # ⚠️ Use a real user later; hardcode for now
-    user = User.objects.get(username="jahir")
+    user = User.objects.get(username="admin")
 
     if not session_id:
         chat_session = ChatSession.objects.create(

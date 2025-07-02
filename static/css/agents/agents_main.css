@@ -16,13 +16,13 @@ input[type="number"] {
 
 /* ✅ Quote Container */
 .quote-container {
-  width: 95%;
-  margin: 20px auto;
-  padding: 20px;
-  background: #ffffff;
-  /* border-radius: 12px; */
-  box-shadow: 0px 1px 5px rgba(0, 0, 0, 0.1);
-}
+    width: 95%;
+    margin: 20px auto;
+    padding: 20px;
+    background: #ffffff;
+    border-radius: 25px;
+    box-shadow: 0px 6px 32px rgb(49 49 51 / 21%);
+  }
 
 /* ✅ Quote Header */
 .quote-header {
@@ -59,6 +59,61 @@ input[type="number"] {
 .quote-details .expiration  { grid-column: 2; grid-row: 2; text-align: left; }
 
 
+/* ===================================================== */
+
+  .quote-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    margin-bottom: 2rem;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  }
+
+  .quote-table thead {
+    background: linear-gradient(135deg, #041530, #233049) !important;
+    color: white;
+  }
+  .quote-table th{
+    background: linear-gradient(135deg, #041530, #233049) !important;
+  }
+
+  .quote-table th,
+  .quote-table td {
+    padding: 12px;
+    font-size: 14px;
+    border-bottom: 1px solid #e0e0e0;  
+  }
+
+  .quote-table input[type="number"],
+  .quote-table input[type="text"] {
+    padding-left: 5px;
+    height: 2.5rem !important;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    width: 100%;
+  }
+
+  .subtotal-amount,
+  .total-amount {
+    text-align: right;
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 16px;
+  }
+
+  .total-amount {
+    font-size: 18px;
+    color: #041530;
+  }
+
+  .centered-td {
+    text-align: center;
+  }
+
+
+/* ============================================================ */
 
 .quote-details div {
   display: flex;
@@ -75,18 +130,18 @@ input[type="number"] {
 }
 
 /* ✅ Quote Table */
-.quote-table {
+/* .quote-table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 20px;
-}
+} */
 
-.quote-table th {
+/* .quote-table th {
   background: #313133;
   color: white;
   padding: 12px;
   text-align: center;
-}
+} */
 
 .quote-table-read-only th {
   background: #909090;
@@ -95,14 +150,14 @@ input[type="number"] {
   text-align: center;
 }
 
-.quote-table td {
+/* .quote-table td {
   padding: 10px;
   border-bottom: 1px solid #ddd;
-}
+} */
 
-.quote-table tr:nth-child(even) {
+/* .quote-table tr:nth-child(even) {
   background: #f9f9f9;
-}
+} */
 
 /* ✅ Editable Fields */
 .editable-field {
