@@ -611,11 +611,20 @@ h2 {
   font-style: italic;
   color: #555;
   list-style: none;
-  padding-left: 0;
-  margin-left: 0;
 }
 
 .conditions-list .logic-operator {
-  padding-left: 0 !important;
+  padding-left: 0.5rem !important;
   margin-left: 0 !important;
+}
+
+/* ✅ Rule Error */
+.rule-error {
+  font-size: 1rem;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 10px;
+}
+
+.rule-error p {
+  font-size: 1.3rem;
 }

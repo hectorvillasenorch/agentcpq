@@ -3,6 +3,7 @@ import os
 import openai
 import logging
 from dotenv import load_dotenv
+from datetime import date
 
 # ✅ Load environment variables
 load_dotenv()
@@ -216,8 +217,99 @@ def extract_quote_line_updates(user_message):
         logging.error(f"❌ Error extracting discount details: {str(e)}")
         return None
     
+# FUNCTION TO EXTRACT QUOTE UPDATES (UPDATE_QUOTE)    
+def extract_quote_updates(user_message):
+    """Uses GPT to extract quote name, field, and new value for quote updates."""
 
-# FUNCTION TO EXTRACT QUOTE LINE ITEMS TO DELETA (DELETE_QUOTE_LINE)     
+    current_date = date.today().isoformat()
+
+    print(f"Current Date: {current_date}")
+
+    prompt = f"""
+    Extract structured update details from the following request.
+    Return a JSON array with objects containing:
+    - "quote_name" (string, required)
+    - "field"
+    - "value" (number, string or date)
+
+    **Example Input & Output:**
+    User: "Set the status of quote Q-00023 to approved, then change the status of Q-00047 to "Pending Approval" also mark quote as rejected."
+    Response:
+    [
+        {{"quote_name": "Q-00023", "field": "status", "value": "Approved"}},
+        {{"quote_name": "Q-00047", "field": "status", "value": "Pending Approval"}},
+        {{"quote_name": null, "field": "status", "value": "Rejected"}}
+    ]
+
+    **Example Input & Output:**
+    User: "Apply a 10% discount to quote and set the discount of Q-00056 to 150"
+    Response:
+    [
+        {{"quote_name": null, "field": "discount_percentage", "value": 10}},
+        {{"quote_name": "Q-00056", "field": "discount_amount", "value": 150}}
+    ]
+
+    **Example Input & Output:**
+    User: "Extend the expiration date of quote to July 30, 2025."
+    Response:
+    [
+        {{"quote_name": null, "field": "expiration_date", "value": "2025-07-30"}}
+    ]
+
+    **Example Input & Output:**
+    User: "Add the note "Urgent request from client" to quote Q-00048."
+    Response:
+    [
+        {{"quote_name": "Q-00048", "field": "notes", "value": "Urgent request from client."}}
+    ]
+
+    **Requirements:**
+    - For discounts, if the user specifies a percentage (e.g., "15% discount"), return field: "discount_percentage" and value: 15. If the user specifies a dollar amount (e.g., "$150 off", "150 dollars discount" or just a number like "150"), return field: "discount_amount" and value: 150. Always extract only the numeric value — remove symbols like % or $, and ignore words like "off", "discount", or "dollars".
+    - Always normalize discount values to plain numbers.
+    - If the user specifies a status value, always normalize it to match one of the following exact formats: "Draft", "Pending Approval", "Approved", "Rejected", or "Closed". Use title casing and ensure the value matches exactly (case-sensitive).
+    - If no quote name are found in the message, return null as quote_name
+    - If no field are found in the message, return null as field
+    - If no value are found in the message, return null as value
+    - For expiration dates, always return the value as a string in ISO 8601 format (YYYY-MM-DD), which is compatible with Python and Django. For example, July 30, 2025 → "2025-07-30".
+    - For notes, always ensure the returned value ends with a period (.). If the user’s note doesn’t end with one, automatically add it to the end of the note.
+    - The current date is {current_date}. Use this as the reference point when interpreting relative dates like "next Friday", "tomorrow", or "in two weeks".
+
+    **IMPORTANT:** **Return a valid JSON array only of product objects. DO NOT include explanations, and DO NOT format the response as Markdown (NO triple backticks or ```json).**
+
+    User Request: "{user_message}"
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Extract structured updates details for quote."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        # ✅ Extract raw response
+        raw_response = response.choices[0].message.content.strip()
+        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+
+        # ✅ Ensure valid JSON response
+        try:
+            extracted_updates = json.loads(raw_response)
+            if isinstance(extracted_updates, list) and all("quote_name" in p and "field" in p and "value" in p for p in extracted_updates):
+                return extracted_updates
+            else:
+                logging.warning("⚠️ GPT response is not in expected format.")
+                return None
+        except json.JSONDecodeError:
+            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
+            return None
+
+    except Exception as e:
+        logging.error(f"❌ Error extracting discount details: {str(e)}")
+        return None
+    
+
+# FUNCTION TO EXTRACT QUOTE LINE ITEMS TO DELETE (DELETE_QUOTE_LINE)     
 def extract_quote_line_items_to_delete(user_message):
     """Uses GPT to extract quote line name."""
 

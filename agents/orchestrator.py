@@ -103,13 +103,11 @@ def orchestrate_request(user_message, session_data):
     - "CreateQuote"
     - "AddProduct"
     - "GenerateQuoteDocument"
-    - "ApplyQuoteDiscount" (Use this when the user wants to apply a discount to the entire quote. These requests do **not** include a SKU like AICPQ-043 or a product name.)
     - "ProvideDates"
     - "ShowQuoteDetails"
     - "UpdateQuoteLine" (Use this when the user wants to update a quote line item. The fields that can be updated at the quote line level are: quantity, discount_amount, discount_percentage, and term.)
-    - "UpdateQuote" (Use this only for messages that starts with 'Update Quote:')
+    - "UpdateQuote" (Use this when the user wants to update any quote. The fields that can be updated at the quote level are: status, discount_percentage, discount_amount, expiration_date, notes)
     - "ShowQuoteNotes"
-    - "UpdateQuoteNotes"
     - "DeleteQuoteLine"
     - "DeleteQuote" (Use this ONLY for messages that not includes SKU or product's names)
     - "CreateProductRecord"
@@ -205,7 +203,7 @@ def orchestrate_request_trigger(user_message, session_data, decision):
         try:
             json_str = user_message.replace("Update Quote:", "")
             update_data = json.loads(json_str)
-            hiddenMessage = update_data[0].get("hiddenMessage", False)
+            hiddenMessage = update_data.get("hiddenMessage", False)
             ChatMessage.objects.create(
                 session=chat_session,
                 sender="user",

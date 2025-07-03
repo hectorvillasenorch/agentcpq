@@ -23,8 +23,6 @@ def extract_validation_rules(user_message):
     - name (string): The name of the rule. If the user specifies a name, use it. If not, generate a concise name that summarizes the rule purpose.
     - rule_type (string): Type of rule. Must be one of:
         - "validation"
-        - "inclusion"
-        - "exclusion"
         If the user does not explicitly mention it, infer it based on the intent.
     - target_type (string): The level where the rule applies. Must be one of:
         - "quote"

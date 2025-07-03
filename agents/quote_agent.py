@@ -26,9 +26,10 @@ from datetime import datetime
 
 # LLM Utils
 from .utils.quote_agent.llm_helpers import extract_quote_details, extract_product_details, extract_quote_line_updates, extract_quote_line_items_to_delete, extract_quote_level_discount
+from .utils.quote_agent.llm_helpers import extract_quote_updates
 
 # Record Helpers (add products)
-from .utils.quote_agent.record_helpers import save_quote_products, handle_quote_line_update_request, save_quote_line_update
+from .utils.quote_agent.record_helpers import save_quote_products, handle_quote_line_update_request, save_quote_line_update, handle_quote_update_request, save_quote_update
 
 # DB Helpers (products exists)
 from .utils.quote_agent.db_helpers import get_or_create_account_and_opportunity, update_opportunity_net_amount
@@ -51,7 +52,7 @@ def quote_agent(action, user_message, session_data):
         "CreateQuote": create_quote, #HELPERS READY
         "AddProduct": add_product_to_quote, #HELPERS READY
         "UpdateQuoteLine": update_quote_line, #HELPERS READY
-        "UpdateQuote": update_quote,
+        "UpdateQuote": update_quote,          #HELPERS READY
         "ApplyQuoteLineDiscount": update_quote_line, #HELPERS READY
         "ApplyQuoteDiscount": apply_discount_to_quote,
         "DeleteQuoteLine": delete_quote_line,
@@ -224,7 +225,7 @@ def add_product_to_quote(user_message, session_data):
 def update_quote_line(user_message, session_data):
     """Updates only the modified fields in quote lines."""
 
-    logging.info("🔧 Updating quote...\n\n")
+    logging.info("🔧 Updating quote line...\n\n")
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)
 
@@ -267,55 +268,47 @@ def update_quote_line(user_message, session_data):
         }
 
 #< ----------------- UPDATE QUOTE -------------------- >
-    
+
 def update_quote(user_message, session_data):
     """Updates only the modified fields in quote lines."""
 
-    json_is_exist_in_message = re.search(r'\{.*\}', user_message)
+    logging.info("🔧 Updating quote...\n\n")
+    # ✅ Looking for active quote
+    quote = get_active_quote(user_message, session_data)
 
-    if user_message.startswith("Update Quote: ") and json_is_exist_in_message:
-        try:
-            updates = json.loads(user_message.replace("Update Quote: ", ""))  # Extract JSON array
+    # ⚠️ Verify if function return an error
+    if isinstance(quote, dict) and "message" in quote:
+        return quote
+        
+    # ✅ Extract quote line updates with LLM
+    extracted_updates = extract_quote_updates(user_message)
 
-            for update in updates:
-                field = update["field"]
-                new_value = update["value"]
-                quote = update["quote"]
+    if not extracted_updates:
+        # ✅ Save quote in session data
+        set_active_quote_to_session_data(session_data, quote)
+        return {
+        "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
+        }
+    
+    response_message = ""
 
-                try:
-                    quote = Quote.objects.get(name=quote)
-                except QuoteLine.DoesNotExist:
-                    # ✅ Save quote in session data
-                    return {"message": f"⚠️ Error: No quote found with name {quote}."}
+    # ✅ Handle quote line update request
+    quote, response_message, updated_quote = handle_quote_update_request(extracted_updates, quote, response_message)
 
-                # ✅ Update based on the field dynamically
-                if field == "expiration_date":
-                    parsed_date = datetime.strptime(new_value, "%m/%d/%Y")
-                    quote.expiration_date = parsed_date
-                elif field == "discount_percentage":
-                    quote.discount_type = "percentage"
-                    quote.discount_percentage = Decimal(new_value)
-                elif field == "discount_amount":
-                    quote.discount_type = "amount"
-                    quote.discount_amount = Decimal(new_value)
-                elif field == "status":
-                    quote.status = new_value
+    # ✅ Safe active quote to session data
+    set_active_quote_to_session_data(session_data, quote)
 
-
-            # ✅ Update quote (subtotal, discounts fields and net amount)
-            quote.save()
-
-            # ✅ Save quote in session data
-            set_active_quote_to_session_data(session_data, quote)
-            
-            return {
-                "message": "✅ Quote was updated successfully.",
-                "quote_details": get_quote_details(quote),
-                "hiddenMessage": "True"
-            }
-        except Exception as e:
-            logging.warning(f"⚠️ Error updating quote expiration date: {str(e)}")
-            return {"message": f"⚠️ Error updating quote expiration date: {str(e)}"}
+    # ✅ Return
+    if not updated_quote:
+        return {
+            "message": f"No quotes were updated. <br><br>{response_message}",
+            "temporaryMessage": True
+        } 
+    
+    return {
+        "message": response_message,
+        "temporaryMessage": True
+        }
 
 
 #< ----------------- APPLY DISCOUNT TO QUOTE -------------------- >
@@ -1594,10 +1587,57 @@ def update_quote_line_from_ui(user_message, session_data):
     except Exception as e:
         logging.warning(f"⚠️ Error updating quote line: {str(e)}")
         return {"message": f"⚠️ Error updating quote line: {str(e)}"}
-
-    
-
+        
 def update_quote_from_ui(user_message, session_data):
-    return {
-        "message": "Update Quote From UI is working."
-    }
+    """Handles updates to quote lines triggered from the UI."""
+    logging.info("📝 Updating quote from front-end UI...")
+    
+    try:
+        json_match = re.search(r'\{.*\}', user_message)
+
+        if user_message.startswith("Update Quote: ") and json_match:
+            json_payload = user_message.replace("Update Quote: ", "", 1).strip()
+
+            data = json.loads(json_payload)
+            quote_name = data["quote"]
+            print(f"\n\n{quote_name}\n\n")
+
+            # Save original values in case something went wrong and restart values on UI
+            #original_value = get_backup_value_from_quote_line(json_payload, quote)
+            try:
+                quote = Quote.objects.get(name=quote_name)
+            except Quote.DoesNotExist:
+                return {
+                    "message": f"The quote with name '{quote_name}' could not be found.",
+                    "original_value": "original_value",
+                    "hiddenMessage": True
+                }
+            
+            #Replace "quote" for "quote_id" on dict
+            data["quote_id"] = quote.id
+            del data["quote"]  # Delete previous key
+
+            json_payload = json.dumps(data)
+
+            response = save_quote_update(json_payload)
+
+            quote.refresh_from_db()
+
+            # ✅ Save quote in session data
+            set_active_quote_to_session_data(session_data, quote)
+
+            if response.get("success") == True:
+                return {
+                    "message": response.get("message"),
+                    "quote_details": get_quote_details(quote),
+                    "hiddenMessage": True
+                }
+            else:
+                return {
+                    "message": response.get("message"),
+                    "original_value": "original_value",
+                    "hiddenMessage": True
+                }
+    except Exception as e:
+        logging.warning(f"⚠️ Error updating quote: {str(e)}")
+        return {"message": f"⚠️ Error updating quote: {str(e)}"}

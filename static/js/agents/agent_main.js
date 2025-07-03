@@ -1010,19 +1010,18 @@ async function updateQuote(input) {
         return;
     }
 
-    // Limpia comas si es amount
     if (field === "discount_amount") {
         newValue = newValue.replace(/,/g, '');
     }
 
     console.log(`🔄 Field Changed: ${field}, Quote: ${quote}, New Value: ${newValue}`);
 
-    const updateData = [{
+    const updateData = {
         field: field,
         value: newValue,
         quote: quote,
         hiddenMessage: true
-    }];
+    };
 
     const userMessage = `Update Quote: ${JSON.stringify(updateData)}`;
 
@@ -1036,7 +1035,7 @@ async function updateQuote(input) {
         const data = await response.json();
         console.log("✅ Server Response:", data);
 
-        if (data.response && data.response.message.includes("Quote was updated successfully") && data.response.quote_details) {
+        if (data.response && data.response.message.includes("✅ Quote updated successfully.") && data.response.quote_details) {
             input.blur();
 
             const updatedQuote = data.response.quote_details;
@@ -1347,6 +1346,25 @@ function renderValidationRuleDetails(rules) {
             <ul class="conditions-list">
               ${renderConditions(rule.conditions)}
             </ul>
+          </div>
+        </div>`;
+    }
+    else if (rule.error){
+      html += 
+        `<div class="rule-container">
+          <div class="rule-header">
+              <h5>⚠️ Error creating validation rule ⚠️</h3>
+          </div>
+          <div class="rule-error">
+              <div class="name">
+                <label for="rule-name"><strong>Name:</strong></label>
+                <input id="rule-name" type="text" value="${rule.name}" readonly/>
+              </div>
+
+              <div class="error">
+                <label for="rule-error"><strong>Error:</strong></label>
+                <h6>${(rule.error).replace("⚠️", "").trim()}</h6>
+              </div>
           </div>
         </div>`;
     }
