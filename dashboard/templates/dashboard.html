@@ -26,12 +26,12 @@
   <i class="material-icons">smart_toy</i>
   New Chat<span style="margin: 0 4px;">+</span> 
 </a>
-        <a href="{% url 'dashboard' %}?view=products">
+        <!-- <a href="{% url 'dashboard' %}?view=products">
             <i class="material-icons">inventory_2</i> Products
-        </a>
-        <a href="{% url 'dashboard' %}?view=quotes">
+        </a> -->
+        <!-- <a href="{% url 'dashboard' %}?view=quotes">
             <i class="material-icons">request_quote</i> Quotes
-        </a>
+        </a> -->
         {% if custom_objects %}
                 {% for obj in custom_objects %}
                      <a href="{% url 'dashboard' %}?view=custom&object_name={{ obj.name }}">
