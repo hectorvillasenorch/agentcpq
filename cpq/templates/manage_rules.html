@@ -1,6 +1,40 @@
 {% extends "base.html" %}
 
 {% block content %}
+
+<style>
+
+.container{
+      padding: 24px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+      max-width: none !important;
+      width: 100%;
+      
+    }
+    .tabs {
+    position: relative;
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 48px;
+    width: 100%;
+    background-color: #182640;
+    margin: 0 auto;
+    white-space: nowrap;
+}
+.card {
+     box-shadow: none !important;
+    padding: 24px;
+    margin: .5rem 0 1rem 0;
+    border-radius: 15px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+}
+.card .card-content{
+    padding: 5px !important;
+}
+</style>
 <div class="container">
   <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
     <i class="material-icons left" style="vertical-align: middle;">rule</i>

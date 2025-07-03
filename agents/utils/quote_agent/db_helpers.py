@@ -23,7 +23,8 @@ def get_or_create_account_and_opportunity(extracted_details, session_data):
         logging.error("❌ extracted_details is None")
         return None, None
     account_name = extracted_details.get("account", session_data.get("account", "")).strip()
-    opportunity_name = extracted_details.get("opportunity", session_data.get("opportunity", "")).strip()
+    # opportunity_name = extracted_details.get("opportunity", session_data.get("opportunity", "")).strip()
+    opportunity_name = (extracted_details.get("opportunity") or session_data.get("opportunity") or "").strip()
 
     if not account_name:
         return {
