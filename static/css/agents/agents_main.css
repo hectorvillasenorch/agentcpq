@@ -37,6 +37,7 @@ input[type="number"] {
 .quote-header h3 {
   color: #fc6a3e;
   margin: 0;
+  font-size: 2.2rem;
 }
 
 
@@ -112,6 +113,56 @@ input[type="number"] {
     text-align: center;
   }
 
+  .quote-table-read-only {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    margin-bottom: 2rem;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  }
+
+  .quote-table-read-only thead {
+    background: linear-gradient(365deg, #041530, #233049) !important;
+    color: white;
+  }
+  .quote-table-read-only th{
+    background: linear-gradient(365deg, #041530, #233049) !important;
+  }
+
+  .quote-table-read-only th,
+  .quote-table-read-only td {
+    padding: 12px;
+    font-size: 16px;
+    border-bottom: 1px solid #e0e0e0;  
+  }
+
+  .quote-table-read-only input[type="number"],
+  .quote-table-read-only input[type="text"] {
+    padding-left: 5px;
+    height: 2.5rem !important;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    width: 100%;
+  }
+
+  .subtotal-amount,
+  .total-amount {
+    text-align: right;
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 16px;
+  }
+
+  .total-amount {
+    font-size: 18px;
+    color: #041530;
+  }
+
+  .centered-td {
+    text-align: center;
+  }
 
 /* ============================================================ */
 
@@ -411,8 +462,8 @@ h2 {
   margin: 20px auto;
   padding: 20px;
   background: #ffffff;
-  /* border-radius: 12px; */
-  box-shadow: 0px 1px 5px rgba(0, 0, 0, 0.1);
+  border-radius: 25px;
+  box-shadow: 0px 6px 32px rgb(49 49 51 / 21%);
   box-sizing: border-box;
 }
 

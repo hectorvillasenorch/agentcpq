@@ -80,6 +80,56 @@ input[type="checkbox"]:checked + span:before {
 input[type="checkbox"] + span {
   color: #212121 !important;  /* o el color que prefieras */
 }
+.container{
+      padding: 24px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+      max-width: none !important;
+      width: 100%;
+      
+    }
+    .card-panel {
+    padding: 24px;
+    margin: .5rem 0 1rem 0;
+    border-radius: 10px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    box-shadow: none !important;
+}
+ .agent-limits{
+  padding: 24px;
+  margin: .5rem 0 1rem 0;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
+  box-shadow: none !important;
+}
+.btn, .btn-flat, .btn-small, .btn-large {
+        box-shadow: none !important;
+      }
+#save-button {
+  border-radius: 20px;
+  font-weight: 500;
+  font-size: 14px;
+  padding: 10px 18px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: none;
+  line-height: 1;
+  width: 169px;
+  background-color:#182740 !important;
+}
+.orange.darken-3 {
+    background-color: #182740 !important;
+}
+input[type="checkbox"]:checked + span:before{
+    border-bottom: 2px solid #fc6a3d !important;
+    border-right: 2px solid #fc6a3d !important;
+}
+
+
 
 </style>
 
@@ -365,7 +415,7 @@ input[type="checkbox"] + span {
   </div>
 
   {% if company %}
-    <div class="row">
+    <div class="row agent-limits">
       <div class="input-field col s6">
         <label class="active">Plan</label>
         <p style="margin-top: 0.5rem;">{{ company.plan }}</p>

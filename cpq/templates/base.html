@@ -23,27 +23,15 @@
 <div class="sidenav sidenav-fixed" style="display: flex; flex-direction: column; height: 100vh;">
 
     <!-- Top Section -->
+
     <div style="flex-grow: 1;">
+          <a href="{% url 'dashboard' %}?view=setup">
+            <i class="material-icons">arrow_back</i> Back To AgentCPQ
+        </a>
         <div class="brand">
             <img width="70%" src="/media/img/logo-small.png" alt="AgentCPQ Logo">
         </div>
-        <a href="{% url 'cpq:custom_fields' %}">
-            <i class="material-icons">view_list</i> Manage Metadata
-        </a>
-        <a href="{% url 'dashboard' %}?view=products">
-            <i class="material-icons">inventory_2</i> Account
-        </a>
-        <a href="{% url 'dashboard' %}?view=quotes">
-            <i class="material-icons">request_quote</i> Quotes
-        </a>
-        <a href="{% url 'dashboard' %}?view=setup">
-            <i class="material-icons">arrow_back</i> Setup
-        </a>
-
-        <div class="divider"></div>
-
-        <div class="session-list">
-            <p class="session-list-title">Account</p>
+        <p class="session-list-title">Organization</p>
             <a href="{% url 'cpq:get_company_information' %}">
                 <i class="material-icons">business</i> Company Information
             </a>
@@ -51,6 +39,14 @@
                 <i class="material-icons">receipt_long</i> Billing
             </a>
 
+        <div class="divider"></div>
+
+        <div class="session-list">
+            <p class="session-list-title">System</p>
+            <a href="{% url 'cpq:custom_fields' %}">
+                <i class="material-icons">view_list</i> Manage Metadata
+            </a>
+            
             <p class="session-list-title">Rules</p>
             <a href="{% url 'cpq:business_rules' %}">
               <i class="material-icons">rule</i> Manage Rules
