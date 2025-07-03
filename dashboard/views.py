@@ -1,6 +1,6 @@
-from venv import logger
-from django.shortcuts import render
-from cpq.models import Product, Quote,QuoteLine, CustomObject, CustomField, CustomFieldValue, CustomRecord,Account # ✅ Importing models, NOT views
+from django.apps import apps
+from django.shortcuts import render, get_object_or_404, redirect
+from cpq.models import Product, Quote,QuoteLine, CustomObject, CustomField, CustomFieldValue, CustomRecord,Account
 from cpq.views import set_primary_quote
 from salesforce.models import SalesforceToken
 from hubspot.models import HubspotToken
@@ -8,6 +8,7 @@ from django.contrib.auth.models import User
 from agents.models import ChatSession, ChatMessage
 from django.utils.timezone import now
 import requests
+from cpq.forms import  generate_dynamic_form
 from collections import defaultdict
 from django.db.models import Prefetch
 from django.contrib.contenttypes.models import ContentType
@@ -16,15 +17,27 @@ from django.http import HttpResponseForbidden
 
 @login_required
 def dashboard(request):
+    
     view = request.GET.get("view", "agents")
+    object_name = request.GET.get("object_name") 
     session_id = request.GET.get("session_id")
     user = request.user
     accounts = get_user_accounts(user)
     
+    custom_object = None
+    form = None
+
+    if object_name:
+        custom_object = get_object_or_404(CustomObject, name=object_name)
+        DynamicForm = generate_dynamic_form(custom_object)
+        form = DynamicForm()
+
     if view == "setup" and not user.is_staff:
         return HttpResponseForbidden("You do not have access to the setup view.")
     
     products = Product.objects.all() if view == "products" else None
+
+    custom_objects = CustomObject.objects.all()
 
     quotes = Quote.objects.select_related("opportunity__account").prefetch_related(
         Prefetch("quote_lines", queryset=QuoteLine.objects.select_related("product"), to_attr="lines")
@@ -37,7 +50,7 @@ def dashboard(request):
     is_authenticated = SalesforceToken.objects.exists()
     is_setup = view == "setup"
 
-    user = User.objects.get(username="admin")  # or request.user
+    #user = User.objects.get(username="admin") or request.user
     chat_sessions = ChatSession.objects.filter(user=user).order_by("-created_at")
 
     chat_messages = []
@@ -60,64 +73,9 @@ def dashboard(request):
                 hubspot_connected = True
     except HubspotToken.DoesNotExist:
         pass
-
-    custom_list_view = None
-    try:
-        custom_object = CustomObject.objects.get(name=view)
-        fields = CustomField.objects.filter(custom_object=custom_object)
-        records = CustomRecord.objects.all().order_by("-created_at")
-
-        logger.info("🧠 records:", records)
-
-        content_type = ContentType.objects.get_for_model(CustomRecord)
-        record_data = []
-
-        for record in records:
-            field_values = {}
-            for field in fields:
-                value_obj = CustomFieldValue.objects.filter(
-                    field=field,
-                    content_type=content_type,
-                    object_id=record.id
-                ).first()
-                field_values[field.name] = value_obj.value if value_obj else ''
-            record_data.append({
-                "id": record.id,
-                "created_at": record.created_at,
-                "fields": field_values
-            })
-
-        # ✅ Group records by account_id__c
-        grouped = defaultdict(list)
-        for rec in record_data:
-            acc_id = rec["fields"].get("account_id__c")
-            grouped[acc_id].append(rec)
-
-        groups = []
-        for acc_id, records in grouped.items():
-            total = sum(
-                float(r["fields"].get("payment_amount__c", 0)) for r in records
-            )
-            try:
-                account = Account.objects.get(id=acc_id)
-            except (Account.DoesNotExist, ValueError, TypeError):
-                account = None
-
-            groups.append({
-                "account": account,
-                "records": records,
-                "total_amount": total,
-            })
-
-        custom_list_view = {
-            "label": custom_object.label,
-            "fields": fields,
-            "records": record_data,
-            "groups": groups,
-            "is_grouped_by_account": True,
-        }
-    except CustomObject.DoesNotExist:
-        pass
+    
+    records_custom_object, field_values_by_record = get_values_by_record(custom_object)
+    lookup_options = get_lookup_data_for_form(custom_object)
 
     return render(request, "dashboard.html", {
         "products": products,
@@ -128,10 +86,42 @@ def dashboard(request):
         "chat_sessions": chat_sessions,
         "chat_messages": chat_messages,
         "selected_session_id": session_id,
-        "custom_list_view": custom_list_view,
+        "custom_object": custom_object,
+        "custom_objects": custom_objects,
+        "form": form,
+        "accounts": accounts,
+        "records_custom_object": records_custom_object,
+        'field_values_by_record': field_values_by_record,
+        'lookup_options': lookup_options,
 })
+        
 
 def get_user_accounts(user):
     if user.is_superuser:
         return Account.objects.all()
     return Account.objects.filter(owner=user)
+
+def get_values_by_record(custom_object):
+    records_custom_object = CustomRecord.objects.filter(object_type=custom_object).order_by('-created_at')
+
+    field_values_by_record = {}
+
+    for record in records_custom_object:
+        values = CustomFieldValue.objects.filter(record=record).select_related("field")
+        field_values_by_record[record.record_id] = {
+            val.field.label or val.field.name: val.value
+            for val in values
+        }
+    return records_custom_object, field_values_by_record
+
+def get_lookup_data_for_form(custom_object):
+    lookup_data = {}
+    for field in CustomField.objects.filter(custom_object=custom_object, data_type="lookup"):
+        try:
+            model = apps.get_model(field.lookup_model)
+            # Only grab id and name or string version
+            instances = model.objects.all()
+            lookup_data[field.name] = [{"id": i.id, "label": str(i)} for i in instances]
+        except Exception as e:
+            lookup_data[field.name] = []
+    return lookup_data

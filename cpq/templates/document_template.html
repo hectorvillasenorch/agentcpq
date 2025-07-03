@@ -80,13 +80,63 @@ input[type="checkbox"]:checked + span:before {
 input[type="checkbox"] + span {
   color: #212121 !important;  /* o el color que prefieras */
 }
+.container{
+      padding: 24px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+      max-width: none !important;
+      width: 100%;
+      
+    }
+    .card-panel {
+    padding: 24px;
+    margin: .5rem 0 1rem 0;
+    border-radius: 10px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    box-shadow: none !important;
+}
+ .agent-limits{
+  padding: 24px;
+  margin: .5rem 0 1rem 0;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
+  box-shadow: none !important;
+}
+.btn, .btn-flat, .btn-small, .btn-large {
+        box-shadow: none !important;
+      }
+#save-button {
+  border-radius: 20px;
+  font-weight: 500;
+  font-size: 14px;
+  padding: 10px 18px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: none;
+  line-height: 1;
+  width: 169px;
+  background-color:#182740 !important;
+}
+.orange.darken-3 {
+    background-color: #182740 !important;
+}
+input[type="checkbox"]:checked + span:before{
+    border-bottom: 2px solid #fc6a3d !important;
+    border-right: 2px solid #fc6a3d !important;
+}
+
+
 
 </style>
 
 <div class="container">
   <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
     <i class="material-icons left" style="vertical-align: middle;">note_alt</i>
-    Manage Document
+    Document Management
   </h4>
 
   <div class="card-panel white z-depth-1">
@@ -290,19 +340,21 @@ input[type="checkbox"] + span {
         <textarea id="terms_conditions" name="terms_conditions" class="materialize-textarea">{{ settings.terms_and_conditions }}</textarea>
         <label for="terms_conditions">Terms and Conditions</label>
       </div>
-      
+
       <script>
         document.addEventListener("DOMContentLoaded", function () {
           const MAX_VISIBLE = 6;
 
           const visible = document.getElementById("visible-fields");
           const available = document.getElementById("available-fields");
+          const saveButton = document.getElementById("save-button");
 
           const highlight = (element, className) => {
             element.classList.add(className);
             setTimeout(() => element.classList.remove(className), 1000);
           };
 
+          // Inicializa los drag and drop
           new Sortable(visible, {
             group: "fields",
             animation: 150,
@@ -310,7 +362,6 @@ input[type="checkbox"] + span {
               if (visible.children.length > MAX_VISIBLE) {
                 const addedItem = evt.item;
                 const removedItem = visible.lastElementChild;
-
                 available.appendChild(removedItem);
 
                 highlight(addedItem, "green-highlight");
@@ -324,13 +375,18 @@ input[type="checkbox"] + span {
             animation: 150,
           });
 
-          const form = document.querySelector("form");
-          form.addEventListener("submit", function (e) {
-            const getFieldNames = (container) =>
-              Array.from(container.children).map(li =>
-                li.textContent.trim().replace('drag_indicator', '').trim()
-              );
+          function getFieldNames(container) {
+            return Array.from(container.children).map(li => {
+              // Solo toma el texto real, no el ícono
+              return Array.from(li.childNodes)
+                .filter(node => node.nodeType === Node.TEXT_NODE)
+                .map(node => node.textContent.trim())
+                .join(" ");
+            });
+          }
 
+          // Aquí se actualizan los inputs ocultos justo antes del envío
+          saveButton.addEventListener("click", function () {
             const renderedFields = getFieldNames(visible);
             const omittedFields = getFieldNames(available);
 
@@ -338,13 +394,13 @@ input[type="checkbox"] + span {
             document.getElementById("omitted_fields_input").value = JSON.stringify(omittedFields);
           });
         });
-      </script>
+        </script>
 
       <input type="hidden" name="rendered_fields" id="rendered_fields_input" />
       <input type="hidden" name="omitted_fields" id="omitted_fields_input" />
     
       <div class="right-align">
-        <button type="submit" class="btn orange darken-2">
+        <button type="submit" id="save-button" class="btn orange darken-2">
           <i class="material-icons left">save</i> Save
         </button>
       </div>
@@ -359,7 +415,7 @@ input[type="checkbox"] + span {
   </div>
 
   {% if company %}
-    <div class="row">
+    <div class="row agent-limits">
       <div class="input-field col s6">
         <label class="active">Plan</label>
         <p style="margin-top: 0.5rem;">{{ company.plan }}</p>

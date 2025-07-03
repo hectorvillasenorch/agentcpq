@@ -58,7 +58,12 @@
           <option value="boolean">Boolean</option>
           <option value="dropdown">Dropdown</option>
           <option value="textarea">Text Area</option>
+          <option value="lookup">Look Up</option>
         </select>
+      </div>
+     <div id="lookup-model-field" style="display: none;">
+      <label for="id_lookup_model" class="block text-sm font-medium text-gray-700">Lookup Model</label>
+        {{ form.lookup_model }}
       </div>
 
       <!-- Required -->
@@ -105,6 +110,21 @@
         nameInput.value = formatted;
       });
     }
+  });
+  document.addEventListener('DOMContentLoaded', function () {
+    const dataTypeSelect = document.getElementById('id_data_type');
+    const lookupField = document.getElementById('lookup-model-field');
+
+    function toggleLookupField() {
+      if (dataTypeSelect.value === 'lookup') {
+        lookupField.style.display = 'block';
+      } else {
+        lookupField.style.display = 'none';
+      }
+    }
+
+    dataTypeSelect.addEventListener('change', toggleLookupField);
+    toggleLookupField();  // Run on load in case "lookup" is pre-selected
   });
 </script>
 {% endblock %}

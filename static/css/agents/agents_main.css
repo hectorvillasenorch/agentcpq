@@ -16,13 +16,13 @@ input[type="number"] {
 
 /* ✅ Quote Container */
 .quote-container {
-  width: 95%;
-  margin: 20px auto;
-  padding: 20px;
-  background: #ffffff;
-  /* border-radius: 12px; */
-  box-shadow: 0px 1px 5px rgba(0, 0, 0, 0.1);
-}
+    width: 95%;
+    margin: 20px auto;
+    padding: 20px;
+    background: #ffffff;
+    border-radius: 25px;
+    box-shadow: 0px 6px 32px rgb(49 49 51 / 21%);
+  }
 
 /* ✅ Quote Header */
 .quote-header {
@@ -37,13 +37,14 @@ input[type="number"] {
 .quote-header h3 {
   color: #fc6a3e;
   margin: 0;
+  font-size: 2.2rem;
 }
 
 
 /* ✅ Quote Details */
 .quote-details {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   grid-auto-rows: auto;
   column-gap: 1rem;
   row-gap: 1rem;
@@ -59,6 +60,111 @@ input[type="number"] {
 .quote-details .expiration  { grid-column: 2; grid-row: 2; text-align: left; }
 
 
+/* ===================================================== */
+
+  .quote-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    margin-bottom: 2rem;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  }
+
+  .quote-table thead {
+    background: linear-gradient(135deg, #041530, #233049) !important;
+    color: white;
+  }
+  .quote-table th{
+    background: linear-gradient(135deg, #041530, #233049) !important;
+  }
+
+  .quote-table th,
+  .quote-table td {
+    padding: 12px;
+    font-size: 14px;
+    border-bottom: 1px solid #e0e0e0;  
+  }
+
+  .quote-table input[type="number"],
+  .quote-table input[type="text"] {
+    padding-left: 5px;
+    height: 2.5rem !important;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    width: 100%;
+  }
+
+  .subtotal-amount,
+  .total-amount {
+    text-align: right;
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 16px;
+  }
+
+  .total-amount {
+    font-size: 18px;
+    color: #041530;
+  }
+
+  .centered-td {
+    text-align: center;
+  }
+
+  .quote-table-read-only {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    margin-bottom: 2rem;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  }
+
+  .quote-table-read-only thead {
+    background: linear-gradient(365deg, #041530, #233049) !important;
+    color: white;
+  }
+  .quote-table-read-only th{
+    background: linear-gradient(365deg, #041530, #233049) !important;
+  }
+
+  .quote-table-read-only th,
+  .quote-table-read-only td {
+    padding: 12px;
+    font-size: 16px;
+    border-bottom: 1px solid #e0e0e0;  
+  }
+
+  .quote-table-read-only input[type="number"],
+  .quote-table-read-only input[type="text"] {
+    padding-left: 5px;
+    height: 2.5rem !important;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    width: 100%;
+  }
+
+  .subtotal-amount,
+  .total-amount {
+    text-align: right;
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 16px;
+  }
+
+  .total-amount {
+    font-size: 18px;
+    color: #041530;
+  }
+
+  .centered-td {
+    text-align: center;
+  }
+
+/* ============================================================ */
 
 .quote-details div {
   display: flex;
@@ -75,18 +181,18 @@ input[type="number"] {
 }
 
 /* ✅ Quote Table */
-.quote-table {
+/* .quote-table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 20px;
-}
+} */
 
-.quote-table th {
+/* .quote-table th {
   background: #313133;
   color: white;
   padding: 12px;
   text-align: center;
-}
+} */
 
 .quote-table-read-only th {
   background: #909090;
@@ -95,14 +201,14 @@ input[type="number"] {
   text-align: center;
 }
 
-.quote-table td {
+/* .quote-table td {
   padding: 10px;
   border-bottom: 1px solid #ddd;
-}
+} */
 
-.quote-table tr:nth-child(even) {
+/* .quote-table tr:nth-child(even) {
   background: #f9f9f9;
-}
+} */
 
 /* ✅ Editable Fields */
 .editable-field {
@@ -347,3 +453,178 @@ h2 {
   margin: 5px 0;
   font-size: 14px;
 } */
+
+/* Validation Rule CSS */
+
+/* ✅ Rule Container */
+.rule-container {
+  width: 95%;
+  margin: 20px auto;
+  padding: 20px;
+  background: #ffffff;
+  border-radius: 25px;
+  box-shadow: 0px 6px 32px rgb(49 49 51 / 21%);
+  box-sizing: border-box;
+}
+
+/* ✅ Rule Header */
+.rule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+}
+
+
+/* ✅ Rule Details */
+.rule-details {
+  font-size: 1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-auto-rows: auto;
+  column-gap: 1rem;
+  row-gap: 1rem;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 10px;
+}
+
+/* Row 1 */
+.rule-details .name    { grid-column: 1 / span 4; grid-row: 1; text-align: left; }
+
+/* Row 2 */
+.rule-details .rule_type    { grid-column: 1; grid-row: 2; text-align: left; }
+.rule-details .target_type   { grid-column: 2; grid-row: 2; text-align: left; }
+.rule-details .priority   { grid-column: 3; grid-row: 2; text-align: left; }
+
+/* Row 3 */
+.rule-details .error_message   { grid-column: 1 / span 4; grid-row: 3; text-align: left; }
+
+
+.rule-details textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 1rem;
+  resize: vertical; /* permite al usuario ajustar la altura si quiere */
+}
+
+/* Conditions */
+.conditions-details {
+  font-size: 0.95rem;
+  padding-top: 10px;
+}
+
+.conditions-details .group {
+  display: inline-block;
+  margin: 4px 0;
+  padding: 4px 6px;
+  background-color: #f3f3f3;
+  border-radius: 6px;
+}
+
+.conditions-details .condition {
+  color: #333;
+}
+
+/* Conditions Lists */
+.conditions-list,
+.conditions-list ul {
+  list-style-type: disc;       /* Usa 'disc' o 'circle' para los bullets */
+  margin-left: 1.5rem;         /* Agrega sangría para cada nivel anidado */
+  padding-left: 1rem;
+}
+
+.conditions-list li {
+  margin-bottom: 6px;          /* Espacio entre líneas */
+}
+
+.conditions-list ul ul {
+  list-style-type: circle;
+}
+
+.conditions-list ul ul ul {
+  list-style-type: square;
+}
+
+.conditions-list li {
+  margin-bottom: 6px;
+  padding-left: 0.5rem;
+}
+
+.depth-0 {
+  border-left: 4px solid #1976d2; /* Azul fuerte */
+  padding-left: 0.5rem;
+}
+
+.depth-1 {
+  border-left: 4px solid #43a047; /* Verde */
+  padding-left: 0.75rem;
+}
+
+.depth-2 {
+  border-left: 4px solid #fb8c00; /* Naranja */
+  padding-left: 1rem;
+}
+
+.depth-3 {
+  border-left: 4px solid #e53935; /* Rojo */
+  padding-left: 1.25rem;
+}
+
+.depth-4 {
+  border-left: 4px solid #8e24aa; /* Morado */
+  padding-left: 1.5rem;
+}
+
+.depth-5 {
+  border-left: 4px solid #00acc1; /* Cyan */
+  padding-left: 1.75rem;
+}
+
+.depth-6 {
+  border-left: 4px solid #fdd835; /* Amarillo */
+  padding-left: 2rem;
+}
+
+.depth-7 {
+  border-left: 4px solid #6d4c41; /* Marrón */
+  padding-left: 2.25rem;
+}
+
+.depth-8 {
+  border-left: 4px solid #ec407a; /* Rosa */
+  padding-left: 2.5rem;
+}
+
+.depth-9 {
+  border-left: 4px solid #009688; /* Verde azulado */
+  padding-left: 2.75rem;
+}
+
+.conditions-list li:not([class*="depth-"]) {
+  border-left: 2px solid #ddd;
+}
+
+.logic-operator {
+  font-weight: bold;
+  font-style: italic;
+  color: #555;
+  list-style: none;
+}
+
+.conditions-list .logic-operator {
+  padding-left: 0.5rem !important;
+  margin-left: 0 !important;
+}
+
+/* ✅ Rule Error */
+.rule-error {
+  font-size: 1rem;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 10px;
+}
+
+.rule-error p {
+  font-size: 1.3rem;
+}

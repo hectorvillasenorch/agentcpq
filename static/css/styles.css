@@ -33,11 +33,11 @@ h2{
   padding-top: 20px;
   color: white;
   transition: transform 0.3s ease-in-out;
-
   /* ✅ Gradient from black to dark blue */
   /* background: linear-gradient(135deg, #4b58b7, #182848); */
-  background: #313133;
- 
+  background: linear-gradient(135deg, #041530, #233049);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
 }
 /* === Chat Session List === */
 .session-list {

@@ -22,7 +22,7 @@
                 {% if msg.sender == 'user' and msg.hiddenMessage == False %}
                   <div class="chat-text user"> 
                     <div class="sender">You: </div>
-                    <div class="message">{{ msg.content}}</div>
+                    <div class="message">{{ msg.content|safe }}</div>
                   </div>
                 {% endif %}
                 
@@ -36,11 +36,25 @@
                 {% if msg.sender == 'agent' and msg.hiddenMessage == False %}
                   <div class="chat-text agent">
                     <div class="senderagent">Agent: </div>
-                    <div class="message">{{ msg.content}}</div>
+                    <div class="message">{{ msg.content|safe }}</div>
                   </div>
                 {% endif %}
 
-                {% if msg.sender == 'agent' and 'quote_details' in msg.content or 'download_url' in msg.content %}
+                {% if msg.sender == 'agent' and 'download_url' in msg.content %}
+                <div class="chat-text agent">
+                    <div class="senderagent">Agent: </div>
+                    <div class="agent-pdf" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
+                {% endif %}
+
+                {% if msg.sender == 'agent' and 'quote_details' in msg.content %}
+                <div class="chat-text agent">
+                    <div class="senderagent">Agent: </div>
+                    <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
+                {% endif %}
+
+                {% if msg.sender == 'agent' and 'validation_rules_details' in msg.content %}
                 <div class="chat-text agent">
                     <div class="senderagent">Agent: </div>
                     <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>

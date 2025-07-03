@@ -4,6 +4,7 @@ import os
 import logging
 from agents.quote_agent import add_product_to_quote, quote_agent
 from agents.product_agent import product_agent
+from agents.admin_agent import admin_agent
 from agents.approvals_agent import approval_agent
 from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
@@ -23,8 +24,11 @@ logging.basicConfig(level=logging.DEBUG)
 openai.log = "warning"
 
 def handle_user_request(user_message, session_data):
-    user = User.objects.get(username="admin") 
-    print(session_data); #MODIFICACION
+    user = User.objects.get(username="admin")
+    #user_id = session_data.get("user_id")
+    #user = User.objects.get(id=user_id)
+    #user = request.user
+    #print(session_data);
 
     if should_reset_session(user_message):
         session_data.clear()
@@ -44,6 +48,15 @@ def handle_user_request(user_message, session_data):
         logging.info("Do NOT use GPT\n")
         response = orchestrate_request_trigger(user_message, session_data, decision="ShowQuoteDetails")
 
+    # 🧠 Shortcut manual: "Update Quote Line:"
+    elif user_message.startswith("Update Quote Line:"):
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(user_message, session_data, decision="UpdateQuoteLineFromUI")
+
+    elif user_message.startswith("Update Quote:"):
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(user_message, session_data, decision="UpdateQuoteFromUI")
+
     # 🧠 Shortcut manual: "generate pdf"
     elif any(message.startswith(trigger) for trigger in trigger_phrases):
         logging.info("Do NOT use GPT\n")
@@ -61,8 +74,8 @@ def orchestrate_request(user_message, session_data):
     session_context = {k: str(v) for k, v in session_data.items() if isinstance(v, (str, int, float, list, dict))}
     
     session_id = session_data.get("session_id")
-    # ⚠️ Use a real user later; hardcode for now
 
+    # ⚠️ Use a real user later; hardcode for now
     user = User.objects.get(username="admin")
 
     if not session_id:
@@ -75,39 +88,12 @@ def orchestrate_request(user_message, session_data):
     else:
         chat_session = ChatSession.objects.get(session_id=session_id)
 
-    #Extract the JSON to give the hidden field (Only for update message)
-    if user_message.startswith("Update Quote Line:"):
-        try:
-            json_str = user_message.replace("Update Quote Line:", "")
-            update_data = json.loads(json_str)
-            hiddenMessage = update_data[0].get("hiddenMessage", False)
-            ChatMessage.objects.create(
-                session=chat_session,
-                sender="user",
-                content=user_message,
-                hiddenMessage = hiddenMessage
-            )
-        except json.JSONDecodeError as e:
-            logging.error(f" Error decoding JSON: {e}")
-    elif user_message.startswith("Update Quote:"):
-        try:
-            json_str = user_message.replace("Update Quote:", "")
-            update_data = json.loads(json_str)
-            hiddenMessage = update_data[0].get("hiddenMessage", False)
-            ChatMessage.objects.create(
-                session=chat_session,
-                sender="user",
-                content=user_message,
-                hiddenMessage = hiddenMessage
-            )
-        except json.JSONDecodeError as e:
-            logging.error(f" Error decoding JSON: {e}")
-    else:
-        ChatMessage.objects.create(
-            session=chat_session,
-            sender="user",
-            content=user_message
-        )
+    
+    ChatMessage.objects.create(
+        session=chat_session,
+        sender="user",
+        content=user_message
+    )
 
     action_prompt = f"""
     You are an AI assistant that classifies user requests into predefined actions.
@@ -117,13 +103,11 @@ def orchestrate_request(user_message, session_data):
     - "CreateQuote"
     - "AddProduct"
     - "GenerateQuoteDocument"
-    - "ApplyQuoteDiscount" (Use this when the user wants to apply a discount to the entire quote. These requests do **not** include a SKU like AICPQ-043 or a product name.)
     - "ProvideDates"
     - "ShowQuoteDetails"
     - "UpdateQuoteLine" (Use this when the user wants to update a quote line item. The fields that can be updated at the quote line level are: quantity, discount_amount, discount_percentage, and term.)
-    - "UpdateQuote" (Use this only for messages that starts with 'Update Quote:')
+    - "UpdateQuote" (Use this when the user wants to update any quote. The fields that can be updated at the quote level are: status, discount_percentage, discount_amount, expiration_date, notes)
     - "ShowQuoteNotes"
-    - "UpdateQuoteNotes"
     - "DeleteQuoteLine"
     - "DeleteQuote" (Use this ONLY for messages that not includes SKU or product's names)
     - "CreateProductRecord"
@@ -135,6 +119,7 @@ def orchestrate_request(user_message, session_data):
     - "RecallQuote"
     - "ShowAccountDetails"
     - "GeneralQuery"
+    - "CreateValidationRule"
     """
     try:
         response = client.chat.completions.create(
@@ -200,11 +185,39 @@ def orchestrate_request_trigger(user_message, session_data, decision):
     else:
         chat_session = ChatSession.objects.get(session_id=session_id)
 
-    ChatMessage.objects.create(
-        session=chat_session,
-        sender="user",
-        content=user_message
-    )
+    #Extract the JSON to give the hidden field (Only for update message)
+    if user_message.startswith("Update Quote Line:"):
+        try:
+            json_str = user_message.replace("Update Quote Line:", "")
+            update_data = json.loads(json_str)
+            hiddenMessage = update_data.get("hiddenMessage", False)
+            ChatMessage.objects.create(
+                session=chat_session,
+                sender="user",
+                content=user_message,
+                hiddenMessage = hiddenMessage
+            )
+        except json.JSONDecodeError as e:
+            logging.error(f" Error decoding JSON: {e}")
+    elif user_message.startswith("Update Quote:"):
+        try:
+            json_str = user_message.replace("Update Quote:", "")
+            update_data = json.loads(json_str)
+            hiddenMessage = update_data.get("hiddenMessage", False)
+            ChatMessage.objects.create(
+                session=chat_session,
+                sender="user",
+                content=user_message,
+                hiddenMessage = hiddenMessage
+            )
+        except json.JSONDecodeError as e:
+            logging.error(f" Error decoding JSON: {e}")
+    else:
+        ChatMessage.objects.create(
+            session=chat_session,
+            sender="user",
+            content=user_message
+        )
 
     action_map = get_action_map()
 
@@ -216,7 +229,7 @@ def orchestrate_request_trigger(user_message, session_data, decision):
         hiddenMessage = result.get("hiddenMessage", False)
 
         for key, value in result.items():
-            if key not in ("message", "session_id", "hiddenMessage"):
+            if key not in ("message", "session_id", "hiddenMessage", "original_value"):
                 agent_message += f"\n\n📦 {key}:\n{json.dumps(value, indent=2)}"
 
         ChatMessage.objects.create(
@@ -329,6 +342,10 @@ def get_action_map():
         "UpdateQuoteNotes": quote_agent,
         "ShowQuoteNotes": quote_agent,
 
+        # Only for triggered messages
+        "UpdateQuoteLineFromUI": quote_agent,
+        "UpdateQuoteFromUI": quote_agent,
+
         # Product-related actions handled by product_agent
         "CreateProductRecord": product_agent,
         "UpdateProductRecord": product_agent,
@@ -341,7 +358,10 @@ def get_action_map():
         "RecallQuote": approval_agent,
 
         # General query handling
-        "GeneralQuery": handle_general_query
+        "GeneralQuery": handle_general_query,
+
+        # Rules
+        "CreateValidationRule": admin_agent,
     }
 
 

@@ -22,25 +22,29 @@
         <div class="brand">
             <img width="70%" src="/media/img/logo-small.png" alt="AgentCPQ Logo">
         </div>
-        <a href="{% url 'dashboard' %}?view=agents">
-            <i class="material-icons">smart_toy</i> AgentCPQ
-        </a>
-        <a href="{% url 'dashboard' %}?view=products">
+        <a href="{% url 'dashboard' %}?view=agents" class="new-chat-button">
+  <i class="material-icons">smart_toy</i>
+  New Chat<span style="margin: 0 4px;">+</span> 
+</a>
+        <!-- <a href="{% url 'dashboard' %}?view=products">
             <i class="material-icons">inventory_2</i> Products
-        </a>
-        <a href="{% url 'dashboard' %}?view=quotes">
+        </a> -->
+        <!-- <a href="{% url 'dashboard' %}?view=quotes">
             <i class="material-icons">request_quote</i> Quotes
-        </a>
-        <a href="{% url 'dashboard' %}?view=payment__c">
-            <i class="material-icons">request_quote</i> Payments
-        </a>
+        </a> -->
+        {% if custom_objects %}
+                {% for obj in custom_objects %}
+                     <a href="{% url 'dashboard' %}?view=custom&object_name={{ obj.name }}">
+                        <i class="material-icons">description</i> {{ obj.label }}
+                    </a>
+                {% endfor %}
+        {% endif %}
         {% if request.user.is_staff %}
             <a href="{% url 'dashboard' %}?view=setup">
             <i class="material-icons">settings</i> Setup
         </a>
         {% endif %}
-        
-
+    
         <div class="divider"></div>
         <div class="session-list">
             <p class="session-list-title">Chat History</p>
@@ -69,7 +73,6 @@
     </div>
     
     </div> 
-
         <!-- Main Content -->
         <main class="main-content">
           <div id="content-area">
@@ -82,11 +85,17 @@
             {% elif request.GET.view == "setup" %}
                 {% include "setup.html" %}
             {% elif request.GET.view == "payment__c" %}
-                {% include "objs_listviews.html" %}    
-            {% else %}
+                {% include "objs_listviews.html" %}
+            {% elif not form and not custom_object %}
                 <p class="grey-text text-darken-2 center-align">Select an option from the sidebar.</p>
             {% endif %}
-          </div>
+            {% if form and custom_object and request.GET.object_name %}
+                <div class="section">
+                <h2><i class="material-icons" style="vertical-align: middle; margin-right: 8px;">description</i>{{ custom_object.label }}</h2>
+                {% include "custom_objects/record_form.html" with form=form custom_object=custom_object %}
+                </div>
+            {% endif %}
+        </div>
         </main>
     </div>
 

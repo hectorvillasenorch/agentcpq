@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, Tenant
+from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, Tenant, CustomObject, CustomField, Option, BusinessRule
 
 admin.site.register(Quote)
 admin.site.register(QuoteLine)
@@ -27,12 +27,59 @@ class OpportunityAdmin(admin.ModelAdmin):
 
 admin.site.register(Opportunity, OpportunityAdmin)
 
+
+class OptionInline(admin.TabularInline):
+    model = Option
+    fk_name = 'parent_product'  # ✔ correct parent FK
+    extra = 0
+    can_delete = True
+    show_change_link = True  # optional: shows ✏️ edit icon
+
+    fields = ('product_option', 'quantity', 'is_required', 'min_quantity', 'max_quantity', 'default_selected', 'group_name')
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == 'parent_product':
+            kwargs['queryset'] = Product.objects.filter(is_bundle=True)
+
+        formfield = super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+        if hasattr(formfield, 'widget') and hasattr(formfield.widget, 'can_add_related'):
+            formfield.widget.can_add_related = False  # ❌ hide green plus
+            formfield.widget.can_change_related = True  # ✅ keep pencil icon
+
+        return formfield
+  
+
 class ProductAdmin(admin.ModelAdmin):
     list_display = ('prdid','name', 'sku', 'price', 'is_subscription', 'term', 'is_bundle')
+    inlines = [OptionInline]
 
 admin.site.register(Product, ProductAdmin)
+
 
 class ActivityAdmin(admin.ModelAdmin):
     list_display = ('activity_type','lead','status','due_date', 'notes')
 
 admin.site.register(Activity,ActivityAdmin)
+
+class OptionAdmin(admin.ModelAdmin):
+    list_display = ('product_option','parent_product','is_required','min_quantity','max_quantity','default_selected')
+
+admin.site.register(Option,OptionAdmin)
+
+
+
+
+@admin.register(CustomObject)
+class CustomObjectAdmin(admin.ModelAdmin):
+    list_display = ('name', 'label', 'description')  # Adjust as needed
+
+@admin.register(CustomField)
+class CustomFieldAdmin(admin.ModelAdmin):
+    list_display = ("label", "name", "data_type", "custom_object","object_type")
+
+@admin.register(BusinessRule)
+class BusinessRuleAdmin(admin.ModelAdmin):
+    list_display = ('name', 'rule_type', 'active')  # replace with actual fields
+    search_fields = ('name',)
+    list_filter = ('rule_type', 'active')

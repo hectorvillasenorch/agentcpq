@@ -17,8 +17,8 @@ from dotenv import load_dotenv
 from decouple import config
 import dj_database_url
 
-NGROK_FULL_URL = "https://b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.ngrok-free.app"
-NGROK_URI = "b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.ngrok-free.app"
+NGROK_FULL_URL = "https://d514-2607-fb90-5791-279-e5a6-6e8c-4007-1b66.ngrok-free.app"
+NGROK_URI = "d514-2607-fb90-5791-279-e5a6-6e8c-4007-1b66.ngrok-free.app"
 
 load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -47,10 +47,6 @@ ALLOWED_HOSTS = ['.herokuapp.com', 'localhost', '127.0.0.1']
 
 # Allow Django to be embedded in an IFrame (required for Salesforce)
 X_FRAME_OPTIONS = 'ALLOWALL'
-CSRF_TRUSTED_ORIGINS = [
-    NGROK_FULL_URL,
-    'https://agente001.lightning.force.com'
-]
 
 CSRF_COOKIE_SECURE = True 
 SESSION_COOKIE_SECURE = True
@@ -63,7 +59,12 @@ CORS_ALLOWED_ORIGINS = [
 
 # ✅ Allow all domains in development (Use only for testing)
 CSRF_COOKIE_DOMAIN = None
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
 
+CSRF_TRUSTED_ORIGINS = [
+    NGROK_FULL_URL
+]
 
 # Application definition
 
@@ -79,6 +80,7 @@ INSTALLED_APPS = [
     "dashboard",
     "salesforce",
     "hubspot",
+    'django.contrib.humanize',
 ]
 
 

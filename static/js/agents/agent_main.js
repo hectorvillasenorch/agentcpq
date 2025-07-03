@@ -66,21 +66,20 @@ function unescapeUnicode(str) {
 function enhanceStructuredAgentMessages() {
     document.querySelectorAll(".agent-json").forEach(div => {
       const raw = div.dataset.raw;
-  
-      const startIndex = raw.indexOf('{');
-      if (startIndex !== -1) {
-        const jsonStr = raw.slice(startIndex);
-  
-        try {
-          const quote = JSON.parse(unescapeUnicode(jsonStr));
-          const html = renderQuoteDetails(quote);
-          div.innerHTML = html;
-        } catch (e) {
-          console.error("❌ JSON parse failed:", e, jsonStr);
-          div.innerHTML = `<div class="error-message">❌ Error trying to display the structured message. (JSON parsing error)</div>`;
-        }
-      } else {
-        div.innerHTML = `<div class="error-message">⚠️ Could not find quote details JSON</div>`;
+      
+      const jsonStr = extractJson(raw);
+      if (!jsonStr) {
+        console.log("enhanceStructuredAgentMessages")
+        div.innerHTML = `<div class="error-message">⚠️ Could not find valid JSON in message</div>`;
+        return;
+      }
+
+      try {
+        const data = JSON.parse(unescapeUnicode(jsonStr));
+        // Procesa data
+      } catch (e) {
+        console.error("JSON parse failed:", e, jsonStr);
+        div.innerHTML = `<div class="error-message">❌ JSON parsing error</div>`;
       }
     });
   }
@@ -88,55 +87,94 @@ function enhanceStructuredAgentMessages() {
 /*
 * ✅ enhanceStructuredAgentMessages in history chat, NOT in real time
 */
+function extractJson(text) {
+  const startObj = text.indexOf('{');
+  const startArr = text.indexOf('[');
+
+  let start = -1;
+  if (startObj === -1) start = startArr;
+  else if (startArr === -1) start = startObj;
+  else start = Math.min(startObj, startArr);
+
+  if (start === -1) return null;
+
+  return text.slice(start).trim();
+}
+
+function unescapeUnicode(str) {
+  return str.replace(/\\u[\dA-F]{4}/gi, function (match) {
+    return String.fromCharCode(parseInt(match.replace(/\\u/g, ''), 16));
+  });
+}
+
 function enhanceStructuredAgentMessagesHistoryChat() {
+  document.querySelectorAll(".agent-json").forEach(div => {
+    const raw = div.dataset.raw;
 
-    document.querySelectorAll(".agent-json").forEach(div => {
-      const raw = div.dataset.raw;
-  
-      const startIndex = raw.indexOf('{');
-      if (startIndex !== -1) {
-        const jsonStr = raw.slice(startIndex);
-  
-        try {
-          const quote = JSON.parse(unescapeUnicode(jsonStr));
-          const html = renderReadOnlyQuoteDetails(quote);
-          div.innerHTML = html;
-          return;
-        } catch (e) {
-          console.error("❌ JSON parse failed:", e, jsonStr);
-          div.innerHTML = `<div class="error-message">❌ Error trying to display the structured message. (JSON parsing error)</div>`;
-        }
+    const keys = ['quote_details:', 'validation_rules_details:'];
+
+    let jsonPart = null;
+    for (const key of keys) {
+      const idx = raw.indexOf(key);
+      if (idx !== -1) {
+        const afterKey = raw.slice(idx + key.length);
+        jsonPart = extractJson(afterKey);
+        if (jsonPart) break;
       }
+    }
 
-      let unescapedRaw = unescapeUnicode(raw);
+    if (!jsonPart) {
+      console.log("enhanceStructuredAgentMessagesHistoryChat");
+      div.innerHTML = `<div class="error-message">⚠️ Could not find valid JSON in message</div>`;
+      return;
+    }
 
-      const pdfPatternUrl = /download_url:\s*"?([^"\s]+)"?/i;
-      const pdfPatternVersion = /document_version:\s*(\d+)/i;
+    try {
+      const data = JSON.parse(unescapeUnicode(jsonPart));
 
-      const downloadUrlMatch = unescapedRaw.match(pdfPatternUrl);
-      const versionMatch = unescapedRaw.match(pdfPatternVersion);
-
-      if (downloadUrlMatch && versionMatch) {
-        const url = downloadUrlMatch[1].trim();
-        const version = versionMatch[1].trim();
-        const message = unescapedRaw.split("download_url:")[0].trim();
-
-        div.innerHTML = `
-          <div class="general-message">
-            <p>${message}<a href="${url}" target="_blank" class="download-link"> Download Here</a></p>
-          </div>
-        `;
+      if (data.rules || (Array.isArray(data) && data[0]?.rule_type)) {
+        const html = renderValidationRuleDetails(data.rules || data);
+        div.innerHTML = html;
         return;
       }
 
-      div.innerHTML = `<pre class="plain-text-message">${escapeHtml(unescapedRaw)}</pre>`;
+      const html = renderReadOnlyQuoteDetails(data);
+      div.innerHTML = html;
 
-    });
+    } catch (e) {
+      console.error("❌ JSON parse failed:", e, jsonPart);
+      div.innerHTML = `<div class="error-message">❌ Error trying to display the structured message. (JSON parsing error)</div>`;
+    }
+  });
 
-    const chatBox = document.getElementById("chat-box");
+  document.querySelectorAll(".agent-pdf").forEach(div => {
+  const raw = unescapeUnicode(div.dataset.raw);
 
-    // Auto-scroll chat
+  if (!raw.includes("download_url")) return;
+
+  // Get download_url
+  const urlMatch = raw.match(/download_url:\s*["']?(.*?)["']?\s*(\n|$)/);
+  const versionMatch = raw.match(/document_version:\s*([0-9]+)/);
+
+  const downloadUrl = urlMatch ? urlMatch[1].trim() : null;
+  const version = versionMatch ? versionMatch[1].trim() : null;
+  //console.log("📄 Extracted PDF Info:", { version, downloadUrl });
+
+  if (downloadUrl && version) {
+    div.innerHTML = `
+      📄 Quote PDF (v${version}) generated successfully! 
+      <a href="${downloadUrl}" target="_blank">Download Here</a>
+    `;
+  } else {
+    div.innerHTML = `<div class="error-message">⚠️ Could not extract PDF fields</div>`;
+  }
+});
+
+  // Auto-scroll chat
+  const chatBox = document.getElementById("chat-box");
+  if (chatBox) {
     chatBox.scrollTop = chatBox.scrollHeight;
+  }
 }
 
 function escapeHtml(text) {
@@ -206,12 +244,12 @@ async function sendMessage() {
         } 
         // ✅ Handle Quote Details Response
         else if (data.response && data.response.quote_details && !data.response.quote_notes) {
-          console.log("Quote Details");
+          //console.log("Quote Details");
           responseMessage += renderQuoteDetails(data.response.quote_details);
         }
         // ✅ Handle Quote Notes Response
         else if (data.response && data.response.quote_notes) {
-          console.log("Quote Notes");
+          //console.log("Quote Notes");
           responseMessage += renderQuoteNotes(data.response.quote_details, data.response.quote_notes);
         }
         // ✅ Handle Quote PDF Response
@@ -219,6 +257,13 @@ async function sendMessage() {
             console.log(data.response);
             responseMessage += `📄 Quote PDF (v${data.response.document_version}) generated successfully! <a href="${data.response.download_url}" target="_blank">Download Here</a>`;
         } 
+        // ✅ Handle Validation Rules Response
+        else if (data.response && data.response.validation_rules_details) {
+          //console.log("Validation Rules Details");
+          console.log(data.response);
+          console.log(data.response.validation_rules_details)
+          responseMessage += renderValidationRuleDetails(data.response.validation_rules_details);
+        }
         // ✅ Default Response (Handle General Messages)
         else if (data.response && data.response.message) {
             responseMessage += `<div class="general-message">${data.response.message}</div>`;
@@ -278,6 +323,20 @@ function appendMessage(className, message) {
         }
       } catch (e) {
         console.warn("Failed to parse quote_details JSON:", e);
+      }
+    }
+
+    // ✅ Detect stored notes as string
+    if (className === "agent" && message.includes("validation_rules_details: {")) {
+      try {
+        // Extract JSON from string
+        const match = message.match(/validation_rules_details:\s({.+})/);
+        if (match && match[1]) {
+          const rules = JSON.parse(match[1]);
+          message = renderValidationRuleDetails(rules);  // Use your nice formatter
+        }
+      } catch (e) {
+        console.warn("Failed to parse validation_rules_details JSON:", e);
       }
     }
   
@@ -816,14 +875,26 @@ document.addEventListener("change", (event) => {
 /**
 * ✅ Update quote line and reflect changes in UI
 */
+
+/**
+* ✅ First we save the input focus
+*/
+
+/**
+* ✅ Update quote line function
+*/
 async function updateQuoteLine(input) {
     const quoteId = input.dataset.quote;
     const sku = input.dataset.sku;
     const field = input.dataset.field;
     let newValue = input.value.trim();
+  
+    if (["quantity", "discount_amount", "discount_percentage", "term"].includes(field)) {
+    newValue = parseFloat(newValue);
+    }
     const quoteLineId = input.dataset.quotelineId;
 
-    if (newValue <= 0){
+    if (newValue < 0){
       alert("⚠️ Invalid quantity or unit price.");
     }
 
@@ -834,7 +905,7 @@ async function updateQuoteLine(input) {
 
     console.log(`🔄 Field Changed: ${field}, SKU: ${sku}, New Value: ${newValue}, Quote: ${quoteId}, QuoteLine: ${quoteLineId}`);
 
-    const updateData = [{ sku, field, value: newValue, quote_line_id: quoteLineId, hiddenMessage: true }];
+    const updateData = { sku, field, value: newValue, quote_line_id: quoteLineId, hiddenMessage: true };
     const userMessage = `Update Quote Line: ${JSON.stringify(updateData)}`;
 
     try {
@@ -892,7 +963,7 @@ async function updateQuoteLine(input) {
             if (subtotalElement) {
                 const subtotal = parseFloat(updatedQuote.subtotal);
                 const formattedSubtotal = `$${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                subtotalElement.textContent = `🧾 Subtotal: ${formattedSubtotal}`;
+                subtotalElement.textContent = `Subtotal: ${formattedSubtotal}`;
             }
 
             // ✅ Update discount amount in quote
@@ -909,15 +980,19 @@ async function updateQuoteLine(input) {
             if (netAmountParagraph) {
                 const totalNetAmount = parseFloat(updatedQuote.net_amount);
                 const formattedTotalNetAmount = `$${totalNetAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                netAmountParagraph.textContent = `💰 Net Amount: ${formattedTotalNetAmount}`;
+                netAmountParagraph.textContent = `Net Amount: ${formattedTotalNetAmount}`;
             }
 
-            alert("✅ Quote updated successfully!");
+            alert("✅ Quote line updated successfully.");
         } else {
-            alert("⚠️ Failed to update quote.");
+            // ⬅️ Restart original value of the input field
+            input.value = data.response.original_value
+            alert(data.response.message.replace(/<br\s*\/?>/gi, '\n'));
         }
     } catch (error) {
         console.error("❌ Error updating quote line:", error);
+        // ⬅️ Restart original value of the input field
+        input.value = data.response.original_value
         alert("❌ Failed to update quote.");
     }
 }
@@ -935,19 +1010,18 @@ async function updateQuote(input) {
         return;
     }
 
-    // Limpia comas si es amount
     if (field === "discount_amount") {
         newValue = newValue.replace(/,/g, '');
     }
 
     console.log(`🔄 Field Changed: ${field}, Quote: ${quote}, New Value: ${newValue}`);
 
-    const updateData = [{
+    const updateData = {
         field: field,
         value: newValue,
         quote: quote,
         hiddenMessage: true
-    }];
+    };
 
     const userMessage = `Update Quote: ${JSON.stringify(updateData)}`;
 
@@ -961,7 +1035,7 @@ async function updateQuote(input) {
         const data = await response.json();
         console.log("✅ Server Response:", data);
 
-        if (data.response && data.response.message.includes("Quote was updated successfully") && data.response.quote_details) {
+        if (data.response && data.response.message.includes("✅ Quote updated successfully.") && data.response.quote_details) {
             input.blur();
 
             const updatedQuote = data.response.quote_details;
@@ -1227,4 +1301,199 @@ function showTemporaryQuoteDetails(quote) {
   </div>`;
 
   return html;
+}
+
+function renderValidationRuleDetails(rules) {
+  let html = "";
+  //console.log(rules);
+
+  rules.forEach((rule) => {
+    if (rule.success){
+      html += 
+        `<div class="rule-container">
+          <div class="rule-header">
+              <h5>✅ New validation rule created successfully ✅</h3>
+          </div>
+          <div class="rule-details">
+              <div class="name">
+                <label for="rule-name"><strong>Name:</strong></label>
+                <input id="rule-name" type="text" value="${rule.name}" readonly/>
+              </div>
+
+              <div class="rule_type">
+                <label for="rule-type"><strong>Rule Type:</strong></label>
+                <input id="rule-type" type="text" value="${rule.rule_type}" readonly/>
+              </div>
+
+              <div class="target_type">
+                <label for="target-type"><strong>Target Type:</strong></label>
+                <input id="target-type" type="text" value="${rule.target_type}" readonly/>
+              </div>
+
+              <div class="priority">
+                <label for="priority"><strong>Priority:</strong></label>
+                <input id="priority" type="number" value="${rule.priority}" readonly/>
+              </div>
+
+              <div class="error_message">
+                <label for="error-message"><strong>Error Message:</strong></label>
+                <textarea id="error-message" class="materialize-textarea" rows="3" readonly>${rule.error_message}</textarea>
+              </div>
+          </div>
+
+          <div class="conditions-details">
+            <p><h6>Conditions:</h6></p>
+            <ul class="conditions-list">
+              ${renderConditions(rule.conditions)}
+            </ul>
+          </div>
+        </div>`;
+    }
+    else if (rule.error){
+      html += 
+        `<div class="rule-container">
+          <div class="rule-header">
+              <h5>⚠️ Error creating validation rule ⚠️</h3>
+          </div>
+          <div class="rule-error">
+              <div class="name">
+                <label for="rule-name"><strong>Name:</strong></label>
+                <input id="rule-name" type="text" value="${rule.name}" readonly/>
+              </div>
+
+              <div class="error">
+                <label for="rule-error"><strong>Error:</strong></label>
+                <h6>${(rule.error).replace("⚠️", "").trim()}</h6>
+              </div>
+          </div>
+        </div>`;
+    }
+    
+  });
+
+  return html;
+}
+
+
+function renderConditions(condition, depth = 0) {
+  if (!condition) return "<p>No conditions found.</p>";
+
+  const fieldLabelMap = {
+    // Quote fields
+    "quote.net_amount": "Net Amount",
+    "quote.tax_amount": "Tax Amount",
+    "quote.status": "Status",
+    "quote.discount_percentage": "Quote Discount %",
+    "quote.discount_amount": "Quote Discount Amount",
+    "quote.discount_type": "Quote Discount Type",
+    "quote.subtotal": "Quote Subtotal",
+
+    // Quote Line fields
+    "quote_line.quantity": "Quantity",
+    "quote_line.unit_price": "Unit Price",
+    "quote_line.special_price": "Special Price",
+    "quote_line.total_price": "Total Price",
+    "quote_line.discount_percentage": "Discount %",
+    "quote_line.discount_type": "Discount Type",
+    "quote_line.discount_amount": "Discount Amount",
+    "quote_line.billing_frequency": "Billing Frequency",
+    "quote_line.billing_end_date": "Billing End Date",
+    "quote_line.billing_start_date": "Billing Start Date",
+    "quote_line.is_subscription": "Is Subscription",
+    "quote_line.product_name": "Product Name",
+    "quote_line.sku": "SKU",
+    "quote_line.term": "Term",
+    "quote_line.subtotal": "Line Subtotal"
+  };
+
+  function translateOperator(op) {
+    switch (op) {
+      case "==": return "is";
+      case "!=": return "is not";
+      case ">": return "is greater than";
+      case ">=": return "is greater than or equal to";
+      case "<": return "is less than";
+      case "<=": return "is less than or equal to";
+      default: return op;
+    }
+  }
+
+  // Caso base: condición simple
+  if (condition.fieldName && condition.operator && typeof condition.value !== "undefined") {
+    const label = fieldLabelMap[condition.fieldName] || condition.fieldName;
+    const operator = translateOperator(condition.operator);
+    const value = condition.value;
+
+    return `<li class="depth-${depth}">${label} ${operator} ${value}</li>`;
+  }
+
+  // Caso compuesto: lógica AND/OR
+  if (condition.logic && Array.isArray(condition.items)) {
+    const logicLabel = condition.logic.toUpperCase() === "AND"
+      ? "All of the following:"
+      : "One of the following:";
+
+    const items = condition.items.map((item, index) => {
+      const rendered = renderConditions(item, depth + 1);
+
+      // Agregar el operador lógico entre condiciones (excepto después de la última)
+      if (index < condition.items.length - 1) {
+        return `${rendered}<li class="logic-operator depth-${depth + 1}">${condition.logic.toUpperCase()}</li>`;
+      } else {
+        return rendered;
+      }
+    });
+
+    return `
+      <li class="depth-${depth}">
+        <strong>${logicLabel}</strong>
+        <ul class="conditions-list">
+          ${items.join("")}
+        </ul>
+      </li>
+    `;
+  }
+
+  return `<li class="depth-${depth}">⚠️ Unknown condition format</li>`;
+}
+
+function extractJson(raw) {
+  const firstBrace = raw.indexOf('{');
+  const firstBracket = raw.indexOf('[');
+
+  // Determinar si el JSON empieza con { o [
+  let startIndex;
+  let openChar, closeChar;
+
+  if (firstBrace === -1 && firstBracket === -1) return null; // no JSON found
+  if (firstBrace === -1) {
+    startIndex = firstBracket;
+    openChar = '['; closeChar = ']';
+  } else if (firstBracket === -1) {
+    startIndex = firstBrace;
+    openChar = '{'; closeChar = '}';
+  } else {
+    // Escoger el que aparece primero
+    if (firstBrace < firstBracket) {
+      startIndex = firstBrace;
+      openChar = '{'; closeChar = '}';
+    } else {
+      startIndex = firstBracket;
+      openChar = '['; closeChar = ']';
+    }
+  }
+
+  // Ahora encontrar el cierre balanceado
+  let depth = 0;
+  for (let i = startIndex; i < raw.length; i++) {
+    if (raw[i] === openChar) depth++;
+    else if (raw[i] === closeChar) depth--;
+
+    if (depth === 0) {
+      return raw.substring(startIndex, i + 1);
+    }
+  }
+
+  // Si no se cerró el JSON, devolver null
+  return null;
 }
