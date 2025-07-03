@@ -225,7 +225,7 @@ def create_validation_rule(user_message, session_data):
             response_message.append(content_message)
             continue
         
-        print(f"\n\nRule {response_message}\n")
+        print(f"\n\nRule: {response_message}\n")
 
     return {
         "message": "Here are the rules details:",

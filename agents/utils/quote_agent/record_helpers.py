@@ -1,10 +1,12 @@
 import logging
 import json
+import re
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
-from cpq.models import Product, Opportunity, Account, QuoteLine
+from cpq.models import Product, Opportunity, Account, QuoteLine, Quote
 from django.db.models import Q, Sum
 from django.db import transaction
 from copy import deepcopy
+from datetime import datetime
 
 # DB Helpers
 from .db_helpers import find_product_and_normalize_variables, update_opportunity_net_amount
@@ -13,7 +15,7 @@ from .db_helpers import find_product_and_normalize_variables, update_opportunity
 from .general_helpers import normalize_term_for_product, get_quote_details, set_active_quote_to_session_data
 
 #Rules Helpers
-from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules
+from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules_quote_line_level, check_for_rules_quote_level
 
 
 def save_quote_products(products, quote, response_message, allow_updates=False):
@@ -85,7 +87,7 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
         temp_quote_line = build_temp_quote_line(quote, product, quantity, discount_type, Decimal(discount_value), term)
 
         # Validate validations rules
-        validations = check_for_rules("quote_line", quote, product, temp_quote_line)
+        validations = check_for_rules_quote_line_level("quote_line", ["validation"], quote, product, temp_quote_line)
 
         if validations:
             validations_message = ""
@@ -241,7 +243,7 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
             "term": "Term"
         }
 
-        response_message += f"<b>🔄 <u>Update Request #{index} in quote {quote.name}</u> 🔄</b><br>"
+        response_message += f"<b>🔄 <u>Line Item Update #{index} in quote {quote.name}</u> 🔄</b><br>"
 
         # General validations
         if sku is None and name is None:
@@ -256,7 +258,7 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
             response_message += f"⚠️ Error: No valid field to update was detected in your request. Please specify which attribute (e.g., quantity, discount or term) you want to modify.<br><br>"
             continue
 
-        if value is None or value == 0:
+        if value is None:
             response_message += f"⚠️ Error: No value was detected in your request. Please specify the new value for the update.<br><br>"
             continue
         
@@ -266,8 +268,8 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
             response_message += f"⚠️ Error: The value \"{value}\" is not a valid number. Please enter a valid numeric value.<br><br>"
             continue
 
-        if field.startswith("discount") and Decimal(value) <= 0:
-            response_message += f"⚠️ Error: The value for discounts cannot be less than or equals 0. Please provide a valid number.<br><br>"
+        if field.startswith("discount") and Decimal(value) < 0:
+            response_message += f"⚠️ Error: The value for discounts cannot be less than 0. Please provide a valid number.<br><br>"
             continue
 
         if field == "term" and int(value) < 0:
@@ -335,7 +337,7 @@ def save_quote_line_update(request, quote):
         quote_line_id = update["quote_line_id"]
 
         
-        while transaction.atomic():
+        with transaction.atomic():
             try:
                 quote_line = QuoteLine.objects.get(id=quote_line_id, quote=quote, product__sku=sku)
             except QuoteLine.DoesNotExist:
@@ -344,6 +346,11 @@ def save_quote_line_update(request, quote):
                     "success": False
                 }
             
+            if field == "term" and not quote_line.is_subscription:
+                return {
+                    "message": "⚠️ Error: A term cannot be assigned to a product that is not a subscription.",
+                    "success": False
+                }
             original_quote_line = deepcopy(quote_line)
 
             # ✅ Update based on the field dynamically
@@ -378,7 +385,7 @@ def save_quote_line_update(request, quote):
             product = quote_line.product
 
             # Validate validations rules
-            validations = check_for_rules("quote_line", quote, product, temp_quote_line)
+            validations = check_for_rules_quote_line_level("quote_line", "validation", quote, product, temp_quote_line)
 
             if validations:
                 validations_message = "".join(f"- {v}<br>" for v in validations)
@@ -412,5 +419,198 @@ def save_quote_line_update(request, quote):
         logging.warning(f"⚠️ Error updating quote line: {str(e)}")
         return {
             "message": f"Error updating quote line: {str(e)}",
+            "success": False
+        }
+
+
+# Handle quote update request
+def handle_quote_update_request(extracted_updates, quote, response_message):
+
+    logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🛠️ Creating record for update quote 🛠️")
+
+    # ✅ Add products to the quote if provided
+    updated_quotes = []
+
+    for index, item in enumerate(extracted_updates, start=1):
+            
+        quote_name = item.get("name", None)
+        field = item.get("field", None)
+        value = item.get("value", None)
+
+        field_labels = {
+            "status": "Status",
+            "discount_percentage": "Discount Percentage",
+            "discount_amount": "Discount Amount",
+            "expiration_date": "Expiration Date",
+            "notes": "Notes"
+        }
+
+        response_message += f"<b>🔄 <u>Quote Update Request #{index}</u> 🔄</b><br>"
+
+        # General validations
+        # If quote name is not in the correct format
+        if quote_name is not None:
+            if not (isinstance(quote_name, str) and re.match(r"^Q-\d{5}$", quote_name)):
+                logging.warning(f"⚠️ Invalid quote name format: {quote_name}. Skipping update.")
+                response_message += f"⚠️ Invalid quote name format: {quote_name}."
+                continue
+
+        if field is None:
+            logging.warning(f"⚠️ Error: No field to update was detected in your request.")
+            response_message += f"⚠️ Error: No field to update was detected in your request. Please specify which attribute (e.g., status, discount, expiration date or notes) you want to modify.<br><br>"
+            continue
+
+        if field not in field_labels:
+            logging.warning(f"⚠️ Error: Field '{field}' is not a valid field to update was detected in your request.")
+            response_message += f"⚠️ Error: Field '{field}' is not a valid field to update was detected in your request. Please specify which attribute (e.g., status, discount, expiration date or notes) you want to modify.<br><br>"
+            continue
+
+        if value is None:
+            logging.warning(f"⚠️ Error: No value was detected in your request. Please specify the new value for the update.")
+            response_message += f"⚠️ Error: No value was detected in your request. Please specify the new value for the update.<br><br>"
+            continue
+
+        if field.startswith("discount") and Decimal(value) <= 0:
+            logging.warning("⚠️ Error: The value for discounts cannot be less than or equals 0. Please provide a valid number.")
+            response_message += f"⚠️ Error: The value for discounts cannot be less than or equals 0. Please provide a valid number.<br><br>"
+            continue
+
+        allowed_status = ["Draft", "Pending Approval", "Approved", "Rejected", "Closed"]
+
+        if field == "status" and value not in allowed_status:
+            logging.warning(f"⚠️ Error: '{value}' is not a valid status. Please use one of: Draft, Pending Approval, Approved, Rejected, or Closed.")
+            response_message += f"⚠️ Error: '{value}' is not a valid status. Please use one of: Draft, Pending Approval, Approved, Rejected, or Closed.<br><br>"
+            continue
+
+        formatted_date = None
+
+        if field == "expiration_date":
+            try:
+                parsed_date = datetime.strptime(value, "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                logging.warning(f"⚠️ Error: '{value}' is not a valid date. Use the format YYYY-MM-DD (e.g., 2025-07-30).")
+                response_message += f"⚠️ Error: '{value}' is not a valid date. Use the format YYYY-MM-DD (e.g., 2025-07-30).<br><br>"
+                continue
+            formatted_date = parsed_date.strftime("%m/%d/%Y")
+
+        # After general validations
+        # If user specifies the name of a quote, set that quote name to current quote
+        if quote_name is not None:
+            try:
+                current_quote = Quote.objects.get(name=quote_name)
+            except Quote.DoesNotExist:
+                logging.warning(f"⚠️ Quote with name '{quote_name}' not found. Skipping update.")
+                response_message += f"⚠️ Quote with name '{quote_name}' not found."
+                continue
+        # If not, set the current quote as session active quote
+        else:
+            current_quote = quote
+
+        # ✅ Format response message
+        response_message += f"🧾 Quote: {current_quote.name}<br>"
+        response_message += f"🏷️ Field: {field_labels.get(field, field.capitalize())}<br>"
+        response_message += f"✏️ Value: {formatted_date if field == 'expiration_date' else value}<br><br>"
+
+
+        update_payload = {
+            "quote_id": current_quote.id,
+            "field": field,
+            "value": value
+        }
+
+        logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Trying to update quote: {update_payload}")
+
+        #Convert list to valid JSON
+        item_json = json.dumps(update_payload)
+
+        # Try to update quote line
+        #logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Entra a la function save_quote_line_update.")
+        response = save_quote_update(item_json)
+
+        if response.get("success"):
+            response_message += f"{response.get("message")}<br><br>"
+            updated_quotes.append(update_payload)
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
+        else:
+            error_msg = response.get("message", "Unknown error.")
+            response_message += f"{error_msg}<br>"
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
+
+    return quote, response_message, updated_quotes
+
+
+def save_quote_update(request):
+    try:
+        update = json.loads(request)  # Extract JSON array
+
+        quote_id = update["quote_id"]
+        field = update["field"]
+        new_value = update["value"]
+
+        try:
+            quote = Quote.objects.get(id=quote_id)
+        except Quote.DoesNotExist:
+            return {
+            "message": f"Quote with ID {quote.id} was not found in the database.",
+            "success": False
+        }
+
+        
+        with transaction.atomic():
+            
+            original_quote = deepcopy(quote)
+
+            # ✅ Update based on the field dynamically
+            fields = ["status", "expiration_date", "notes"]
+
+            if field in fields:
+                setattr(quote, field, new_value)
+            else:
+                if field == "discount_percentage":
+                    quote.discount_type = "percentage"
+                    quote.discount_percentage = new_value
+                elif field == "discount_amount":
+                    quote.discount_type = "amount"
+                    quote.discount_amount = new_value
+
+
+            ##################### ✅ Checkrules
+
+            quote.subtotal = quote.get_subtotal_amount()
+            quote.update_discount_fields()
+            quote.update_net_amount()
+
+            # Validate validations rules
+            triggered_rules = check_for_rules_quote_level("quote", "validation", quote)
+
+            if triggered_rules:
+                validations_message = "".join(f"- {v}<br>" for v in triggered_rules)
+                response_message = f"🛑 Quote {quote.name} triggered one or more validation rules 🛑<br>{validations_message}"
+                print(f"\n\n🛑 Validation rule was triggered by quote {quote.name} 🛑. Skipping...\n\n")
+
+                raise ValueError(response_message)
+
+            # ✅ Update quote (subtotal, discounts fields and net amount)
+            quote.save()
+            update_opportunity_net_amount(quote.opportunity)
+            #########################################################################################################
+        
+            response_message = "✅ Quote updated successfully."
+
+            return {
+                "message": response_message,
+                "success": True
+            }
+    
+    except ValueError as ve:
+        return {
+            "message": str(ve),
+            "success": False
+        }
+
+    except Exception as e:
+        logging.warning(f"⚠️ Error updating quote: {str(e)}")
+        return {
+            "message": f"Error updating quote: {str(e)}",
             "success": False
         }
