@@ -2,6 +2,7 @@ from django.contrib import admin
 from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule
 
 admin.site.register(Quote)
+admin.site.register(Account)
 admin.site.register(QuoteLine)
 admin.site.register(Subscription)
 admin.site.register(Asset)
@@ -18,9 +19,9 @@ class LeadAdmin(admin.ModelAdmin):
 admin.site.register(Lead, LeadAdmin)
 
 
-class AccountAdmin(admin.ModelAdmin):
-    list_display = ('name', 'industry', 'website', 'owner', 'created_at')
-admin.site.register(Account, AccountAdmin)
+# class AccountAdmin(admin.ModelAdmin):
+#     list_display = ('name', 'industry', 'website', 'owner', 'created_at')
+# admin.site.register(Account, AccountAdmin)
 
 class OpportunityAdmin(admin.ModelAdmin):
     list_display = ('name', 'account', 'stage', 'amount', 'owner', 'expected_close_date')

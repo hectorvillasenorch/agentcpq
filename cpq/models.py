@@ -78,6 +78,12 @@ class Account(models.Model):
     accid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='accounts')
+     # Address fields
+    street = models.CharField(max_length=255, blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    zip_code = models.CharField(max_length=20, blank=True, null=True)
+    # country = models.CharField(max_length=100, blank=True, null=True)
     
 
     def save(self, *args, **kwargs):
