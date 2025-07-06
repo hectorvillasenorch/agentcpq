@@ -821,8 +821,20 @@ class CustomObject(models.Model):
 #dummy model for all custom objects
 class CustomRecord(models.Model):
     object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE)
-    record_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    # record_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    record_id = models.UUIDField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    def __str__(self):
+        label = f"{self.object_type.name} record"
+        try:
+            from .models import CustomFieldValue
+            values = CustomFieldValue.objects.filter(record=self).select_related("field")[:4]
+            value_parts = [
+                f"{v.field.label}: {v.value}" for v in values if v.field and v.value
+            ]
+            return f"{label} — {' | '.join(value_parts)}" if value_parts else label
+        except Exception:
+            return label
 
 
 class CustomField(models.Model):
@@ -846,20 +858,23 @@ class CustomField(models.Model):
 
     def __str__(self):
         return f"{self.crm}.{self.object_type}.{self.name}"
+    
+
 
 
 class CustomFieldValue(models.Model):
     field = models.ForeignKey(CustomField, on_delete=models.CASCADE, related_name="values")
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)  # Generic relation
-    object_id = models.PositiveIntegerField()
+    object_id = models.PositiveIntegerField(null=True, blank=True)
     content_object = GenericForeignKey("content_type", "object_id")
     value = models.TextField()
-    record = models.ForeignKey(CustomRecord, on_delete=models.CASCADE)
+    record = models.ForeignKey(CustomRecord, null=True, blank=True, on_delete=models.CASCADE)
 
     def __str__(self):
-        return f"{self.content_object} - {self.field.field_name}: {self.value}"
+        return f"{self.content_object} - {self.field.label}: {self.value}"
     
     
+
 class QuoteDocumentSettings(models.Model):
     DESIGN_CHOICES = [
         ('classic', 'Classic'),
