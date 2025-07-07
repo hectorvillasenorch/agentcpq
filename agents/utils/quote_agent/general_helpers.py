@@ -100,3 +100,24 @@ def get_backup_value_from_quote_line(json_payload, quote):
         value = getattr(quote_line, field)
 
     return float(value)
+
+def format_currency(value):
+    """Formats a Decimal value into currency format with commas and two decimal places."""
+    return f"{value:,.2f}"  # Example: 3,000.00 instead of 3000.0
+
+def wrap_text(text, font_name, font_size, max_width, pdf_canvas):
+    words = text.split()
+    lines = []
+    current_line = ""
+
+    for word in words:
+        test_line = f"{current_line} {word}".strip()
+        if pdf_canvas.stringWidth(test_line, font_name, font_size) <= max_width:
+            current_line = test_line
+        else:
+            lines.append(current_line)
+            current_line = word
+    if current_line:
+        lines.append(current_line)
+
+    return lines

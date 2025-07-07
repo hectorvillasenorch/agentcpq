@@ -422,6 +422,9 @@ class QuoteLine(models.Model):
         else:
             self.total_price = base_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+    def check_term_is_not_null_for_subscriptions(self):
+        if self.product.is_subscription and self.term is None:
+            self.term = 1
 
     def save(self, *args, **kwargs):
         # Auto-calculate price for bundles
@@ -438,6 +441,9 @@ class QuoteLine(models.Model):
             self.product_name = self.product.name
         if self.product and not self.sku:
             self.sku = self.product.sku
+
+        #Chech term for subscriptions:
+        self.check_term_is_not_null_for_subscriptions()
 
         #Update discount fields
         self.update_discount_fields()
@@ -532,7 +538,8 @@ class BusinessRule(models.Model):
         ("product", "Product"),
     ]
 
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, blank=True)
+    description = models.CharField(max_length=255)
     rule_type = models.CharField(max_length=20, choices=RULE_TYPES, default="validation")
     target_type = models.CharField(max_length=20, choices=TARGET_TYPES, default="quote_line")
     priority = models.IntegerField(default=0, help_text="Higher priority rules run first.")

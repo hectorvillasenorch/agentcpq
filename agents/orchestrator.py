@@ -25,9 +25,6 @@ openai.log = "warning"
 
 def handle_user_request(user_message, session_data):
     user = User.objects.get(username="admin")
-    #user_id = session_data.get("user_id")
-    #user = User.objects.get(id=user_id)
-    #user = request.user
     #print(session_data);
 
     if should_reset_session(user_message):
@@ -120,6 +117,9 @@ def orchestrate_request(user_message, session_data):
     - "ShowAccountDetails"
     - "GeneralQuery"
     - "CreateValidationRule"
+    - "ShowRules"
+    - "UpdateRule" (Use this when the user wants to update a rule)
+    - "DeleteRule" (Use this when the user wants to delete a rule)
     """
     try:
         response = client.chat.completions.create(
@@ -330,17 +330,14 @@ def get_action_map():
         # Quote-related actions handled by quote_agent
         "CreateQuote": quote_agent,
         "AddProduct": quote_agent,
-        "GenerateQuoteDocument": quote_agent,
-        "ApplyQuoteDiscount": quote_agent,
-        "ApplyQuoteLineDiscount": quote_agent,
-        "ProvideDates": quote_agent,
-        "ShowQuoteDetails": quote_agent,
         "UpdateQuoteLine": quote_agent,
         "UpdateQuote": quote_agent,
         "DeleteQuoteLine": quote_agent,
         "DeleteQuote": quote_agent,
-        "UpdateQuoteNotes": quote_agent,
+        "ShowQuoteDetails": quote_agent,
         "ShowQuoteNotes": quote_agent,
+        "GenerateQuoteDocument": quote_agent,
+        #"ProvideDates": quote_agent,
 
         # Only for triggered messages
         "UpdateQuoteLineFromUI": quote_agent,
@@ -362,6 +359,9 @@ def get_action_map():
 
         # Rules
         "CreateValidationRule": admin_agent,
+        "ShowRules": admin_agent,
+        "UpdateRule": admin_agent,
+        "DeleteRule": admin_agent
     }
 
 

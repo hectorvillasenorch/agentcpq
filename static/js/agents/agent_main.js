@@ -111,7 +111,7 @@ function enhanceStructuredAgentMessagesHistoryChat() {
   document.querySelectorAll(".agent-json").forEach(div => {
     const raw = div.dataset.raw;
 
-    const keys = ['quote_details:', 'validation_rules_details:'];
+    const keys = ['quote_details:', 'validation_rules_details:', 'rules:'];
 
     let jsonPart = null;
     for (const key of keys) {
@@ -130,10 +130,20 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     }
 
     try {
+      //console.log("JsonPart: ", jsonPart);
       const data = JSON.parse(unescapeUnicode(jsonPart));
+      //console.log("Data: ", data);
 
       if (data.rules || (Array.isArray(data) && data[0]?.rule_type)) {
         const html = renderValidationRuleDetails(data.rules || data);
+        div.innerHTML = html;
+        return;
+      }
+
+      if (data.rules || (Array.isArray(data) && data[0]?.rules_request_description)) {
+        //const html = renderValidationRuleDetails(data.rules || data);
+        //console.log("Render Rules | Show rules")
+        const html = renderRules(data);
         div.innerHTML = html;
         return;
       }
@@ -259,10 +269,17 @@ async function sendMessage() {
         } 
         // ✅ Handle Validation Rules Response
         else if (data.response && data.response.validation_rules_details) {
-          //console.log("Validation Rules Details");
-          console.log(data.response);
-          console.log(data.response.validation_rules_details)
+          console.log("Validation Rules Details");
+          //console.log(data.response);
+          //console.log(data.response.validation_rules_details)
           responseMessage += renderValidationRuleDetails(data.response.validation_rules_details);
+        }
+        // ✅ Show Rules
+        else if (data.response && data.response.rules && data.response.read_only) {
+          console.log("Show Rules");
+          //console.log(data.response);
+          //console.log(data.response.validation_rules_details)
+          responseMessage += renderRules(data.response.rules);
         }
         // ✅ Default Response (Handle General Messages)
         else if (data.response && data.response.message) {
@@ -445,11 +462,11 @@ function renderQuoteDetails(quote) {
               </div>
               <h4>Line Items</h4>`;
 
-  var is_subscription_cont = 0;
+  var has_printed_subscription_header = false;
 
   quote.line_items.forEach(item => {
     if(item.is_subscription == true){
-      if(is_subscription_cont == 0){
+      if(has_printed_subscription_header == false){
         html += `
               <table class="quote-table" data-quote-id="${quote.quote_name}">
                   <thead>
@@ -465,15 +482,15 @@ function renderQuoteDetails(quote) {
                       </tr>
                   </thead>
                   <tbody>`;
-            is_subscription_cont = 1;
+            has_printed_subscription_header = true;
       }
       
 
       html += `
           <tr>
               <td>
-                <div class="centered-td">${item.product}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.65em">${item.sku}</div>
+                <div class="centered-td">${item.sku}</div>
+                <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
               </td>
               <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"></td>
               <td>
@@ -1303,21 +1320,25 @@ function showTemporaryQuoteDetails(quote) {
   return html;
 }
 
-function renderValidationRuleDetails(rules) {
+function renderValidationRuleDetails(rules, read_only=false) {
   let html = "";
   //console.log(rules);
 
   rules.forEach((rule) => {
     if (rule.success){
+      var head_text = `✅ New validation rule created successfully | ${rule.name} ✅`;
       html += 
         `<div class="rule-container">
           <div class="rule-header">
-              <h5>✅ New validation rule created successfully ✅</h3>
+              <h5>${head_text}</h3>
+              <span style="margin-left: 10px; font-weight: bold; color: ${rule.active ? 'green' : 'red'};">
+                ${rule.active ? '🟢 Active' : '🔴 Inactive'}
+              </span>
           </div>
           <div class="rule-details">
               <div class="name">
-                <label for="rule-name"><strong>Name:</strong></label>
-                <input id="rule-name" type="text" value="${rule.name}" readonly/>
+                <label for="rule-name"><strong>Description:</strong></label>
+                <input id="rule-name" type="text" value="${rule.description}" readonly/>
               </div>
 
               <div class="rule_type">
@@ -1369,6 +1390,75 @@ function renderValidationRuleDetails(rules) {
         </div>`;
     }
     
+  });
+
+  return html;
+}
+
+function renderRules(group_rules) {
+  let html = "";
+  //console.log(rules);
+
+  group_rules.forEach((group) => {
+    html += 
+        `<span>
+            ${group.rules_request_description}
+          </span>`;
+    
+    if (group.rules.length === 0){
+      html += 
+        `<br>
+        <span>
+            ⚠️ No rules found matching these specifications ⚠️
+          </span>`;
+    }
+    
+    group.rules.forEach((rule) => {
+
+      var head_text = `📖 Rule | ${rule.name}`;
+      html += 
+        `<div class="rule-container">
+          <div class="rule-header">
+              <h5>${head_text}</h3>
+              <span style="margin-left: 10px; font-weight: bold; color: ${rule.active ? 'green' : 'red'};">
+                ${rule.active ? '🟢 Active' : '🔴 Inactive'}
+              </span>
+          </div>
+          <div class="rule-details">
+              <div class="name">
+                <label for="rule-name"><strong>Description:</strong></label>
+                <input id="rule-name" type="text" value="${rule.description}" readonly/>
+              </div>
+
+              <div class="rule_type">
+                <label for="rule-type"><strong>Rule Type:</strong></label>
+                <input id="rule-type" type="text" value="${rule.rule_type}" readonly/>
+              </div>
+
+              <div class="target_type">
+                <label for="target-type"><strong>Target Type:</strong></label>
+                <input id="target-type" type="text" value="${rule.target_type}" readonly/>
+              </div>
+
+              <div class="priority">
+                <label for="priority"><strong>Priority:</strong></label>
+                <input id="priority" type="number" value="${rule.priority}" readonly/>
+              </div>
+
+              <div class="error_message">
+                <label for="error-message"><strong>Error Message:</strong></label>
+                <textarea id="error-message" class="materialize-textarea" rows="3" readonly>${rule.error_message}</textarea>
+              </div>
+          </div>
+
+          <div class="conditions-details">
+            <p><h6>Conditions:</h6></p>
+            <ul class="conditions-list">
+              ${renderConditions(rule.conditions)}
+            </ul>
+          </div>
+        </div>`;
+    });
   });
 
   return html;
