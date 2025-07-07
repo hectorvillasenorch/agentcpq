@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord
+from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage
 from .forms import  get_dynamic_form
 from django.contrib.contenttypes.models import ContentType
 
@@ -117,4 +117,10 @@ class QuoteLineAdmin(DynamicCustomFieldAdmin):
     def get_fieldsets(self, request, obj=None):
         return [(None, {'fields': list(self.form().fields.keys())})]
 admin.site.register(QuoteLine, QuoteLineAdmin)
+
+@admin.register(ActionUsage)
+class ActionUsageAdmin(admin.ModelAdmin):
+    list_display = ("timestamp", "action", "user", "related_object_type", "related_object_id")
+    list_filter = ("action", "related_object_type")
+    search_fields = ("action", "related_object_id", "user__username")
 

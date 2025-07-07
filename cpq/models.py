@@ -11,6 +11,7 @@ from django.contrib.postgres.fields import JSONField
 from django.db.models import JSONField
 from dateutil.relativedelta import relativedelta
 from django.contrib.auth.models import User
+from django.conf import settings
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -948,3 +949,32 @@ class QuoteDocumentSettings(models.Model):
 
     def __str__(self):
         return f"PDF Settings"
+
+class ActionUsage(models.Model):
+    action = models.CharField(max_length=100)  # e.g., "CreateQuote", "UpdateQuoteLine"
+    timestamp = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="action_usages"
+    )
+    related_object_type = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Type of object this action is related to (e.g., Quote, Product, Approval)"
+    )
+    related_object_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="ID of the related object (e.g., Q-0001, PROD-001)"
+    )
+
+    class Meta:
+        ordering = ["-timestamp"]
+
+    def __str__(self):
+        return f"{self.action} by {self.user or 'System'} on {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
