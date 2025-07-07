@@ -1,5 +1,5 @@
 from django import forms
-from .models import CustomField, BusinessRule, RuleCondition, CustomObject
+from .models import CustomField, BusinessRule, RuleCondition, CustomObject, QuoteLine, CustomFieldValue, ContentType
 from django.forms import modelformset_factory
 from django.apps import apps
 
@@ -43,6 +43,7 @@ PRODUCT_FIELDS = [
     ("price", "Price"),
     ("term", "Term")
 ]
+
 
 def get_model_choices():
     choices = []
@@ -166,3 +167,136 @@ def generate_dynamic_form(custom_object):
                 )
 
     return DynamicCustomForm
+
+
+def get_dynamic_form(model_class, crm, object_type):
+    class DynamicCustomForm(forms.ModelForm):
+        class Meta:
+            model = model_class
+            fields = '__all__'
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            instance = kwargs.get("instance")
+            self._custom_fields = CustomField.objects.filter(crm=crm, object_type=object_type)
+
+            for field in self._custom_fields:
+                field_name = field.name
+                value = self.get_custom_field_value(instance, field) if instance else ""
+
+                self.fields[field_name] = forms.CharField(
+                    label=field.label or field.name,
+                    required=field.required,
+                    initial=value
+                )
+
+        def get_custom_field_value(self, instance, custom_field):
+            if not instance:
+                return ""
+            try:
+                ct = ContentType.objects.get_for_model(instance)
+                return CustomFieldValue.objects.get(
+                    content_type=ct,
+                    object_id=instance.id,
+                    field=custom_field
+                ).value
+            except CustomFieldValue.DoesNotExist:
+                return ""
+
+        def save(self, commit=True):
+            instance = super().save(commit)
+
+            # If this is a new object (add form), save again to get the ID
+            if not instance.id:
+                instance.save()
+
+            content_type = ContentType.objects.get_for_model(instance)
+
+            for field in self._custom_fields:
+                value = self.cleaned_data.get(field.name)
+                if value is not None:
+                    CustomFieldValue.objects.update_or_create(
+                        content_type=content_type,
+                        object_id=instance.id,
+                        field=field,
+                        defaults={"value": value}
+                    )
+
+            return instance
+
+    return DynamicCustomForm
+
+
+class DynamicQuoteLineForm(forms.ModelForm):
+    class Meta:
+        model = QuoteLine
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        instance = kwargs.get("instance")
+        print("🧠 DynamicQuoteLineForm is being used.")
+
+        # Only load custom fields for AgentCPQ > QuoteLine
+        custom_fields = CustomField.objects.filter(
+            crm="AgentCPQ",
+            object_type="QuoteLine"
+        )
+        custom_fields = CustomField.objects.filter(crm='AgentCPQ', object_type='QuoteLine')
+        print("📦 Loaded custom fields:", list(custom_fields.values_list("name", flat=True)))
+
+        for field in custom_fields:
+            field_name = field.name  # Now 'uom__c', not 'custom__uom__c'
+
+            try:
+                if field.data_type == "dropdown":
+                    self.fields[field_name] = forms.ChoiceField(
+                        label=field.label or field.name,
+                        choices=[("Each", "Each"), ("Hour", "Hour"), ("Pack", "Pack")],  # example
+                        required=field.required,
+                        initial=self.get_custom_field_value(instance, field) if instance else ''
+                    )
+                else:
+                    self.fields[field_name] = forms.CharField(
+                        label=field.label or field.name,
+                        required=field.required,
+                        initial=self.get_custom_field_value(instance, field) if instance else ''
+                    )
+
+                print(f"✅ Added dynamic field: {field_name}")
+            except Exception as e:
+                print(f"❌ Error adding {field_name}: {e}")
+                
+
+    def get_custom_field_value(self, instance, custom_field):
+        try:
+            content_type = ContentType.objects.get_for_model(instance)
+            cfv = CustomFieldValue.objects.get(
+                content_type=content_type,
+                object_id=instance.id,
+                field=custom_field
+            )
+            return cfv.value
+        except CustomFieldValue.DoesNotExist:
+            return ""
+
+    def save(self, commit=True):
+        instance = super().save(commit)
+        content_type = ContentType.objects.get_for_model(instance.__class__)
+
+        custom_fields = CustomField.objects.filter(crm="AgentCPQ", object_type="QuoteLine")
+
+        for field in custom_fields:
+            value = self.cleaned_data.get(field.name)
+            if value is not None:
+                cfv, _ = CustomFieldValue.objects.get_or_create(
+                    content_type=content_type,
+                    object_id=instance.id,
+                    field=field,
+                    defaults={"value": value}
+                )
+                # Update value if it already exists
+                cfv.value = value
+                cfv.save()
+
+        return instance

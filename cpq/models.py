@@ -11,6 +11,7 @@ from django.contrib.postgres.fields import JSONField
 from django.db.models import JSONField
 from dateutil.relativedelta import relativedelta
 from django.contrib.auth.models import User
+from django.conf import settings
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -78,6 +79,12 @@ class Account(models.Model):
     accid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='accounts')
+     # Address fields
+    street = models.CharField(max_length=255, blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    zip_code = models.CharField(max_length=20, blank=True, null=True)
+    # country = models.CharField(max_length=100, blank=True, null=True)
     
 
     def save(self, *args, **kwargs):
@@ -822,8 +829,20 @@ class CustomObject(models.Model):
 #dummy model for all custom objects
 class CustomRecord(models.Model):
     object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE)
-    record_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    # record_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    record_id = models.UUIDField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    def __str__(self):
+        label = f"{self.object_type.name} record"
+        try:
+            from .models import CustomFieldValue
+            values = CustomFieldValue.objects.filter(record=self).select_related("field")[:4]
+            value_parts = [
+                f"{v.field.label}: {v.value}" for v in values if v.field and v.value
+            ]
+            return f"{label} — {' | '.join(value_parts)}" if value_parts else label
+        except Exception:
+            return label
 
 
 class CustomField(models.Model):
@@ -847,20 +866,23 @@ class CustomField(models.Model):
 
     def __str__(self):
         return f"{self.crm}.{self.object_type}.{self.name}"
+    
+
 
 
 class CustomFieldValue(models.Model):
     field = models.ForeignKey(CustomField, on_delete=models.CASCADE, related_name="values")
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)  # Generic relation
-    object_id = models.PositiveIntegerField()
+    object_id = models.PositiveIntegerField(null=True, blank=True)
     content_object = GenericForeignKey("content_type", "object_id")
     value = models.TextField()
-    record = models.ForeignKey(CustomRecord, on_delete=models.CASCADE)
+    record = models.ForeignKey(CustomRecord, null=True, blank=True, on_delete=models.CASCADE)
 
     def __str__(self):
-        return f"{self.content_object} - {self.field.field_name}: {self.value}"
+        return f"{self.content_object} - {self.field.label}: {self.value}"
     
     
+
 class QuoteDocumentSettings(models.Model):
     DESIGN_CHOICES = [
         ('classic', 'Classic'),
@@ -934,3 +956,32 @@ class QuoteDocumentSettings(models.Model):
 
     def __str__(self):
         return f"PDF Settings"
+
+class ActionUsage(models.Model):
+    action = models.CharField(max_length=100)  # e.g., "CreateQuote", "UpdateQuoteLine"
+    timestamp = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="action_usages"
+    )
+    related_object_type = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Type of object this action is related to (e.g., Quote, Product, Approval)"
+    )
+    related_object_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="ID of the related object (e.g., Q-0001, PROD-001)"
+    )
+
+    class Meta:
+        ordering = ["-timestamp"]
+
+    def __str__(self):
+        return f"{self.action} by {self.user or 'System'} on {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
