@@ -75,6 +75,7 @@ def chat_with_gpt(request):
     opportunity_id = request.GET.get("opportunity_id", "No Opportunity ID provided")
     logger.info(f"🔹 DEBUG: Incoming request URL - {request.build_absolute_uri()}")
     logger.info(f"🔹 DEBUG: Extracted Opportunity ID - {opportunity_id}")
+    logger.info(f"USER LOGGED IN - {request.user.username}")
 
     # --- 3. Parse JSON body ---
     try:
@@ -115,7 +116,7 @@ def chat_with_gpt(request):
 
     # --- 6. No pending action -> Orchestrate new user request ---
     try:
-        ai_response = handle_user_request(user_message, session_data)
+        ai_response = handle_user_request(request.user.username, user_message, session_data)
     except Exception as e:
         logger.error(f"❌ Error in Orchestrator logic: {e}", exc_info=True)
         return JsonResponse({"error": "Internal server error."}, status=500)

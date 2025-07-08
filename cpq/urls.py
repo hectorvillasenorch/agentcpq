@@ -1,8 +1,7 @@
 from django.http import HttpResponse
 from django.urls import path
 from .views import quotes_view, settings_view, product_list, product_detail,field_mapping_view,save_field_mappings,set_primary_quote, custom_fields_view,create_custom_field, get_company_information, create_custom_object, get_document_template, business_rules_view
-from .views import create_business_rule, create_custom_record, search_accounts
-create_custom_field
+from .views import create_business_rule, create_custom_record, search_accounts,create_custom_field, usage_dashboard
 from hubspot.views import get_hubspot_schema
 from django.conf import settings
 from django.conf.urls.static import static
@@ -32,7 +31,8 @@ urlpatterns = [
     path('admin/manage-document', get_document_template, name='get_document_template'),
     path('admin/manage-rules', business_rules_view, name='business_rules'),
     path("admin/manage-rules/create/", create_business_rule, name="create_business_rule"),
-    path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote')
+    path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote'),
+    path('admin/usage/', usage_dashboard, name='usage_dashboard'),
 ]
 
 

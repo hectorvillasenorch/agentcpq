@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import json
 import os
 import logging
+from .utils.quote_agent.db_helpers import log_action_usage
 
 
 load_dotenv()
@@ -11,7 +12,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-3.5-turbo"
 
 
-def product_agent(action, user_message, session_data):
+def product_agent(user, action, user_message, session_data):
     """Handles all quote-related actions dynamically."""
 
     # ✅ Action-to-function mapping
@@ -23,13 +24,13 @@ def product_agent(action, user_message, session_data):
 
     # ✅ Dynamically call the function if action exists in map
     if action in action_map:
-        return action_map[action](user_message, session_data)
+        return action_map[action](user, user_message, session_data)
 
     return {"message": "🤖 Sorry, I couldn’t understand your request. From Product Agent"}
 
 
 
-def create_product(user_message, session_data):
+def create_product(user, user_message, session_data):
     """Extracts product details, validates fields, and creates the product record."""
     try:
         product_details = extract_product_details(user_message, session_data)
@@ -49,7 +50,7 @@ def create_product(user_message, session_data):
             return {"message": f"⚠️ Product `{product_details['sku']}` already exists in the database."}
 
         # ✅ Create product record
-        success_message = create_product_record(product_details)
+        success_message = create_product_record(user, product_details)
 
         return {"message": success_message}  # ✅ Ensure correct response format
 
@@ -94,7 +95,7 @@ def extract_sku_from_message(user_message):
         print(f"⚠️ Error extracting SKU: {str(e)}")
         return "MISSING_SKU"
 
-def update_product(user_message, session_data):
+def update_product(user, user_message, session_data):
     """Modify product details based on user input before confirmation."""
     try:
         print("🔹 DEBUG: USER MESSAGE:", user_message)  # Debugging step
@@ -134,7 +135,7 @@ def update_product(user_message, session_data):
         json_preview = json.dumps(updated_product, indent=2)
 
         # ✅ Execute the update
-        product_update_executed = update_product_record(updated_product)
+        product_update_executed = update_product_record(user,updated_product)
 
         return {
             "message": f"🔹 Updated product details:\n```json\n{json_preview}\n```\n\n {product_update_executed}",
@@ -202,7 +203,7 @@ def extract_product_details(user_request, session_data):
     except Exception as e:
         return {"error": f"⚠️ Error extracting product details: {str(e)}"}
   
-def create_product_record(product_details):
+def create_product_record(user,product_details):
     """Create a new product record in the database and return a success message."""
     try:
         # ✅ Create the product
@@ -218,12 +219,15 @@ def create_product_record(product_details):
         print("✅ DEBUG: Created Product:", product)  # Debugging step
 
         # ✅ Instead of returning JsonResponse, return a success message string
+        log_action_usage("CreateProductRecord", user, "Product", product.sku)
+
         return f"✅ Product `{product.sku}` successfully created."
+       
 
     except Exception as e:
         return f"⚠️ Error creating product: {str(e)}"
 
-def update_product_record(updated_product_details):
+def update_product_record(user,updated_product_details):
     """Update the product in the database and return a success message."""
     try:
         sku = updated_product_details["sku"]
@@ -241,6 +245,7 @@ def update_product_record(updated_product_details):
 
         # ✅ Save the updated product
         product.save()
+        log_action_usage("UpdateProductRecord", user, "Product", product.name)
         print(f"✅ DEBUG: Product `{sku}` successfully updated.")  # ✅ Debugging step
 
         return f"✅ Product `{sku}` successfully updated."

@@ -21,7 +21,6 @@ from .utils.admin_agent.general_helpers import get_rules_details
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-#OPENAI_MODEL = "gpt-3.5-turbo"
 OPENAI_MODEL = "gpt-4"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
