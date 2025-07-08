@@ -23,7 +23,6 @@ from django.db.models import Q
 from django.forms.models import model_to_dict
 from django.db.models import ForeignKey
 from datetime import datetime
-
 # LLM Utils
 from .utils.quote_agent.llm_helpers import extract_quote_details, extract_product_details, extract_quote_line_updates, extract_quote_line_items_to_delete, extract_quote_level_discount
 from .utils.quote_agent.llm_helpers import extract_quote_updates
@@ -32,7 +31,7 @@ from .utils.quote_agent.llm_helpers import extract_quote_updates
 from .utils.quote_agent.record_helpers import save_quote_products, handle_quote_line_update_request, save_quote_line_update, handle_quote_update_request, save_quote_update
 
 # DB Helpers (products exists)
-from .utils.quote_agent.db_helpers import get_or_create_account_and_opportunity, update_opportunity_net_amount
+from .utils.quote_agent.db_helpers import get_or_create_account_and_opportunity, update_opportunity_net_amount, log_action_usage
 
 # General Helpers
 from .utils.quote_agent.general_helpers import get_active_quote, set_active_quote_to_session_data, get_quote_details, get_backup_value_from_quote_line
@@ -46,7 +45,7 @@ OPENAI_MODEL = "gpt-3.5-turbo"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-def quote_agent(action, user_message, session_data):
+def quote_agent(user, action, user_message, session_data):
 
     action_map = {
         "CreateQuote": create_quote, #HELPERS READY
@@ -68,13 +67,13 @@ def quote_agent(action, user_message, session_data):
 
     # ✅ Dynamically call the function if action exists in map
     if action in action_map:
-        return action_map[action](user_message, session_data)
+        return action_map[action](user, user_message, session_data)
 
     return {"message": "🤖 Sorry, I couldn’t understand your request."}
 
 #< ----------------- CREATE A QUOTE -------------------- >
 
-def create_quote(user_message, session_data):
+def create_quote(user,user_message, session_data):
     """Handles quote creation while preserving context."""
 
     # ✅ Extract the quote details with LLM
@@ -101,6 +100,7 @@ def create_quote(user_message, session_data):
     # ✅ Assign formatted name after creation using quote.id
     quote.name = f"Q-{quote.id:05d}"
     quote.save()
+    log_action_usage("CreateQuote", user, "Quote", quote.name)
 
     # ✅ Extract products
     extracted_products = extracted_details.get("products", [])
@@ -162,7 +162,7 @@ def create_quote(user_message, session_data):
 
 #< ----------------- ADD PRODUCT TO QUOTE -------------------- >
 
-def add_product_to_quote(user_message, session_data):
+def add_product_to_quote(user, user_message, session_data):
     """Handles adding multiple products to an existing quote."""
     logging.info("🔄 Adding product(s) to existing quote...")
 
@@ -187,7 +187,7 @@ def add_product_to_quote(user_message, session_data):
 
     # ✅ Save quote products
     quote, response_message, added_products = save_quote_products(extracted_products, quote, response_message, allow_updates=True)
-    
+    log_action_usage("AddProduct", user, "Quote", quote.name)
     # ✅ Update quote (subtotal, discounts fields and net amount)
     quote.save()
 
@@ -222,7 +222,7 @@ def add_product_to_quote(user_message, session_data):
     
 #< ----------------- UPDATE QUOTE LINE -------------------- >
 
-def update_quote_line(user_message, session_data):
+def update_quote_line(user, user_message, session_data):
     """Updates only the modified fields in quote lines."""
 
     logging.info("🔧 Updating quote line...\n\n")
@@ -248,7 +248,7 @@ def update_quote_line(user_message, session_data):
 
     # ✅ Handle quote line update request
     quote, response_message, updated_products = handle_quote_line_update_request(extracted_updates, quote, response_message)
-
+    log_action_usage("UpdateQuoteLine", user, "Quote", quote.name)
     # ✅ Update quote (subtotal, discounts fields and net amount)
     quote.save()
 
@@ -265,11 +265,12 @@ def update_quote_line(user_message, session_data):
     return {
         "message": response_message,
         "temporaryMessage": True
+        
         }
 
 #< ----------------- UPDATE QUOTE -------------------- >
 
-def update_quote(user_message, session_data):
+def update_quote(user, user_message, session_data):
     """Updates only the modified fields in quote lines."""
 
     logging.info("🔧 Updating quote...\n\n")
@@ -294,6 +295,7 @@ def update_quote(user_message, session_data):
 
     # ✅ Handle quote line update request
     quote, response_message, updated_quote = handle_quote_update_request(extracted_updates, quote, response_message)
+    log_action_usage("UpdateQuote", user, "Quote", quote.name)
 
     # ✅ Safe active quote to session data
     set_active_quote_to_session_data(session_data, quote)
@@ -312,7 +314,7 @@ def update_quote(user_message, session_data):
 
 
 #< ----------------- APPLY DISCOUNT TO QUOTE -------------------- >
-def apply_discount_to_quote(user_message, session_data):
+def apply_discount_to_quote(user, user_message, session_data):
     """Applies a discount to quote based on the user message."""
     logging.info("🔧 Applying discount to quote level...\n\n")
 
@@ -407,6 +409,7 @@ def apply_discount_to_quote(user_message, session_data):
 
         # ✅ Update quote (subtotal, discounts fields and net amount)
         quote.save()
+        log_action_usage("ApplyQuoteDiscount", user, "Quote", quote.name)
 
         # ✅ Update related opportunity
         if quote.opportunity:
@@ -472,6 +475,7 @@ def update_quote_net_amount(quote):
     except Exception as e:
         print(f"⚠️ Error updating net amount for Quote {quote.id}: {str(e)}")
 
+
 def update_opportunity_net_amount(opportunity):
     """Recalculate and update the opportunity's total amount from all related quotes."""
     try:
@@ -503,7 +507,7 @@ def get_editable_quoteline_fields():
     return editable_fields
 
 
-def show_quote_details(user_message, session_data):
+def show_quote_details(user,user_message, session_data):
     """Fetches and formats quote details, including quote lines, based on user input or session data."""
     try:
         logging.info("🔄 Showing quote details...")
@@ -530,7 +534,7 @@ def show_quote_details(user_message, session_data):
     except Quote.DoesNotExist:
         return {"message": "⚠️ Error: Quote not found. Please check the quote name."}
     
-def delete_quote_line(user_message, session_data):
+def delete_quote_line(user, user_message, session_data):
     """Deleting quote line item from quote"""
     response_message = ""
     try:
@@ -574,6 +578,7 @@ def delete_quote_line(user_message, session_data):
             try:
                 quote_line = QuoteLine.objects.get(quote=quote, product=product)
                 quote_line.delete()
+                log_action_usage("DeleteQuoteLine", user, "Quote", quote.name)
 
                 response_message += f"✅ The quote line with product SKU '{product.sku}' was successfully deleted from quote '{quote.name}'.<br>"
                 continue
@@ -605,8 +610,7 @@ def format_currency(value):
     """Formats a Decimal value into currency format with commas and two decimal places."""
     return f"{value:,.2f}"  # Example: 3,000.00 instead of 3000.0
 
-def generate_quote_pdf(user_message, session_data):
-    """Generates a sleek PDF document for the specified quote."""
+def generate_quote_pdf(user,user_message, session_data):
     # Looking for active quote
     quote = get_active_quote(user_message, session_data)
 
@@ -1293,6 +1297,8 @@ def generate_quote_pdf(user_message, session_data):
 
         buffer.close()
 
+        log_action_usage("GenerateQuoteDocument", user, "Quote", quote.name)
+
         # ✅ Save record in QuoteDocument
         QuoteDocument.objects.create(
             quote=quote,
@@ -1336,7 +1342,7 @@ def wrap_text(text, font_name, font_size, max_width, pdf_canvas):
     return lines
     
         
-def delete_quote(user_message, session_data):
+def delete_quote(user, user_message, session_data):
     """Deleting Quote"""
     response_message = ""
     try:
@@ -1354,8 +1360,8 @@ def delete_quote(user_message, session_data):
         if quote.status == "Draft":
             if session_data["pending_action"] == "delete_quote_confirmed":
                 quote_name = quote.name  # Save quote name before to delete
+                log_action_usage("DeleteQuote", user, "Quote", quote_name)
                 quote.delete()
-
                 return {
                     "message": f"✅ Quote '{quote_name}' has been successfully deleted."
                 }
@@ -1380,7 +1386,7 @@ def delete_quote(user_message, session_data):
             "message": f"❌ An unexpected error occurred: {str(e)}"
         }
     
-def update_quote_notes(user_message, session_data):
+def update_quote_notes(user, user_message, session_data):
     """Updating Quote Notes"""
     try:
         #Looking for active quote
@@ -1419,6 +1425,7 @@ def update_quote_notes(user_message, session_data):
                 try:
                     quote.notes = notes
                     quote.save()
+                    log_action_usage("UpdateQuoteNotes", user, "Quote", quote.name)
                 except Exception as e:
                     return {
                         "message": "⚠️ An error occurred while trying to save the notes to the quote. Please try again."
@@ -1588,7 +1595,7 @@ def update_quote_line_from_ui(user_message, session_data):
         logging.warning(f"⚠️ Error updating quote line: {str(e)}")
         return {"message": f"⚠️ Error updating quote line: {str(e)}"}
         
-def update_quote_from_ui(user_message, session_data):
+def update_quote_from_ui(user,user_message, session_data):
     """Handles updates to quote lines triggered from the UI."""
     logging.info("📝 Updating quote from front-end UI...")
     

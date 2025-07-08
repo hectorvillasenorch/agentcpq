@@ -1,5 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue
+from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt 
 from django.apps import apps
@@ -12,16 +12,20 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.contenttypes.models import ContentType
 from django.contrib import messages
 import logging
-
+from django.db.models import Count
+from django.utils.timezone import now
+from django.db.models.functions import TruncMonth
+from datetime import datetime
+from django.utils.timezone import make_aware
+from .forms import CustomFieldForm, BusinessRuleForm, get_rule_condition_formset
+from .forms import QUOTE_FIELDS, QUOTE_LINE_FIELDS, PRODUCT_FIELDS
+from django.utils.safestring import mark_safe
 
 
 def root_redirect(request):
     if request.user.is_authenticated:
         return redirect('dashboard')  # or any logged-in home view
     return redirect('login')
-from .forms import CustomFieldForm, BusinessRuleForm, get_rule_condition_formset
-from .forms import QUOTE_FIELDS, QUOTE_LINE_FIELDS, PRODUCT_FIELDS
-from django.utils.safestring import mark_safe
 
 def product_list(request):
     """Fetch all products and display them in a table."""
@@ -488,3 +492,70 @@ def search_accounts(request):
         results = [{"id": acc.id, "name": acc.name} for acc in matches]
 
     return JsonResponse({"results": results})
+
+
+def usage_dashboard(request):
+    current_tenant = Tenant.objects.first()
+    usage_logs = ActionUsage.objects.all()
+ 
+
+    # ---- Total Actions by Month ----
+    actions_by_month = (
+        usage_logs
+        .annotate(month=TruncMonth("timestamp"))
+        .values("month")
+        .annotate(total=Count("id"))
+        .order_by("month")
+    )
+
+    # ---- Top 5 Actions (Overall) ----
+    top_actions = (
+        usage_logs
+        .values("action")
+        .annotate(count=Count("id"))
+        .order_by("-count")[:5]
+    )
+
+    # ---- Total Actions by User ----
+    actions_by_user = (
+        usage_logs
+        .values("user__username")
+        .annotate(count=Count("id"))
+        .order_by("-count")
+    )
+    print(actions_by_user)
+    # ---- Overflow Metric (Current Month Only) ----
+    start_of_month = make_aware(datetime(now().year, now().month, 1))
+    monthly_count = usage_logs.filter(timestamp__gte=start_of_month).count()
+    action_limit = current_tenant.actions_limit or 1000
+    overflow = monthly_count - action_limit
+
+
+    actions_by_month_serialized = [
+    {
+        "month": entry["month"].strftime("%Y-%m"),  # or "%b %Y" for readable labels
+        "total": entry["total"]
+    }
+    for entry in actions_by_month
+    ]
+
+    actions_by_user_serialized = [
+        {
+            "user": entry.get("user__username") or "Unknown",
+            "total": entry["count"]
+        }
+        for entry in actions_by_user
+    ]
+
+
+    context = {
+        "tenant": current_tenant,
+        "actions_by_month_json": mark_safe(json.dumps(list(actions_by_month_serialized))),
+        "actions_by_user_json": mark_safe(json.dumps(list(actions_by_user_serialized))),
+        "top_actions": top_actions,
+        "monthly_count": monthly_count,
+        "limit": action_limit,
+        "overflow": max(0, overflow),
+    }
+
+    return render(request, "usage.html", context)

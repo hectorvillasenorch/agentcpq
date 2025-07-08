@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
 from django.contrib.auth.models import User
 from uuid import uuid4
-
+logger = logging.getLogger(__name__)
 
 # TDOO STOP Call to GPT 
 # Pything to understand request, and catch before hitting LLM
@@ -23,12 +23,9 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 logging.basicConfig(level=logging.DEBUG)
 openai.log = "warning"
 
-def handle_user_request(user_message, session_data):
-    user = User.objects.get(username="admin")
-    #user_id = session_data.get("user_id")
-    #user = User.objects.get(id=user_id)
-    #user = request.user
-    #print(session_data);
+def handle_user_request(user,user_message, session_data):
+    user = User.objects.get(username=user)
+    logger.info(f"USER LOGGED IN - {user}")
 
     if should_reset_session(user_message):
         session_data.clear()
@@ -46,37 +43,37 @@ def handle_user_request(user_message, session_data):
     # 🧠 Shortcut manual: "show quote details for <quote_id>"
     if user_message.lower().startswith("show quote details for "):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user_message, session_data, decision="ShowQuoteDetails")
+        response = orchestrate_request_trigger(user,user_message, session_data, decision="ShowQuoteDetails")
 
     # 🧠 Shortcut manual: "Update Quote Line:"
     elif user_message.startswith("Update Quote Line:"):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user_message, session_data, decision="UpdateQuoteLineFromUI")
+        response = orchestrate_request_trigger(user, user_message, session_data, decision="UpdateQuoteLineFromUI")
 
     elif user_message.startswith("Update Quote:"):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user_message, session_data, decision="UpdateQuoteFromUI")
+        response = orchestrate_request_trigger(user, user_message, session_data, decision="UpdateQuoteFromUI")
 
     # 🧠 Shortcut manual: "generate pdf"
     elif any(message.startswith(trigger) for trigger in trigger_phrases):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(message, session_data, decision="GenerateQuoteDocument")
+        response = orchestrate_request_trigger(user, message, session_data, decision="GenerateQuoteDocument")
 
     else:
         logging.info("USE GPT\n")
-        response = orchestrate_request(user_message, session_data)
+        response = orchestrate_request(user, user_message, session_data)
 
     response["chat_sessions"] = list(ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at"))
     return response
 
-def orchestrate_request(user_message, session_data):
+def orchestrate_request(user, user_message, session_data):
     
     session_context = {k: str(v) for k, v in session_data.items() if isinstance(v, (str, int, float, list, dict))}
     
     session_id = session_data.get("session_id")
 
     # ⚠️ Use a real user later; hardcode for now
-    user = User.objects.get(username="admin")
+    user = User.objects.get(username=user)
 
     if not session_id:
         chat_session = ChatSession.objects.create(
@@ -139,7 +136,7 @@ def orchestrate_request(user_message, session_data):
     action_map = get_action_map()
 
     if decision in action_map:
-        result = action_map[decision](decision, user_message, session_data)
+        result = action_map[decision](user,decision, user_message, session_data)
 
         if result is None:
             logging.error(f"❌ Agent function for '{decision}' returned None.")
@@ -169,11 +166,11 @@ def orchestrate_request(user_message, session_data):
     return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
 
 
-def orchestrate_request_trigger(user_message, session_data, decision):
+def orchestrate_request_trigger(user, user_message, session_data, decision):
     logging.info(f"\n🟢 AI Decision Trigger: {decision} \n")
     session_id = session_data.get("session_id")
     # ⚠️ Use a real user later; hardcode for now
-    user = User.objects.get(username="admin")
+    user = User.objects.get(username=user)
 
     if not session_id:
         chat_session = ChatSession.objects.create(
@@ -222,7 +219,7 @@ def orchestrate_request_trigger(user_message, session_data, decision):
     action_map = get_action_map()
 
     if decision in action_map:
-        result = action_map[decision](decision, user_message, session_data)
+        result = action_map[decision](user,decision, user_message, session_data)
         
         agent_message = result.get("message", "")
 
@@ -249,7 +246,7 @@ def orchestrate_request_trigger(user_message, session_data, decision):
 
 
 
-def handle_general_query(decision, user_message, session_data):
+def handle_general_query(user,decision, user_message, session_data):
     """Handles general inquiries about CPQ, pricing rules, approvals, etc."""
     try:
         # ✅ Initialize OpenAI client

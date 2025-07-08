@@ -15,7 +15,6 @@ from .utils.admin_agent.llm_helpers import extract_validation_rules
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-#OPENAI_MODEL = "gpt-3.5-turbo"
 OPENAI_MODEL = "gpt-4"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
