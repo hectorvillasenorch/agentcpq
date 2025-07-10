@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage
+from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact
 from .forms import  get_dynamic_form
 from django.contrib.contenttypes.models import ContentType
 
@@ -104,11 +104,13 @@ class OptionAdmin(DynamicCustomFieldAdmin):
 admin.site.register(Option, OptionAdmin)
     
 
-@admin.register(BusinessRule)
-class BusinessRuleAdmin(admin.ModelAdmin):
-    list_display = ('name', 'rule_type', 'active')  # replace with actual fields
-    search_fields = ('name',)
-    list_filter = ('rule_type', 'active')
+### Uncomment to Enable This Feature ####
+
+# @admin.register(BusinessRule)
+# class BusinessRuleAdmin(admin.ModelAdmin):
+#     list_display = ('name', 'rule_type', 'active')  # replace with actual fields
+#     search_fields = ('name',)
+#     list_filter = ('rule_type', 'active')
 
 
 class QuoteLineAdmin(DynamicCustomFieldAdmin):
@@ -118,9 +120,33 @@ class QuoteLineAdmin(DynamicCustomFieldAdmin):
         return [(None, {'fields': list(self.form().fields.keys())})]
 admin.site.register(QuoteLine, QuoteLineAdmin)
 
-@admin.register(ActionUsage)
-class ActionUsageAdmin(admin.ModelAdmin):
-    list_display = ("timestamp", "action", "user", "related_object_type", "related_object_id")
-    list_filter = ("action", "related_object_type")
-    search_fields = ("action", "related_object_id", "user__username")
+# @admin.register(ActionUsage)
+# class ActionUsageAdmin(admin.ModelAdmin):
+#     list_display = ("timestamp", "action", "user", "related_object_type", "related_object_id")
+#     list_filter = ("action", "related_object_type")
+#     search_fields = ("action", "related_object_id", "user__username")
 
+class ContactAdmin(DynamicCustomFieldAdmin):
+    # build a dynamic ModelForm for AgentCPQ → Contact
+    form = get_dynamic_form(Contact, crm="AgentCPQ", object_type="Contact")
+
+    # expose every form field in a single fieldset
+    def get_fieldsets(self, request, obj=None):
+        return [(None, {'fields': list(self.form().fields.keys())})]
+
+    # tweak these to match your actual model columns
+    list_display = (
+        'first_name',
+        'last_name',
+        'email',
+        'phone',
+        'account',        # drop if not on the model
+        'created_at',     # idem
+    )
+
+    # optional niceties
+    search_fields = ('first_name', 'last_name', 'email')
+    list_filter   = ('created_at',)
+
+# register with the admin site
+admin.site.register(Contact, ContactAdmin)
