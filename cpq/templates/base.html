@@ -27,7 +27,7 @@
     <!-- Top Section -->
 
     <div style="flex-grow: 1;">
-          <a href="{% url 'dashboard' %}?view=setup">
+          <a href="{% url 'dashboard' %}?view=agents">
             <i class="material-icons">arrow_back</i> Back To AgentCPQ
         </a>
         <div class="brand">
@@ -47,6 +47,9 @@
             <p class="session-list-title">System</p>
             <a href="{% url 'cpq:custom_fields' %}">
                 <i class="material-icons">view_list</i> Manage Metadata
+            </a>
+            <a href="{% url 'admin:auth_user_changelist' %}">
+                <i class="material-icons">group</i> Users
             </a>
             
             <p class="session-list-title">Rules</p>

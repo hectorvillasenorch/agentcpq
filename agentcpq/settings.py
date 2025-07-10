@@ -15,8 +15,8 @@ import os
 import logging
 from dotenv import load_dotenv
 
-NGROK_FULL_URL = "https://d514-2607-fb90-5791-279-e5a6-6e8c-4007-1b66.ngrok-free.app"
-NGROK_URI = "d514-2607-fb90-5791-279-e5a6-6e8c-4007-1b66.ngrok-free.app"
+NGROK_FULL_URL = "https://0d0e3e34c51c.ngrok-free.app"
+NGROK_URI = "0d0e3e34c51c.ngrok-free.app"
 
 load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
