@@ -274,7 +274,7 @@ async function sendMessage() {
         }
 
         // ✅ Append the final response message to the chat
-        appendMessage("agent", `<div class="senderagent">Agent: </div> <div class="message">${responseMessage}</div>`);
+        appendMessage("agent", `<div class="senderagent"><img width="95px" src="/media/img/agentcpq-5.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
 
         // ✅ Handle Temporary Quote Details After Update Quote Line, Add Product And Delete Quote Line Item
         if (data.response && data.response.update_details && data.response.temporaryMessage){
@@ -368,6 +368,9 @@ function appendMessage(className, message) {
 }
 
 function renderQuoteDetails(quote) {
+  if (window.innerWidth < 1200) {
+    return renderQuoteDetailsMobile(quote);   // ← new helper (see below)
+  }
   const createdAt = new Date(quote.created_at);
   const expirationDate = new Date(quote.expiration_date);
 
@@ -471,18 +474,20 @@ function renderQuoteDetails(quote) {
 
       html += `
           <tr>
-              <td>
+              <td data-label="SKU / Product">
                 <div class="centered-td">${item.product}</div>
                 <div class="centered-td" style="color: gray; font-size: 0.65em">${item.sku}</div>
               </td>
-              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"></td>
-              <td>
+              <td data-label="Quantity">
+                <input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)">
+              </td>
+              <td data-label="Unit Price">
                 ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
                     style: 'currency',
                     currency: 'USD'
                 })}
               </td>
-              <td class="centered-td">
+              <td data-label="Discount (%)" class="centered-td">
                 <input name="discountPercentage"
                 type="number"
                 min="0"
@@ -498,13 +503,13 @@ function renderQuoteDetails(quote) {
                 data-field="discount_percentage"
                 onchange="updateQuoteLine(this)">
               </td>
-              <td class="centered-td">
+              <td data-label="Discount (USD)" class="centered-td">
                <input name="discountAmount" type="number" min="0" max="100" value="${item.discount_amount.replace('$', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)">
               </td>
-              <td class="centered-td">
+              <td data-label="Subscription" class="centered-td">
                 ${item.is_subscription ? '✅' : '❌'}
               </td>
-              <td class="centered-td">
+              <td data-label="Term" class="centered-td">
                 <input
                   name="term"
                   type="number"
@@ -517,7 +522,7 @@ function renderQuoteDetails(quote) {
                   onchange="updateQuoteLine(this)"
                   style="text-align: center;">
               </td>
-              <td class="total-price" data-sku="${item.sku}">
+              <td data-label="Total Price" class="total-price" data-sku="${item.sku}">
                 ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
                     style: 'currency',
                     currency: 'USD'
@@ -527,7 +532,7 @@ function renderQuoteDetails(quote) {
     }
   });
 
-  html += `</tbody></table><br>`
+  html += `</tbody></table><br>`;
   let none_suscription_bool = 0;
 
   quote.line_items.forEach(item => {
@@ -596,7 +601,58 @@ function renderQuoteDetails(quote) {
   return html;
 }
 
+/* ────────────────────────────── 2. MOBILE-ONLY HELPER ──────────────────────────────── */
+/* Place this anywhere after renderQuoteDetails (same file or imported) */
+function renderQuoteDetailsMobile(quote) {
+  const format = (d) =>
+    `${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCDate()).padStart(
+      2,
+      "0"
+    )}/${d.getUTCFullYear()}`;
+
+  const createdAt = new Date(quote.created_at);
+  const expiration = new Date(quote.expiration_date);
+
+  let html = `
+    <div class="quote-mobile" style="font-family: Arial, sans-serif; line-height: 1.4">
+      <h3 style="margin:0 0 8px 0; color:#ff7f00; font-size:1.2rem; font-weight:600; background-color:#f5f5f5; padding:0.5rem">${quote.quote_name}</h3>
+      <p>🏢 <b>Account:</b> ${quote.account} 🔸 🗒️ <b>Status:</b> ${quote.status}</p>
+      <p>📆 <b>Expires:</b> ${format(expiration)}</p>
+      <p>🚀 <b>Opportunity:</b> ${quote.opportunity}</p>
+      <p>🏷️ <b>Discount:</b> ${quote.discount_percentage}% (-$${Number(
+        quote.discount_amount
+      ).toLocaleString("en-US", { minimumFractionDigits: 2 })})</p>
+
+      <h4 style="margin:16px 0 8px 0; font-size:1.3rem; color: #ff7f00; padding:0.5rem; border-bottom: 1px solid border-bottom: 1px solid #e7e7e7;) ">Line Items</h4>
+      <ul style="padding-left:18px; margin:0">
+        ${quote.line_items
+          .map(
+            (item) => `
+          <li>
+            ${item.quantity} × ${item.product} @ ${parseFloat(
+              item.unit_price.replace("$", "")
+            ).toLocaleString("en-US", { style: "currency", currency: "USD" })}
+            ${item.is_subscription ? " /sub" : ""}
+          </li>`
+          )
+          .join("")}
+      </ul>
+
+      <p style="margin-top:12px"><b>Subtotal:</b> ${parseFloat(
+        quote.subtotal.replace("$", "")
+      ).toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
+      <p>💰 <b>Net Amount:</b> ${parseFloat(
+        quote.net_amount.replace("$", "")
+      ).toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
+    </div>`;
+
+  return html;
+}
+
 function renderReadOnlyQuoteDetails(quote) {
+  if (window.innerWidth < 1200) {
+    return renderQuoteDetailsMobile(quote);   // ← new helper (see below)
+  }
   const createdAt = new Date(quote.created_at);
   const expirationDate = new Date(quote.expiration_date);
 
@@ -1125,6 +1181,9 @@ function renderTemporaryMessage(className, htmlContent, iterations) {
 * ✅ Show Temporary Quote Details Message
 */
 function showTemporaryQuoteDetails(quote) {
+   if (window.innerWidth < 1200) {
+    return renderQuoteDetailsMobile(quote);   // ← new helper (see below)
+  }
   const createdAt = new Date(quote.created_at);
   const creationDate = new Date(quote.expiration_date);
 

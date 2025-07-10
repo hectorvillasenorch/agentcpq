@@ -35,28 +35,30 @@
 
                 {% if msg.sender == 'agent' and msg.hiddenMessage == False %}
                   <div class="chat-text agent">
-                    <div class="senderagent">Agent: </div>
+                    <div class="senderagent">
+                      <img width="95px" src="/media/img/agentcpq-5.png" alt="AgentCPQ Logo">
+                    </div>
                     <div class="message">{{ msg.content|safe }}</div>
                   </div>
                 {% endif %}
 
                 {% if msg.sender == 'agent' and 'download_url' in msg.content %}
                 <div class="chat-text agent">
-                    <div class="senderagent">Agent: </div>
+                    <img width="95px" src="/media/img/agentcpq-5.png" alt="AgentCPQ Logo">
                     <div class="agent-pdf" data-raw="{{ msg.content|escapejs }}"></div>
                   </div>
                 {% endif %}
 
                 {% if msg.sender == 'agent' and 'quote_details' in msg.content %}
                 <div class="chat-text agent">
-                    <div class="senderagent">Agent: </div>
+                    <img width="95px" src="/media/img/agentcpq-5.png" alt="AgentCPQ Logo">
                     <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
                   </div>
                 {% endif %}
 
                 {% if msg.sender == 'agent' and 'validation_rules_details' in msg.content %}
                 <div class="chat-text agent">
-                    <div class="senderagent">Agent: </div>
+                    <img width="95px" src="/media/img/agentcpq-5.png" alt="AgentCPQ Logo">
                     <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
                   </div>
                 {% endif %}
