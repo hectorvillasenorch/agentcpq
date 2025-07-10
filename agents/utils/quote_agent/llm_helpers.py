@@ -139,7 +139,7 @@ def extract_quote_line_updates(user_message):
     Return a JSON array with objects containing:
     - "sku" (string, required)
     - "name" (string, required)
-    - "field" (one of: "{allowed_fields_str}")
+    - "field" (one of: "{allowed_fields_str}", if user specifies any other field, set field as that field)
     - "value" (number, requited)
 
     **Example Input & Output:**

@@ -226,8 +226,15 @@ class Product(models.Model):
     family = models.CharField(max_length=50)
     prdid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
-    description = models.TextField(blank=True) 
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_products')
+    description = models.TextField(blank=True)
+
+    def get_custom_fields(self):
+        return CustomField.objects.filter(object_type="Product")
+
+    def get_custom_fields_values(self):
+        content_type = ContentType.objects.get_for_model(Product)
+        return CustomFieldValue.objects.filter(content_type=content_type, object_id=self.id)
 
     def save(self, *args, **kwargs):
         if not self.prdid:
@@ -364,7 +371,7 @@ class QuoteLine(models.Model):
     parent_line = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)  # for nesting
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     special_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage")
+    discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage", null=True, blank=True)
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -449,6 +456,9 @@ class QuoteLine(models.Model):
         else:
             self.total_price = base_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+    def check_term_is_not_null_for_subscriptions(self):
+        if self.product.is_subscription and self.term is None:
+            self.term = 1
 
     def save(self, *args, **kwargs):
         # Auto-calculate price for bundles
@@ -465,6 +475,9 @@ class QuoteLine(models.Model):
             self.product_name = self.product.name
         if self.product and not self.sku:
             self.sku = self.product.sku
+
+        #Chech term for subscriptions:
+        self.check_term_is_not_null_for_subscriptions()
 
         #Update discount fields
         self.update_discount_fields()
@@ -559,7 +572,8 @@ class BusinessRule(models.Model):
         ("product", "Product"),
     ]
 
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, blank=True)
+    description = models.CharField(max_length=255)
     rule_type = models.CharField(max_length=20, choices=RULE_TYPES, default="validation")
     target_type = models.CharField(max_length=20, choices=TARGET_TYPES, default="quote_line")
     priority = models.IntegerField(default=0, help_text="Higher priority rules run first.")
@@ -881,8 +895,6 @@ class CustomField(models.Model):
         return f"{self.crm}.{self.object_type}.{self.name}"
     
 
-
-
 class CustomFieldValue(models.Model):
     field = models.ForeignKey(CustomField, on_delete=models.CASCADE, related_name="values")
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)  # Generic relation
@@ -969,6 +981,32 @@ class QuoteDocumentSettings(models.Model):
 
     def __str__(self):
         return f"PDF Settings"
+    
+class QuoteUIRender(models.Model):
+
+    def default_rendered_fields():
+        return ['sku_product', 'quantity', 'unit_price', 'discount_percentage', 'discount_amount', 'subscription', 'term', 'total_price']
+
+    def default_omitted_fields():
+        return []
+
+    # Quote information
+    show_quote_account = models.BooleanField(default=True)
+    show_quote_opportunity = models.BooleanField(default=True)
+    show_quote_created_at = models.BooleanField(default=True)
+    show_quote_expires_at = models.BooleanField(default=True)
+    show_quote_discount = models.BooleanField(default=True)
+
+    # Line items information
+    rendered_fields = JSONField(default=default_rendered_fields, blank=True)
+    omitted_fields = JSONField(default=default_omitted_fields, blank=True)
+
+    # Subtotal and net amount information
+    show_quote_subtotal = models.BooleanField(default=True)
+    show_quote_net_amount = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"QuoteUI Settings"
 
 class ActionUsage(models.Model):
     action = models.CharField(max_length=100)  # e.g., "CreateQuote", "UpdateQuoteLine"

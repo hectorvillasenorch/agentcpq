@@ -1,8 +1,18 @@
 import logging
 import json
 from django.db.models import Q
+from cpq.models import Product
 from django.forms.models import model_to_dict
 from cpq.models import BusinessRule, QuoteLine, Quote
+
+# Validation Helpers
+from .validation_helpers import validate_rule_update_request
+
+# General Helpers
+from .general_helpers import generate_conditions_format
+
+# Record Helpers
+from .record_helpers import update_rule_record
 
 def check_for_rules_quote_line_level(target_type, rule_type, quote, product, quote_line):
     #   Accept one rule type (str) or many types (list)
@@ -32,13 +42,13 @@ def check_for_rules_quote_line_level(target_type, rule_type, quote, product, quo
             logging.warning(f"Error: {e}")
             continue # Skip the rules with conditions bad formed
 
-        print(f"\n📜 Evaluating rule: {rule.name}")
+        print(f"\n📜 Evaluating rule: {rule.name} ('{rule.description}')")
         if rule.rule_type == "validation":
             if check_validation_conditions(conditions, quote, product, quote_line):
-                logging.warning(f"🚫 Validation Rule: {rule.error_message}")
-                triggered_rules.append(rule.error_message)
+                logging.warning(f"🚫 Validation Rule: ({rule.name}) {rule.error_message}")
+                triggered_rules.append(f"(Rule: {rule.name}) {rule.error_message}")
             else:
-                logging.info(f"✅ No problems with rule {rule.name}\n\n")
+                logging.info(f"✅ No problems with rule {rule.name} ('{rule.description}')\n\n")
 
     return triggered_rules
 
@@ -156,8 +166,8 @@ def check_for_rules_quote_level(target_type, rule_type, quote):
         print(f"\n📜 Evaluating rule: {rule.name}")
         if rule.rule_type == "validation":
             if check_validation_conditions_for_quote_level(conditions, quote):
-                logging.warning(f"🚫 Validation Rule: {rule.error_message}")
-                triggered_rules.append(rule.error_message)
+                logging.warning(f"🚫 Validation Rule: ({rule.name}) {rule.error_message}")
+                triggered_rules.append(f"(Rule: {rule.name}) {rule.error_message}")
             else:
                 logging.info(f"✅ No problems with rule {rule.name}\n\n")
 
@@ -270,8 +280,169 @@ def build_temp_quote_line(quote, product, quantity, discount_type, discount_amou
         temp_line.sku = product.sku
 
     # Aplica los cálculos de descuento, subtotal y total
+    temp_line.check_term_is_not_null_for_subscriptions()
     temp_line.update_discount_fields()
     temp_line.update_subtotal()
     temp_line.update_total_price()
 
     return temp_line
+
+def handle_extracted_rules_details(extracted_rules_details):
+    try:
+
+        resulting_rules = []
+
+        for rule in extracted_rules_details:
+            name = rule.get("name")
+            rule_type = rule.get("rule_type")
+            target_type = rule.get("target_type")
+            priority = rule.get("priority")
+            active = rule.get("active")
+            request_description = rule.get("request_description")
+
+            # Make sure priority is int and active is bool
+            if isinstance(priority, str) and priority.isdigit():
+                priority = int(priority)
+
+            if isinstance(active, str):
+                active = active.lower() == "true"
+
+            # Return a warning message to the user to avoid displaying all rules.
+            if all(value is None for value in [name, rule_type, target_type, priority, active, request_description]):
+                logging.warning("⚠️ For security reasons, we cannot show all the rules. If you want to render all rules, please type: show all rules.")
+                return {
+                    "message": "⚠️ For security reasons, we cannot show all the rules. If you want to render all rules, please type: show all rules."
+                }
+            
+            # If name exists, found just by name
+            if name:
+                if isinstance(name, list):
+                    query = BusinessRule.objects.filter(name__in=name)
+                else:
+                    query = BusinessRule.objects.filter(name=name)
+            else:
+                # Build dynamic filter
+                query = BusinessRule.objects.all()
+
+                # If no rule type is specified, search in all rule types
+                if not rule_type:
+                    query = query.filter(rule_type__in=["validation", "inclusion", "exclusion"])
+                elif isinstance(rule_type, list):
+                    query = query.filter(rule_type__in=rule_type)
+                else:
+                    query = query.filter(rule_type=rule_type)
+
+                # If no target type is specified, search in all target types
+                if not target_type:
+                    query = query.filter(target_type__in=["quote", "quote_line", "multiple"])
+                elif isinstance(target_type, list):
+                    query = query.filter(target_type__in=target_type)
+                else:
+                    query = query.filter(target_type=target_type)
+
+                # Priority
+                if priority is not None:
+                    # Puede ser lista o entero
+                    if isinstance(priority, list):
+                        query = query.filter(priority__in=priority)
+                    else:
+                        query = query.filter(priority=priority)
+
+                # Active
+                if active is not None:
+                    query = query.filter(active=active)
+            
+            resulting_rules.append({
+                "rules_request_description": request_description,
+                "rules": list(query)
+            })
+
+
+        return list(resulting_rules)
+    except Exception as e:
+        logging.warning(f"❌ Error in handle_extracted_rules_details: {e}")
+        return e
+    
+def handle_rules_updates(extracted_updates, response_message):
+    logging.info("🔧 Handling rule updates...")
+
+    updated_rules = []
+
+    for index, update in enumerate(extracted_updates, start=1):
+        name = update.get("name", None)
+        field = update.get("field", None)
+        value = update.get("value", None)
+
+        response_message += f"<b>🔄 <u>Rule Update Request #{index}</u> 🔄</b><br>"
+        # ✅ Format response message
+        field_labels = {
+            "rule_type": "Rule Type",
+            "target_type": "Target Type",
+            "prioriy": "Priority",
+            "error_message": "Error Message",
+            "active": "Active",
+            "description": "Description",
+            "conditions": "Conditions"
+        }
+
+        response_message += f"🧾 Rule: {name}<br>"
+        response_message += f"🏷️ Field: {field_labels.get(field, field.capitalize())}<br>"
+        response_message += f"✏️ Value: {value if field != "conditions" else generate_conditions_format(value)}<br><br>"
+
+        # Validate request informatio
+        is_valid, feedback, rule = validate_rule_update_request(name, field, value)
+
+        if not is_valid:
+            response_message += feedback
+            logging.warning(response_message)
+            continue
+
+        update_payload = {
+            "rule": rule,
+            "field": field,
+            "value": value
+        }
+
+        logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Trying to update rule: {update_payload}")
+
+        # Try to update rule
+
+        response = update_rule_record(update_payload)
+
+        if response.get("success"):
+            response_message += f"{response.get("message")}<br><br>"
+            updated_rules.append(update_payload)
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
+        else:
+            error_msg = response.get("message", "Unknown error.")
+            response_message += f"{error_msg}<br>"
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
+
+    return response_message, updated_rules
+
+def handle_rules_deletes(extracted_deletes, response_message):
+    logging.info("🔧 Handling rule deletions...")
+
+    deleted_rules = []
+
+    for index, update in enumerate(extracted_deletes, start=1):
+        name = update.get("name", None)
+
+        response_message += f"<b>🔄 <u>Rule Delete Request #{index}</u> 🔄</b><br>"
+        # ✅ Format response message
+
+        response_message += f"🧾 Rule: {name}<br><br>"
+
+        try:
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Trying to delete rule: {name}")
+            rule = BusinessRule.objects.get(name=name)
+            rule.delete()
+            deleted_rules.append(name)
+            response_message += f"✅ The rule with name '{name}' was successfully deleted.<br><br>"
+            continue
+        except BusinessRule.DoesNotExist:
+            logging.warning(f"⚠️ Error: The rule with the name {name} does not exist.")
+            response_message += f"⚠️ Error: The rule with the name <strong>{name}</strong> does not exist.<br><br>"
+            continue
+
+    return response_message, deleted_rules

@@ -84,7 +84,8 @@ input[type="number"] {
   .quote-table td {
     padding: 12px;
     font-size: 14px;
-    border-bottom: 1px solid #e0e0e0;  
+    border-bottom: 1px solid #e0e0e0;
+    text-align: center;
   }
 
   .quote-table input[type="number"],

@@ -6,7 +6,7 @@ import logging
 import re
 import locale
 from dotenv import load_dotenv
-from cpq.models import Quote, Account, Opportunity, QuoteLine, Product, QuoteDocument, Tenant, QuoteDocumentSettings, BusinessRule
+from cpq.models import Quote, Account, Opportunity, QuoteLine, Product, QuoteDocument, Tenant, QuoteDocumentSettings, BusinessRule, CustomField, CustomFieldValue
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
@@ -34,8 +34,8 @@ from .utils.quote_agent.record_helpers import save_quote_products, handle_quote_
 from .utils.quote_agent.db_helpers import get_or_create_account_and_opportunity, update_opportunity_net_amount, log_action_usage
 
 # General Helpers
-from .utils.quote_agent.general_helpers import get_active_quote, set_active_quote_to_session_data, get_quote_details, get_backup_value_from_quote_line
-
+from .utils.quote_agent.general_helpers import get_active_quote, set_active_quote_to_session_data, get_quote_details, get_backup_value_from_quote_line, format_currency, wrap_text
+from .utils.quote_agent.general_helpers import get_document_pdf
 
 # ✅ Load environment variables
 load_dotenv()
@@ -52,12 +52,9 @@ def quote_agent(user, action, user_message, session_data):
         "AddProduct": add_product_to_quote, #HELPERS READY
         "UpdateQuoteLine": update_quote_line, #HELPERS READY
         "UpdateQuote": update_quote,          #HELPERS READY
-        "ApplyQuoteLineDiscount": update_quote_line, #HELPERS READY
-        "ApplyQuoteDiscount": apply_discount_to_quote,
         "DeleteQuoteLine": delete_quote_line,
         "DeleteQuote": delete_quote,
         "ShowQuoteDetails": show_quote_details,
-        "UpdateQuoteNotes": update_quote_notes,
         "ShowQuoteNotes": show_quote_notes,
         "GenerateQuoteDocument": generate_quote_pdf,
         "UpdateQuoteLineFromUI": update_quote_line_from_ui,
@@ -311,228 +308,6 @@ def update_quote(user, user_message, session_data):
         "message": response_message,
         "temporaryMessage": True
         }
-
-
-#< ----------------- APPLY DISCOUNT TO QUOTE -------------------- >
-def apply_discount_to_quote(user, user_message, session_data):
-    """Applies a discount to quote based on the user message."""
-    logging.info("🔧 Applying discount to quote level...\n\n")
-
-    # Looking for active quote
-    quote = get_active_quote(user_message, session_data)
-
-    # ⚠️ Verify if function return an error
-    if isinstance(quote, dict) and "message" in quote:
-        return quote
-    
-    # ✅ Save quote in session data
-    set_active_quote_to_session_data(session_data, quote)
-
-    # ✅ Check if quote has quote line items
-    quote_lines = quote.quote_lines.all()
-
-    if not quote_lines.exists():
-        return {
-            "message": "⚠️ Error: The selected quote has no line items. Please add products to the quote before applying a discount."
-        }
-
-    response_message = ""
-        
-    # ✅ Extract multiple discount details
-    extracted_discounts = extract_quote_level_discount(user_message)
-    if not extracted_discounts or not isinstance(extracted_discounts, list):
-        return {"message": "⚠️ Error: Could not extract discount details. Please specify the discount."}
-
-    added_discounts = []
-
-    for index, discount_data in enumerate(extracted_discounts, start=1):
-        discount_value = discount_data.get("discount")
-        discount_type = discount_data.get("discount_type", 0)
-
-        #If LLM did not find a discount
-        if discount_value == "None":
-            return {
-                "message": "⚠️ Error: No discount was detected in your request. Please specify the discount to apply."
-            }
-        
-        #If LLM did not find a discount type
-        if discount_type == "None":
-            return {
-                "message": "⚠️ Error: No discount type was detected in your request. Please specify the type of discount you'd like to apply (e.g., percentage or dollars)."
-            }
-        
-        #Convert from string to numeric for validations
-        discount_numeric_value = Decimal(discount_value)
-        
-        if discount_type == "percentage" and not (0 < discount_numeric_value <= 100):
-            return {
-                "message": "⚠️ Error: Percentage discounts must be between 0 and 100."
-            }
-
-        if discount_type == "amount" and discount_numeric_value <= 0:
-            return {
-                "message": "⚠️ Error: Discount amount must be greater than 0."
-            }
-        
-        if discount_type not in ["percentage", "amount"]:
-            return {
-                "message": "⚠️ Error: Invalid discount type. Please use 'percentage' or 'amount'."
-            }
-    
-        quote_total = quote_lines.aggregate(total=Sum('total_price'))['total'] or 0
-
-        if quote_total == 0:
-            return {
-                "message": "⚠️ Error: Cannot apply amount-based discount. The quote total is zero."
-            }
-
-        if discount_type == "amount":
-            #SSave both values
-            discount_amount = Decimal(discount_value)
-            discount_percentage = (discount_amount / Decimal(quote_total)) * 100
-            discount_percentage = discount_percentage.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            added_discounts.append(f"Discount #{index}: ${discount_value} applied to Quote {quote.name}")
-        
-        else:
-            #Discount_type = "percentage"
-            discount_percentage = Decimal(discount_value)
-            discount_amount = (discount_percentage / Decimal(100)) * Decimal(quote_total)
-            print(f"\n\n Discount before quantize: {discount_amount}\n\n")
-            discount_amount = discount_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            print(f"\n\n Discount after quantize: {discount_amount}\n\n")
-            added_discounts.append(f"Discount #{index}: {discount_value}% applied to Quote {quote.name}")
-
-        # ✅ Apply the discount to the quote
-        quote.discount_type = discount_type
-        quote.discount_percentage = discount_percentage
-        quote.discount_amount = discount_amount
-
-        # ✅ Update quote (subtotal, discounts fields and net amount)
-        quote.save()
-        log_action_usage("ApplyQuoteDiscount", user, "Quote", quote.name)
-
-        # ✅ Update related opportunity
-        if quote.opportunity:
-            update_opportunity_net_amount(quote.opportunity)
-
-
-    if not added_discounts:
-        response_message += "⚠️ Error: Something went wrong while trying to apply the discount."
-        return {
-            "message": response_message
-        }
-    
-    quote.refresh_from_db()
-    
-    response_message = ""
-
-    for discount in added_discounts:
-        response_message += f"✅ {discount}.<br>"
-    
-    response_message += f"<br><br>💰 Net amount updated to ${quote.net_amount:,.2f}."
-
-    # ✅ Check if the quote requires approval after adding the product
-    approval_suggestion = get_approval_status("", "", quote.id, "")
-
-    response = get_quote_details(quote)
-    
-    # If an approval suggestion exists, append it to the message
-    if "message" in approval_suggestion:
-        response_message += f"\n\n{approval_suggestion['message']}"
-    
-    return {
-        "message": response_message,
-        "update_details": response,
-        "temporaryMessage": True,
-        "iterations": index
-    }
-
-
-def update_quote_net_amount(quote):
-    """Recalculate and update the quote's net amount based on all quote lines."""
-    try:
-        # ✅ Fetch total from all related QuoteLines
-        quote_total = quote.get_subtotal_amount()
-
-        if quote.discount_type == "percentage":
-            discount = quote.discount_percentage / Decimal(100)
-            quote.net_amount = quote_total * (1 - discount)
-        elif quote.discount_type == "amount":
-            quote.net_amount = quote_total - quote.discount_amount
-        else:
-            quote.net_amount = quote_total # Fallback without discount
-
-        # ✅ Ensure we round to 2 decimal places
-        quote.net_amount = max(quote.net_amount, Decimal(0)) #Avoid negative values
-
-        # ✅ Update quote (subtotal, discounts fields and net amount)
-        quote.save()
-
-        # ✅ Ensure the value is saved correctly
-        Quote.objects.filter(id=quote.id).update(net_amount=quote.net_amount)
-
-        print(f"✅ Updated Quote {quote.id} Net Amount: {quote.net_amount}")  # Debugging log
-    except Exception as e:
-        print(f"⚠️ Error updating net amount for Quote {quote.id}: {str(e)}")
-
-
-def update_opportunity_net_amount(opportunity):
-    """Recalculate and update the opportunity's total amount from all related quotes."""
-    try:
-        # ✅ Add all the net_amounts of the quotes associated with the opportunity
-        total_amount = opportunity.quotes.aggregate(
-            total=Sum('net_amount')
-        )['total']
-
-        # ✅ Ensure we round to 2 decimal places
-        opportunity.amount = Decimal(total_amount or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-        # ✅ Guardar la oportunidad actualizada
-        opportunity.save()
-
-        print(f"✅ Updated Opportunity {opportunity.id} Amount: {opportunity.amount}")
-    except Exception as e:
-        print(f"⚠️ Error updating amount for Opportunity {opportunity.id}: {str(e)}")
-    
-
-def get_editable_quoteline_fields():
-    editable_fields = []
-    for field in QuoteLine._meta.fields:
-        if (
-            not isinstance(field, ForeignKey)  # No foreign keys
-            and field.editable  # Only editable fields
-            and field.name not in ["id", "total_price"]  # Not id or total_price
-        ):
-            editable_fields.append(field.name)
-    return editable_fields
-
-
-def show_quote_details(user,user_message, session_data):
-    """Fetches and formats quote details, including quote lines, based on user input or session data."""
-    try:
-        logging.info("🔄 Showing quote details...")
-
-        # Looking for active quote
-        quote = get_active_quote(user_message, session_data)
-
-        # ⚠️ Verify if function return an error
-        if isinstance(quote, dict) and "message" in quote:
-            return quote
-
-        # ✅ Fetch related quote lines
-        quote_lines = QuoteLine.objects.filter(quote=quote)
-
-        # ✅ Format the response
-        quote_details = get_quote_details(quote)
-
-        print(f"\n\nExpiration Date: {quote_details["expiration_date"]}")
-
-        set_active_quote_to_session_data(session_data, quote)
-
-        return {"message": "Here are the quote details:", "quote_details": quote_details, "hiddenMessage": "True"}
-    
-    except Quote.DoesNotExist:
-        return {"message": "⚠️ Error: Quote not found. Please check the quote name."}
     
 def delete_quote_line(user, user_message, session_data):
     """Deleting quote line item from quote"""
@@ -572,7 +347,7 @@ def delete_quote_line(user, user_message, session_data):
             sku = product.sku
             name = product.name
 
-            print(f"\n\nQuote details: {sku} | {name}\n\n")
+            #print(f"\n\nQuote details: {sku} | {name}\n\n")
             
             # Check is quote line exists in active quote
             try:
@@ -606,742 +381,8 @@ def delete_quote_line(user, user_message, session_data):
         "iterations": index
     }
 
-def format_currency(value):
-    """Formats a Decimal value into currency format with commas and two decimal places."""
-    return f"{value:,.2f}"  # Example: 3,000.00 instead of 3000.0
+#< ----------------- DELETE QUOTE -------------------- >
 
-def generate_quote_pdf(user,user_message, session_data):
-    # Looking for active quote
-    quote = get_active_quote(user_message, session_data)
-
-    # ⚠️ Verify if function return an error
-    if isinstance(quote, dict) and "message" in quote:
-        return quote
-    
-    try:
-        # ✅ Fetch related quote lines
-        quote_lines = QuoteLine.objects.filter(quote=quote)
-
-        # ✅ Fetch related company
-        company = Tenant.objects.first()
-
-        # ✅ Fetch related quote document settings (template)
-        template = QuoteDocumentSettings.objects.first()
-
-        # ✅ Fetch related account
-        account = quote.account
-
-        # ✅ Generate file name
-        last_doc = QuoteDocument.objects.filter(quote=quote).order_by('-version').first()
-        next_version = (last_doc.version if last_doc else 0) + 1
-
-        pdf_filename = f"Quote_{quote.name}_v{next_version}.pdf"
-        pdf_path = os.path.join(settings.MEDIA_ROOT, "quote_documents", pdf_filename)
-
-        # ✅ Create PDF in memory
-        buffer = BytesIO()
-        pdf = canvas.Canvas(buffer, pagesize=letter)
-        pdf.setTitle(f"Quote {quote.name}")
-        CBLACK = "#000000"
-        
-
-        # MODERN TEMPLATE
-        if template.template_style == 'modern':
-            PCOLOR = company.primary_color
-            SCOLOR = company.secondary_color
-        elif template.template_style == 'classic':
-            PCOLOR = CBLACK
-            SCOLOR = CBLACK
-
-
-        # ✅ Letterhead
-        pdf.setFont("Helvetica", 8)
-        pdf.drawString(20, 770, f"{datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}")
-
-        # ✅ Quote Header
-        pdf.setFont("Helvetica-Bold", 26)
-        pdf.setFillColor(HexColor(SCOLOR))
-        pdf.drawString(50, 730, f"Quote: {quote.name}")
-        pdf.setFillColor(HexColor(CBLACK))
-
-        # ✅ Add Logo (Update path if needed)
-        if template.show_company_logo:
-            if company and company.logo:
-                logo_path = company.logo.path
-                if os.path.exists(logo_path):
-                    pdf.drawImage(logo_path, 430, 710, width=150, height=60, preserveAspectRatio=True, mask='auto')
-
-        # ------------------------------------
-        pdf.setStrokeColor(HexColor(SCOLOR))
-        pdf.setLineWidth(3)
-        pdf.line(32, 700, 580, 700) 
-
-        # ✅ Set Y and X position for Company Information
-        y_position = 660
-        x_position = 50
-        company_count = 0
-        pdf.setFont("Helvetica-Bold", 12)
-        
-        # ✅ Company Information
-        if template.show_company_name and company.name:
-            pdf.drawString(x_position, y_position, f"{company.name}")
-            company_count += 1
-            y_position -= 15
-
-        # ✅ Company email with hyperlink
-        if template.show_company_email and company.contact_email:
-            pdf.setFillColor(HexColor("#888888"))
-            x = x_position
-            y = y_position
-            email = company.contact_email
-            pdf.drawString(x_position, y_position, email)
-            pdf.linkURL(f"mailto:{email}", (x_position, y_position - 2, x + pdf.stringWidth(email), y + 10), relative=0)
-            pdf.setFillColor(HexColor(CBLACK))
-            company_count += 1
-            y_position -= 15
-
-        # ✅ Company addres
-        if template.show_company_address and company.street_address and company.city and company.state:
-            pdf.setFillColor(HexColor("#888888"))
-            pdf.drawString(x_position, y_position, company.street_address)
-            y_position -= 15
-            pdf.drawString(x_position, y_position, f"{company.city}, {company.state}")
-            pdf.setFillColor(HexColor(CBLACK))
-            company_count += 1
-            y_position -= 15
-        
-        # ✅ Company phone
-        if template.show_company_phone and company.phone_number:
-            pdf.setFillColor(HexColor("#888888"))
-            pdf.drawString(x_position, y_position, f"Phone: {company.phone_number}")
-            pdf.setFillColor(HexColor(CBLACK))
-            company_count += 1
-            y_position -= 15
-
-        # ✅ Company domain
-        if template.show_company_domain and company.domain:
-            pdf.setFillColor(HexColor("#888888"))
-            pdf.drawString(x_position, y_position, company.domain)
-            pdf.setFillColor(HexColor(CBLACK))
-            company_count += 1
-            y_position -= 15
-
-        # ✅ Set Y and X position for Account Information
-        y_position = 660
-        x_position = 350
-        account_count = 0
-    
-        # ✅ Account Name
-        if template.show_account_name and account.name:
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, "Account:")
-            y_position -= 15
-            pdf.drawString(x_position, y_position, account.name)
-            y_position -= 15
-            account_count += 1
-
-        # ✅ Account Website
-        if template.show_account_website and account.website:
-            pdf.setFillColor(HexColor("#888888"))
-            pdf.drawString(x_position, y_position, account.website)
-            pdf.setFillColor(HexColor(CBLACK))
-            y_position -= 15
-            account_count += 1
-
-        # ✅ Account Website
-        if template.show_account_phone and account.phone:
-            pdf.setFillColor(HexColor("#888888"))
-            pdf.drawString(x_position, y_position, account.phone)
-            pdf.setFillColor(HexColor(CBLACK))
-            y_position -= 15
-            account_count += 1
-
-        # ✅ Set Y and X position for General Quote Information
-        y_position = 660 - (max(company_count, account_count) * 15) - 30
-        x_position = 350
-
-        # ✅ Quote Opportunity Name
-        if template.show_quote_opportunity and quote.opportunity.name:
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, quote.opportunity.name)
-            y_position -= 15
-
-        # ✅ Quote Status
-        if template.show_quote_status and quote.status:
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, f"Status: {quote.status}")
-            y_position -= 15
-
-        # ✅ Quote Created Date
-        if template.show_quote_created_at and quote.created_at:
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, f"Created at: {quote.created_at.strftime('%m/%d/%Y')}")
-            y_position -= 15
-
-        # ✅ Quote Expiration Date
-        if template.show_quote_expires_at: #and quote.expiration_date:
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, f"Expiration Date: {quote.expiration_date.strftime('%m/%d/%Y')}")
-            y_position -= 15
-
-        # ✅ Quote Notes
-        if template.show_quote_notes and quote.notes:
-            x_position = 50
-            lines_count = 15
-            y_position -= 15
-            line_spacing = 12
-            left_margin = x_position + 5
-            pdf.drawString(left_margin, y_position, f"Quote Notes:")
-            # Pre settings and draw notes
-            max_width = 500
-            font_name = "Helvetica"
-            font_size = 10
-            pdf.setFont(font_name, font_size)
-
-            lines = wrap_text(quote.notes, font_name, font_size, max_width, pdf)
-
-            y_position -= 15
-            new_page_bool = False
-
-            for index, line in enumerate(lines, start=1):
-                if y_position < 50:  # Si nos acercamos al final de la hoja
-                    lines_count += 12 * index
-
-                    pdf.setFillColor(HexColor(PCOLOR))
-                    pdf.setLineWidth(1)
-                    pdf.setStrokeColor(HexColor(PCOLOR))
-                    pdf.rect(x_position, y_position, 510, lines_count, fill=False, stroke=True)
-
-                    pdf.showPage()
-                    y_position = letter[1] - 50  # Reinicia desde arriba con margen
-                    pdf.setFont(font_name, font_size)
-                    pdf.setFillColor(HexColor(CBLACK))
-
-                    new_page_bool = True
-                    lines_before_new_page = index
-                    
-                    lines_count = 15
-                else:
-                    pdf.drawString(left_margin, y_position, line)
-                    y_position -= line_spacing
-            
-            #-----------------
-            if new_page_bool:
-                lines_count += line_spacing * (len(lines) - lines_before_new_page)
-            else:
-                lines_count += line_spacing * (len(lines) + 1)
-
-            pdf.setFillColor(HexColor(PCOLOR))
-            pdf.setLineWidth(1)
-            pdf.setStrokeColor(HexColor(PCOLOR))
-            pdf.rect(x_position, y_position, 510, lines_count, fill=False, stroke=True)
-
-            # Set all up back again
-            pdf.setFont("Helvetica-Bold", 12)
-            pdf.setFillColor(HexColor(CBLACK))
-        
-        x_position = 50
-        y_position -= 30
-        font_name = "Helvetica-Bold"
-        font_size = 12
-
-        if y_position < 100:  # Si nos acercamos al final de la hoja
-            pdf.showPage()
-            y_position = letter[1] - 50  # Reinicia desde arriba con margen
-            pdf.setFont(font_name, font_size)
-            pdf.setFillColor(HexColor(CBLACK))
-
-        # ✅ Products and Services
-        if template.rendered_fields:
-            pdf.drawString(x_position, y_position, "Products and Services")
-            y_position -= 25
-
-            # ✅ Table header Information
-            pdf.setFont("Helvetica-Bold", 10)
-            pdf.setFillColor(HexColor(CBLACK))
-            column_spacing = 512 / len(template.rendered_fields)
-
-            for index, field in enumerate(template.rendered_fields):
-                column_x = x_position + index * column_spacing
-                text_width = pdf.stringWidth(field, "Helvetica-Bold", 10)
-                last_index = len(template.rendered_fields) - 1
-
-                if field == "Product And SKU" and index == 0:
-                    aligned_x = column_x + 2 
-                elif index == 0:
-                    aligned_x = column_x
-                elif index == last_index:
-                    aligned_x = column_x + column_spacing - text_width
-                else:
-                    aligned_x = column_x + (column_spacing - text_width) / 2
-
-                pdf.drawString(aligned_x, y_position, field)
-            
-            y_position -= 15
-            # ------------------------------------
-            pdf.setStrokeColor(HexColor(SCOLOR))
-            pdf.setLineWidth(2)
-            pdf.line(50, y_position, 562, y_position) 
-            y_position -= 27
-
-            FIELD_MAP = {
-                "Product And SKU": lambda line: f"{line.product_name} ({line.sku})" if line.sku else line.product_name,
-                "Product": lambda line: line.product_name,
-                "SKU": lambda line: line.sku,
-                "Description": lambda line: line.description,
-                "Quantity": lambda line: str(line.quantity),
-                "Unit Price": lambda line: f"${line.unit_price:,.2f}",
-                "Special Price": lambda line: f"${line.special_price:,.2f}",
-                "Discount": lambda line: (
-                    f"${line.discount_amount:,.2f}" if line.discount_type == "amount"
-                    else f"{line.discount_percentage:.2f}%" if line.discount_type == "percentage"
-                    else "---"
-                ),
-                "Subtotal": lambda line: f"${line.subtotal:,.2f}",
-                "Total Price": lambda line: f"${line.total_price:,.2f}",
-            }
-
-            for line in quote.quote_lines.all():
-                if y_position < 70:  # Si nos acercamos al final de la hoja
-                    right_margin = 562
-                    y_position += 15
-                    pdf.setStrokeColor(HexColor(SCOLOR))
-                    pdf.setLineWidth(2)
-                    pdf.line(50, y_position, right_margin, y_position) 
-                    pdf.showPage()
-                    y_position = letter[1] - 50  # Reinicia desde arriba con margen
-
-                    # ✅ Table header Information
-                    pdf.setFont("Helvetica-Bold", 10)
-                    pdf.setFillColor(HexColor(CBLACK))
-                    column_spacing = 512 / len(template.rendered_fields)
-
-                    for index, field in enumerate(template.rendered_fields):
-                        column_x = x_position + index * column_spacing
-                        text_width = pdf.stringWidth(field, "Helvetica-Bold", 10)
-                        last_index = len(template.rendered_fields) - 1
-
-                        if field == "Product And SKU" and index == 0:
-                            aligned_x = column_x + 2 
-                        elif index == 0:
-                            aligned_x = column_x
-                        elif index == last_index:
-                            aligned_x = column_x + column_spacing - text_width
-                        else:
-                            aligned_x = column_x + (column_spacing - text_width) / 2
-
-                        pdf.drawString(aligned_x, y_position, field)
-                    
-                    y_position -= 15
-                    # ------------------------------------
-                    pdf.setStrokeColor(HexColor(SCOLOR))
-                    pdf.setLineWidth(2)
-                    pdf.line(50, y_position, 562, y_position) 
-                    y_position -= 27
-            
-                set_y_position = y_position
-                for index, field_title in enumerate(template.rendered_fields):
-                    column_x = x_position + index * column_spacing
-                    last_index = len(template.rendered_fields) - 1
-
-                    if field_title == "Product And SKU":
-                        if index == 0:
-                            aligned_x = column_x
-                        else:
-                            aligned_x = column_x + column_spacing / 2
-                    else:
-                        if index == 0:
-                            aligned_x = column_x
-                        elif index == last_index:
-                            aligned_x = column_x + column_spacing - 1
-                        else:
-                            aligned_x = column_x + column_spacing / 2
-
-                    if field_title == "Product And SKU":
-                        sku = line.sku or ""
-                        product = line.product_name or ""
-
-                        max_width = column_spacing - 5 
-                        sku_font_size = 10
-                        product_font_size = 9
-
-                        sku_text_width = pdf.stringWidth(sku, "Helvetica-Bold", sku_font_size)
-                        if sku_text_width > max_width:
-                            sku_font_size = max(6, int(sku_font_size * max_width / sku_text_width))
-
-                        product_text_width = pdf.stringWidth(product, "Helvetica", product_font_size)
-                        if product_text_width > max_width:
-                            product_font_size = max(6, int(product_font_size * max_width / product_text_width))
-
-                        if index == 0:
-                            pdf.setFont("Helvetica-Bold", sku_font_size)
-                            pdf.setFillColor(HexColor("#000000"))
-                            pdf.drawString(column_x + 2, set_y_position, sku)
-                            pdf.setFont("Helvetica", product_font_size)
-                            pdf.setFillColor(HexColor("#666666"))  
-                            pdf.drawString(column_x + 2, set_y_position - 10, product)
-                        else:
-                            pdf.setFont("Helvetica-Bold", sku_font_size)
-                            pdf.setFillColor(HexColor("#000000"))
-                            pdf.drawCentredString(aligned_x, set_y_position, sku)
-                            pdf.setFont("Helvetica", product_font_size)
-                            pdf.setFillColor(HexColor("#666666"))
-                            pdf.drawCentredString(aligned_x, set_y_position - 10, product)
-
-                    else:
-                        value_func = FIELD_MAP.get(field_title, lambda l: "")
-                        if field_title == "Total Price" and template.show_subscription_term and line.term is not None:
-                            monthly_total = line.subtotal * line.quantity
-                            text = f"${monthly_total:,.2f} /mo"
-                        else:
-                            text = value_func(line) or ""
-
-
-                        if field_title == "Description":
-                            max_font_size = 9
-                            min_font_size = 8
-                            font_name = "Helvetica"
-                            max_width = column_spacing - 5
-                            line_spacing = 10
-
-                            is_short = template.line_description_detail_level == 'short'
-                            max_lines = 3 if is_short else 100
-
-                            font_size = max_font_size
-                            wrapped_lines = []
-
-                            while font_size >= min_font_size:
-                                words = text.split()
-                                lines = []
-                                current_line = ""
-                                for word in words:
-                                    test_line = f"{current_line} {word}".strip()
-                                    line_width = pdf.stringWidth(test_line, font_name, font_size)
-                                    if line_width <= max_width:
-                                        current_line = test_line
-                                    else:
-                                        lines.append(current_line)
-                                        current_line = word
-                                if current_line:
-                                    lines.append(current_line)
-
-                                wrapped_lines = lines
-                                if not is_short or len(wrapped_lines) <= max_lines:
-                                    break
-
-                                font_size -= 1
-
-                            if is_short and len(wrapped_lines) > max_lines:
-                                wrapped_lines = wrapped_lines[:max_lines]
-                                last_line = wrapped_lines[-1]
-                                ellipsis = "..."
-                                while pdf.stringWidth(last_line + ellipsis, font_name, font_size) > max_width and len(last_line) > 0:
-                                    last_line = last_line[:-1]
-                                wrapped_lines[-1] = last_line.strip() + ellipsis
-
-                            start_y = set_y_position
-
-                            pdf.setFont(font_name, font_size)
-                            pdf.setFillColor(HexColor(CBLACK))
-                            counter_lines = 0
-
-                            for i, wrapped_line in enumerate(wrapped_lines):
-                                counter_lines += 1
-                                y = start_y - i * line_spacing
-                                text_width = pdf.stringWidth(wrapped_line, font_name, font_size)
-                                aligned_x = column_x + (column_spacing - text_width) / 2
-                                pdf.drawString(aligned_x, y, wrapped_line)
-
-                            y_position -= 5
-
-                        else:
-                            font_size = 9
-                            text_width = pdf.stringWidth(text, "Helvetica", font_size)
-                            if text_width > column_spacing - 5:
-                                font_size = max(6, int(font_size * (column_spacing - 5) / text_width))
-
-                            text_width = pdf.stringWidth(text, "Helvetica", font_size)
-                            if index == 0:
-                                aligned_x = column_x
-                            elif index == last_index:
-                                aligned_x = column_x + column_spacing - text_width
-                            else:
-                                aligned_x = column_x + (column_spacing - text_width) / 2
-
-                            pdf.setFont("Helvetica", font_size)
-                            pdf.setFillColor(HexColor("#000000"))
-                            pdf.drawString(aligned_x, set_y_position, text)
-
-                            if field_title == "Total Price" and template.show_line_discount and line.discount_type != "None":
-                                set_y_position -= 13
-                                pdf.setFillColor(HexColor("#666666"))
-
-                                # Get discount text
-                                discount_text = (
-                                    f"after a {line.discount_percentage:.2f}% discount"
-                                    if line.discount_type == "percentage"
-                                    else f"after a ${line.discount_amount:,.2f} discount"
-                                )
-
-                                # Text's width
-                                discount_text_width = pdf.stringWidth(discount_text, "Helvetica", font_size)
-
-                                # Align depending last field
-                                if index == last_index:
-                                    discount_x = column_x + column_spacing - discount_text_width  # Right align
-                                else:
-                                    discount_x = column_x + (column_spacing - discount_text_width) / 2  # Centered
-
-                                pdf.setFont("Helvetica", font_size)
-                                pdf.drawString(discount_x, set_y_position, discount_text)
-
-                            if field_title == "Total Price" and template.show_subscription_term and line.term is not None:
-                                set_y_position -= 13
-                                pdf.setFillColor(HexColor("#666666"))
-
-                                # Get discount text
-                                term_text = f"for {line.term} months"
-
-                                term_text_width = pdf.stringWidth(term_text, "Helvetica", font_size)
-
-                                if index == last_index:
-                                    term_x = column_x + column_spacing - term_text_width 
-                                else:
-                                    term_x = column_x + (column_spacing - term_text_width) / 2 
-
-                                pdf.setFont("Helvetica", font_size)
-                                pdf.drawString(term_x, set_y_position, term_text)
-                            
-                            y_position -= 5
-
-                y_position -= 30 
-
-            # ------------------------------------
-            right_margin = 562
-            y_position += 15
-            pdf.setStrokeColor(HexColor(SCOLOR))
-            pdf.setLineWidth(2)
-            pdf.line(50, y_position, right_margin, y_position)
-
-            y_position -= 27
-
-            if y_position < 100:  # Si nos acercamos al final de la hoja
-                pdf.showPage()
-                y_position = letter[1] - 50  # Reinicia desde arriba con margen
-                pdf.setFont(font_name, font_size)
-                pdf.setFillColor(HexColor(CBLACK))
-
-            label_font = "Helvetica-Bold"
-            label_size = 12
-            value_font = "Helvetica"
-            value_size = 10
-            spacing = 100
-
-            # === Subtotal ===
-            subtotal_label = "Subtotal:"
-            subtotal_value = f"${format_currency(quote.subtotal)}"
-
-            subtotal_label_width = pdf.stringWidth(subtotal_label, label_font, label_size)
-            subtotal_value_width = pdf.stringWidth(subtotal_value, value_font, value_size)
-
-            start_x = right_margin - 150 - subtotal_label_width
-
-            pdf.setFont(label_font, label_size)
-            pdf.setFillColor(HexColor(CBLACK))
-            #Render subtotal label
-            pdf.setFont(label_font, label_size)
-            pdf.drawString(start_x, y_position, subtotal_label)
-            #Render subtotal value
-            pdf.setFont(value_font, value_size)
-            pdf.drawString(right_margin - subtotal_value_width, y_position, subtotal_value)
-
-            y_position -= 30
-
-            # === Discount ===
-            discount_label = "Discount:"
-            discount_value = f"{quote.discount_percentage:.2f}% (-{format_currency(quote.discount_amount)})"
-
-            discount_label_width = pdf.stringWidth(discount_label, label_font, label_size)
-            discount_value_width = pdf.stringWidth(discount_value, value_font, value_size)
-
-            start_x = right_margin - 150 - discount_label_width
-
-            pdf.setFont(label_font, label_size)
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(start_x, y_position, discount_label)
-
-            pdf.setFont(value_font, value_size)
-            pdf.setFillColor(red)
-            pdf.drawString(right_margin - discount_value_width, y_position, discount_value)
-
-            y_position -= 30
-
-            # === Net Amount ===
-            net_label = "Net Amount:"
-            net_value = f"${format_currency(quote.net_amount)}"
-
-            net_label_width = pdf.stringWidth(net_label, label_font, label_size)
-            net_value_width = pdf.stringWidth(net_value, value_font, value_size)
-
-            start_x = right_margin - 150 - net_label_width
-
-            pdf.setFont(label_font, label_size)
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(start_x, y_position, net_label)
-
-            pdf.setFont(value_font, value_size)
-            pdf.drawString(right_margin - net_value_width, y_position, net_value)
-
-            y_position -= 30
-            x_position = 50
-
-        
-
-        if template.terms_and_conditions:
-            if y_position < 50:  # Si nos acercamos al final de la hoja
-                pdf.showPage()
-                y_position = letter[1] - 50  # Reinicia desde arriba con margen
-            #Terms and conditions
-            tac_value = "Terms And Conditions"
-            value_font = "Helvetica-Bold"
-            value_size = 12
-            terms_and_conditions_width = pdf.stringWidth(tac_value, value_font, value_size)
-            
-            left_margin = 50
-            right_margin = 50
-            usable_width = letter[0] - left_margin - right_margin  # 612 - 100 = 512
-
-            font_name = "Helvetica"
-            font_size = 10
-            line_spacing = 12
-
-            # Título
-            pdf.setFont("Helvetica-Bold", 12)
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(left_margin, y_position, "Terms And Conditions")
-            y_position -= 15
-
-            # Texto
-            pdf.setFont(font_name, font_size)
-            pdf.setFillColor(HexColor(CBLACK))
-
-            lines = wrap_text(template.terms_and_conditions, font_name, font_size, usable_width, pdf)
-
-            for line in lines:
-                if y_position < 50:  # Si nos acercamos al final de la hoja
-                    pdf.showPage()
-                    y_position = letter[1] - 50  # Reinicia desde arriba con margen
-                    pdf.setFont(font_name, font_size)
-                    pdf.setFillColor(HexColor(CBLACK))
-                
-                pdf.drawString(left_margin, y_position, line)
-                y_position -= line_spacing
-            
-            y_position -= 18
-            
-        #Show sign
-        x_position = 50
-        if template.show_sign:
-            if y_position < 160:  # Si nos acercamos al final de la hoja
-                pdf.showPage()
-                y_position = letter[1] - 50  # Reinicia desde arriba con margen
-
-            pdf.setFont("Helvetica-Bold", 12)
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, "Signature")
-
-            y_position -= 40
-
-            pdf.setStrokeColor(HexColor(CBLACK))
-            pdf.setLineWidth(1)
-            line_width = 150
-            spacing = 50
-            pdf.line(x_position, y_position, x_position + line_width, y_position)
-            pdf.line(x_position + line_width + spacing, y_position, x_position + line_width + spacing + line_width, y_position)
-
-            y_position -= 15
-            pdf.setFont("Helvetica", 10)
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, "Sign")
-            pdf.drawString(x_position + line_width + spacing, y_position, "Date")
-
-            y_position -= 40
-
-            pdf.setStrokeColor(HexColor(CBLACK))
-            pdf.setLineWidth(1)
-            line_width = 150
-            spacing = 50
-            pdf.line(x_position, y_position, x_position + line_width, y_position)
-
-            y_position -= 15
-            pdf.setFont("Helvetica", 10)
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, "Name")
-                
-
-        # ✅ Save PDF to buffer
-        pdf.showPage()
-        pdf.save()
-
-        # ✅ Ensure target folder exists before writing the PDF
-        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
-
-        # ✅ Save the buffer content to the file
-        with open(pdf_path, "wb") as f:
-            f.write(buffer.getvalue())
-
-
-        # ✅ Save the buffer content to the file
-        with open(pdf_path, "wb") as f:
-            f.write(buffer.getvalue())
-
-        buffer.close()
-
-        log_action_usage("GenerateQuoteDocument", user, "Quote", quote.name)
-
-        # ✅ Save record in QuoteDocument
-        QuoteDocument.objects.create(
-            quote=quote,
-            version=next_version,
-            name=pdf_filename,
-            file=f"quote_documents/{pdf_filename}",
-            generated_by="system"
-        )
-
-        # ✅ Save quote in session data
-        set_active_quote_to_session_data(session_data, quote)
-
-        return {
-            "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
-            "download_url": f"{settings.MEDIA_URL}quote_documents/{pdf_filename}",
-            "document_version": next_version,
-            "hiddenMessage": True
-            }
-
-    except Quote.DoesNotExist:
-        return {"message": "⚠️ Error: Quote not found."}
-    except Exception as e:
-        return {"message": f"⚠️ Error generating PDF: {str(e)}"}
-    
-    
-def wrap_text(text, font_name, font_size, max_width, pdf_canvas):
-    words = text.split()
-    lines = []
-    current_line = ""
-
-    for word in words:
-        test_line = f"{current_line} {word}".strip()
-        if pdf_canvas.stringWidth(test_line, font_name, font_size) <= max_width:
-            current_line = test_line
-        else:
-            lines.append(current_line)
-            current_line = word
-    if current_line:
-        lines.append(current_line)
-
-    return lines
-    
-        
 def delete_quote(user, user_message, session_data):
     """Deleting Quote"""
     response_message = ""
@@ -1362,6 +403,7 @@ def delete_quote(user, user_message, session_data):
                 quote_name = quote.name  # Save quote name before to delete
                 log_action_usage("DeleteQuote", user, "Quote", quote_name)
                 quote.delete()
+
                 return {
                     "message": f"✅ Quote '{quote_name}' has been successfully deleted."
                 }
@@ -1385,130 +427,33 @@ def delete_quote(user, user_message, session_data):
         return {
             "message": f"❌ An unexpected error occurred: {str(e)}"
         }
-    
-def update_quote_notes(user, user_message, session_data):
-    """Updating Quote Notes"""
+
+#< ----------------- SHOW QUOTE DETAILS -------------------- >
+
+def show_quote_details(user, user_message, session_data):
+    """Fetches and formats quote details, including quote lines, based on user input or session data."""
     try:
-        #Looking for active quote
+        logging.info("🔄 Showing quote details...")
+
+        # Looking for active quote
         quote = get_active_quote(user_message, session_data)
 
         # ⚠️ Verify if function return an error
         if isinstance(quote, dict) and "message" in quote:
             return quote
-        
-        logging.info(f"updating notes for quote: {quote.name}...")
 
-        extracted_notes = get_quote_notes_details(user_message)
+        # ✅ Format the response
+        quote_details = get_quote_details(quote)
 
-        if not extracted_notes:
-            # ✅ Save quote in session data
-            set_active_quote_to_session_data(session_data, quote)
-            
-            return {
-                "message": "⚠️ Sorry, I couldn't recognize a quote note from your message."
-            }
-        
-        for index, item in enumerate(extracted_notes, start=1):
-            notes = item['notes']
 
-            if not isinstance(notes, str) or not notes.strip():
-                return {
-                    "message": "⚠️ Sorry, an error occurred. I couldn't extract a valid note from your message. Please try again or modify your input."
-                }
+        set_active_quote_to_session_data(session_data, quote)
 
-            if notes is None or notes == "Null":
-                return {
-                    "message": "⚠️ Sorry, an error occurred. I couldn't extract a quote note from your message. Please try again or modify your input."
-                }
-            
-            if quote.notes != notes:
-                try:
-                    quote.notes = notes
-                    quote.save()
-                    log_action_usage("UpdateQuoteNotes", user, "Quote", quote.name)
-                except Exception as e:
-                    return {
-                        "message": "⚠️ An error occurred while trying to save the notes to the quote. Please try again."
-                    }
-                
-            return {
-                "message": "✅ Quote notes have been successfully updated."
-            }
+        return {"message": "Here are the quote details:", "quote_details": quote_details, "hiddenMessage": "True"}
+    
     except Quote.DoesNotExist:
-        return {
-            "message": "⚠️ Quote doesn't exist."
-        }
-    except Exception as e:
-        logging.exception("An unexpected error occurred while showing the quote.")
-        return {
-            "message": f"❌ An unexpected error occurred: {str(e)}"
-        }
-    
-    
-def get_quote_notes_details(user_message):
-    """Uses GPT to extract quote notes."""
+        return {"message": "⚠️ Error: Quote not found. Please check the quote name."}
 
-    prompt = f"""
-    Extract the quote notes in the following user request.
-
-    Return only the text of notes inside a JSON object like this:
-    [{{"notes": "This is a note."}}]
-
-    "Look for phrases such as:
-    - 'quote notes to:'
-    - 'quote note should be'
-    - 'set the note to'
-    - 'make the quote note:'"
-
-    **Rules:**
-    - If no notes are found in the message, return Null as notes.
-
-    **Examples:**
-
-    User: "Update quote notes to: This is a simple note for this quote."
-    **Expected JSON Output:**
-    [
-        {{"notes": "This is a symple notes for this quote."}}
-    ]
-
-    User: "Change the quote notes to This is a symple notes for this quote."
-    **Expected JSON Output:**
-    [
-        {{"notes": "This is a symple notes for this quote."}}
-    ]
-    **IMPORTANT:** **Return a valid JSON array only of notes. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
-
-    User Request: "{user_message}"
-    """
-
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Extract the notes mentioned in the user's request."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        # ✅ Extract raw response
-        raw_response = response.choices[0].message.content.strip()
-        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
-
-        # ✅ Ensure valid JSON response
-        try:
-            extracted_sku = json.loads(raw_response)
-            if isinstance(extracted_sku, list) and all("notes" in p for p in extracted_sku):
-                return extracted_sku
-            else:
-                logging.warning("⚠️ GPT response is not in expected format.")
-                return None
-        except json.JSONDecodeError:
-            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
-            return None
-
-    except Exception as e:
-        logging.error(f"❌ Error extracting discount details: {str(e)}")
-        return None    
+#< ----------------- SHOW QUOTE DETAILS -------------------- >
 
 def show_quote_notes(user_message, session_data):
     """Showing Quote Notes"""
@@ -1534,10 +479,7 @@ def show_quote_notes(user_message, session_data):
         msg = f"<b>Quote Notes:</b><br><br>{notes}"
         
         return {
-            "message": msg#,
-            #"quote_details": get_quote_details(quote),
-            #"quote_notes": quote.notes,
-            #"hiddenMessage": True
+            "message": msg
         }
 
     except Quote.DoesNotExist:
@@ -1551,9 +493,52 @@ def show_quote_notes(user_message, session_data):
             "message": f"❌ An unexpected error occurred: {str(e)}"
         }
 
+#< ----------------- GENERATE QUOTE DOCUMENT -------------------- >
+
+def generate_quote_pdf(user,user_message, session_data):
+    # Looking for active quote
+    quote = get_active_quote(user_message, session_data)
+
+    # ⚠️ Verify if function return an error
+    if isinstance(quote, dict) and "message" in quote:
+        return quote
+    
+    try:
+        result = get_document_pdf(quote)
+
+        # ✅ Save quote in session data
+        set_active_quote_to_session_data(session_data, quote)
+
+        if result.get("success"):
+            # Guardamos la quote en la sesión
+            set_active_quote_to_session_data(session_data, quote)
+
+            log_action_usage("GenerateQuoteDocument", user, "Quote", quote.name)
+
+            # Retornamos los datos con hiddenMessage = True
+            return {
+                "message": result["message"],
+                "download_url": result["download_url"],
+                "document_version": result["document_version"],
+                "hiddenMessage": True,
+            }
+        else:
+            # Error al generar PDF (pero manejado dentro de get_document_pdf)
+            return {
+                "message": result.get("message", "⚠️ Unknown error generating PDF."),
+                "success": False
+            }
+    except Exception as e:
+        # Error inesperado (por si acaso)
+        return {
+            "message": f"⚠️ Unexpected error: {str(e)}",
+            "success": False
+        }
 
 
-def update_quote_line_from_ui(user,user_message, session_data):
+#< ----------------- UPDATE QUOTE LINE FROM UI -------------------- >
+
+def update_quote_line_from_ui(user, user_message, session_data):
     """Handles updates to quote lines triggered from the UI."""
     logging.info("📝 Updating quote line(s) from front-end UI...")
 
@@ -1594,6 +579,8 @@ def update_quote_line_from_ui(user,user_message, session_data):
     except Exception as e:
         logging.warning(f"⚠️ Error updating quote line: {str(e)}")
         return {"message": f"⚠️ Error updating quote line: {str(e)}"}
+    
+#< ----------------- UPDATE QUOTE FROM UI -------------------- >
         
 def update_quote_from_ui(user,user_message, session_data):
     """Handles updates to quote lines triggered from the UI."""
