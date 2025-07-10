@@ -1553,7 +1553,7 @@ def show_quote_notes(user_message, session_data):
 
 
 
-def update_quote_line_from_ui(user_message, session_data):
+def update_quote_line_from_ui(user,user_message, session_data):
     """Handles updates to quote lines triggered from the UI."""
     logging.info("📝 Updating quote line(s) from front-end UI...")
 

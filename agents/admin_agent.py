@@ -19,7 +19,7 @@ OPENAI_MODEL = "gpt-4"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-def admin_agent(action, user_message, session_data):
+def admin_agent(user,action, user_message, session_data):
 
     action_map = {
         "CreateValidationRule": create_validation_rule
