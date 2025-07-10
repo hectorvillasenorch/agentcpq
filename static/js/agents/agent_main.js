@@ -518,12 +518,23 @@ function renderQuoteDetails(quote) {
       quote.rendered_fields.forEach(field => {
         // Limpiar campos como Product.UOM
         const cleanedField = field.replace(/^Product\./, "");
+        console.log("Field: ", cleanedField)
 
         if (field === "Product And SKU") {
           html += `
             <td>
               <div class="centered-td">${item.sku}</div>
               <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+            </td>`;
+        } else if (field === "Product") {
+          html += `
+            <td>
+              <div class="centered-td">${item.product}</div>
+            </td>`;
+        } else if (field === "SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
             </td>`;
         } else if (field === "Quantity") {
           html += `
@@ -539,7 +550,14 @@ function renderQuoteDetails(quote) {
                 data-field="quantity"
                 onchange="updateQuoteLine(this)">
             </td>`;
-        } else if (field === "Unit Price") {
+        } else if (field === "Description") {
+          //console.log("Field es description.");
+          html += `
+            <td class="centered-td">
+              <p>${item.description}</p>
+            </td>`;
+        }
+        else if (field === "Unit Price") {
           html += `
             <td>
               ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
@@ -658,12 +676,27 @@ function renderQuoteDetails(quote) {
               <div class="centered-td">${item.sku}</div>
               <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
             </td>`;
+        } else if (field === "Product") {
+          html += `
+            <td>
+              <div class="centered-td">${item.product}</div>
+            </td>`;
+        } else if (field === "SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+            </td>`;
         } else if (field === "Quantity") {
           html += `
             <td>
               <input type="number" min="1" value="${item.quantity}" 
                 data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
                 class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)">
+            </td>`;
+        } else if (field === "Description") {
+          html += `
+            <td class="centered-td">
+              <p>${item.description}</p>
             </td>`;
         } else if (field === "Unit Price") {
           html += `
@@ -882,6 +915,16 @@ function renderReadOnlyQuoteDetails(quote) {
               <div class="centered-td">${item.sku}</div>
               <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
             </td>`;
+        } else if (field === "Product") {
+          html += `
+            <td>
+              <div class="centered-td">${item.product}</div>
+            </td>`;
+        } else if (field === "SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+            </td>`;
         } else if (field === "Quantity") {
           html += `
             <td>
@@ -904,6 +947,11 @@ function renderReadOnlyQuoteDetails(quote) {
                 style: 'currency',
                 currency: 'USD'
               })}
+            </td>`;
+        } else if (field === "Description") {
+          html += `
+            <td class="centered-td">
+              <p>${item.description}</p>
             </td>`;
         } else if (field === "Discount") {
           html += `
@@ -1019,6 +1067,16 @@ function renderReadOnlyQuoteDetails(quote) {
               <div class="centered-td">${item.sku}</div>
               <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
             </td>`;
+        } else if (field === "Product") {
+          html += `
+            <td>
+              <div class="centered-td">${item.product}</div>
+            </td>`;
+        } else if (field === "SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+            </td>`;
         } else if (field === "Quantity") {
           html += `
             <td>
@@ -1026,6 +1084,11 @@ function renderReadOnlyQuoteDetails(quote) {
                 data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
                 class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"
                 disabled>
+            </td>`;
+        } else if (field === "Description") {
+          html += `
+            <td class="centered-td">
+              <p>${item.description}</p>
             </td>`;
         } else if (field === "Unit Price") {
           html += `
@@ -1453,42 +1516,43 @@ function showTemporaryQuoteDetails(quote) {
     return renderQuoteDetailsMobile(quote);   // ← new helper (see below)
   }
   const createdAt = new Date(quote.created_at);
-  const creationDate = new Date(quote.expiration_date);
+  const expirationDate = new Date(quote.expiration_date);
 
-  // Add 0 in front if necessary
-  const month = String(createdAt.getMonth() + 1).padStart(2, '0');
-  const day = String(createdAt.getDate()).padStart(2, '0');
-  const year = createdAt.getFullYear();
+  const month = String(createdAt.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(createdAt.getUTCDate()).padStart(2, '0');
+  const year = createdAt.getUTCFullYear();
 
   const formattedDate = `${month}/${day}/${year}`;
 
-  const month_e = String(creationDate.getMonth() + 1).padStart(2, '0');
-  const day_e = String(creationDate.getDate()).padStart(2, '0');
-  const year_e = creationDate.getFullYear();
+  const monthFormatted = String(expirationDate.getUTCMonth() + 1).padStart(2, '0');
+  const dayFormatted = String(expirationDate.getUTCDate()).padStart(2, '0');
+  const yearFormatted = expirationDate.getUTCFullYear();
 
-  const formattedDate_e = `${month_e}/${day_e}/${year_e}`;
+  const formattedDate_e = `${monthFormatted}/${dayFormatted}/${yearFormatted}`;
 
-   var html = `
-        <div>
-          ⏳ Rendering temporary quote details...
-        </div>
-        <div class="quote-container">
+  var html = `
+              <div>
+                ⏳ Rendering temporary quote details...
+              </div>
+              <div class="quote-container">
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
-                  <p><strong>Status:</strong> ${quote.status}</p>
+                  <div style="display: flex; align-items: center; gap: 8px;" class="status-select">
+                    <p><strong>Status:</strong> ${quote.status}</p>
+                  </div>
               </div>
               <div class="quote-details">
                 <div class="account">
-                  <p><strong>Account:</strong> ${quote.account}</p>
+                  <p><strong>Account:</strong> ${quote.account ? quote.account : "---"}</p>
                 </div>
                 <div class="opportunity">
-                  <p><strong>Opportunity:</strong> ${quote.opportunity}</p>
+                  <p><strong>Opportunity:</strong> ${quote.opportunity ? quote.opportunity : "---"}</p>
                 </div>
                 <div class="created">
-                  <p><strong>Created At:</strong> ${formattedDate}</p>
+                  <p><strong>Created At:</strong> ${quote.created_at ? formattedDate : "---"}</p>
                 </div>
                 <div class="expiration">
-                  <p><strong>Expiration Date:</strong> ${formattedDate_e}</p>
+                  <p><strong>Expiration Date:</strong> ${quote.expiration_date ? formattedDate : "---"}</p>
                 </div>
                 
                 <div class="discount">
@@ -1499,63 +1563,125 @@ function showTemporaryQuoteDetails(quote) {
               </div>
               <h4>Line Items</h4>`;
 
-  var is_subscription_cont = 0;
+  var has_printed_subscription_header = false;
+
 
   quote.line_items.forEach(item => {
     if(item.is_subscription == true){
-      if(is_subscription_cont == 0){
+      if(!has_printed_subscription_header){
+        const headers = [];
+
+        quote.rendered_fields.forEach(field => {
+          const cleaned = field.replace(/^Product\./, "");
+
+          if (cleaned.toLowerCase() === "discount") {
+            headers.push(`<th>Discount (%)</th>`);
+            headers.push(`<th>Discount (USD)</th>`);
+          } 
+          else if (cleaned === "Total Price") {
+            headers.push(`<th>Subscription</th>`);
+            headers.push(`<th>Term</th>`);
+            headers.push(`<th>Total Price</th>`);
+          }
+          else {
+            const label = cleaned
+              .replace("Product And SKU", "SKU/Product")
+              .replace("Unit Price", "Unit Price")
+              .replace("Quantity", "Quantity")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, l => l.toUpperCase());
+
+            headers.push(`<th>${label}</th>`);
+          }
+        });
+
         html += `
-              <table class="quote-table" data-quote-id="${quote.quote_name}">
+                <table class="quote-table" data-quote-id="${quote.quote_name}">
                   <thead>
-                      <tr>
-                          <th>SKU/Product</th>
-                          <th>Quantity</th>
-                          <th>Unit Price</th>
-                          <th>Discount (%)</th>
-                          <th>Discount (USD)</th>
-                          <th>Subscription</th>
-                          <th>Term</th>
-                          <th>Total Price</th>
-                      </tr>
+                    <tr>
+                      ${headers.join("\n")}
+                    </tr>
                   </thead>
                   <tbody>`;
-            is_subscription_cont = 1;
+
+        has_printed_subscription_header = true;
       }
 
-      html += `
-          <tr>
-              <td>
-                <div class="centered-td">${item.sku}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
-              </td>
-              <td>
-                ${item.quantity}
-              </td>
-              <td>
-                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-              <td class="centered-td">
-                ${item.discount_percentage.replace('%', '')}
-              </td>
-              <td class="centered-td">
-                ${item.discount_amount.replace('$', '')}
-              </td>
+      html += `<tr>`;
+
+      quote.rendered_fields.forEach(field => {
+        // Limpiar campos como Product.UOM
+        const cleanedField = field.replace(/^Product\./, "");
+
+        if (field === "Product And SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+              <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+            </td>`;
+        } else if (field === "Product") {
+          html += `
+            <td>
+              <div class="centered-td">${item.product}</div>
+            </td>`;
+        } else if (field === "SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+            </td>`;
+        } else if (field === "Quantity") {
+          html += `
+            <td>
+              <div class="centered-td">${item.quantity}</div>
+            </td>`;
+        } else if (field === "Unit Price") {
+          html += `
+            <td>
+              ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else if (field === "Description") {
+          html += `
+            <td class="centered-td">
+              <p>${item.description}</p>
+            </td>`;
+        } else if (field === "Discount") {
+          html += `
+            <td class="centered-td">
+              <div class="centered-td">${item.discount_percentage}</div>
+            </td>`;
+            html += `
+            <td class="centered-td">
+              <div class="centered-td">${item.discount_amount}</div>
+            </td>`;
+        } else if (field === "Total Price") {
+          html += `
               <td class="centered-td">
                 ${item.is_subscription ? '✅' : '❌'}
-              </td>
+              </td>`;
+
+          html += `
               <td class="centered-td">
-                ${item.term || '---'}
-              </td>
-              <td class="total-price" data-sku="${item.sku}">
-                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-          </tr>`;
+                  <div class="centered-td">${item.term}</div>
+              </td>`;
+          
+          html += `
+            <td class="total-price" data-sku="${item.sku}">
+              ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else {
+          // Custom Field: Just render the value
+          html += `
+            <td class="centered-td">${item[cleanedField] ?? "---"}</td>`;
+        }
+      });
+
+      html += `</tr>`;
     }
   });
 
@@ -1565,66 +1691,125 @@ function showTemporaryQuoteDetails(quote) {
   quote.line_items.forEach(item => {
     if(item.is_subscription == false){
       if(none_suscription_bool == 0){
+        const headers = [];
+
+        quote.rendered_fields.forEach(field => {
+          const cleaned = field.replace(/^Product\./, "");
+
+          if (cleaned.toLowerCase() === "discount") {
+            headers.push(`<th>Discount (%)</th>`);
+            headers.push(`<th>Discount (USD)</th>`);
+          } else {
+            const label = cleaned
+              .replace("Product And SKU", "SKU/Product")
+              .replace("Unit Price", "Unit Price")
+              .replace("discount_percentage", "Discount (%)")
+              .replace("discount_amount", "Discount (USD)")
+              .replace("total_price", "Total Price")
+              .replace("subscription", "Subscription")
+              .replace("term", "Term")
+              .replace("Quantity", "Quantity")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, l => l.toUpperCase());
+
+            headers.push(`<th>${label}</th>`);
+          }
+        });
+
         html += `
-              <table class="quote-table" data-quote-id="${quote.quote_name}">
+                <table class="quote-table" data-quote-id="${quote.quote_name}">
                   <thead>
-                      <tr>
-                          <th>SKU/Product</th>
-                          <th>Quantity</th>
-                          <th>Unit Price</th>
-                          <th>Discount (%)</th>
-                          <th>Discount (USD)</th>
-                          <th>Total Price</th>
-                      </tr>
+                    <tr>
+                      ${headers.join("\n")}
+                    </tr>
                   </thead>
                   <tbody>`;
-            none_suscription_bool = 1;
+        none_suscription_bool = 1;
       }
 
-      html += `
-          <tr>
-              <td>
-                <div class="centered-td">${item.sku}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
-              </td>
-              <td>
-                ${item.quantity}
-              </td>
-              <td>
-                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-              <td class="centered-td">
-                ${item.discount_percentage.replace('%', '')}
-              </td>
-              <td class="centered-td">
-                ${item.discount_amount.replace('$', '')}
-              </td>
-              <td class="total-price" data-sku="${item.sku}">
-                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-          </tr>`;
+      html += `<tr>`;
+
+      quote.rendered_fields.forEach(field => {
+        // Limpiar campos como Product.UOM
+        const cleanedField = field.replace(/^Product\./, "");
+
+        if (field === "Product And SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+              <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+            </td>`;
+        } else if (field === "Product") {
+          html += `
+            <td>
+              <div class="centered-td">${item.product}</div>
+            </td>`;
+        } else if (field === "SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+            </td>`;
+        } else if (field === "Quantity") {
+          html += `
+            <td>
+              <div class="centered-td">${item.quantity}</div>
+            </td>`;
+        } else if (field === "Description") {
+          html += `
+            <td class="centered-td">
+              <p>${item.description}</p>
+            </td>`;
+        } else if (field === "Unit Price") {
+          html += `
+            <td>
+              ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else if (field === "Discount") {
+          html += `
+            <td class="centered-td">
+              <div class="centered-td">${item.discount_percentage}</div>
+            </td>`;
+            html += `
+            <td class="centered-td">
+              <div class="centered-td">${item.discount_amount}</div>
+            </td>`;
+        } else if (field === "Total Price") {
+          html += `
+            <td class="total-price" data-sku="${item.sku}">
+              ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else {
+          // Custom Field: Just render the value
+          html += `
+            <td class="centered-td">${item[cleanedField] ?? "---"}</td>`;
+        }
+      });
+
+      html += `</tr>`;
     }
   });
 
   html += `</tbody></table>
-    <p class="subtotal-amount">
-      Subtotal: ${parseFloat(quote.subtotal.replace('$', '')).toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-      })}
-    </p>
-    <p class="total-amount">
-      Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-      })}
-    </p>
+    <div class="total-container">
+      <p class="subtotal-amount">
+        Subtotal: ${parseFloat(quote.subtotal.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+      </p>
+      <p class="total-amount">
+        Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+      </p>
+    </div>
   </div>`;
 
   return html;
