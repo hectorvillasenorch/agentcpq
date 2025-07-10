@@ -25,7 +25,7 @@ OPENAI_MODEL = "gpt-4"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-def admin_agent(action, user_message, session_data):
+def admin_agent(user, action, user_message, session_data):
 
     action_map = {
         "CreateValidationRule": create_validation_rule,
@@ -36,12 +36,12 @@ def admin_agent(action, user_message, session_data):
 
     # ✅ Dynamically call the function if action exists in map
     if action in action_map:
-        return action_map[action](user_message, session_data)
+        return action_map[action](user, user_message, session_data)
 
     return {"message": "🤖 Sorry, I couldn’t understand your request."}
 
 
-def create_validation_rule(user_message, session_data):
+def create_validation_rule(user, user_message, session_data):
     logging.info("🔧 Creating Validation Rule...\n\n")
 
     # Extract rule with LLM        
@@ -250,7 +250,7 @@ def create_validation_rule(user_message, session_data):
 
 #< ----------------- SHOW VALIDATION RULES -------------------- >
 
-def show_rules(user_message, session_data):
+def show_rules(user, user_message, session_data):
     """Fetches and formats quote details, including quote lines, based on user input or session data."""
     try:
         logging.info("🔄 Showing rules...")
@@ -282,7 +282,7 @@ def show_rules(user_message, session_data):
             "message": f"❌ An unexpected error occurred while retrieving the rules: {str(e)}"
         }
     
-def update_rule(user_message, session_data):
+def update_rule(user, user_message, session_data):
     """Updates only the modified fields in rules."""
 
     logging.info("🔧 Updating rules...\n\n")
@@ -317,7 +317,7 @@ def update_rule(user_message, session_data):
         "temporaryMessage": True
         }
 
-def delete_rule(user_message, session_data):
+def delete_rule(user, user_message, session_data):
     """Updates only the modified fields in rules."""
 
     logging.info("🔧 Deleting rules...\n\n")

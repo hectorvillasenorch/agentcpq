@@ -21,6 +21,9 @@ from .forms import CustomFieldForm, BusinessRuleForm, get_rule_condition_formset
 from .forms import QUOTE_FIELDS, QUOTE_LINE_FIELDS, PRODUCT_FIELDS
 from django.utils.safestring import mark_safe
 
+# Agents General Helpers
+from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
+
 
 def root_redirect(request):
     if request.user.is_authenticated:
@@ -168,11 +171,25 @@ def create_custom_field(request):
 
         # ✅ Save to DB
         field = CustomField.objects.create(
-            crm=crm, object_type=object_type,
-            name=name, label=label,
-            data_type=data_type, required=required,
+            crm=crm,
+            object_type=object_type,
+            name=name,
+            label=label,
+            data_type=data_type,
+            required=required,
             created_by=request.user
         )
+
+        if field:
+            quote_document_settings = QuoteDocumentSettings.objects.first()
+            if quote_document_settings:
+                # Add label at the end of omitted_fields
+                omitted = quote_document_settings.omitted_fields or []
+                
+                if label not in omitted:  # Avoid duplicated
+                    omitted.append(label)
+                    quote_document_settings.omitted_fields = omitted
+                    quote_document_settings.save()
 
         return redirect("custom_fields")
 
@@ -249,7 +266,19 @@ def create_custom_field(request):
     if request.method == 'POST':
         form = CustomFieldForm(request.POST)
         if form.is_valid():
-            form.save()
+            field = form.save()
+
+            # 🔧 Lógica personalizada aquí
+            quote_document_settings = QuoteDocumentSettings.objects.first()
+            if quote_document_settings:
+                full_label = f"{field.object_type}.{field.label}"
+                omitted = quote_document_settings.omitted_fields or []
+
+                if full_label not in omitted:
+                    omitted.append(full_label)
+                    quote_document_settings.omitted_fields = omitted
+                    quote_document_settings.save()
+            
             return redirect('cpq:custom_fields')  # or wherever you want to go after save
     else:
         form = CustomFieldForm()
@@ -319,6 +348,7 @@ def get_document_template(request):
     
     try:
         document_settings = QuoteDocumentSettings.objects.first()
+        
     except ObjectDoesNotExist:
         document_settings = None
 
@@ -366,6 +396,10 @@ def get_document_template(request):
             rendered_fields=QuoteDocumentSettings.default_rendered_fields(),
             omitted_fields=QuoteDocumentSettings.default_omitted_fields()
         )
+    
+    # Hardcore for now
+    set_custom_fields_into_quote_document_settings("Product")
+    document_settings.refresh_from_db()
 
     return render(request, 'document_template.html', {
         'company': company,

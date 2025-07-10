@@ -385,6 +385,7 @@ function appendMessage(className, message) {
 }
 
 function renderQuoteDetails(quote) {
+  //console.log("Quote: ", quote);
   const createdAt = new Date(quote.created_at);
   const expirationDate = new Date(quote.expiration_date);
 
@@ -421,27 +422,30 @@ function renderQuoteDetails(quote) {
               </div>
               <div class="quote-details">
                 <div class="account">
-                  <p><strong>Account:</strong> ${quote.account}</p>
+                  <p><strong>Account:</strong> ${quote.account ? quote.account : "*****"}</p>
                 </div>
                 <div class="opportunity">
-                  <p><strong>Opportunity:</strong> ${quote.opportunity}</p>
+                  <p><strong>Opportunity:</strong> ${quote.opportunity ? quote.opportunity : "*****"}</p>
                 </div>
                 <div class="created">
-                  <p><strong>Created At:</strong> ${formattedDate}</p>
+                  <p><strong>Created At:</strong> ${quote.created_at ? formattedDate : "*****"}</p>
                 </div>
                 <div class="expiration">
                   <p><strong>Expiration Date:</strong>
+                  ${quote.expiration_date ? `
                   <input type="text" id="expiration_date" name="expiration_date"
                           data-field="expiration_date"
                           data-quote="${quote.quote_name}"
                           placeholder="MM/DD/YYYY"
                           style="display: inline-block; width: 7rem; margin-top: 0px; color: black;"
                           value="${formattedDate_e}"/>
+                  ` : "*****"}
                   </p>
                 </div>
                 
                 <div class="discount">
                   <p><strong>Discount: </strong>
+                    ${(quote.discount_type && quote.discount_percentage && quote.discount_amount) ? `
                     <input type="number"
                           value="${Number(quote.discount_percentage)}"
                           data-field="discount_percentage"
@@ -457,6 +461,7 @@ function renderQuoteDetails(quote) {
                       onchange="updateQuote(this)"
                       style="width: 6rem; color: red;">
                     <span style="color: red;"> )</span>
+                    ` : "*****"}
                   </p>
                 </div>
               </div>
@@ -464,63 +469,107 @@ function renderQuoteDetails(quote) {
 
   var has_printed_subscription_header = false;
 
+
   quote.line_items.forEach(item => {
     if(item.is_subscription == true){
-      if(has_printed_subscription_header == false){
+      if(!has_printed_subscription_header){
+        const headers = [];
+
+        quote.rendered_fields.forEach(field => {
+          const cleaned = field.replace(/^Product\./, "");
+
+          if (cleaned.toLowerCase() === "discount") {
+            headers.push(`<th>Discount (%)</th>`);
+            headers.push(`<th>Discount (USD)</th>`);
+          } 
+          else if (cleaned === "Total Price") {
+            headers.push(`<th>Subscription</th>`);
+            headers.push(`<th>Term</th>`);
+            headers.push(`<th>Total Price</th>`);
+          }
+          else {
+            const label = cleaned
+              .replace("Product And SKU", "SKU/Product")
+              .replace("Unit Price", "Unit Price")
+              .replace("Quantity", "Quantity")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, l => l.toUpperCase());
+
+            headers.push(`<th>${label}</th>`);
+          }
+        });
+
         html += `
-              <table class="quote-table" data-quote-id="${quote.quote_name}">
+                <table class="quote-table" data-quote-id="${quote.quote_name}">
                   <thead>
-                      <tr>
-                          <th>SKU/Product</th>
-                          <th>Quantity</th>
-                          <th>Unit Price</th>
-                          <th>Discount (%)</th>
-                          <th>Discount (USD)</th>
-                          <th>Subscription</th>
-                          <th>Term</th>
-                          <th>Total Price</th>
-                      </tr>
+                    <tr>
+                      ${headers.join("\n")}
+                    </tr>
                   </thead>
                   <tbody>`;
-            has_printed_subscription_header = true;
-      }
-      
 
-      html += `
-          <tr>
-              <td>
-                <div class="centered-td">${item.sku}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
-              </td>
-              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"></td>
-              <td>
-                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-              <td class="centered-td">
-                <input name="discountPercentage"
+        has_printed_subscription_header = true;
+      }
+
+      html += `<tr>`;
+
+      quote.rendered_fields.forEach(field => {
+        // Limpiar campos como Product.UOM
+        const cleanedField = field.replace(/^Product\./, "");
+
+        if (field === "Product And SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+              <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+            </td>`;
+        } else if (field === "Quantity") {
+          html += `
+            <td>
+              <input
                 type="number"
-                min="0"
-                max="100"
-                value="${(() => {
-                    const val = parseFloat(item.discount_percentage.replace('%', ''));
-                    return Number.isInteger(val) ? val : val.toFixed(2);
-                  })()}"
+                min="1"
+                class="editable-field"
+                value="${item.quantity}" 
                 data-quote="${quote.quote_name}"
                 data-quoteline-id="${item.id}"
-                data-sku="${item.sku}"
-                class="editable-field"
-                data-field="discount_percentage"
+                data-sku="${item.sku}" 
+                data-field="quantity"
                 onchange="updateQuoteLine(this)">
-              </td>
-              <td class="centered-td">
-               <input name="discountAmount" type="number" min="0" max="100" value="${item.discount_amount.replace('$', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)">
-              </td>
+            </td>`;
+        } else if (field === "Unit Price") {
+          html += `
+            <td>
+              ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else if (field === "Discount") {
+          html += `
+            <td class="centered-td">
+              <input name="discountPercentage" type="number" min="0" max="100"
+                value="${(() => {
+                  const val = parseFloat(item.discount_percentage.replace('%', ''));
+                  return Number.isInteger(val) ? val : val.toFixed(2);
+                })()}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)">
+            </td>`;
+            html += `
+            <td class="centered-td">
+              <input name="discountAmount" type="number" min="0" max="100"
+                value="${item.discount_amount.replace('$', '')}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)">
+            </td>`;
+        } else if (field === "Total Price") {
+          html += `
               <td class="centered-td">
                 ${item.is_subscription ? '✅' : '❌'}
-              </td>
+              </td>`;
+
+          html += `
               <td class="centered-td">
                 <input
                   name="term"
@@ -533,14 +582,23 @@ function renderQuoteDetails(quote) {
                   data-field="term"
                   onchange="updateQuoteLine(this)"
                   style="text-align: center;">
-              </td>
-              <td class="total-price" data-sku="${item.sku}">
-                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-          </tr>`;
+              </td>`;
+          
+          html += `
+            <td class="total-price" data-sku="${item.sku}">
+              ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else {
+          // Custom Field: Just render the value
+          html += `
+            <td class="centered-td">${item[cleanedField] ?? "---"}</td>`;
+        }
+      });
+
+      html += `</tr>`;
     }
   });
 
@@ -550,103 +608,162 @@ function renderQuoteDetails(quote) {
   quote.line_items.forEach(item => {
     if(item.is_subscription == false){
       if(none_suscription_bool == 0){
+        const headers = [];
+
+        quote.rendered_fields.forEach(field => {
+          const cleaned = field.replace(/^Product\./, "");
+
+          if (cleaned.toLowerCase() === "discount") {
+            headers.push(`<th>Discount (%)</th>`);
+            headers.push(`<th>Discount (USD)</th>`);
+          } else {
+            const label = cleaned
+              .replace("Product And SKU", "SKU/Product")
+              .replace("Unit Price", "Unit Price")
+              .replace("discount_percentage", "Discount (%)")
+              .replace("discount_amount", "Discount (USD)")
+              .replace("total_price", "Total Price")
+              .replace("subscription", "Subscription")
+              .replace("term", "Term")
+              .replace("Quantity", "Quantity")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, l => l.toUpperCase());
+
+            headers.push(`<th>${label}</th>`);
+          }
+        });
+
         html += `
-              <table class="quote-table" data-quote-id="${quote.quote_name}">
+                <table class="quote-table" data-quote-id="${quote.quote_name}">
                   <thead>
-                      <tr>
-                          <th>SKU/Product</th>
-                          <th>Quantity</th>
-                          <th>Unit Price</th>
-                          <th>Discount (%)</th>
-                          <th>Discount (USD)</th>
-                          <th>Total Price</th>
-                      </tr>
+                    <tr>
+                      ${headers.join("\n")}
+                    </tr>
                   </thead>
                   <tbody>`;
-            none_suscription_bool = 1;
+        none_suscription_bool = 1;
       }
 
-      html += `
-          <tr>
-              <td>
-                <div class="centered-td">${item.sku}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
-              </td>
-              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"></td>
-              <td>
-                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-              <td class="centered-td">
-               <input name="discountPercentage" type="number" min="0" max="100" value="${item.discount_percentage.replace('%', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)">
-              </td>
-              <td class="centered-td">
-               <input name="discountAmount" type="number" min="0" max="100" value="${item.discount_amount.replace('$', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)">
-              </td>
-              <td class="total-price" data-sku="${item.sku}">
-                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-          </tr>`;
+      html += `<tr>`;
+
+      quote.rendered_fields.forEach(field => {
+        // Limpiar campos como Product.UOM
+        const cleanedField = field.replace(/^Product\./, "");
+
+        if (field === "Product And SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+              <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+            </td>`;
+        } else if (field === "Quantity") {
+          html += `
+            <td>
+              <input type="number" min="1" value="${item.quantity}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)">
+            </td>`;
+        } else if (field === "Unit Price") {
+          html += `
+            <td>
+              ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else if (field === "Discount") {
+          html += `
+            <td class="centered-td">
+              <input name="discountPercentage" type="number" min="0" max="100"
+                value="${(() => {
+                  const val = parseFloat(item.discount_percentage.replace('%', ''));
+                  return Number.isInteger(val) ? val : val.toFixed(2);
+                })()}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)">
+            </td>`;
+            html += `
+            <td class="centered-td">
+              <input name="discountAmount" type="number" min="0" max="100"
+                value="${item.discount_amount.replace('$', '')}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)">
+            </td>`;
+        } else if (field === "Total Price") {
+          html += `
+            <td class="total-price" data-sku="${item.sku}">
+              ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else {
+          // Custom Field: Just render the value
+          html += `
+            <td class="centered-td">${item[cleanedField] ?? "---"}</td>`;
+        }
+      });
+
+      html += `</tr>`;
     }
   });
 
   html += `</tbody></table>
-    <p class="subtotal-amount">
-      Subtotal: ${parseFloat(quote.subtotal.replace('$', '')).toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-      })}
-    </p>
-    <p class="total-amount">
-      Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-      })}
-    </p>
+    <div class="total-container">
+      <p class="subtotal-amount">
+        Subtotal: ${parseFloat(quote.subtotal.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+      </p>
+      <p class="total-amount">
+        Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+      </p>
+    </div>
   </div>`;
 
   return html;
 }
 
 function renderReadOnlyQuoteDetails(quote) {
+  //console.log("Quote: ", quote);
   const createdAt = new Date(quote.created_at);
   const expirationDate = new Date(quote.expiration_date);
 
-  // Add 0 in front if necessary
-  const month = String(createdAt.getMonth() + 1).padStart(2, '0');
-  const day = String(createdAt.getDate()).padStart(2, '0');
-  const year = createdAt.getFullYear();
+  const month = String(createdAt.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(createdAt.getUTCDate()).padStart(2, '0');
+  const year = createdAt.getUTCFullYear();
 
   const formattedDate = `${month}/${day}/${year}`;
 
-  const month_e = String(expirationDate.getMonth() + 1).padStart(2, '0');
-  const day_e = String(expirationDate.getDate()).padStart(2, '0');
-  const year_e = expirationDate.getFullYear();
+  const monthFormatted = String(expirationDate.getUTCMonth() + 1).padStart(2, '0');
+  const dayFormatted = String(expirationDate.getUTCDate()).padStart(2, '0');
+  const yearFormatted = expirationDate.getUTCFullYear();
 
-  const formattedDate_e = `${month_e}/${day_e}/${year_e}`;
+  const formattedDate_e = `${monthFormatted}/${dayFormatted}/${yearFormatted}`;
 
   var html = `<div class="quote-container">
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
-                  <p><strong>Status:</strong> ${quote.status}</p>
+                  <div style="display: flex; align-items: center; gap: 8px;" class="status-select">
+                    <p><strong>Status:</strong> ${quote.status}</p>
+                  </div>
               </div>
               <div class="quote-details">
                 <div class="account">
-                  <p><strong>Account:</strong> ${quote.account}</p>
+                  <p><strong>Account:</strong> ${quote.account ? quote.account : "---"}</p>
                 </div>
                 <div class="opportunity">
-                  <p><strong>Opportunity:</strong> ${quote.opportunity}</p>
+                  <p><strong>Opportunity:</strong> ${quote.opportunity ? quote.opportunity : "---"}</p>
                 </div>
                 <div class="created">
-                  <p><strong>Created At:</strong> ${formattedDate}</p>
+                  <p><strong>Created At:</strong> ${quote.created_at ? formattedDate : "---"}</p>
                 </div>
                 <div class="expiration">
-                  <p><strong>Expiration Date:</strong> ${formattedDate_e}</p>
+                  <p><strong>Expiration Date:</strong> ${quote.expiration_date ? formattedDate : "---"}</p>
                 </div>
                 
                 <div class="discount">
@@ -657,76 +774,142 @@ function renderReadOnlyQuoteDetails(quote) {
               </div>
               <h4>Line Items</h4>`;
 
-  var is_subscription_cont = 0;
+  var has_printed_subscription_header = false;
+
 
   quote.line_items.forEach(item => {
     if(item.is_subscription == true){
-      if(is_subscription_cont == 0){
+      if(!has_printed_subscription_header){
+        const headers = [];
+
+        quote.rendered_fields.forEach(field => {
+          const cleaned = field.replace(/^Product\./, "");
+
+          if (cleaned.toLowerCase() === "discount") {
+            headers.push(`<th>Discount (%)</th>`);
+            headers.push(`<th>Discount (USD)</th>`);
+          } 
+          else if (cleaned === "Total Price") {
+            headers.push(`<th>Subscription</th>`);
+            headers.push(`<th>Term</th>`);
+            headers.push(`<th>Total Price</th>`);
+          }
+          else {
+            const label = cleaned
+              .replace("Product And SKU", "SKU/Product")
+              .replace("Unit Price", "Unit Price")
+              .replace("Quantity", "Quantity")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, l => l.toUpperCase());
+
+            headers.push(`<th>${label}</th>`);
+          }
+        });
+
         html += `
-              <table class="quote-table quote-table-read-only" data-quote-id="${quote.quote_name}">
+                <table class="quote-table" data-quote-id="${quote.quote_name}">
                   <thead>
-                      <tr>
-                          <th>SKU/Product</th>
-                          <th>Quantity</th>
-                          <th>Unit Price</th>
-                          <th>Discount (%)</th>
-                          <th>Discount (USD)</th>
-                          <th>Subscription</th>
-                          <th>Term</th>
-                          <th>Total Price</th>
-                      </tr>
+                    <tr>
+                      ${headers.join("\n")}
+                    </tr>
                   </thead>
                   <tbody>`;
-            is_subscription_cont = 1;
+
+        has_printed_subscription_header = true;
       }
 
-      html += `
-          <tr>
-              <td>
-                <div class="centered-td">${item.sku}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
-              </td>
-              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)" disabled></td>
-              <td>
-                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
+      html += `<tr>`;
+
+      quote.rendered_fields.forEach(field => {
+        // Limpiar campos como Product.UOM
+        const cleanedField = field.replace(/^Product\./, "");
+
+        if (field === "Product And SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+              <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+            </td>`;
+        } else if (field === "Quantity") {
+          html += `
+            <td>
+              <input
+                type="number"
+                min="1"
+                class="editable-field"
+                value="${item.quantity}" 
+                data-quote="${quote.quote_name}"
+                data-quoteline-id="${item.id}"
+                data-sku="${item.sku}" 
+                data-field="quantity"
+                onchange="updateQuoteLine(this)"
+                disabled>
+            </td>`;
+        } else if (field === "Unit Price") {
+          html += `
+            <td>
+              ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else if (field === "Discount") {
+          html += `
+            <td class="centered-td">
+              <input name="discountPercentage" type="number" min="0" max="100"
+                value="${(() => {
+                  const val = parseFloat(item.discount_percentage.replace('%', ''));
+                  return Number.isInteger(val) ? val : val.toFixed(2);
+                })()}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)"
+                disabled>
+            </td>`;
+            html += `
+            <td class="centered-td">
+              <input name="discountAmount" type="number" min="0" max="100"
+                value="${item.discount_amount.replace('$', '')}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)"
+                disabled>
+            </td>`;
+        } else if (field === "Total Price") {
+          html += `
+              <td class="centered-td">
+                ${item.is_subscription ? '✅' : '❌'}
+              </td>`;
+
+          html += `
               <td class="centered-td">
                 <input
-                  name="discountPercentage"
+                  name="term"
                   type="number"
-                  min="0"
-                  max="100"
-                  value="${(() => {
-                    const val = parseFloat(item.discount_percentage.replace('%', ''));
-                    return Number.isInteger(val) ? val : val.toFixed(2);
-                  })()}"
+                  value="${item.term || '---'}"
                   data-quote="${quote.quote_name}"
                   data-quoteline-id="${item.id}"
                   data-sku="${item.sku}"
                   class="editable-field"
-                  data-field="discount_percentage"
+                  data-field="term"
                   onchange="updateQuoteLine(this)"
+                  style="text-align: center;"
                   disabled>
-              </td>
-              <td class="centered-td">
-               <input name="discountAmount" type="number" min="0" max="100" value="${item.discount_amount.replace('$', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)" disabled>
-              </td>
-              <td class="centered-td">
-                ${item.is_subscription ? '✅' : '❌'}
-              </td>
-              <td class="centered-td">
-                ${item.term || '---'}
-              </td>
-              <td class="total-price" data-sku="${item.sku}">
-                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-          </tr>`;
+              </td>`;
+          
+          html += `
+            <td class="total-price" data-sku="${item.sku}">
+              ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else {
+          // Custom Field: Just render the value
+          html += `
+            <td class="centered-td">${item[cleanedField] ?? "---"}</td>`;
+        }
+      });
+
+      html += `</tr>`;
     }
   });
 
@@ -736,64 +919,124 @@ function renderReadOnlyQuoteDetails(quote) {
   quote.line_items.forEach(item => {
     if(item.is_subscription == false){
       if(none_suscription_bool == 0){
+        const headers = [];
+
+        quote.rendered_fields.forEach(field => {
+          const cleaned = field.replace(/^Product\./, "");
+
+          if (cleaned.toLowerCase() === "discount") {
+            headers.push(`<th>Discount (%)</th>`);
+            headers.push(`<th>Discount (USD)</th>`);
+          } else {
+            const label = cleaned
+              .replace("Product And SKU", "SKU/Product")
+              .replace("Unit Price", "Unit Price")
+              .replace("discount_percentage", "Discount (%)")
+              .replace("discount_amount", "Discount (USD)")
+              .replace("total_price", "Total Price")
+              .replace("subscription", "Subscription")
+              .replace("term", "Term")
+              .replace("Quantity", "Quantity")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, l => l.toUpperCase());
+
+            headers.push(`<th>${label}</th>`);
+          }
+        });
+
         html += `
-              <table class="quote-table-read-only" data-quote-id="${quote.quote_name}">
+                <table class="quote-table" data-quote-id="${quote.quote_name}">
                   <thead>
-                      <tr>
-                          <th>SKU/Product</th>
-                          <th>Quantity</th>
-                          <th>Unit Price</th>
-                          <th>Discount (%)</th>
-                          <th>Discount (USD)</th>
-                          <th>Total Price</th>
-                      </tr>
+                    <tr>
+                      ${headers.join("\n")}
+                    </tr>
                   </thead>
                   <tbody>`;
-            none_suscription_bool = 1;
+        none_suscription_bool = 1;
       }
 
-      html += `
-          <tr>
-              <td>
-                <div class="centered-td">${item.sku}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
-              </td>
-              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)" disabled></td>
-              <td>
-                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-              <td class="centered-td">
-               <input name="discountPercentage" type="number" min="0" max="100" value="${item.discount_percentage.replace('%', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)" disabled>
-              </td>
-              <td class="centered-td">
-               <input name="discountAmount" type="number" min="0" max="100" value="${item.discount_amount.replace('$', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)" disabled>
-              </td>
-              <td class="total-price" data-sku="${item.sku}">
-                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-          </tr>`;
+      html += `<tr>`;
+
+      quote.rendered_fields.forEach(field => {
+        // Limpiar campos como Product.UOM
+        const cleanedField = field.replace(/^Product\./, "");
+
+        if (field === "Product And SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+              <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+            </td>`;
+        } else if (field === "Quantity") {
+          html += `
+            <td>
+              <input type="number" min="1" value="${item.quantity}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"
+                disabled>
+            </td>`;
+        } else if (field === "Unit Price") {
+          html += `
+            <td>
+              ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else if (field === "Discount") {
+          html += `
+            <td class="centered-td">
+              <input name="discountPercentage" type="number" min="0" max="100"
+                value="${(() => {
+                  const val = parseFloat(item.discount_percentage.replace('%', ''));
+                  return Number.isInteger(val) ? val : val.toFixed(2);
+                })()}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)"
+                disabled>
+            </td>`;
+            html += `
+            <td class="centered-td">
+              <input name="discountAmount" type="number" min="0" max="100"
+                value="${item.discount_amount.replace('$', '')}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)"
+                disabled>
+            </td>`;
+        } else if (field === "Total Price") {
+          html += `
+            <td class="total-price" data-sku="${item.sku}">
+              ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else {
+          // Custom Field: Just render the value
+          html += `
+            <td class="centered-td">${item[cleanedField] ?? "---"}</td>`;
+        }
+      });
+
+      html += `</tr>`;
     }
   });
 
   html += `</tbody></table>
-    <p class="subtotal-amount">
-      Subtotal: ${parseFloat(quote.subtotal.replace('$', '')).toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-      })}
-    </p>
-    <p class="total-amount">
-      Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-      })}
-    </p>
+    <div class="total-container">
+      <p class="subtotal-amount">
+        Subtotal: ${parseFloat(quote.subtotal.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+      </p>
+      <p class="total-amount">
+        Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+      </p>
+    </div>
   </div>`;
 
   return html;
@@ -905,9 +1148,10 @@ async function updateQuoteLine(input) {
     const sku = input.dataset.sku;
     const field = input.dataset.field;
     let newValue = input.value.trim();
+    console.log("Entra a updateQuoteLine");
   
     if (["quantity", "discount_amount", "discount_percentage", "term"].includes(field)) {
-    newValue = parseFloat(newValue);
+      newValue = parseFloat(newValue);
     }
     const quoteLineId = input.dataset.quotelineId;
 
@@ -1057,10 +1301,8 @@ async function updateQuote(input) {
 
             const updatedQuote = data.response.quote_details;
 
-            // Encuentra el contenedor del descuento
             const quoteContainer = input.closest(".quote-details");
 
-            // Actualiza el otro campo dependiendo de cuál cambió
             if (field === "discount_percentage") {
                 const discountAmountInput = quoteContainer.querySelector('input[data-field="discount_amount"]');
                 if (discountAmountInput) {
@@ -1078,6 +1320,19 @@ async function updateQuote(input) {
                     const discountPct = parseFloat(updatedQuote.discount_percentage);
                     discountPctInput.value = discountPct.toFixed(2);
                 }
+            }
+
+            // 🧮 Update Net Amount (total amount)
+            const totalContainer = input.closest(".quote-container");
+            const netAmountEl = totalContainer.querySelector(".total-amount");
+            if (netAmountEl && updatedQuote.net_amount) {
+                const net = parseFloat(updatedQuote.net_amount.replace('$', ''));
+                netAmountEl.innerHTML = `
+                    Net Amount: ${net.toLocaleString('en-US', {
+                        style: 'currency',
+                        currency: 'USD'
+                    })}
+                `;
             }
 
             alert("✅ Quote updated successfully!");

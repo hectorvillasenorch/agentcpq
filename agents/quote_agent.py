@@ -52,12 +52,9 @@ def quote_agent(user, action, user_message, session_data):
         "AddProduct": add_product_to_quote, #HELPERS READY
         "UpdateQuoteLine": update_quote_line, #HELPERS READY
         "UpdateQuote": update_quote,          #HELPERS READY
-        #"ApplyQuoteLineDiscount": update_quote_line,  # (Not needed) Logic already handled in update_quote function
-        #"ApplyQuoteDiscount": update_quote,           # (Not needed) Logic already handled in update_quote function
         "DeleteQuoteLine": delete_quote_line,
         "DeleteQuote": delete_quote,
         "ShowQuoteDetails": show_quote_details,
-        #"UpdateQuoteNotes": update_quote_notes,       # (Not needed) Logic already handled in update_quote function
         "ShowQuoteNotes": show_quote_notes,
         "GenerateQuoteDocument": generate_quote_pdf,
         "UpdateQuoteLineFromUI": update_quote_line_from_ui,
@@ -311,9 +308,6 @@ def update_quote(user, user_message, session_data):
         "message": response_message,
         "temporaryMessage": True
         }
-
-
-#< ----------------- DELETE QUOTE LINE -------------------- >
     
 def delete_quote_line(user, user_message, session_data):
     """Deleting quote line item from quote"""
@@ -389,7 +383,7 @@ def delete_quote_line(user, user_message, session_data):
 
 #< ----------------- DELETE QUOTE -------------------- >
 
-def delete_quote(user_message, session_data):
+def delete_quote(user, user_message, session_data):
     """Deleting Quote"""
     response_message = ""
     try:
@@ -407,6 +401,7 @@ def delete_quote(user_message, session_data):
         if quote.status == "Draft":
             if session_data["pending_action"] == "delete_quote_confirmed":
                 quote_name = quote.name  # Save quote name before to delete
+                log_action_usage("DeleteQuote", user, "Quote", quote_name)
                 quote.delete()
 
                 return {
@@ -435,7 +430,7 @@ def delete_quote(user_message, session_data):
 
 #< ----------------- SHOW QUOTE DETAILS -------------------- >
 
-def show_quote_details(user_message, session_data):
+def show_quote_details(user, user_message, session_data):
     """Fetches and formats quote details, including quote lines, based on user input or session data."""
     try:
         logging.info("🔄 Showing quote details...")
@@ -749,33 +744,49 @@ def generate_quote_pdf(user,user_message, session_data):
             # ✅ Table header Information
             pdf.setFont("Helvetica-Bold", 10)
             pdf.setFillColor(HexColor(CBLACK))
-            column_spacing = 512 / len(template.rendered_fields)
 
+            # Configuramos el espacio para cada columna de 512 (tamaño del espacio) / la cantidad de columnas a imprimir (MAX 6)
+            column_spacing = 512 / len(template.rendered_fields)
+            print(f"Column Spacing: {column_spacing}")
+
+            # Renderizamos los encabezados de la tabla
             for index, field in enumerate(template.rendered_fields):
-                column_x = x_position + index * column_spacing
+                # Obtenemos la posicion en la que va a iniciar el texto de la columna segun el index
+                column_x_position = x_position + index * column_spacing
+                # Calculamos el ancho real del texto del encabezado, segun la fuente y el tamaño (para poder alinear correctamente)
                 text_width = pdf.stringWidth(field, "Helvetica-Bold", 10)
+                # Determina si estamos en la ultima pocision
                 last_index = len(template.rendered_fields) - 1
 
-                if field == "Product And SKU" and index == 0:
-                    aligned_x = column_x + 2 
-                elif index == 0:
-                    aligned_x = column_x
+                # Si es la primera columna se alinea a la izquierda
+                if index == 0:
+                    aligned_x = column_x_position
+                # Si es la ultima columna se alinea a la derecha
                 elif index == last_index:
-                    aligned_x = column_x + column_spacing - text_width
+                    aligned_x = column_x_position + column_spacing - text_width
+                # Si es cualquier otra columna se alinea al centro de su espacio
                 else:
-                    aligned_x = column_x + (column_spacing - text_width) / 2
+                    aligned_x = column_x_position + (column_spacing - text_width) / 2
 
+                # Finalmente se imprime el texto del encabezado
                 pdf.drawString(aligned_x, y_position, field)
+
+                pdf.setStrokeColor(HexColor("#2d14ff"))
+                pdf.setLineWidth(1)
+                pdf.line(column_x_position, y_position - 5, column_x_position, y_position + 5)
+                pdf.line(column_x_position + column_spacing, y_position - 5, column_x_position + column_spacing, y_position + 5)
             
+            # Le quitamos 15 puntos a Y para imprimir la linea divisora
             y_position -= 15
-            # ------------------------------------
+            # ------------------------------------ Imprimimos la linea divisora
             pdf.setStrokeColor(HexColor(SCOLOR))
             pdf.setLineWidth(2)
-            pdf.line(50, y_position, 562, y_position) 
+            pdf.line(50, y_position, 562, y_position)
+            # Restamos 27 puntos para comenzar a imprimir los elementos de la tabla
             y_position -= 27
 
             FIELD_MAP = {
-                "Product And SKU": lambda line: f"{line.product_name} ({line.sku})" if line.sku else line.product_name,
+                "Product And SKU": lambda line: max([line.product_name or "", line.sku or ""], key=len),
                 "Product": lambda line: line.product_name,
                 "SKU": lambda line: line.sku,
                 "Description": lambda line: line.description,
@@ -791,8 +802,8 @@ def generate_quote_pdf(user,user_message, session_data):
                 "Total Price": lambda line: f"${line.total_price:,.2f}",
             }
 
-            for line in quote.quote_lines.all():
-                if y_position < 70:  # Si nos acercamos al final de la hoja
+            for line in quote_lines.all():
+                if y_position < 70:  # Si nos acercamos al final de la hoja reseteamos los encabezados
                     right_margin = 562
                     y_position += 15
                     pdf.setStrokeColor(HexColor(SCOLOR))
@@ -806,20 +817,26 @@ def generate_quote_pdf(user,user_message, session_data):
                     pdf.setFillColor(HexColor(CBLACK))
                     column_spacing = 512 / len(template.rendered_fields)
 
+                    # Renderizamos los encabezados de la tabla
                     for index, field in enumerate(template.rendered_fields):
-                        column_x = x_position + index * column_spacing
+                        # Obtenemos la posicion en la que va a iniciar el texto de la columna segun el index
+                        column_x_position = x_position + index * column_spacing
+                        # Calculamos el ancho real del texto del encabezado, segun la fuente y el tamaño (para poder alinear correctamente)
                         text_width = pdf.stringWidth(field, "Helvetica-Bold", 10)
+                        # Determina si estamos en la ultima pocision
                         last_index = len(template.rendered_fields) - 1
 
-                        if field == "Product And SKU" and index == 0:
-                            aligned_x = column_x + 2 
-                        elif index == 0:
-                            aligned_x = column_x
+                        # Si es la primera columna se alinea a la izquierda
+                        if index == 0:
+                            aligned_x = column_x_position
+                        # Si es la ultima columna se alinea a la derecha
                         elif index == last_index:
-                            aligned_x = column_x + column_spacing - text_width
+                            aligned_x = column_x_position + column_spacing - text_width
+                        # Si es cualquier otra columna se alinea al centro de su espacio
                         else:
-                            aligned_x = column_x + (column_spacing - text_width) / 2
+                            aligned_x = column_x_position + (column_spacing - text_width) / 2
 
+                        # Finalmente se imprime el texto del encabezado
                         pdf.drawString(aligned_x, y_position, field)
                     
                     y_position -= 15
@@ -829,56 +846,91 @@ def generate_quote_pdf(user,user_message, session_data):
                     pdf.line(50, y_position, 562, y_position) 
                     y_position -= 27
             
+                # Usamos la posicion en Y para poder manipular posiciones en Y dentro de la columna
                 set_y_position = y_position
                 for index, field_title in enumerate(template.rendered_fields):
-                    column_x = x_position + index * column_spacing
-                    last_index = len(template.rendered_fields) - 1
+                    #set_y_position = y_position
+                    column_x = x_position + index * column_spacing # Inicio del valor de la columna correspondiente
+                    last_index = len(template.rendered_fields) - 1 # Para saber si es el ultimo valor
 
-                    if field_title == "Product And SKU":
-                        if index == 0:
-                            aligned_x = column_x
-                        else:
-                            aligned_x = column_x + column_spacing / 2
+                    # 🔍 Obtener el contenido dinámicamente desde el FIELD_MAP
+                    if field_title in FIELD_MAP:
+                        field_value = FIELD_MAP[field_title](line)
+                        print(f"Fv: {field_value}")
                     else:
-                        if index == 0:
-                            aligned_x = column_x
-                        elif index == last_index:
-                            aligned_x = column_x + column_spacing - 1
-                        else:
-                            aligned_x = column_x + column_spacing / 2
+                        field_value = "---"  # O dejarlo vacío o lanzar warning si el campo es desconocido
 
+                    text_width = pdf.stringWidth(field_value, "Helvetica-Bold", 10)
+
+                    # Imprimimos diferente para Product And SKU porque se van a imprimir ambos valores (SKU y Product Name)
                     if field_title == "Product And SKU":
                         sku = line.sku or ""
                         product = line.product_name or ""
 
-                        max_width = column_spacing - 5 
-                        sku_font_size = 10
-                        product_font_size = 9
+                        max_width = column_spacing - 5 # Definimos el tamaño maximo que puede ocupar el texto
+                        sku_font_size = 10 # Tamaño de fuente del texto SKU
+                        product_font_size = 9 # Tamaño de fuente del texto Product Name
 
+                        # Comparamos que el valor del texto SKU no sea mas grande que el tamaño maximo de la columna
                         sku_text_width = pdf.stringWidth(sku, "Helvetica-Bold", sku_font_size)
                         if sku_text_width > max_width:
                             sku_font_size = max(6, int(sku_font_size * max_width / sku_text_width))
+                            sku_text_width = pdf.stringWidth(sku, "Helvetica-Bold", sku_font_size)
 
+                        # Comparamos que el valor del texto Product Name no sea mas grande que el tamaño maximo de la columna
                         product_text_width = pdf.stringWidth(product, "Helvetica", product_font_size)
                         if product_text_width > max_width:
                             product_font_size = max(6, int(product_font_size * max_width / product_text_width))
+                            product_text_width = pdf.stringWidth(product, "Helvetica", product_font_size)
 
+                        # Si Product And SKU está al inicio
                         if index == 0:
+                            aligned_x = column_x
                             pdf.setFont("Helvetica-Bold", sku_font_size)
                             pdf.setFillColor(HexColor("#000000"))
-                            pdf.drawString(column_x + 2, set_y_position, sku)
+                            pdf.drawString(aligned_x, set_y_position, sku)
                             pdf.setFont("Helvetica", product_font_size)
                             pdf.setFillColor(HexColor("#666666"))  
-                            pdf.drawString(column_x + 2, set_y_position - 10, product)
-                        else:
+                            pdf.drawString(aligned_x, set_y_position - 10, product)
+
+                        # Si Product And SKU está al final
+                        elif index == last_index:
+                            sku_aligned_x = column_x + column_spacing - sku_text_width
                             pdf.setFont("Helvetica-Bold", sku_font_size)
                             pdf.setFillColor(HexColor("#000000"))
-                            pdf.drawCentredString(aligned_x, set_y_position, sku)
-                            pdf.setFont("Helvetica", product_font_size)
-                            pdf.setFillColor(HexColor("#666666"))
-                            pdf.drawCentredString(aligned_x, set_y_position - 10, product)
+                            pdf.drawString(sku_aligned_x, set_y_position, sku)
 
+                            name_aligned_x = column_x + column_spacing - product_text_width
+                            pdf.setFont("Helvetica", product_font_size)
+                            pdf.setFillColor(HexColor("#666666"))  
+                            pdf.drawString(name_aligned_x, set_y_position - 10, product)
+                        
+                        # Si Product And SKU está en medio
+                        else:
+                            sku_aligned_x = column_x + (column_spacing - sku_text_width) / 2
+                            pdf.setFont("Helvetica-Bold", sku_font_size)
+                            pdf.setFillColor(HexColor("#000000"))
+                            pdf.drawString(sku_aligned_x, set_y_position, sku)
+                            name_aligned_x = column_x + (column_spacing - product_text_width) / 2
+                            pdf.setFont("Helvetica", product_font_size)
+                            pdf.setFillColor(HexColor("#666666"))  
+                            pdf.drawString(name_aligned_x, set_y_position - 10, product)
                     else:
+                        # Asignamos la alineacion en X segun en donde se vaya imprimir el valor, al principio, en medio o al final
+                        if index == 0:
+                            aligned_x = column_x # Si el valor es la primera columna, entonces se alinea a la izquierda
+                        elif index == last_index:
+                            aligned_x = column_x + column_spacing - text_width # Si el valor es la ultima columna, entonces se alinea hasta al final
+                        else:
+                            aligned_x = column_x + (column_spacing - text_width) / 2 # Si el valor es una columna del medio, entonces se alinea al centro
+
+                        ########################################################
+                        pdf.setStrokeColor(HexColor("#2d14ff"))
+                        pdf.setLineWidth(1)
+                        pdf.line(column_x, y_position - 5, column_x, y_position + 5)
+                        pdf.line(column_x + column_spacing, y_position - 5, column_x + column_spacing, y_position + 5)
+                        ########################################################
+
                         value_func = FIELD_MAP.get(field_title, lambda l: "")
                         if field_title == "Total Price" and template.show_subscription_term and line.term is not None:
                             monthly_total = line.subtotal * line.quantity
@@ -1212,242 +1264,11 @@ def generate_quote_pdf(user,user_message, session_data):
         return {"message": "⚠️ Error: Quote not found."}
     except Exception as e:
         return {"message": f"⚠️ Error generating PDF: {str(e)}"}
-<<<<<<< HEAD
-=======
-    
-    
-def wrap_text(text, font_name, font_size, max_width, pdf_canvas):
-    words = text.split()
-    lines = []
-    current_line = ""
-
-    for word in words:
-        test_line = f"{current_line} {word}".strip()
-        if pdf_canvas.stringWidth(test_line, font_name, font_size) <= max_width:
-            current_line = test_line
-        else:
-            lines.append(current_line)
-            current_line = word
-    if current_line:
-        lines.append(current_line)
-
-    return lines
-    
-        
-def delete_quote(user, user_message, session_data):
-    """Deleting Quote"""
-    response_message = ""
-    try:
-        #Looking for active quote
-        quote = get_active_quote(user_message, session_data)
-
-        # ⚠️ Verify if function return an error
-        if isinstance(quote, dict) and "message" in quote:
-            return quote
-        
-        logging.info(f"Deleting quote with name: {quote.name}...")
-
-        #If quote status is not in Draft Status
-        #print(f"\n\nQuote: {quote.__dict__}\n\n")
-        if quote.status == "Draft":
-            if session_data["pending_action"] == "delete_quote_confirmed":
-                quote_name = quote.name  # Save quote name before to delete
-                log_action_usage("DeleteQuote", user, "Quote", quote_name)
-                quote.delete()
-                return {
-                    "message": f"✅ Quote '{quote_name}' has been successfully deleted."
-                }
-            else:
-                session_data["pending_action"] = "delete_quote_confirmation"
-                return{
-                    "message": f"⚠️ Are you sure you want to delete the quote <strong>{quote.name}</strong>? (Yes/No)"
-                }
-        else:
-            return {
-                "message": f"⚠️ Quote '{quote.name}' can not be deleted because it's status is '{quote.status}'. Only 'Draft' quotes can be deleted."
-            }   
-
-    except Quote.DoesNotExist:
-        return {
-            "message": "⚠️ Quote doesn't exist."
-        }
-    
-    except Exception as e:
-        logging.exception("An unexpected error occurred while deleting the quote.")
-        return {
-            "message": f"❌ An unexpected error occurred: {str(e)}"
-        }
-    
-def update_quote_notes(user, user_message, session_data):
-    """Updating Quote Notes"""
-    try:
-        #Looking for active quote
-        quote = get_active_quote(user_message, session_data)
-
-        # ⚠️ Verify if function return an error
-        if isinstance(quote, dict) and "message" in quote:
-            return quote
-        
-        logging.info(f"updating notes for quote: {quote.name}...")
-
-        extracted_notes = get_quote_notes_details(user_message)
-
-        if not extracted_notes:
-            # ✅ Save quote in session data
-            set_active_quote_to_session_data(session_data, quote)
-            
-            return {
-                "message": "⚠️ Sorry, I couldn't recognize a quote note from your message."
-            }
-        
-        for index, item in enumerate(extracted_notes, start=1):
-            notes = item['notes']
-
-            if not isinstance(notes, str) or not notes.strip():
-                return {
-                    "message": "⚠️ Sorry, an error occurred. I couldn't extract a valid note from your message. Please try again or modify your input."
-                }
-
-            if notes is None or notes == "Null":
-                return {
-                    "message": "⚠️ Sorry, an error occurred. I couldn't extract a quote note from your message. Please try again or modify your input."
-                }
-            
-            if quote.notes != notes:
-                try:
-                    quote.notes = notes
-                    quote.save()
-                    log_action_usage("UpdateQuoteNotes", user, "Quote", quote.name)
-                except Exception as e:
-                    return {
-                        "message": "⚠️ An error occurred while trying to save the notes to the quote. Please try again."
-                    }
-                
-            return {
-                "message": "✅ Quote notes have been successfully updated."
-            }
-    except Quote.DoesNotExist:
-        return {
-            "message": "⚠️ Quote doesn't exist."
-        }
-    except Exception as e:
-        logging.exception("An unexpected error occurred while showing the quote.")
-        return {
-            "message": f"❌ An unexpected error occurred: {str(e)}"
-        }
-    
-    
-def get_quote_notes_details(user_message):
-    """Uses GPT to extract quote notes."""
-
-    prompt = f"""
-    Extract the quote notes in the following user request.
-
-    Return only the text of notes inside a JSON object like this:
-    [{{"notes": "This is a note."}}]
-
-    "Look for phrases such as:
-    - 'quote notes to:'
-    - 'quote note should be'
-    - 'set the note to'
-    - 'make the quote note:'"
-
-    **Rules:**
-    - If no notes are found in the message, return Null as notes.
-
-    **Examples:**
-
-    User: "Update quote notes to: This is a simple note for this quote."
-    **Expected JSON Output:**
-    [
-        {{"notes": "This is a symple notes for this quote."}}
-    ]
-
-    User: "Change the quote notes to This is a symple notes for this quote."
-    **Expected JSON Output:**
-    [
-        {{"notes": "This is a symple notes for this quote."}}
-    ]
-    **IMPORTANT:** **Return a valid JSON array only of notes. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
-
-    User Request: "{user_message}"
-    """
-
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Extract the notes mentioned in the user's request."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        # ✅ Extract raw response
-        raw_response = response.choices[0].message.content.strip()
-        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
-
-        # ✅ Ensure valid JSON response
-        try:
-            extracted_sku = json.loads(raw_response)
-            if isinstance(extracted_sku, list) and all("notes" in p for p in extracted_sku):
-                return extracted_sku
-            else:
-                logging.warning("⚠️ GPT response is not in expected format.")
-                return None
-        except json.JSONDecodeError:
-            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
-            return None
-
-    except Exception as e:
-        logging.error(f"❌ Error extracting discount details: {str(e)}")
-        return None    
-
-def show_quote_notes(user_message, session_data):
-    """Showing Quote Notes"""
-    response_message = ""
-    try:
-        #Looking for active quote
-        quote = get_active_quote(user_message, session_data)
-
-        # ⚠️ Verify if function return an error
-        if isinstance(quote, dict) and "message" in quote:
-            return quote
-        
-        logging.info(f"Showing notes for quote: {quote.name}...")
-
-        notes = quote.notes
-
-        if notes is None:
-            msg = "📝 There are no notes on the current quote. You can add or update it by typing: “Update quote notes to: your message”."
-            return {
-                "message": msg
-            }
-        
-        msg = f"<b>Quote Notes:</b><br><br>{notes}"
-        
-        return {
-            "message": msg#,
-            #"quote_details": get_quote_details(quote),
-            #"quote_notes": quote.notes,
-            #"hiddenMessage": True
-        }
-
-    except Quote.DoesNotExist:
-        return {
-            "message": "⚠️ Quote doesn't exist."
-        }
-    
-    except Exception as e:
-        logging.exception("An unexpected error occurred while showing the quote.")
-        return {
-            "message": f"❌ An unexpected error occurred: {str(e)}"
-        }
->>>>>>> origin/hubspot
 
 
 #< ----------------- UPDATE QUOTE LINE FROM UI -------------------- >
 
-def update_quote_line_from_ui(user_message, session_data):
+def update_quote_line_from_ui(user, user_message, session_data):
     """Handles updates to quote lines triggered from the UI."""
     logging.info("📝 Updating quote line(s) from front-end UI...")
 

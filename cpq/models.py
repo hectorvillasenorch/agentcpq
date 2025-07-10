@@ -210,7 +210,14 @@ class Product(models.Model):
     family = models.CharField(max_length=50)
     prdid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
-    description = models.TextField(blank=True) 
+    description = models.TextField(blank=True)
+
+    def get_custom_fields(self):
+        return CustomField.objects.filter(object_type="Product")
+
+    def get_custom_fields_values(self):
+        content_type = ContentType.objects.get_for_model(Product)
+        return CustomFieldValue.objects.filter(content_type=content_type, object_id=self.id)
 
     def save(self, *args, **kwargs):
         if not self.prdid:
@@ -868,8 +875,6 @@ class CustomField(models.Model):
         return f"{self.crm}.{self.object_type}.{self.name}"
     
 
-
-
 class CustomFieldValue(models.Model):
     field = models.ForeignKey(CustomField, on_delete=models.CASCADE, related_name="values")
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)  # Generic relation
@@ -956,6 +961,32 @@ class QuoteDocumentSettings(models.Model):
 
     def __str__(self):
         return f"PDF Settings"
+    
+class QuoteUIRender(models.Model):
+
+    def default_rendered_fields():
+        return ['sku_product', 'quantity', 'unit_price', 'discount_percentage', 'discount_amount', 'subscription', 'term', 'total_price']
+
+    def default_omitted_fields():
+        return []
+
+    # Quote information
+    show_quote_account = models.BooleanField(default=True)
+    show_quote_opportunity = models.BooleanField(default=True)
+    show_quote_created_at = models.BooleanField(default=True)
+    show_quote_expires_at = models.BooleanField(default=True)
+    show_quote_discount = models.BooleanField(default=True)
+
+    # Line items information
+    rendered_fields = JSONField(default=default_rendered_fields, blank=True)
+    omitted_fields = JSONField(default=default_omitted_fields, blank=True)
+
+    # Subtotal and net amount information
+    show_quote_subtotal = models.BooleanField(default=True)
+    show_quote_net_amount = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"QuoteUI Settings"
 
 class ActionUsage(models.Model):
     action = models.CharField(max_length=100)  # e.g., "CreateQuote", "UpdateQuoteLine"
