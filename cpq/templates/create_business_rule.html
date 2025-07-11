@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}Create {{ rule_type|title }} Rule - AgentCPQ{% endblock %}
+
+{% block content %}
+<h2 class="text-2xl font-semibold mb-4">Rules Management</h2>
+
+<div class="card-panel white" style="border:1px solid #e0e0e0;border-radius:10px;">
+  <div class="max-w-4xl mx-auto py-10">
+
+    <h4 class="text-center text-xl font-semibold text-orange-600 mb-6">
+      Create New {{ rule_type|title }} Rule
+    </h4>
+
+    <form method="post" action="" class="bg-white shadow rounded-2xl p-8 space-y-6">
+      {% csrf_token %}
+      <!-- Para el form -->
+      {% if form.errors %}
+        <div class="text-red-600">
+          <strong>Form Errors:</strong>
+          <ul>
+            {% for field, errors in form.errors.items %}
+              <li><strong>{{ field }}:</strong> {{ errors|join:", " }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <!-- Para el formset -->
+      {% for form in formset.forms %}
+        {% if form.errors %}
+          <div class="text-red-600">
+            <strong>Condition Error:</strong>
+            <ul>
+              {% for field, errors in form.errors.items %}
+                <li><strong>{{ field }}:</strong> {{ errors|join:", " }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+      {% endfor %}
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Name -->
+        <div>
+          {{ form.name.label_tag }}
+          {{ form.name }}
+        </div>
+
+        <!-- Rule Type -->
+        <div>
+          {{ form.rule_type.label_tag }}
+          {{ form.rule_type }}
+        </div>
+
+        <!-- Target Type -->
+        <div>
+          {{ form.target_type.label_tag }}
+          {{ form.target_type }}
+        </div>
+
+        <!-- Priority -->
+        <div>
+          {{ form.priority.label_tag }}
+          {{ form.priority }}
+        </div>
+
+        <!-- Active -->
+        <div class="flex items-center space-x-2">
+          {{ form.active }}
+          <span class="text-sm">Active</span>
+        </div>
+
+        <!-- Error Message -->
+        <div class="md:col-span-2">
+          {{ form.error_message.label_tag }}
+          {{ form.error_message }}
+        </div>
+      </div>
+
+      {% if rule_type == 'validation' %}
+        <br>
+        <hr class="my-6">
+        <br>
+        <h5 class="text-lg font-semibold mb-4 text-gray-700">Validation Conditions</h5>
+
+        <div class="space-y-4">
+          {{ formset.management_form }}
+          {% for form in formset.forms %}
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border rounded-md">
+              <div>
+                {{ form.field_name.label_tag }}
+                {{ form.field_name }}
+              </div>
+              <div>
+                {{ form.operator.label_tag }}
+                {{ form.operator }}
+              </div>
+              <div>
+                {{ form.value.label_tag }}
+                {{ form.value }}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="flex justify-end space-x-4 pt-6">
+        <a href="{% url 'cpq:business_rules' %}" class="px-4 py-2 text-gray-600">Cancel</a>
+        <button type="submit" class="px-6 py-2 bg-orange-600 text-white rounded-lg">
+          Save
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const selects = document.querySelectorAll('select');
+    M.FormSelect.init(selects);
+    const labels = document.querySelectorAll('label');
+    labels.forEach(label => label.classList.add('active'));
+  });
+</script>
+
+<script>
+  const fieldsByTarget = {
+    'quote': {{ QUOTE_FIELDS|safe }},
+    'quote_line': {{ QUOTE_LINE_FIELDS|safe }},
+    'product': {{ PRODUCT_FIELDS|safe }},
+  };
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const fieldsByTarget = {
+    'quote': {{ QUOTE_FIELDS|safe }},
+    'quote_line': {{ QUOTE_LINE_FIELDS|safe }},
+    'product': {{ PRODUCT_FIELDS|safe }},
+  };
+
+  const targetSelect = document.querySelector('select[name="target_type"]');
+  const fieldNameSelects = document.querySelectorAll('select[name$="field_name"]');
+
+  function updateFieldNameOptions(targetType) {
+    const fields = fieldsByTarget[targetType] || [];
+    fieldNameSelects.forEach(select => {
+      // Guarda el valor actual para intentar restaurarlo luego
+      const currentValue = select.value;
+
+      // Limpia opciones actuales
+      select.innerHTML = '';
+
+      // Agrega las nuevas opciones
+      fields.forEach(([value, label]) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        select.appendChild(option);
+      });
+
+      // Intenta restaurar el valor anterior si existe
+      if (fields.some(([value]) => value === currentValue)) {
+        select.value = currentValue;
+      }
+    });
+
+    // Si usas Materialize, re-inicializa los selects para que se refresquen visualmente
+    if (window.M) {
+      M.FormSelect.init(fieldNameSelects);
+    }
+  }
+
+  // Inicializa cuando carga la página
+  updateFieldNameOptions(targetSelect.value);
+
+  // Actualiza cuando cambie target_type
+  targetSelect.addEventListener('change', function() {
+    updateFieldNameOptions(this.value);
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<script src="{% static 'js/agents/agent_main.js' %}" defer></script>
+<style>
+ #monthlyChart {
+  aspect-ratio: 2 / 1;
+  width: 100%;
+  max-height: 250px;
+}
+#userChart {
+  aspect-ratio: 2 / 1;
+  width: 100%;
+  max-height: 250px;
+}
+</style>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <!-- Limit Summary -->
+    <div class="bg-white p-4 rounded shadow">
+      <h3 class="text-xl font-semibold mb-2">Limit Summary</h3>
+      <p><strong>Monthly Limit:</strong> {{ limit }}</p>
+      <p><strong>Current Usage (This Month):</strong> {{ monthly_count }}</p>
+      <p><strong>Overflow:</strong> 
+        {% if overflow > 0 %}
+          <span class="text-red-600 font-bold">{{ overflow }}</span>
+        {% else %}
+          <span class="text-green-600 font-semibold">None</span>
+        {% endif %}
+      </p>
+    </div>
+
+    <!-- Top 5 Actions Table -->
+    <div class="bg-white p-4 rounded shadow">
+      <h3 class="text-xl font-semibold mb-2">Top 5 Most Used Actions</h3>
+      <table class="table-auto w-full border">
+        <thead>
+          <tr class="bg-gray-100">
+            <th class="px-4 py-2 text-left">#</th>
+            <th class="px-4 py-2 text-left">Action</th>
+            <th class="px-4 py-2 text-left">Count</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for action in top_actions %}
+          <tr>
+            <td class="border px-4 py-2">{{ forloop.counter }}</td>
+            <td class="border px-4 py-2">{{ action.action }}</td>
+            <td class="border px-4 py-2">{{ action.count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="bg-white p-4 rounded shadow my-6">
+    <h3 class="text-xl font-semibold mb-4">Total Actions by Month</h3>
+    <canvas id="monthlyChart"></canvas>
+  </div>
+
+  <div class="bg-white p-4 rounded shadow">
+    <h3 class="text-xl font-semibold mb-4">Actions by User</h3>
+    <canvas id="userChart"></canvas>
+  </div>
+<script>
+  const actionsByMonth = {{ actions_by_month_json|safe }};
+</script>
+<script>
+  const actionsByUser = {{ actions_by_user_json|safe }};
+</script>
+ <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const ctx = document.getElementById("userChart");
+    if (!ctx) {
+      console.error("Canvas with id 'userChart' not found.");
+      return;
+    }
+
+    const chart = new Chart(ctx.getContext("2d"), {
+      type: 'bar',
+      data: {
+        labels: actionsByUser.map(a => a.user),
+        datasets: [{
+          label: 'Actions by User',
+          data: actionsByUser.map(a => a.total),
+          backgroundColor: 'rgba(252, 106, 62, 0.78)',
+          borderColor: 'rgba(252, 106, 62, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              stepSize: 1
+            }
+          }
+        }
+      }
+    });
+  });
+</script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const monthlyCtx = document.getElementById("monthlyChart");
+    if (!monthlyCtx) {
+      console.error("Canvas with id 'monthlyChart' not found.");
+      return;
+    }
+
+    new Chart(monthlyCtx.getContext("2d"), {
+      type: 'bar',
+      data: {
+        labels: actionsByMonth.map(entry => entry.month),
+        datasets: [{
+          label: 'Total Actions per Month',
+          data: actionsByMonth.map(entry => entry.total),
+          backgroundColor: 'rgba(252, 106, 62, 0.78)',
+          borderColor: 'rgba(252, 106, 62, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              precision: 0  // Ensure integer y-axis ticks
+            }
+          }
+        }
+      }
+    });
+  });
+</script>
+
+{% endblock %}

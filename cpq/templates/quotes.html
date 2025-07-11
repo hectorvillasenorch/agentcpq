@@ -1,3 +1,5 @@
+{% load static %}
+<script src="{% static 'js/agents/agent_main.js' %}" defer></script>
 <style>
     body {
         background-color: #f9fafb;
@@ -128,10 +130,26 @@
       .collapsible-header{
         font-size: 1.7rem;
       }
+    .container-fluid {
+      padding: 24px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+      height: auto;
+    }
+    h2 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 15px;
+    margin-top: 0px;
+  }
   </style>
   
   <div class="container-fluid" style="width: 100%;">
- 
+
     <h2>
         <i class="material-icons">request_quote</i> My Quotes
       </h2>

@@ -13,6 +13,8 @@
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   
 </head>
 <body class="grey lighten-5">  
@@ -23,34 +25,44 @@
 <div class="sidenav sidenav-fixed" style="display: flex; flex-direction: column; height: 100vh;">
 
     <!-- Top Section -->
+
     <div style="flex-grow: 1;">
+          <a href="{% url 'dashboard' %}?view=agents">
+            <i class="material-icons">arrow_back</i> Back To AgentCPQ
+        </a>
         <div class="brand">
             <img width="70%" src="/media/img/logo-small.png" alt="AgentCPQ Logo">
         </div>
-        <a href="{% url 'cpq:custom_fields' %}">
-            <i class="material-icons">view_list</i> Manage Metadata
-        </a>
-        <a href="{% url 'dashboard' %}?view=products">
-            <i class="material-icons">inventory_2</i> Account
-        </a>
-        <a href="{% url 'dashboard' %}?view=quotes">
-            <i class="material-icons">request_quote</i> Quotes
-        </a>
-        <a href="{% url 'dashboard' %}?view=setup">
-            <i class="material-icons">arrow_back</i> Setup
-        </a>
+        <p class="session-list-title">Organization</p>
+            <a href="{% url 'cpq:get_company_information' %}">
+                <i class="material-icons">business</i> Company Information
+            </a>
+            <a href="{% url 'cpq:usage_dashboard' %}">
+                <i class="material-icons">receipt_long</i> Usage
+            </a>
 
         <div class="divider"></div>
 
         <div class="session-list">
-            <p class="session-list-title">Account</p>
-            <a href="{% url 'cpq:get_company_information' %}">
-                <i class="material-icons">business</i> Company Information
+            <p class="session-list-title">System</p>
+            <a href="{% url 'cpq:custom_fields' %}">
+                <i class="material-icons">view_list</i> Manage Metadata
             </a>
-            <a href="{% url 'dashboard' %}?view=setup">
-                <i class="material-icons">receipt_long</i> Billing
+            {% if request.user.is_superuser or perms.auth.view_user %}
+                <a href="{% url 'admin:auth_user_changelist' %}">
+                    <i class="material-icons">group</i> Users
+                </a>
+            {% endif %}
+            {% if perms.cpq %}  
+                <a href="{% url 'admin:app_list' 'cpq' %}">
+                    <i class="material-icons">settings</i> CPQ Admin
+                </a>
+            {% endif %}
+            
+            <p class="session-list-title">Rules</p>
+            <a href="{% url 'cpq:business_rules' %}">
+              <i class="material-icons">rule</i> Manage Rules
             </a>
-
             <p class="session-list-title">Document</p>
             <a href="{% url 'cpq:get_document_template' %}">
                 <i class="material-icons">note_alt</i> Manage Document

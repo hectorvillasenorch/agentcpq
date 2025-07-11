@@ -66,21 +66,20 @@ function unescapeUnicode(str) {
 function enhanceStructuredAgentMessages() {
     document.querySelectorAll(".agent-json").forEach(div => {
       const raw = div.dataset.raw;
-  
-      const startIndex = raw.indexOf('{');
-      if (startIndex !== -1) {
-        const jsonStr = raw.slice(startIndex);
-  
-        try {
-          const quote = JSON.parse(unescapeUnicode(jsonStr));
-          const html = renderQuoteDetails(quote);
-          div.innerHTML = html;
-        } catch (e) {
-          console.error("❌ JSON parse failed:", e, jsonStr);
-          div.innerHTML = `<div class="error-message">❌ Error trying to display the structured message. (JSON parsing error)</div>`;
-        }
-      } else {
-        div.innerHTML = `<div class="error-message">⚠️ Could not find quote details JSON</div>`;
+      
+      const jsonStr = extractJson(raw);
+      if (!jsonStr) {
+        console.log("enhanceStructuredAgentMessages")
+        div.innerHTML = `<div class="error-message">⚠️ Could not find valid JSON in message</div>`;
+        return;
+      }
+
+      try {
+        const data = JSON.parse(unescapeUnicode(jsonStr));
+        // Procesa data
+      } catch (e) {
+        console.error("JSON parse failed:", e, jsonStr);
+        div.innerHTML = `<div class="error-message">❌ JSON parsing error</div>`;
       }
     });
   }
@@ -88,55 +87,104 @@ function enhanceStructuredAgentMessages() {
 /*
 * ✅ enhanceStructuredAgentMessages in history chat, NOT in real time
 */
+function extractJson(text) {
+  const startObj = text.indexOf('{');
+  const startArr = text.indexOf('[');
+
+  let start = -1;
+  if (startObj === -1) start = startArr;
+  else if (startArr === -1) start = startObj;
+  else start = Math.min(startObj, startArr);
+
+  if (start === -1) return null;
+
+  return text.slice(start).trim();
+}
+
+function unescapeUnicode(str) {
+  return str.replace(/\\u[\dA-F]{4}/gi, function (match) {
+    return String.fromCharCode(parseInt(match.replace(/\\u/g, ''), 16));
+  });
+}
+
 function enhanceStructuredAgentMessagesHistoryChat() {
+  document.querySelectorAll(".agent-json").forEach(div => {
+    const raw = div.dataset.raw;
 
-    document.querySelectorAll(".agent-json").forEach(div => {
-      const raw = div.dataset.raw;
-  
-      const startIndex = raw.indexOf('{');
-      if (startIndex !== -1) {
-        const jsonStr = raw.slice(startIndex);
-  
-        try {
-          const quote = JSON.parse(unescapeUnicode(jsonStr));
-          const html = renderReadOnlyQuoteDetails(quote);
-          div.innerHTML = html;
-          return;
-        } catch (e) {
-          console.error("❌ JSON parse failed:", e, jsonStr);
-          div.innerHTML = `<div class="error-message">❌ Error trying to display the structured message. (JSON parsing error)</div>`;
-        }
+    const keys = ['quote_details:', 'validation_rules_details:', 'rules:'];
+
+    let jsonPart = null;
+    for (const key of keys) {
+      const idx = raw.indexOf(key);
+      if (idx !== -1) {
+        const afterKey = raw.slice(idx + key.length);
+        jsonPart = extractJson(afterKey);
+        if (jsonPart) break;
       }
+    }
 
-      let unescapedRaw = unescapeUnicode(raw);
+    if (!jsonPart) {
+      console.log("enhanceStructuredAgentMessagesHistoryChat");
+      div.innerHTML = `<div class="error-message">⚠️ Could not find valid JSON in message</div>`;
+      return;
+    }
 
-      const pdfPatternUrl = /download_url:\s*"?([^"\s]+)"?/i;
-      const pdfPatternVersion = /document_version:\s*(\d+)/i;
+    try {
+      //console.log("JsonPart: ", jsonPart);
+      const data = JSON.parse(unescapeUnicode(jsonPart));
+      //console.log("Data: ", data);
 
-      const downloadUrlMatch = unescapedRaw.match(pdfPatternUrl);
-      const versionMatch = unescapedRaw.match(pdfPatternVersion);
-
-      if (downloadUrlMatch && versionMatch) {
-        const url = downloadUrlMatch[1].trim();
-        const version = versionMatch[1].trim();
-        const message = unescapedRaw.split("download_url:")[0].trim();
-
-        div.innerHTML = `
-          <div class="general-message">
-            <p>${message}<a href="${url}" target="_blank" class="download-link"> Download Here</a></p>
-          </div>
-        `;
+      if (data.rules || (Array.isArray(data) && data[0]?.rule_type)) {
+        const html = renderValidationRuleDetails(data.rules || data);
+        div.innerHTML = html;
         return;
       }
 
-      div.innerHTML = `<pre class="plain-text-message">${escapeHtml(unescapedRaw)}</pre>`;
+      if (data.rules || (Array.isArray(data) && data[0]?.rules_request_description)) {
+        //const html = renderValidationRuleDetails(data.rules || data);
+        //console.log("Render Rules | Show rules")
+        const html = renderRules(data);
+        div.innerHTML = html;
+        return;
+      }
 
-    });
+      const html = renderReadOnlyQuoteDetails(data);
+      div.innerHTML = html;
 
-    const chatBox = document.getElementById("chat-box");
+    } catch (e) {
+      console.error("❌ JSON parse failed:", e, jsonPart);
+      div.innerHTML = `<div class="error-message">❌ Error trying to display the structured message. (JSON parsing error)</div>`;
+    }
+  });
 
-    // Auto-scroll chat
+  document.querySelectorAll(".agent-pdf").forEach(div => {
+  const raw = unescapeUnicode(div.dataset.raw);
+
+  if (!raw.includes("download_url")) return;
+
+  // Get download_url
+  const urlMatch = raw.match(/download_url:\s*["']?(.*?)["']?\s*(\n|$)/);
+  const versionMatch = raw.match(/document_version:\s*([0-9]+)/);
+
+  const downloadUrl = urlMatch ? urlMatch[1].trim() : null;
+  const version = versionMatch ? versionMatch[1].trim() : null;
+  //console.log("📄 Extracted PDF Info:", { version, downloadUrl });
+
+  if (downloadUrl && version) {
+    div.innerHTML = `
+      📄 Quote PDF (v${version}) generated successfully! 
+      <a href="${downloadUrl}" target="_blank">Download Here</a>
+    `;
+  } else {
+    div.innerHTML = `<div class="error-message">⚠️ Could not extract PDF fields</div>`;
+  }
+});
+
+  // Auto-scroll chat
+  const chatBox = document.getElementById("chat-box");
+  if (chatBox) {
     chatBox.scrollTop = chatBox.scrollHeight;
+  }
 }
 
 function escapeHtml(text) {
@@ -206,12 +254,12 @@ async function sendMessage() {
         } 
         // ✅ Handle Quote Details Response
         else if (data.response && data.response.quote_details && !data.response.quote_notes) {
-          console.log("Quote Details");
+          //console.log("Quote Details");
           responseMessage += renderQuoteDetails(data.response.quote_details);
         }
         // ✅ Handle Quote Notes Response
         else if (data.response && data.response.quote_notes) {
-          console.log("Quote Notes");
+          //console.log("Quote Notes");
           responseMessage += renderQuoteNotes(data.response.quote_details, data.response.quote_notes);
         }
         // ✅ Handle Quote PDF Response
@@ -219,6 +267,20 @@ async function sendMessage() {
             console.log(data.response);
             responseMessage += `📄 Quote PDF (v${data.response.document_version}) generated successfully! <a href="${data.response.download_url}" target="_blank">Download Here</a>`;
         } 
+        // ✅ Handle Validation Rules Response
+        else if (data.response && data.response.validation_rules_details) {
+          console.log("Validation Rules Details");
+          //console.log(data.response);
+          //console.log(data.response.validation_rules_details)
+          responseMessage += renderValidationRuleDetails(data.response.validation_rules_details);
+        }
+        // ✅ Show Rules
+        else if (data.response && data.response.rules && data.response.read_only) {
+          console.log("Show Rules");
+          //console.log(data.response);
+          //console.log(data.response.validation_rules_details)
+          responseMessage += renderRules(data.response.rules);
+        }
         // ✅ Default Response (Handle General Messages)
         else if (data.response && data.response.message) {
             responseMessage += `<div class="general-message">${data.response.message}</div>`;
@@ -229,7 +291,7 @@ async function sendMessage() {
         }
 
         // ✅ Append the final response message to the chat
-        appendMessage("agent", `<div class="senderagent">Agent: </div> <div class="message">${responseMessage}</div>`);
+        appendMessage("agent", `<div class="senderagent"><img width="95px" src="/media/img/agentcpq-5.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
 
         // ✅ Handle Temporary Quote Details After Update Quote Line, Add Product And Delete Quote Line Item
         if (data.response && data.response.update_details && data.response.temporaryMessage){
@@ -280,6 +342,20 @@ function appendMessage(className, message) {
         console.warn("Failed to parse quote_details JSON:", e);
       }
     }
+
+    // ✅ Detect stored notes as string
+    if (className === "agent" && message.includes("validation_rules_details: {")) {
+      try {
+        // Extract JSON from string
+        const match = message.match(/validation_rules_details:\s({.+})/);
+        if (match && match[1]) {
+          const rules = JSON.parse(match[1]);
+          message = renderValidationRuleDetails(rules);  // Use your nice formatter
+        }
+      } catch (e) {
+        console.warn("Failed to parse validation_rules_details JSON:", e);
+      }
+    }
   
     messageBubble.innerHTML = message;
     chatBox.appendChild(messageBubble);
@@ -309,6 +385,9 @@ function appendMessage(className, message) {
 }
 
 function renderQuoteDetails(quote) {
+  if (window.innerWidth < 1200) {
+    return renderQuoteDetailsMobile(quote);   // ← new helper (see below)
+  }
   const createdAt = new Date(quote.created_at);
   const expirationDate = new Date(quote.expiration_date);
 
@@ -345,27 +424,30 @@ function renderQuoteDetails(quote) {
               </div>
               <div class="quote-details">
                 <div class="account">
-                  <p><strong>Account:</strong> ${quote.account}</p>
+                  <p><strong>Account:</strong> ${quote.account ? quote.account : "*****"}</p>
                 </div>
                 <div class="opportunity">
-                  <p><strong>Opportunity:</strong> ${quote.opportunity}</p>
+                  <p><strong>Opportunity:</strong> ${quote.opportunity ? quote.opportunity : "*****"}</p>
                 </div>
                 <div class="created">
-                  <p><strong>Created At:</strong> ${formattedDate}</p>
+                  <p><strong>Created At:</strong> ${quote.created_at ? formattedDate : "*****"}</p>
                 </div>
                 <div class="expiration">
                   <p><strong>Expiration Date:</strong>
+                  ${quote.expiration_date ? `
                   <input type="text" id="expiration_date" name="expiration_date"
                           data-field="expiration_date"
                           data-quote="${quote.quote_name}"
                           placeholder="MM/DD/YYYY"
                           style="display: inline-block; width: 7rem; margin-top: 0px; color: black;"
                           value="${formattedDate_e}"/>
+                  ` : "*****"}
                   </p>
                 </div>
                 
                 <div class="discount">
                   <p><strong>Discount: </strong>
+                    ${(quote.discount_type && quote.discount_percentage && quote.discount_amount) ? `
                     <input type="number"
                           value="${Number(quote.discount_percentage)}"
                           data-field="discount_percentage"
@@ -381,70 +463,133 @@ function renderQuoteDetails(quote) {
                       onchange="updateQuote(this)"
                       style="width: 6rem; color: red;">
                     <span style="color: red;"> )</span>
+                    ` : "*****"}
                   </p>
                 </div>
               </div>
               <h4>Line Items</h4>`;
 
-  var is_subscription_cont = 0;
+  var has_printed_subscription_header = false;
+
 
   quote.line_items.forEach(item => {
     if(item.is_subscription == true){
-      if(is_subscription_cont == 0){
+      if(!has_printed_subscription_header){
+        const headers = [];
+
+        quote.rendered_fields.forEach(field => {
+          const cleaned = field.replace(/^Product\./, "");
+
+          if (cleaned.toLowerCase() === "discount") {
+            headers.push(`<th>Discount (%)</th>`);
+            headers.push(`<th>Discount (USD)</th>`);
+          } 
+          else if (cleaned === "Total Price") {
+            headers.push(`<th>Subscription</th>`);
+            headers.push(`<th>Term</th>`);
+            headers.push(`<th>Total Price</th>`);
+          }
+          else {
+            const label = cleaned
+              .replace("Product And SKU", "SKU/Product")
+              .replace("Unit Price", "Unit Price")
+              .replace("Quantity", "Quantity")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, l => l.toUpperCase());
+
+            headers.push(`<th>${label}</th>`);
+          }
+        });
+
         html += `
-              <table class="quote-table" data-quote-id="${quote.quote_name}">
+                <table class="quote-table" data-quote-id="${quote.quote_name}">
                   <thead>
-                      <tr>
-                          <th>SKU/Product</th>
-                          <th>Quantity</th>
-                          <th>Unit Price</th>
-                          <th>Discount (%)</th>
-                          <th>Discount (USD)</th>
-                          <th>Subscription</th>
-                          <th>Term</th>
-                          <th>Total Price</th>
-                      </tr>
+                    <tr>
+                      ${headers.join("\n")}
+                    </tr>
                   </thead>
                   <tbody>`;
-            is_subscription_cont = 1;
-      }
-      
 
-      html += `
-          <tr>
-              <td>
-                <div class="centered-td">${item.product}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.65em">${item.sku}</div>
-              </td>
-              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"></td>
-              <td>
-                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-              <td class="centered-td">
-                <input name="discountPercentage"
+        has_printed_subscription_header = true;
+      }
+
+      html += `<tr>`;
+
+      quote.rendered_fields.forEach(field => {
+        // Limpiar campos como Product.UOM
+        const cleanedField = field.replace(/^Product\./, "");
+        console.log("Field: ", cleanedField)
+
+        if (field === "Product And SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+              <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+            </td>`;
+        } else if (field === "Product") {
+          html += `
+            <td>
+              <div class="centered-td">${item.product}</div>
+            </td>`;
+        } else if (field === "SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+            </td>`;
+        } else if (field === "Quantity") {
+          html += `
+            <td>
+              <input
                 type="number"
-                min="0"
-                max="100"
-                value="${(() => {
-                    const val = parseFloat(item.discount_percentage.replace('%', ''));
-                    return Number.isInteger(val) ? val : val.toFixed(2);
-                  })()}"
+                min="1"
+                class="editable-field"
+                value="${item.quantity}" 
                 data-quote="${quote.quote_name}"
                 data-quoteline-id="${item.id}"
-                data-sku="${item.sku}"
-                class="editable-field"
-                data-field="discount_percentage"
+                data-sku="${item.sku}" 
+                data-field="quantity"
                 onchange="updateQuoteLine(this)">
-              </td>
-              <td class="centered-td">
-               <input name="discountAmount" type="number" min="0" max="100" value="${item.discount_amount.replace('$', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)">
-              </td>
+            </td>`;
+        } else if (field === "Description") {
+          //console.log("Field es description.");
+          html += `
+            <td class="centered-td">
+              <p>${item.description}</p>
+            </td>`;
+        }
+        else if (field === "Unit Price") {
+          html += `
+            <td>
+              ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else if (field === "Discount") {
+          html += `
+            <td class="centered-td">
+              <input name="discountPercentage" type="number" min="0" max="100"
+                value="${(() => {
+                  const val = parseFloat(item.discount_percentage.replace('%', ''));
+                  return Number.isInteger(val) ? val : val.toFixed(2);
+                })()}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)">
+            </td>`;
+            html += `
+            <td class="centered-td">
+              <input name="discountAmount" type="number" min="0" max="100"
+                value="${item.discount_amount.replace('$', '')}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)">
+            </td>`;
+        } else if (field === "Total Price") {
+          html += `
               <td class="centered-td">
                 ${item.is_subscription ? '✅' : '❌'}
-              </td>
+              </td>`;
+
+          html += `
               <td class="centered-td">
                 <input
                   name="term"
@@ -457,120 +602,253 @@ function renderQuoteDetails(quote) {
                   data-field="term"
                   onchange="updateQuoteLine(this)"
                   style="text-align: center;">
-              </td>
-              <td class="total-price" data-sku="${item.sku}">
-                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-          </tr>`;
+              </td>`;
+          
+          html += `
+            <td class="total-price" data-sku="${item.sku}">
+              ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else {
+          // Custom Field: Just render the value
+          html += `
+            <td class="centered-td">${item[cleanedField] ?? "---"}</td>`;
+        }
+      });
+
+      html += `</tr>`;
     }
   });
 
-  html += `</tbody></table><br>`
+  html += `</tbody></table><br>`;
   let none_suscription_bool = 0;
 
   quote.line_items.forEach(item => {
     if(item.is_subscription == false){
       if(none_suscription_bool == 0){
+        const headers = [];
+
+        quote.rendered_fields.forEach(field => {
+          const cleaned = field.replace(/^Product\./, "");
+
+          if (cleaned.toLowerCase() === "discount") {
+            headers.push(`<th>Discount (%)</th>`);
+            headers.push(`<th>Discount (USD)</th>`);
+          } else {
+            const label = cleaned
+              .replace("Product And SKU", "SKU/Product")
+              .replace("Unit Price", "Unit Price")
+              .replace("discount_percentage", "Discount (%)")
+              .replace("discount_amount", "Discount (USD)")
+              .replace("total_price", "Total Price")
+              .replace("subscription", "Subscription")
+              .replace("term", "Term")
+              .replace("Quantity", "Quantity")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, l => l.toUpperCase());
+
+            headers.push(`<th>${label}</th>`);
+          }
+        });
+
         html += `
-              <table class="quote-table" data-quote-id="${quote.quote_name}">
+                <table class="quote-table" data-quote-id="${quote.quote_name}">
                   <thead>
-                      <tr>
-                          <th>SKU/Product</th>
-                          <th>Quantity</th>
-                          <th>Unit Price</th>
-                          <th>Discount (%)</th>
-                          <th>Discount (USD)</th>
-                          <th>Total Price</th>
-                      </tr>
+                    <tr>
+                      ${headers.join("\n")}
+                    </tr>
                   </thead>
                   <tbody>`;
-            none_suscription_bool = 1;
+        none_suscription_bool = 1;
       }
 
-      html += `
-          <tr>
-              <td>
-                <div class="centered-td">${item.sku}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
-              </td>
-              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"></td>
-              <td>
-                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-              <td class="centered-td">
-               <input name="discountPercentage" type="number" min="0" max="100" value="${item.discount_percentage.replace('%', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)">
-              </td>
-              <td class="centered-td">
-               <input name="discountAmount" type="number" min="0" max="100" value="${item.discount_amount.replace('$', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)">
-              </td>
-              <td class="total-price" data-sku="${item.sku}">
-                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-          </tr>`;
+      html += `<tr>`;
+
+      quote.rendered_fields.forEach(field => {
+        // Limpiar campos como Product.UOM
+        const cleanedField = field.replace(/^Product\./, "");
+
+        if (field === "Product And SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+              <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+            </td>`;
+        } else if (field === "Product") {
+          html += `
+            <td>
+              <div class="centered-td">${item.product}</div>
+            </td>`;
+        } else if (field === "SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+            </td>`;
+        } else if (field === "Quantity") {
+          html += `
+            <td>
+              <input type="number" min="1" value="${item.quantity}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)">
+            </td>`;
+        } else if (field === "Description") {
+          html += `
+            <td class="centered-td">
+              <p>${item.description}</p>
+            </td>`;
+        } else if (field === "Unit Price") {
+          html += `
+            <td>
+              ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else if (field === "Discount") {
+          html += `
+            <td class="centered-td">
+              <input name="discountPercentage" type="number" min="0" max="100"
+                value="${(() => {
+                  const val = parseFloat(item.discount_percentage.replace('%', ''));
+                  return Number.isInteger(val) ? val : val.toFixed(2);
+                })()}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)">
+            </td>`;
+            html += `
+            <td class="centered-td">
+              <input name="discountAmount" type="number" min="0" max="100"
+                value="${item.discount_amount.replace('$', '')}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)">
+            </td>`;
+        } else if (field === "Total Price") {
+          html += `
+            <td class="total-price" data-sku="${item.sku}">
+              ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else {
+          // Custom Field: Just render the value
+          html += `
+            <td class="centered-td">${item[cleanedField] ?? "---"}</td>`;
+        }
+      });
+
+      html += `</tr>`;
     }
   });
 
   html += `</tbody></table>
-    <p class="subtotal-amount">
-      Subtotal: ${parseFloat(quote.subtotal.replace('$', '')).toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-      })}
-    </p>
-    <p class="total-amount">
-      Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-      })}
-    </p>
+    <div class="total-container">
+      <p class="subtotal-amount">
+        Subtotal: ${parseFloat(quote.subtotal.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+      </p>
+      <p class="total-amount">
+        Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+      </p>
+    </div>
   </div>`;
 
   return html;
 }
 
+/* ────────────────────────────── 2. MOBILE-ONLY HELPER ──────────────────────────────── */
+/* Place this anywhere after renderQuoteDetails (same file or imported) */
+function renderQuoteDetailsMobile(quote) {
+  const format = (d) =>
+    `${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCDate()).padStart(
+      2,
+      "0"
+    )}/${d.getUTCFullYear()}`;
+
+  const createdAt = new Date(quote.created_at);
+  const expiration = new Date(quote.expiration_date);
+
+  let html = `
+    <div class="quote-mobile" style="font-family: Arial, sans-serif; line-height: 1.4">
+      <h3 style="margin:0 0 8px 0; color:#ff7f00; font-size:1.2rem; font-weight:600; background-color:#f5f5f5; padding:0.5rem">${quote.quote_name}</h3>
+      <p>🏢 <b>Account:</b> ${quote.account} 🔸 🗒️ <b>Status:</b> ${quote.status}</p>
+      <p>📆 <b>Expires:</b> ${format(expiration)}</p>
+      <p>🚀 <b>Opportunity:</b> ${quote.opportunity}</p>
+      <p>🏷️ <b>Discount:</b> ${quote.discount_percentage}% (-$${Number(
+        quote.discount_amount
+      ).toLocaleString("en-US", { minimumFractionDigits: 2 })})</p>
+
+      <h4 style="margin:16px 0 8px 0; font-size:1.3rem; color: #ff7f00; padding:0.5rem; border-bottom: 1px solid border-bottom: 1px solid #e7e7e7;) ">Line Items</h4>
+      <ul style="padding-left:18px; margin:0">
+        ${quote.line_items
+          .map(
+            (item) => `
+          <li>
+            ${item.quantity} × ${item.product} @ ${parseFloat(
+              item.unit_price.replace("$", "")
+            ).toLocaleString("en-US", { style: "currency", currency: "USD" })}
+            ${item.is_subscription ? " /sub" : ""}
+          </li>`
+          )
+          .join("")}
+      </ul>
+
+      <p style="margin-top:12px"><b>Subtotal:</b> ${parseFloat(
+        quote.subtotal.replace("$", "")
+      ).toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
+      <p>💰 <b>Net Amount:</b> ${parseFloat(
+        quote.net_amount.replace("$", "")
+      ).toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
+    </div>`;
+
+  return html;
+}
+
 function renderReadOnlyQuoteDetails(quote) {
+  if (window.innerWidth < 1200) {
+    return renderQuoteDetailsMobile(quote);   // ← new helper (see below)
+  }
   const createdAt = new Date(quote.created_at);
   const expirationDate = new Date(quote.expiration_date);
 
-  // Add 0 in front if necessary
-  const month = String(createdAt.getMonth() + 1).padStart(2, '0');
-  const day = String(createdAt.getDate()).padStart(2, '0');
-  const year = createdAt.getFullYear();
+  const month = String(createdAt.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(createdAt.getUTCDate()).padStart(2, '0');
+  const year = createdAt.getUTCFullYear();
 
   const formattedDate = `${month}/${day}/${year}`;
 
-  const month_e = String(expirationDate.getMonth() + 1).padStart(2, '0');
-  const day_e = String(expirationDate.getDate()).padStart(2, '0');
-  const year_e = expirationDate.getFullYear();
+  const monthFormatted = String(expirationDate.getUTCMonth() + 1).padStart(2, '0');
+  const dayFormatted = String(expirationDate.getUTCDate()).padStart(2, '0');
+  const yearFormatted = expirationDate.getUTCFullYear();
 
-  const formattedDate_e = `${month_e}/${day_e}/${year_e}`;
+  const formattedDate_e = `${monthFormatted}/${dayFormatted}/${yearFormatted}`;
 
   var html = `<div class="quote-container">
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
-                  <p><strong>Status:</strong> ${quote.status}</p>
+                  <div style="display: flex; align-items: center; gap: 8px;" class="status-select">
+                    <p><strong>Status:</strong> ${quote.status}</p>
+                  </div>
               </div>
               <div class="quote-details">
                 <div class="account">
-                  <p><strong>Account:</strong> ${quote.account}</p>
+                  <p><strong>Account:</strong> ${quote.account ? quote.account : "---"}</p>
                 </div>
                 <div class="opportunity">
-                  <p><strong>Opportunity:</strong> ${quote.opportunity}</p>
+                  <p><strong>Opportunity:</strong> ${quote.opportunity ? quote.opportunity : "---"}</p>
                 </div>
                 <div class="created">
-                  <p><strong>Created At:</strong> ${formattedDate}</p>
+                  <p><strong>Created At:</strong> ${quote.created_at ? formattedDate : "---"}</p>
                 </div>
                 <div class="expiration">
-                  <p><strong>Expiration Date:</strong> ${formattedDate_e}</p>
+                  <p><strong>Expiration Date:</strong> ${quote.expiration_date ? formattedDate : "---"}</p>
                 </div>
                 
                 <div class="discount">
@@ -581,76 +859,157 @@ function renderReadOnlyQuoteDetails(quote) {
               </div>
               <h4>Line Items</h4>`;
 
-  var is_subscription_cont = 0;
+  var has_printed_subscription_header = false;
+
 
   quote.line_items.forEach(item => {
     if(item.is_subscription == true){
-      if(is_subscription_cont == 0){
+      if(!has_printed_subscription_header){
+        const headers = [];
+
+        quote.rendered_fields.forEach(field => {
+          const cleaned = field.replace(/^Product\./, "");
+
+          if (cleaned.toLowerCase() === "discount") {
+            headers.push(`<th>Discount (%)</th>`);
+            headers.push(`<th>Discount (USD)</th>`);
+          } 
+          else if (cleaned === "Total Price") {
+            headers.push(`<th>Subscription</th>`);
+            headers.push(`<th>Term</th>`);
+            headers.push(`<th>Total Price</th>`);
+          }
+          else {
+            const label = cleaned
+              .replace("Product And SKU", "SKU/Product")
+              .replace("Unit Price", "Unit Price")
+              .replace("Quantity", "Quantity")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, l => l.toUpperCase());
+
+            headers.push(`<th>${label}</th>`);
+          }
+        });
+
         html += `
-              <table class="quote-table quote-table-read-only" data-quote-id="${quote.quote_name}">
+                <table class="quote-table" data-quote-id="${quote.quote_name}">
                   <thead>
-                      <tr>
-                          <th>SKU/Product</th>
-                          <th>Quantity</th>
-                          <th>Unit Price</th>
-                          <th>Discount (%)</th>
-                          <th>Discount (USD)</th>
-                          <th>Subscription</th>
-                          <th>Term</th>
-                          <th>Total Price</th>
-                      </tr>
+                    <tr>
+                      ${headers.join("\n")}
+                    </tr>
                   </thead>
                   <tbody>`;
-            is_subscription_cont = 1;
+
+        has_printed_subscription_header = true;
       }
 
-      html += `
-          <tr>
-              <td>
-                <div class="centered-td">${item.sku}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
-              </td>
-              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)" disabled></td>
-              <td>
-                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
+      html += `<tr>`;
+
+      quote.rendered_fields.forEach(field => {
+        // Limpiar campos como Product.UOM
+        const cleanedField = field.replace(/^Product\./, "");
+
+        if (field === "Product And SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+              <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+            </td>`;
+        } else if (field === "Product") {
+          html += `
+            <td>
+              <div class="centered-td">${item.product}</div>
+            </td>`;
+        } else if (field === "SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+            </td>`;
+        } else if (field === "Quantity") {
+          html += `
+            <td>
+              <input
+                type="number"
+                min="1"
+                class="editable-field"
+                value="${item.quantity}" 
+                data-quote="${quote.quote_name}"
+                data-quoteline-id="${item.id}"
+                data-sku="${item.sku}" 
+                data-field="quantity"
+                onchange="updateQuoteLine(this)"
+                disabled>
+            </td>`;
+        } else if (field === "Unit Price") {
+          html += `
+            <td>
+              ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else if (field === "Description") {
+          html += `
+            <td class="centered-td">
+              <p>${item.description}</p>
+            </td>`;
+        } else if (field === "Discount") {
+          html += `
+            <td class="centered-td">
+              <input name="discountPercentage" type="number" min="0" max="100"
+                value="${(() => {
+                  const val = parseFloat(item.discount_percentage.replace('%', ''));
+                  return Number.isInteger(val) ? val : val.toFixed(2);
+                })()}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)"
+                disabled>
+            </td>`;
+            html += `
+            <td class="centered-td">
+              <input name="discountAmount" type="number" min="0" max="100"
+                value="${item.discount_amount.replace('$', '')}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)"
+                disabled>
+            </td>`;
+        } else if (field === "Total Price") {
+          html += `
+              <td class="centered-td">
+                ${item.is_subscription ? '✅' : '❌'}
+              </td>`;
+
+          html += `
               <td class="centered-td">
                 <input
-                  name="discountPercentage"
+                  name="term"
                   type="number"
-                  min="0"
-                  max="100"
-                  value="${(() => {
-                    const val = parseFloat(item.discount_percentage.replace('%', ''));
-                    return Number.isInteger(val) ? val : val.toFixed(2);
-                  })()}"
+                  value="${item.term || '---'}"
                   data-quote="${quote.quote_name}"
                   data-quoteline-id="${item.id}"
                   data-sku="${item.sku}"
                   class="editable-field"
-                  data-field="discount_percentage"
+                  data-field="term"
                   onchange="updateQuoteLine(this)"
+                  style="text-align: center;"
                   disabled>
-              </td>
-              <td class="centered-td">
-               <input name="discountAmount" type="number" min="0" max="100" value="${item.discount_amount.replace('$', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)" disabled>
-              </td>
-              <td class="centered-td">
-                ${item.is_subscription ? '✅' : '❌'}
-              </td>
-              <td class="centered-td">
-                ${item.term || '---'}
-              </td>
-              <td class="total-price" data-sku="${item.sku}">
-                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-          </tr>`;
+              </td>`;
+          
+          html += `
+            <td class="total-price" data-sku="${item.sku}">
+              ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else {
+          // Custom Field: Just render the value
+          html += `
+            <td class="centered-td">${item[cleanedField] ?? "---"}</td>`;
+        }
+      });
+
+      html += `</tr>`;
     }
   });
 
@@ -660,64 +1019,139 @@ function renderReadOnlyQuoteDetails(quote) {
   quote.line_items.forEach(item => {
     if(item.is_subscription == false){
       if(none_suscription_bool == 0){
+        const headers = [];
+
+        quote.rendered_fields.forEach(field => {
+          const cleaned = field.replace(/^Product\./, "");
+
+          if (cleaned.toLowerCase() === "discount") {
+            headers.push(`<th>Discount (%)</th>`);
+            headers.push(`<th>Discount (USD)</th>`);
+          } else {
+            const label = cleaned
+              .replace("Product And SKU", "SKU/Product")
+              .replace("Unit Price", "Unit Price")
+              .replace("discount_percentage", "Discount (%)")
+              .replace("discount_amount", "Discount (USD)")
+              .replace("total_price", "Total Price")
+              .replace("subscription", "Subscription")
+              .replace("term", "Term")
+              .replace("Quantity", "Quantity")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, l => l.toUpperCase());
+
+            headers.push(`<th>${label}</th>`);
+          }
+        });
+
         html += `
-              <table class="quote-table-read-only" data-quote-id="${quote.quote_name}">
+                <table class="quote-table" data-quote-id="${quote.quote_name}">
                   <thead>
-                      <tr>
-                          <th>SKU/Product</th>
-                          <th>Quantity</th>
-                          <th>Unit Price</th>
-                          <th>Discount (%)</th>
-                          <th>Discount (USD)</th>
-                          <th>Total Price</th>
-                      </tr>
+                    <tr>
+                      ${headers.join("\n")}
+                    </tr>
                   </thead>
                   <tbody>`;
-            none_suscription_bool = 1;
+        none_suscription_bool = 1;
       }
 
-      html += `
-          <tr>
-              <td>
-                <div class="centered-td">${item.sku}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
-              </td>
-              <td><input type="number" min="1" value="${item.quantity}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)" disabled></td>
-              <td>
-                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-              <td class="centered-td">
-               <input name="discountPercentage" type="number" min="0" max="100" value="${item.discount_percentage.replace('%', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)" disabled>
-              </td>
-              <td class="centered-td">
-               <input name="discountAmount" type="number" min="0" max="100" value="${item.discount_amount.replace('$', '')}" data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)" disabled>
-              </td>
-              <td class="total-price" data-sku="${item.sku}">
-                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-          </tr>`;
+      html += `<tr>`;
+
+      quote.rendered_fields.forEach(field => {
+        // Limpiar campos como Product.UOM
+        const cleanedField = field.replace(/^Product\./, "");
+
+        if (field === "Product And SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+              <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+            </td>`;
+        } else if (field === "Product") {
+          html += `
+            <td>
+              <div class="centered-td">${item.product}</div>
+            </td>`;
+        } else if (field === "SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+            </td>`;
+        } else if (field === "Quantity") {
+          html += `
+            <td>
+              <input type="number" min="1" value="${item.quantity}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"
+                disabled>
+            </td>`;
+        } else if (field === "Description") {
+          html += `
+            <td class="centered-td">
+              <p>${item.description}</p>
+            </td>`;
+        } else if (field === "Unit Price") {
+          html += `
+            <td>
+              ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else if (field === "Discount") {
+          html += `
+            <td class="centered-td">
+              <input name="discountPercentage" type="number" min="0" max="100"
+                value="${(() => {
+                  const val = parseFloat(item.discount_percentage.replace('%', ''));
+                  return Number.isInteger(val) ? val : val.toFixed(2);
+                })()}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)"
+                disabled>
+            </td>`;
+            html += `
+            <td class="centered-td">
+              <input name="discountAmount" type="number" min="0" max="100"
+                value="${item.discount_amount.replace('$', '')}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)"
+                disabled>
+            </td>`;
+        } else if (field === "Total Price") {
+          html += `
+            <td class="total-price" data-sku="${item.sku}">
+              ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else {
+          // Custom Field: Just render the value
+          html += `
+            <td class="centered-td">${item[cleanedField] ?? "---"}</td>`;
+        }
+      });
+
+      html += `</tr>`;
     }
   });
 
   html += `</tbody></table>
-    <p class="subtotal-amount">
-      Subtotal: ${parseFloat(quote.subtotal.replace('$', '')).toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-      })}
-    </p>
-    <p class="total-amount">
-      Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-      })}
-    </p>
+    <div class="total-container">
+      <p class="subtotal-amount">
+        Subtotal: ${parseFloat(quote.subtotal.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+      </p>
+      <p class="total-amount">
+        Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+      </p>
+    </div>
   </div>`;
 
   return html;
@@ -816,14 +1250,27 @@ document.addEventListener("change", (event) => {
 /**
 * ✅ Update quote line and reflect changes in UI
 */
+
+/**
+* ✅ First we save the input focus
+*/
+
+/**
+* ✅ Update quote line function
+*/
 async function updateQuoteLine(input) {
     const quoteId = input.dataset.quote;
     const sku = input.dataset.sku;
     const field = input.dataset.field;
     let newValue = input.value.trim();
+    console.log("Entra a updateQuoteLine");
+  
+    if (["quantity", "discount_amount", "discount_percentage", "term"].includes(field)) {
+      newValue = parseFloat(newValue);
+    }
     const quoteLineId = input.dataset.quotelineId;
 
-    if (newValue <= 0){
+    if (newValue < 0){
       alert("⚠️ Invalid quantity or unit price.");
     }
 
@@ -834,7 +1281,7 @@ async function updateQuoteLine(input) {
 
     console.log(`🔄 Field Changed: ${field}, SKU: ${sku}, New Value: ${newValue}, Quote: ${quoteId}, QuoteLine: ${quoteLineId}`);
 
-    const updateData = [{ sku, field, value: newValue, quote_line_id: quoteLineId, hiddenMessage: true }];
+    const updateData = { sku, field, value: newValue, quote_line_id: quoteLineId, hiddenMessage: true };
     const userMessage = `Update Quote Line: ${JSON.stringify(updateData)}`;
 
     try {
@@ -892,7 +1339,7 @@ async function updateQuoteLine(input) {
             if (subtotalElement) {
                 const subtotal = parseFloat(updatedQuote.subtotal);
                 const formattedSubtotal = `$${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                subtotalElement.textContent = `🧾 Subtotal: ${formattedSubtotal}`;
+                subtotalElement.textContent = `Subtotal: ${formattedSubtotal}`;
             }
 
             // ✅ Update discount amount in quote
@@ -909,15 +1356,19 @@ async function updateQuoteLine(input) {
             if (netAmountParagraph) {
                 const totalNetAmount = parseFloat(updatedQuote.net_amount);
                 const formattedTotalNetAmount = `$${totalNetAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                netAmountParagraph.textContent = `💰 Net Amount: ${formattedTotalNetAmount}`;
+                netAmountParagraph.textContent = `Net Amount: ${formattedTotalNetAmount}`;
             }
 
-            alert("✅ Quote updated successfully!");
+            alert("✅ Quote line updated successfully.");
         } else {
-            alert("⚠️ Failed to update quote.");
+            // ⬅️ Restart original value of the input field
+            input.value = data.response.original_value
+            alert(data.response.message.replace(/<br\s*\/?>/gi, '\n'));
         }
     } catch (error) {
         console.error("❌ Error updating quote line:", error);
+        // ⬅️ Restart original value of the input field
+        input.value = data.response.original_value
         alert("❌ Failed to update quote.");
     }
 }
@@ -935,19 +1386,18 @@ async function updateQuote(input) {
         return;
     }
 
-    // Limpia comas si es amount
     if (field === "discount_amount") {
         newValue = newValue.replace(/,/g, '');
     }
 
     console.log(`🔄 Field Changed: ${field}, Quote: ${quote}, New Value: ${newValue}`);
 
-    const updateData = [{
+    const updateData = {
         field: field,
         value: newValue,
         quote: quote,
         hiddenMessage: true
-    }];
+    };
 
     const userMessage = `Update Quote: ${JSON.stringify(updateData)}`;
 
@@ -961,15 +1411,13 @@ async function updateQuote(input) {
         const data = await response.json();
         console.log("✅ Server Response:", data);
 
-        if (data.response && data.response.message.includes("Quote was updated successfully") && data.response.quote_details) {
+        if (data.response && data.response.message.includes("✅ Quote updated successfully.") && data.response.quote_details) {
             input.blur();
 
             const updatedQuote = data.response.quote_details;
 
-            // Encuentra el contenedor del descuento
             const quoteContainer = input.closest(".quote-details");
 
-            // Actualiza el otro campo dependiendo de cuál cambió
             if (field === "discount_percentage") {
                 const discountAmountInput = quoteContainer.querySelector('input[data-field="discount_amount"]');
                 if (discountAmountInput) {
@@ -987,6 +1435,19 @@ async function updateQuote(input) {
                     const discountPct = parseFloat(updatedQuote.discount_percentage);
                     discountPctInput.value = discountPct.toFixed(2);
                 }
+            }
+
+            // 🧮 Update Net Amount (total amount)
+            const totalContainer = input.closest(".quote-container");
+            const netAmountEl = totalContainer.querySelector(".total-amount");
+            if (netAmountEl && updatedQuote.net_amount) {
+                const net = parseFloat(updatedQuote.net_amount.replace('$', ''));
+                netAmountEl.innerHTML = `
+                    Net Amount: ${net.toLocaleString('en-US', {
+                        style: 'currency',
+                        currency: 'USD'
+                    })}
+                `;
             }
 
             alert("✅ Quote updated successfully!");
@@ -1051,43 +1512,47 @@ function renderTemporaryMessage(className, htmlContent, iterations) {
 * ✅ Show Temporary Quote Details Message
 */
 function showTemporaryQuoteDetails(quote) {
+   if (window.innerWidth < 1200) {
+    return renderQuoteDetailsMobile(quote);   // ← new helper (see below)
+  }
   const createdAt = new Date(quote.created_at);
-  const creationDate = new Date(quote.expiration_date);
+  const expirationDate = new Date(quote.expiration_date);
 
-  // Add 0 in front if necessary
-  const month = String(createdAt.getMonth() + 1).padStart(2, '0');
-  const day = String(createdAt.getDate()).padStart(2, '0');
-  const year = createdAt.getFullYear();
+  const month = String(createdAt.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(createdAt.getUTCDate()).padStart(2, '0');
+  const year = createdAt.getUTCFullYear();
 
   const formattedDate = `${month}/${day}/${year}`;
 
-  const month_e = String(creationDate.getMonth() + 1).padStart(2, '0');
-  const day_e = String(creationDate.getDate()).padStart(2, '0');
-  const year_e = creationDate.getFullYear();
+  const monthFormatted = String(expirationDate.getUTCMonth() + 1).padStart(2, '0');
+  const dayFormatted = String(expirationDate.getUTCDate()).padStart(2, '0');
+  const yearFormatted = expirationDate.getUTCFullYear();
 
-  const formattedDate_e = `${month_e}/${day_e}/${year_e}`;
+  const formattedDate_e = `${monthFormatted}/${dayFormatted}/${yearFormatted}`;
 
-   var html = `
-        <div>
-          ⏳ Rendering temporary quote details...
-        </div>
-        <div class="quote-container">
+  var html = `
+              <div>
+                ⏳ Rendering temporary quote details...
+              </div>
+              <div class="quote-container">
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
-                  <p><strong>Status:</strong> ${quote.status}</p>
+                  <div style="display: flex; align-items: center; gap: 8px;" class="status-select">
+                    <p><strong>Status:</strong> ${quote.status}</p>
+                  </div>
               </div>
               <div class="quote-details">
                 <div class="account">
-                  <p><strong>Account:</strong> ${quote.account}</p>
+                  <p><strong>Account:</strong> ${quote.account ? quote.account : "---"}</p>
                 </div>
                 <div class="opportunity">
-                  <p><strong>Opportunity:</strong> ${quote.opportunity}</p>
+                  <p><strong>Opportunity:</strong> ${quote.opportunity ? quote.opportunity : "---"}</p>
                 </div>
                 <div class="created">
-                  <p><strong>Created At:</strong> ${formattedDate}</p>
+                  <p><strong>Created At:</strong> ${quote.created_at ? formattedDate : "---"}</p>
                 </div>
                 <div class="expiration">
-                  <p><strong>Expiration Date:</strong> ${formattedDate_e}</p>
+                  <p><strong>Expiration Date:</strong> ${quote.expiration_date ? formattedDate : "---"}</p>
                 </div>
                 
                 <div class="discount">
@@ -1098,63 +1563,125 @@ function showTemporaryQuoteDetails(quote) {
               </div>
               <h4>Line Items</h4>`;
 
-  var is_subscription_cont = 0;
+  var has_printed_subscription_header = false;
+
 
   quote.line_items.forEach(item => {
     if(item.is_subscription == true){
-      if(is_subscription_cont == 0){
+      if(!has_printed_subscription_header){
+        const headers = [];
+
+        quote.rendered_fields.forEach(field => {
+          const cleaned = field.replace(/^Product\./, "");
+
+          if (cleaned.toLowerCase() === "discount") {
+            headers.push(`<th>Discount (%)</th>`);
+            headers.push(`<th>Discount (USD)</th>`);
+          } 
+          else if (cleaned === "Total Price") {
+            headers.push(`<th>Subscription</th>`);
+            headers.push(`<th>Term</th>`);
+            headers.push(`<th>Total Price</th>`);
+          }
+          else {
+            const label = cleaned
+              .replace("Product And SKU", "SKU/Product")
+              .replace("Unit Price", "Unit Price")
+              .replace("Quantity", "Quantity")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, l => l.toUpperCase());
+
+            headers.push(`<th>${label}</th>`);
+          }
+        });
+
         html += `
-              <table class="quote-table" data-quote-id="${quote.quote_name}">
+                <table class="quote-table" data-quote-id="${quote.quote_name}">
                   <thead>
-                      <tr>
-                          <th>SKU/Product</th>
-                          <th>Quantity</th>
-                          <th>Unit Price</th>
-                          <th>Discount (%)</th>
-                          <th>Discount (USD)</th>
-                          <th>Subscription</th>
-                          <th>Term</th>
-                          <th>Total Price</th>
-                      </tr>
+                    <tr>
+                      ${headers.join("\n")}
+                    </tr>
                   </thead>
                   <tbody>`;
-            is_subscription_cont = 1;
+
+        has_printed_subscription_header = true;
       }
 
-      html += `
-          <tr>
-              <td>
-                <div class="centered-td">${item.sku}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
-              </td>
-              <td>
-                ${item.quantity}
-              </td>
-              <td>
-                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-              <td class="centered-td">
-                ${item.discount_percentage.replace('%', '')}
-              </td>
-              <td class="centered-td">
-                ${item.discount_amount.replace('$', '')}
-              </td>
+      html += `<tr>`;
+
+      quote.rendered_fields.forEach(field => {
+        // Limpiar campos como Product.UOM
+        const cleanedField = field.replace(/^Product\./, "");
+
+        if (field === "Product And SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+              <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+            </td>`;
+        } else if (field === "Product") {
+          html += `
+            <td>
+              <div class="centered-td">${item.product}</div>
+            </td>`;
+        } else if (field === "SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+            </td>`;
+        } else if (field === "Quantity") {
+          html += `
+            <td>
+              <div class="centered-td">${item.quantity}</div>
+            </td>`;
+        } else if (field === "Unit Price") {
+          html += `
+            <td>
+              ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else if (field === "Description") {
+          html += `
+            <td class="centered-td">
+              <p>${item.description}</p>
+            </td>`;
+        } else if (field === "Discount") {
+          html += `
+            <td class="centered-td">
+              <div class="centered-td">${item.discount_percentage}</div>
+            </td>`;
+            html += `
+            <td class="centered-td">
+              <div class="centered-td">${item.discount_amount}</div>
+            </td>`;
+        } else if (field === "Total Price") {
+          html += `
               <td class="centered-td">
                 ${item.is_subscription ? '✅' : '❌'}
-              </td>
+              </td>`;
+
+          html += `
               <td class="centered-td">
-                ${item.term || '---'}
-              </td>
-              <td class="total-price" data-sku="${item.sku}">
-                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-          </tr>`;
+                  <div class="centered-td">${item.term}</div>
+              </td>`;
+          
+          html += `
+            <td class="total-price" data-sku="${item.sku}">
+              ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else {
+          // Custom Field: Just render the value
+          html += `
+            <td class="centered-td">${item[cleanedField] ?? "---"}</td>`;
+        }
+      });
+
+      html += `</tr>`;
     }
   });
 
@@ -1164,67 +1691,394 @@ function showTemporaryQuoteDetails(quote) {
   quote.line_items.forEach(item => {
     if(item.is_subscription == false){
       if(none_suscription_bool == 0){
+        const headers = [];
+
+        quote.rendered_fields.forEach(field => {
+          const cleaned = field.replace(/^Product\./, "");
+
+          if (cleaned.toLowerCase() === "discount") {
+            headers.push(`<th>Discount (%)</th>`);
+            headers.push(`<th>Discount (USD)</th>`);
+          } else {
+            const label = cleaned
+              .replace("Product And SKU", "SKU/Product")
+              .replace("Unit Price", "Unit Price")
+              .replace("discount_percentage", "Discount (%)")
+              .replace("discount_amount", "Discount (USD)")
+              .replace("total_price", "Total Price")
+              .replace("subscription", "Subscription")
+              .replace("term", "Term")
+              .replace("Quantity", "Quantity")
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, l => l.toUpperCase());
+
+            headers.push(`<th>${label}</th>`);
+          }
+        });
+
         html += `
-              <table class="quote-table" data-quote-id="${quote.quote_name}">
+                <table class="quote-table" data-quote-id="${quote.quote_name}">
                   <thead>
-                      <tr>
-                          <th>SKU/Product</th>
-                          <th>Quantity</th>
-                          <th>Unit Price</th>
-                          <th>Discount (%)</th>
-                          <th>Discount (USD)</th>
-                          <th>Total Price</th>
-                      </tr>
+                    <tr>
+                      ${headers.join("\n")}
+                    </tr>
                   </thead>
                   <tbody>`;
-            none_suscription_bool = 1;
+        none_suscription_bool = 1;
       }
 
-      html += `
-          <tr>
-              <td>
-                <div class="centered-td">${item.sku}</div>
-                <div class="centered-td" style="color: gray; font-size: 0.85em">${item.product}</div>
-              </td>
-              <td>
-                ${item.quantity}
-              </td>
-              <td>
-                ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-              <td class="centered-td">
-                ${item.discount_percentage.replace('%', '')}
-              </td>
-              <td class="centered-td">
-                ${item.discount_amount.replace('$', '')}
-              </td>
-              <td class="total-price" data-sku="${item.sku}">
-                ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                })}
-              </td>
-          </tr>`;
+      html += `<tr>`;
+
+      quote.rendered_fields.forEach(field => {
+        // Limpiar campos como Product.UOM
+        const cleanedField = field.replace(/^Product\./, "");
+
+        if (field === "Product And SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+              <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+            </td>`;
+        } else if (field === "Product") {
+          html += `
+            <td>
+              <div class="centered-td">${item.product}</div>
+            </td>`;
+        } else if (field === "SKU") {
+          html += `
+            <td>
+              <div class="centered-td">${item.sku}</div>
+            </td>`;
+        } else if (field === "Quantity") {
+          html += `
+            <td>
+              <div class="centered-td">${item.quantity}</div>
+            </td>`;
+        } else if (field === "Description") {
+          html += `
+            <td class="centered-td">
+              <p>${item.description}</p>
+            </td>`;
+        } else if (field === "Unit Price") {
+          html += `
+            <td>
+              ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else if (field === "Discount") {
+          html += `
+            <td class="centered-td">
+              <div class="centered-td">${item.discount_percentage}</div>
+            </td>`;
+            html += `
+            <td class="centered-td">
+              <div class="centered-td">${item.discount_amount}</div>
+            </td>`;
+        } else if (field === "Total Price") {
+          html += `
+            <td class="total-price" data-sku="${item.sku}">
+              ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })}
+            </td>`;
+        } else {
+          // Custom Field: Just render the value
+          html += `
+            <td class="centered-td">${item[cleanedField] ?? "---"}</td>`;
+        }
+      });
+
+      html += `</tr>`;
     }
   });
 
   html += `</tbody></table>
-    <p class="subtotal-amount">
-      Subtotal: ${parseFloat(quote.subtotal.replace('$', '')).toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-      })}
-    </p>
-    <p class="total-amount">
-      Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
-          style: 'currency',
-          currency: 'USD'
-      })}
-    </p>
+    <div class="total-container">
+      <p class="subtotal-amount">
+        Subtotal: ${parseFloat(quote.subtotal.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+      </p>
+      <p class="total-amount">
+        Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        })}
+      </p>
+    </div>
   </div>`;
 
   return html;
+}
+
+function renderValidationRuleDetails(rules, read_only=false) {
+  let html = "";
+  //console.log(rules);
+
+  rules.forEach((rule) => {
+    if (rule.success){
+      var head_text = `✅ New validation rule created successfully | ${rule.name} ✅`;
+      html += 
+        `<div class="rule-container">
+          <div class="rule-header">
+              <h5>${head_text}</h3>
+              <span style="margin-left: 10px; font-weight: bold; color: ${rule.active ? 'green' : 'red'};">
+                ${rule.active ? '🟢 Active' : '🔴 Inactive'}
+              </span>
+          </div>
+          <div class="rule-details">
+              <div class="name">
+                <label for="rule-name"><strong>Description:</strong></label>
+                <input id="rule-name" type="text" value="${rule.description}" readonly/>
+              </div>
+
+              <div class="rule_type">
+                <label for="rule-type"><strong>Rule Type:</strong></label>
+                <input id="rule-type" type="text" value="${rule.rule_type}" readonly/>
+              </div>
+
+              <div class="target_type">
+                <label for="target-type"><strong>Target Type:</strong></label>
+                <input id="target-type" type="text" value="${rule.target_type}" readonly/>
+              </div>
+
+              <div class="priority">
+                <label for="priority"><strong>Priority:</strong></label>
+                <input id="priority" type="number" value="${rule.priority}" readonly/>
+              </div>
+
+              <div class="error_message">
+                <label for="error-message"><strong>Error Message:</strong></label>
+                <textarea id="error-message" class="materialize-textarea" rows="3" readonly>${rule.error_message}</textarea>
+              </div>
+          </div>
+
+          <div class="conditions-details">
+            <p><h6>Conditions:</h6></p>
+            <ul class="conditions-list">
+              ${renderConditions(rule.conditions)}
+            </ul>
+          </div>
+        </div>`;
+    }
+    else if (rule.error){
+      html += 
+        `<div class="rule-container">
+          <div class="rule-header">
+              <h5>⚠️ Error creating validation rule ⚠️</h3>
+          </div>
+          <div class="rule-error">
+              <div class="name">
+                <label for="rule-name"><strong>Name:</strong></label>
+                <input id="rule-name" type="text" value="${rule.name}" readonly/>
+              </div>
+
+              <div class="error">
+                <label for="rule-error"><strong>Error:</strong></label>
+                <h6>${(rule.error).replace("⚠️", "").trim()}</h6>
+              </div>
+          </div>
+        </div>`;
+    }
+    
+  });
+
+  return html;
+}
+
+function renderRules(group_rules) {
+  let html = "";
+  //console.log(rules);
+
+  group_rules.forEach((group) => {
+    html += 
+        `<span>
+            ${group.rules_request_description}
+          </span>`;
+    
+    if (group.rules.length === 0){
+      html += 
+        `<br>
+        <span>
+            ⚠️ No rules found matching these specifications ⚠️
+          </span>`;
+    }
+    
+    group.rules.forEach((rule) => {
+
+      var head_text = `📖 Rule | ${rule.name}`;
+      html += 
+        `<div class="rule-container">
+          <div class="rule-header">
+              <h5>${head_text}</h3>
+              <span style="margin-left: 10px; font-weight: bold; color: ${rule.active ? 'green' : 'red'};">
+                ${rule.active ? '🟢 Active' : '🔴 Inactive'}
+              </span>
+          </div>
+          <div class="rule-details">
+              <div class="name">
+                <label for="rule-name"><strong>Description:</strong></label>
+                <input id="rule-name" type="text" value="${rule.description}" readonly/>
+              </div>
+
+              <div class="rule_type">
+                <label for="rule-type"><strong>Rule Type:</strong></label>
+                <input id="rule-type" type="text" value="${rule.rule_type}" readonly/>
+              </div>
+
+              <div class="target_type">
+                <label for="target-type"><strong>Target Type:</strong></label>
+                <input id="target-type" type="text" value="${rule.target_type}" readonly/>
+              </div>
+
+              <div class="priority">
+                <label for="priority"><strong>Priority:</strong></label>
+                <input id="priority" type="number" value="${rule.priority}" readonly/>
+              </div>
+
+              <div class="error_message">
+                <label for="error-message"><strong>Error Message:</strong></label>
+                <textarea id="error-message" class="materialize-textarea" rows="3" readonly>${rule.error_message}</textarea>
+              </div>
+          </div>
+
+          <div class="conditions-details">
+            <p><h6>Conditions:</h6></p>
+            <ul class="conditions-list">
+              ${renderConditions(rule.conditions)}
+            </ul>
+          </div>
+        </div>`;
+    });
+  });
+
+  return html;
+}
+
+
+function renderConditions(condition, depth = 0) {
+  if (!condition) return "<p>No conditions found.</p>";
+
+  const fieldLabelMap = {
+    // Quote fields
+    "quote.net_amount": "Net Amount",
+    "quote.tax_amount": "Tax Amount",
+    "quote.status": "Status",
+    "quote.discount_percentage": "Quote Discount %",
+    "quote.discount_amount": "Quote Discount Amount",
+    "quote.discount_type": "Quote Discount Type",
+    "quote.subtotal": "Quote Subtotal",
+
+    // Quote Line fields
+    "quote_line.quantity": "Quantity",
+    "quote_line.unit_price": "Unit Price",
+    "quote_line.special_price": "Special Price",
+    "quote_line.total_price": "Total Price",
+    "quote_line.discount_percentage": "Discount %",
+    "quote_line.discount_type": "Discount Type",
+    "quote_line.discount_amount": "Discount Amount",
+    "quote_line.billing_frequency": "Billing Frequency",
+    "quote_line.billing_end_date": "Billing End Date",
+    "quote_line.billing_start_date": "Billing Start Date",
+    "quote_line.is_subscription": "Is Subscription",
+    "quote_line.product_name": "Product Name",
+    "quote_line.sku": "SKU",
+    "quote_line.term": "Term",
+    "quote_line.subtotal": "Line Subtotal"
+  };
+
+  function translateOperator(op) {
+    switch (op) {
+      case "==": return "is";
+      case "!=": return "is not";
+      case ">": return "is greater than";
+      case ">=": return "is greater than or equal to";
+      case "<": return "is less than";
+      case "<=": return "is less than or equal to";
+      default: return op;
+    }
+  }
+
+  // Caso base: condición simple
+  if (condition.fieldName && condition.operator && typeof condition.value !== "undefined") {
+    const label = fieldLabelMap[condition.fieldName] || condition.fieldName;
+    const operator = translateOperator(condition.operator);
+    const value = condition.value;
+
+    return `<li class="depth-${depth}">${label} ${operator} ${value}</li>`;
+  }
+
+  // Caso compuesto: lógica AND/OR
+  if (condition.logic && Array.isArray(condition.items)) {
+    const logicLabel = condition.logic.toUpperCase() === "AND"
+      ? "All of the following:"
+      : "One of the following:";
+
+    const items = condition.items.map((item, index) => {
+      const rendered = renderConditions(item, depth + 1);
+
+      // Agregar el operador lógico entre condiciones (excepto después de la última)
+      if (index < condition.items.length - 1) {
+        return `${rendered}<li class="logic-operator depth-${depth + 1}">${condition.logic.toUpperCase()}</li>`;
+      } else {
+        return rendered;
+      }
+    });
+
+    return `
+      <li class="depth-${depth}">
+        <strong>${logicLabel}</strong>
+        <ul class="conditions-list">
+          ${items.join("")}
+        </ul>
+      </li>
+    `;
+  }
+
+  return `<li class="depth-${depth}">⚠️ Unknown condition format</li>`;
+}
+
+function extractJson(raw) {
+  const firstBrace = raw.indexOf('{');
+  const firstBracket = raw.indexOf('[');
+
+  // Determinar si el JSON empieza con { o [
+  let startIndex;
+  let openChar, closeChar;
+
+  if (firstBrace === -1 && firstBracket === -1) return null; // no JSON found
+  if (firstBrace === -1) {
+    startIndex = firstBracket;
+    openChar = '['; closeChar = ']';
+  } else if (firstBracket === -1) {
+    startIndex = firstBrace;
+    openChar = '{'; closeChar = '}';
+  } else {
+    // Escoger el que aparece primero
+    if (firstBrace < firstBracket) {
+      startIndex = firstBrace;
+      openChar = '{'; closeChar = '}';
+    } else {
+      startIndex = firstBracket;
+      openChar = '['; closeChar = ']';
+    }
+  }
+
+  // Ahora encontrar el cierre balanceado
+  let depth = 0;
+  for (let i = startIndex; i < raw.length; i++) {
+    if (raw[i] === openChar) depth++;
+    else if (raw[i] === closeChar) depth--;
+
+    if (depth === 0) {
+      return raw.substring(startIndex, i + 1);
+    }
+  }
+
+  // Si no se cerró el JSON, devolver null
+  return null;
 }

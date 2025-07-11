@@ -1,5 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject
+from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt 
 from django.apps import apps
@@ -7,8 +7,23 @@ from salesforce.models import SalesforceToken
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.exceptions import ObjectDoesNotExist
 import json
-from .forms import CustomFieldForm, CustomObjectForm
+from .forms import CustomFieldForm, CustomObjectForm, generate_dynamic_form
 from django.contrib.auth.decorators import login_required
+from django.contrib.contenttypes.models import ContentType
+from django.contrib import messages
+import logging
+from django.db.models import Count
+from django.utils.timezone import now
+from django.db.models.functions import TruncMonth
+from datetime import datetime
+from django.utils.timezone import make_aware
+from .forms import CustomFieldForm, BusinessRuleForm, get_rule_condition_formset
+from .forms import QUOTE_FIELDS, QUOTE_LINE_FIELDS, PRODUCT_FIELDS
+from django.utils.safestring import mark_safe
+
+# Agents General Helpers
+from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
+
 
 def root_redirect(request):
     if request.user.is_authenticated:
@@ -156,11 +171,25 @@ def create_custom_field(request):
 
         # ✅ Save to DB
         field = CustomField.objects.create(
-            crm=crm, object_type=object_type,
-            name=name, label=label,
-            data_type=data_type, required=required,
+            crm=crm,
+            object_type=object_type,
+            name=name,
+            label=label,
+            data_type=data_type,
+            required=required,
             created_by=request.user
         )
+
+        if field:
+            quote_document_settings = QuoteDocumentSettings.objects.first()
+            if quote_document_settings:
+                # Add label at the end of omitted_fields
+                omitted = quote_document_settings.omitted_fields or []
+                
+                if label not in omitted:  # Avoid duplicated
+                    omitted.append(label)
+                    quote_document_settings.omitted_fields = omitted
+                    quote_document_settings.save()
 
         return redirect("custom_fields")
 
@@ -237,7 +266,19 @@ def create_custom_field(request):
     if request.method == 'POST':
         form = CustomFieldForm(request.POST)
         if form.is_valid():
-            form.save()
+            field = form.save()
+
+            # 🔧 Lógica personalizada aquí
+            quote_document_settings = QuoteDocumentSettings.objects.first()
+            if quote_document_settings:
+                full_label = f"{field.object_type}.{field.label}"
+                omitted = quote_document_settings.omitted_fields or []
+
+                if full_label not in omitted:
+                    omitted.append(full_label)
+                    quote_document_settings.omitted_fields = omitted
+                    quote_document_settings.save()
+            
             return redirect('cpq:custom_fields')  # or wherever you want to go after save
     else:
         form = CustomFieldForm()
@@ -307,6 +348,7 @@ def get_document_template(request):
     
     try:
         document_settings = QuoteDocumentSettings.objects.first()
+        
     except ObjectDoesNotExist:
         document_settings = None
 
@@ -341,8 +383,7 @@ def get_document_template(request):
             settings.rendered_fields = json.loads(rendered_fields_raw)
             settings.omitted_fields = json.loads(omitted_fields_raw)
         except json.JSONDecodeError:
-            settings.rendered_fields = []
-            settings.omitted_fields = []
+            print("Error decodificando los JSON\n\n")
         
         # Terms and conditions
         settings.terms_and_conditions = request.POST.get("terms_conditions", "")
@@ -355,6 +396,10 @@ def get_document_template(request):
             rendered_fields=QuoteDocumentSettings.default_rendered_fields(),
             omitted_fields=QuoteDocumentSettings.default_omitted_fields()
         )
+    
+    # Hardcore for now
+    set_custom_fields_into_quote_document_settings("Product")
+    document_settings.refresh_from_db()
 
     return render(request, 'document_template.html', {
         'company': company,
@@ -363,26 +408,188 @@ def get_document_template(request):
         'omitted_fields': document_settings.omitted_fields if document_settings else []
     })
 
-def create_payment(request):
-    custom_fields = CustomField.objects.filter(object_type="Payment")
+def business_rules_view(request):
 
-    if request.method == 'POST':
-        # Create the Payment record (can be extended if you have actual fields)
-        payment = Payment.objects.create()  # You may want to populate actual fields if defined
+    try:
+        company = Tenant.objects.first()
+    except ObjectDoesNotExist:
+        company = None
 
-        # Save custom field values
-        for field in custom_fields:
-            form_value = request.POST.get(f'custom_{field.name}')
-            if form_value:
-                CustomFieldValue.objects.create(
-                    field=field,
-                    content_type=ContentType.objects.get_for_model(Payment),
-                    object_id=payment.id,
-                    value=form_value
-                )
+    rule_types = ['general', 'validation', 'inclusion', 'exclusion']
+    rules_by_type = {}
 
-        return redirect('cpq:some_payment_list_or_success_view')  # Redirect as needed
+    for rule_type in rule_types:
+        rules = BusinessRule.objects.filter(rule_type=rule_type).order_by("priority")
+        rules_by_type[rule_type] = rules
 
-    return render(request, 'payment_create.html', {
-        'custom_fields': custom_fields
+    return render(request, 'manage_rules.html', {
+        'company': company,
+        "rules_by_type": rules_by_type
     })
+
+def create_business_rule(request):
+    rule_type = request.GET.get("type", "validation")
+    target_type = request.GET.get("target_type", "quote_line")
+
+    if request.method == "POST":
+        print(f"\n\nSi llega al POST\n\n")
+        form = BusinessRuleForm(request.POST)
+        target_type = request.POST.get("target_type", "quote_line")
+        formset = get_rule_condition_formset(target_type, request.POST)
+
+        if form.is_valid() and formset.is_valid():
+            rule = form.save(commit=False)
+            rule.rule_type = rule_type
+            rule.save()
+
+            for condition in formset.save(commit=False):
+                condition.rule = rule
+                condition.save()
+
+            return redirect("cpq:business_rules")
+        else:
+            print("Form errors:", form.errors)
+            print("Formset errors:")
+            for f in formset.forms:
+                print(f.errors)
+
+    else:
+        form = BusinessRuleForm(initial={"rule_type": rule_type})
+        target_type = request.GET.get("target_type", "quote_line")
+        formset = get_rule_condition_formset(target_type)
+
+
+    return render(request, "create_business_rule.html", {
+        "form": form,
+        "formset": formset,
+        "rule_type": rule_type,
+        "QUOTE_FIELDS": mark_safe(json.dumps(QUOTE_FIELDS)),
+        "QUOTE_LINE_FIELDS": mark_safe(json.dumps(QUOTE_LINE_FIELDS)),
+        "PRODUCT_FIELDS": mark_safe(json.dumps(PRODUCT_FIELDS)),
+    })
+
+
+def create_custom_record(request, object_name):
+
+    custom_object = get_object_or_404(CustomObject, name=object_name)
+    DynamicForm = generate_dynamic_form(custom_object)
+    
+    if request.method == 'POST':
+        form = DynamicForm(request.POST)
+        if form.is_valid():
+            record = CustomRecord.objects.create(object_type=custom_object)
+
+            content_type = ContentType.objects.get_for_model(record)
+
+            for field_name, value in form.cleaned_data.items():
+                try:
+                    custom_field = CustomField.objects.get(name=field_name, custom_object=custom_object)
+                    CustomFieldValue.objects.create(
+                        record=record,
+                        field=custom_field,
+                        value=value,
+                        content_type=content_type,
+                        object_id=record.id
+                    )
+                
+                except CustomField.DoesNotExist:
+                    print(f"Field not found: {field_name}")
+            messages.success(request, f"{custom_object.label} record created successfully.")
+            return redirect(request.META.get('HTTP_REFERER', '/dashboard/'))
+    else:
+        form = DynamicForm()
+
+    return render(request, 'custom_objects/record_form.html', {
+        'form': form,
+        'custom_object': custom_object
+    })
+
+
+def get_lookup_data_for_form(custom_object):
+    lookup_data = {}
+    for field in CustomField.objects.filter(custom_object=custom_object, data_type="lookup"):
+        try:
+            model = apps.get_model(field.lookup_model)
+            # Only grab id and name or string version
+            instances = model.objects.all()
+            lookup_data[field.name] = [{"id": i.id, "label": str(i)} for i in instances]
+        except Exception as e:
+            lookup_data[field.name] = []
+    return lookup_data
+
+def search_accounts(request):
+    q = request.GET.get("q", "")
+    results = []
+
+    if q:
+        matches = Account.objects.filter(name__icontains=q)[:20]
+        results = [{"id": acc.id, "name": acc.name} for acc in matches]
+
+    return JsonResponse({"results": results})
+
+
+def usage_dashboard(request):
+    current_tenant = Tenant.objects.first()
+    usage_logs = ActionUsage.objects.all()
+ 
+
+    # ---- Total Actions by Month ----
+    actions_by_month = (
+        usage_logs
+        .annotate(month=TruncMonth("timestamp"))
+        .values("month")
+        .annotate(total=Count("id"))
+        .order_by("month")
+    )
+
+    # ---- Top 5 Actions (Overall) ----
+    top_actions = (
+        usage_logs
+        .values("action")
+        .annotate(count=Count("id"))
+        .order_by("-count")[:5]
+    )
+
+    # ---- Total Actions by User ----
+    actions_by_user = (
+        usage_logs
+        .values("user__username")
+        .annotate(count=Count("id"))
+        .order_by("-count")
+    )
+    print(actions_by_user)
+    # ---- Overflow Metric (Current Month Only) ----
+    start_of_month = make_aware(datetime(now().year, now().month, 1))
+    monthly_count = usage_logs.filter(timestamp__gte=start_of_month).count()
+    action_limit = current_tenant.actions_limit or 1000
+    overflow = monthly_count - action_limit
+
+
+    actions_by_month_serialized = [
+    {
+        "month": entry["month"].strftime("%Y-%m"),  # or "%b %Y" for readable labels
+        "total": entry["total"]
+    }
+    for entry in actions_by_month
+    ]
+
+    actions_by_user_serialized = [
+        {
+            "user": entry.get("user__username") or "Unknown",
+            "total": entry["count"]
+        }
+        for entry in actions_by_user
+    ]
+
+
+    context = {
+        "tenant": current_tenant,
+        "actions_by_month_json": mark_safe(json.dumps(list(actions_by_month_serialized))),
+        "actions_by_user_json": mark_safe(json.dumps(list(actions_by_user_serialized))),
+        "top_actions": top_actions,
+        "monthly_count": monthly_count,
+        "limit": action_limit,
+        "overflow": max(0, overflow),
+    }
+
+    return render(request, "usage.html", context)

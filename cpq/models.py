@@ -11,6 +11,7 @@ from django.contrib.postgres.fields import JSONField
 from django.db.models import JSONField
 from dateutil.relativedelta import relativedelta
 from django.contrib.auth.models import User
+from django.conf import settings
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -47,6 +48,8 @@ class Lead(models.Model):
     assigned_to = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_leads')
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_leads')
     def save(self, *args, **kwargs):
         if not self.leadId:
             self.leadId = generate_agentcpq_id()
@@ -78,12 +81,22 @@ class Account(models.Model):
     accid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='accounts')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_accounts')
+     # Address fields
+    street = models.CharField(max_length=255, blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    zip_code = models.CharField(max_length=20, blank=True, null=True)
+    # country = models.CharField(max_length=100, blank=True, null=True)
     
 
     def save(self, *args, **kwargs):
         if not self.accid:
             self.accid = generate_agentcpq_id()
         super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return self.name
 
 class Contact(models.Model):
     first_name = models.CharField(max_length=100)
@@ -98,6 +111,8 @@ class Contact(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='contacts')
     contactId = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_contacts')
+    is_primary = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
         if not self.contactId:
@@ -111,32 +126,35 @@ class Contact(models.Model):
 
 class Opportunity(models.Model):
     """Represents a sales opportunity linked to an Account."""
-    # STAGE_CHOICES = [
-    #     ('Prospecting', 'Prospecting'),
-    #     ('Qualification', 'Qualification'),
-    #     ('Proposal', 'Proposal Sent'),
-    #     ('Negotiation', 'Negotiation'),
-    #     ('Closed Won', 'Closed Won'),
-    #     ('Closed Lost', 'Closed Lost'),
-    # ]
-
     STAGE_CHOICES = [
-        ("appointmentscheduled", "Appointment Scheduled"),
-        ("qualifiedtobuy", "Qualified to Buy"),
-        ("presentationscheduled", "Presentation Scheduled"),
-        ("decisionmakerboughtin", "Decision Maker Bought-In"),
-        ("contractsent", "Contract Sent"),
-        ("closedwon", "Closed Won"),
-        ("closedlost", "Closed Lost"),
+        ('Prospecting', 'Prospecting'),
+        ('Qualification', 'Qualification'),
+        ('Proposal', 'Proposal Sent'),
+        ('Negotiation', 'Negotiation'),
+        ('Closed Won', 'Closed Won'),
+        ('Closed Lost', 'Closed Lost'),
     ]
+
+    ### UNCOMENT FOR HUBSPOT INTEGRATION ###
+    # STAGE_CHOICES = [
+    #     ("appointmentscheduled", "Appointment Scheduled"),
+    #     ("qualifiedtobuy", "Qualified to Buy"),
+    #     ("presentationscheduled", "Presentation Scheduled"),
+    #     ("decisionmakerboughtin", "Decision Maker Bought-In"),
+    #     ("contractsent", "Contract Sent"),
+    #     ("closedwon", "Closed Won"),
+    #     ("closedlost", "Closed Lost"),
+    # ]
 
     name = models.CharField(max_length=255)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="opportunities")
     amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    stage = models.CharField(max_length=50, choices=STAGE_CHOICES, default='appointmentscheduled')
+    stage = models.CharField(max_length=50, choices=STAGE_CHOICES, default='Prospecting')
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     expected_close_date = models.DateField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_opportunities')
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     primary_quote = models.ForeignKey(
         "Quote", 
         on_delete=models.SET_NULL,  # Set to NULL if quote is deleted
@@ -182,9 +200,17 @@ class Activity(models.Model):
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_activities')
+    activityid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+
     class Meta:
         verbose_name = "Activity"
         verbose_name_plural = "Activities"
+
+    def save(self, *args, **kwargs):
+        if not self.activityid:
+            self.activityid = generate_agentcpq_id()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.subject} ({self.get_activity_type_display()})"
@@ -200,21 +226,36 @@ class Product(models.Model):
     family = models.CharField(max_length=50)
     prdid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
-    description = models.TextField(blank=True) 
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_products')
+    description = models.TextField(blank=True)
+
+    def get_custom_fields(self):
+        return CustomField.objects.filter(object_type="Product")
+
+    def get_custom_fields_values(self):
+        content_type = ContentType.objects.get_for_model(Product)
+        return CustomFieldValue.objects.filter(content_type=content_type, object_id=self.id)
 
     def save(self, *args, **kwargs):
         if not self.prdid:
             self.prdid = generate_agentcpq_id()
         super().save(*args, **kwargs)
+    def __str__(self):
+        bundle_tag = " - BUNDLE" if self.is_bundle else ""
+        return f"{self.name} ({self.sku}){bundle_tag}"
 
 class Option(models.Model):
     parent_product = models.ForeignKey(Product, related_name="options", on_delete=models.CASCADE)  # 🔗 Parent Bundle
-    product = models.ForeignKey(Product, related_name="included_in", on_delete=models.CASCADE)  # 🔗 Child Product
+    product_option = models.ForeignKey(Product, related_name="included_in", on_delete=models.CASCADE)  # 🔗 Child Product
     quantity = models.PositiveIntegerField(default=1)  # Default quantity
-    required = models.BooleanField(default=False)  # ✅ Is this product required in the bundle?
+    is_required = models.BooleanField(default=False)
+    min_quantity = models.PositiveIntegerField(default=1)
+    max_quantity = models.PositiveIntegerField(default=10)
+    default_selected = models.BooleanField(default=False)
+    group_name = models.CharField(max_length=255, blank=True, null=True)  # Optional grouping (for dynamic)
 
     def __str__(self):
-        return f"{self.parent_product.name} - {self.product.name} (Qty: {self.quantity})"
+        return f"{self.parent_product.name}"
 
 class Quote(models.Model):
     """Now linked to an Opportunity instead of a Customer."""
@@ -249,6 +290,8 @@ class Quote(models.Model):
     hs_primary = models.BooleanField(default=False,help_text="Marks this quote as the primary quote for the HubSpot deal")
     synced = models.BooleanField(default=False)
     last_synced_at = models.DateTimeField(null=True, blank=True)
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_quotes')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quotes')
 
 
     def get_total_discount_percentage(self):
@@ -325,9 +368,10 @@ class QuoteLine(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="quote_lines")
     product_name = models.CharField(max_length=255, blank=True, null=True)
     quantity = models.IntegerField(default=1)
+    parent_line = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)  # for nesting
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     special_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage")
+    discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage", null=True, blank=True)
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -335,6 +379,9 @@ class QuoteLine(models.Model):
     parent_quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="parent_quote_lines", blank=True, null=True)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     is_subscription = models.BooleanField(default=False)
+    is_bundle_parent = models.BooleanField(default=False)
+    product_option = models.ForeignKey("Option", null=True, blank=True, on_delete=models.SET_NULL)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quote_lines')
     billing_frequency = models.CharField(
         max_length=20,
         choices=[("monthly", "monthly"), ("quarterly", "quarterly"), ("annual", "annual"), ("one_time", "one_time")],
@@ -409,6 +456,9 @@ class QuoteLine(models.Model):
         else:
             self.total_price = base_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+    def check_term_is_not_null_for_subscriptions(self):
+        if self.product.is_subscription and self.term is None:
+            self.term = 1
 
     def save(self, *args, **kwargs):
         # Auto-calculate price for bundles
@@ -416,7 +466,7 @@ class QuoteLine(models.Model):
             self.unit_price = sum(
                 bundle_item.product.price * bundle_item.quantity
                 for bundle_item in self.product.bundle_items.all()
-            ), Decimal("0.00")
+            ) or Decimal("0.00")
         elif self.unit_price is None:
             self.unit_price = self.product.price
 
@@ -425,6 +475,9 @@ class QuoteLine(models.Model):
             self.product_name = self.product.name
         if self.product and not self.sku:
             self.sku = self.product.sku
+
+        #Chech term for subscriptions:
+        self.check_term_is_not_null_for_subscriptions()
 
         #Update discount fields
         self.update_discount_fields()
@@ -505,7 +558,33 @@ class ApprovalRule(models.Model):
             if not condition.matches(quote):
                 return False
         return True
+    
+class BusinessRule(models.Model):
+    RULE_TYPES = [
+        ("validation", "Validation"),
+        ("inclusion", "Inclusion"),
+        ("exclusion", "Exclusion")
+    ]
 
+    TARGET_TYPES = [
+        ("quote", "Quote"),
+        ("quote_line", "Quote Line"),
+        ("product", "Product"),
+    ]
+
+    name = models.CharField(max_length=255, blank=True)
+    description = models.CharField(max_length=255)
+    rule_type = models.CharField(max_length=20, choices=RULE_TYPES, default="validation")
+    target_type = models.CharField(max_length=20, choices=TARGET_TYPES, default="quote_line")
+    priority = models.IntegerField(default=0, help_text="Higher priority rules run first.")
+    error_message = models.TextField(blank=True, help_text="Message shown when the rule is triggered.")
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    conditions = models.JSONField(default=list, blank=True, help_text="List of conditions for the rule.")
+
+    def __str__(self):
+        return f"{self.name} ({self.rule_type}, Priority {self.priority})"
+    
 class RuleCondition(models.Model):
     OPERATORS = [
         ('>=', 'Greater Than or Equal'),
@@ -516,12 +595,13 @@ class RuleCondition(models.Model):
         ('!=', 'Not Equal'),
     ]
 
-    rule = models.ForeignKey(
-        'ApprovalRule',
-        on_delete=models.CASCADE,
-        null=True, 
-        related_name='conditions'
-    )
+    #rule = models.ForeignKey(
+    #    'ApprovalRule',
+    #    on_delete=models.CASCADE,
+    #    null=True, 
+    #    related_name='conditions'
+    #)
+    rule = models.ForeignKey(BusinessRule, on_delete=models.CASCADE)
     field_name = models.CharField(max_length=255)  # e.g. "discount_percentage"
     operator = models.CharField(max_length=2, choices=OPERATORS)
     value = models.DecimalField(max_digits=12, decimal_places=2)
@@ -760,9 +840,6 @@ class QuoteDocument(models.Model):
     def __str__(self):
         return f"{self.quote.name} - v{self.version}"
 
-#dummy model for all custom objects
-class CustomRecord(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
 
 class CustomObject(models.Model):
     name = models.CharField(max_length=255, unique=True)
@@ -772,6 +849,27 @@ class CustomObject(models.Model):
 
     def __str__(self):
         return self.label or self.name
+    
+    class Meta:
+        verbose_name = "Custom Object"
+        verbose_name_plural = "Custom Objects"
+#dummy model for all custom objects
+class CustomRecord(models.Model):
+    object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE)
+    # record_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    record_id = models.UUIDField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    def __str__(self):
+        label = f"{self.object_type.name} record"
+        try:
+            from .models import CustomFieldValue
+            values = CustomFieldValue.objects.filter(record=self).select_related("field")[:4]
+            value_parts = [
+                f"{v.field.label}: {v.value}" for v in values if v.field and v.value
+            ]
+            return f"{label} — {' | '.join(value_parts)}" if value_parts else label
+        except Exception:
+            return label
 
 
 class CustomField(models.Model):
@@ -783,29 +881,40 @@ class CustomField(models.Model):
     required = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     custom_object = models.ForeignKey(CustomObject, on_delete=models.SET_NULL, null=True, blank=True)
+    lookup_model = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Format: 'app_label.ModelName' (e.g., 'cpq.Account')"
+    )
+    class Meta:
+        verbose_name = "Custom Field"
+        verbose_name_plural = "Custom Fields"
 
     def __str__(self):
-        return f"{self.crm}.{self.object_type}.{self.field_name}"
-
+        return f"{self.crm}.{self.object_type}.{self.name}"
+    
 
 class CustomFieldValue(models.Model):
     field = models.ForeignKey(CustomField, on_delete=models.CASCADE, related_name="values")
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)  # Generic relation
-    object_id = models.PositiveIntegerField()
+    object_id = models.PositiveIntegerField(null=True, blank=True)
     content_object = GenericForeignKey("content_type", "object_id")
     value = models.TextField()
+    record = models.ForeignKey(CustomRecord, null=True, blank=True, on_delete=models.CASCADE)
 
     def __str__(self):
-        return f"{self.content_object} - {self.field.field_name}: {self.value}"
+        return f"{self.content_object} - {self.field.label}: {self.value}"
     
     
+
 class QuoteDocumentSettings(models.Model):
     DESIGN_CHOICES = [
         ('classic', 'Classic'),
         ('modern', 'Modern'),
     ]
 
-    DESCRIPTION_DETAIL_DHOICES = [
+    DESCRIPTION_DETAIL_CHOICES = [
         ('short', 'Short'),
         ('long', 'Modern'),
     ]
@@ -847,7 +956,7 @@ class QuoteDocumentSettings(models.Model):
     #Quote Line Description
     line_description_detail_level = models.CharField(
         max_length=20,
-        choices=DESCRIPTION_DETAIL_DHOICES,
+        choices=DESCRIPTION_DETAIL_CHOICES,
         default='short',
         help_text="Select the quote line description detail level."
     )
@@ -872,3 +981,58 @@ class QuoteDocumentSettings(models.Model):
 
     def __str__(self):
         return f"PDF Settings"
+    
+class QuoteUIRender(models.Model):
+
+    def default_rendered_fields():
+        return ['sku_product', 'quantity', 'unit_price', 'discount_percentage', 'discount_amount', 'subscription', 'term', 'total_price']
+
+    def default_omitted_fields():
+        return []
+
+    # Quote information
+    show_quote_account = models.BooleanField(default=True)
+    show_quote_opportunity = models.BooleanField(default=True)
+    show_quote_created_at = models.BooleanField(default=True)
+    show_quote_expires_at = models.BooleanField(default=True)
+    show_quote_discount = models.BooleanField(default=True)
+
+    # Line items information
+    rendered_fields = JSONField(default=default_rendered_fields, blank=True)
+    omitted_fields = JSONField(default=default_omitted_fields, blank=True)
+
+    # Subtotal and net amount information
+    show_quote_subtotal = models.BooleanField(default=True)
+    show_quote_net_amount = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"QuoteUI Settings"
+
+class ActionUsage(models.Model):
+    action = models.CharField(max_length=100)  # e.g., "CreateQuote", "UpdateQuoteLine"
+    timestamp = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="action_usages"
+    )
+    related_object_type = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Type of object this action is related to (e.g., Quote, Product, Approval)"
+    )
+    related_object_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="ID of the related object (e.g., Q-0001, PROD-001)"
+    )
+
+    class Meta:
+        ordering = ["-timestamp"]
+
+    def __str__(self):
+        return f"{self.action} by {self.user or 'System'} on {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"

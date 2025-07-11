@@ -1,6 +1,7 @@
 {% extends "base.html" %}
-
+{% load static %}
 {% block content %}
+<script src="{% static 'js/agents/agent_main.js' %}" defer></script>
 <style>
   input:hover,
   textarea:hover,
@@ -80,13 +81,84 @@ input[type="checkbox"]:checked + span:before {
 input[type="checkbox"] + span {
   color: #212121 !important;  /* o el color que prefieras */
 }
+.container{
+      padding: 24px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+      max-width: none !important;
+      width: 100%;
+      
+    }
+    .card-panel {
+    padding: 24px;
+    margin: .5rem 0 1rem 0;
+    border-radius: 10px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    box-shadow: none !important;
+}
+ .agent-limits{
+  padding: 24px;
+  margin: .5rem 0 1rem 0;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
+  box-shadow: none !important;
+}
+.btn, .btn-flat, .btn-small, .btn-large {
+        box-shadow: none !important;
+      }
+#save-button {
+  border-radius: 20px;
+  font-weight: 500;
+  font-size: 14px;
+  padding: 10px 18px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: none;
+  line-height: 1;
+  width: 169px;
+  background-color:#182740 !important;
+}
+.orange.darken-3 {
+    background-color: #182740 !important;
+}
+input[type="checkbox"]:checked + span:before{
+    border-bottom: 2px solid #fc6a3d !important;
+    border-right: 2px solid #fc6a3d !important;
+}
+
+
+/* Heading size + spacing */
+.tenant-title {
+  font-family: 'Euclid Circular A', sans-serif;
+  font-size: 1rem;          /* smaller than default h6 */
+  margin-bottom: 0.75rem;
+}
+
+/* Nice, touch-friendly check-boxes */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;                 /* space between box and text */
+  font-size: 0.95rem;
+  margin: 4px 0;
+}
+
+/* Optional: enlarge tap target slightly */
+.checkbox-label input[type="checkbox"] {
+  transform: scale(1.1);
+}
+
 
 </style>
 
 <div class="container">
   <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
     <i class="material-icons left" style="vertical-align: middle;">note_alt</i>
-    Manage Document
+    Document Management
   </h4>
 
   <div class="card-panel white z-depth-1">
@@ -113,112 +185,131 @@ input[type="checkbox"] + span {
         
       </style>
 
-      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Tenant Information</h6>
-    
-      <div class="row">
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_company_name" {% if settings.show_company_name %}checked{% endif %} />
+      <h6 class="tenant-title left-align">Tenant Information</h6>
+
+      <!-- 2️⃣  Grid of check-boxes -->
+      <div class="row tenant-info">
+        <!-- stacks 1-per-row on phones, 2-per-row on small tablets, 3-per-row on ≥992 px -->
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_company_name"
+                  {% if settings.show_company_name %}checked{% endif %} />
             <span>Name</span>
           </label>
         </div>
 
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_company_email" {% if settings.show_company_email %}checked{% endif %} />
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_company_email"
+                  {% if settings.show_company_email %}checked{% endif %} />
             <span>Email</span>
           </label>
         </div>
 
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_company_address" {% if settings.show_company_address %}checked{% endif %} />
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_company_address"
+                  {% if settings.show_company_address %}checked{% endif %} />
             <span>Address</span>
           </label>
         </div>
 
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_company_phone" {% if settings.show_company_phone %}checked{% endif %} />
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_company_phone"
+                  {% if settings.show_company_phone %}checked{% endif %} />
             <span>Phone</span>
           </label>
         </div>
 
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_company_domain" {% if settings.show_company_domain %}checked{% endif %} />
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_company_domain"
+                  {% if settings.show_company_domain %}checked{% endif %} />
             <span>Domain</span>
           </label>
         </div>
 
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_company_logo" {% if settings.show_company_logo %}checked{% endif %} />
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_company_logo"
+                  {% if settings.show_company_logo %}checked{% endif %} />
             <span>Logo</span>
           </label>
         </div>
       </div>
 
-      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Account Information</h6>
+      <!-- 1️⃣  Heading -->
+        <h6 class="section-title left-align">Account Information</h6>
 
-      <div class="row">
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_account_name" {% if settings.show_account_name %}checked{% endif %} />
-            <span>Name</span>
-          </label>
+        <!-- 2️⃣  Responsive grid of check-boxes -->
+        <div class="row account-info">
+          <div class="col s12 m6 l4">
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_account_name"
+                    {% if settings.show_account_name %}checked{% endif %} />
+              <span>Name</span>
+            </label>
+          </div>
+
+          <div class="col s12 m6 l4">
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_account_website"
+                    {% if settings.show_account_website %}checked{% endif %} />
+              <span>Website</span>
+            </label>
+          </div>
+
+          <div class="col s12 m6 l4">
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_account_phone"
+                    {% if settings.show_account_phone %}checked{% endif %} />
+              <span>Phone</span>
+            </label>
+          </div>
         </div>
 
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_account_website" {% if settings.show_account_website %}checked{% endif %} />
-            <span>Website</span>
-          </label>
-        </div>
+      <!-- 1️⃣  Heading -->
+      <h6 class="section-title left-align">Quote Information</h6>
 
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_account_phone" {% if settings.show_account_phone %}checked{% endif %} />
-            <span>Phone</span>
-          </label>
-        </div>
-
-      </div>
-
-      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Quote Information</h6>
-
-      <div class="row">
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_quote_opportunity" {% if settings.show_quote_opportunity %}checked{% endif %} />
+      <!-- 2️⃣  Responsive grid of check-boxes -->
+      <div class="row quote-info">
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_quote_opportunity"
+                  {% if settings.show_quote_opportunity %}checked{% endif %} />
             <span>Opportunity</span>
           </label>
         </div>
 
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_quote_status" {% if settings.show_quote_status %}checked{% endif %} />
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_quote_status"
+                  {% if settings.show_quote_status %}checked{% endif %} />
             <span>Status</span>
           </label>
         </div>
 
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_quote_created_at" {% if settings.show_quote_created_at %}checked{% endif %} />
-            <span>Created Date</span>
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_quote_created_at"
+                  {% if settings.show_quote_created_at %}checked{% endif %} />
+            <span>Created&nbsp;Date</span>
           </label>
         </div>
 
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_quote_expires_at" {% if settings.show_quote_expires_at %}checked{% endif %} />
-            <span>Expiration Date</span>
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_quote_expires_at"
+                  {% if settings.show_quote_expires_at %}checked{% endif %} />
+            <span>Expiration&nbsp;Date</span>
           </label>
         </div>
 
-        <div class="col s2">
-          <label>
-            <input type="checkbox" name="show_quote_notes" {% if settings.show_quote_notes %}checked{% endif %} />
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_quote_notes"
+                  {% if settings.show_quote_notes %}checked{% endif %} />
             <span>Notes</span>
           </label>
         </div>
@@ -246,43 +337,54 @@ input[type="checkbox"] + span {
           </ul>
         </div>
 
-        <div class="col s12">
-          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Description Detail Level</h6>
-          <div class="switch">
-            <label>
-              Short
-              <input type="checkbox" name="description_detail_level" id="description_detail_level_switch" {% if settings.line_description_detail_level == 'long' %}checked{% endif %}>
-              <span class="lever"></span>
-              Long
+        <!-- Description Detail Level -->
+        
+          <div class="col s12">
+            <h6 class="option-title">Description Detail Level</h6>
+
+            <div class="switch detail-switch">
+              <label>
+                Short
+                <input type="checkbox"
+                      name="description_detail_level"
+                      id="description_detail_level_switch"
+                      {% if settings.line_description_detail_level == 'long' %}checked{% endif %} />
+                <span class="lever"></span>
+                Long
+              </label>
+            </div>
+          </div>
+        
+
+              <!--  Responsive grid: Show Discount / Term / Sign  -->
+        <div class="row line-display-options">
+          <div class="col s12 m6 l4">
+            <h6 class="option-title">Show Discount</h6>
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_line_discount"
+                    {% if settings.show_line_discount %}checked{% endif %} />
+              <span>Quote&nbsp;Line&nbsp;Discount</span>
+            </label>
+          </div>
+
+          <div class="col s12 m6 l4">
+            <h6 class="option-title">Show Term&nbsp;(Subscriptions)</h6>
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_subscription_term"
+                    {% if settings.show_subscription_term %}checked{% endif %} />
+              <span>Term</span>
+            </label>
+          </div>
+
+          <div class="col s12 m6 l4">
+            <h6 class="option-title">Show Sign</h6>
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_sign"
+                    {% if settings.show_sign %}checked{% endif %} />
+              <span>Sign</span>
             </label>
           </div>
         </div>
-
-        <div class="col s4">
-          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Show Discount</h6>
-          <label>
-            <input type="checkbox" name="show_line_discount" {% if settings.show_line_discount %}checked{% endif %} />
-            <span>Show Quote Line Item Discount</span>
-          </label>
-        </div>
-
-        <div class="col s4">
-          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Show Term (Subscriptions)</h6>
-          <label>
-            <input type="checkbox" name="show_subscription_term" {% if settings.show_subscription_term %}checked{% endif %} />
-            <span>Show Term</span>
-          </label>
-        </div>
-
-        <div class="col s4">
-          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Show Sign</h6>
-          <label>
-            <input type="checkbox" name="show_sign" {% if settings.show_sign %}checked{% endif %} />
-            <span>Show Sign</span>
-          </label>
-        </div>
-
-      </div>
 
       <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Terms and Conditions</h6>
 
@@ -290,19 +392,21 @@ input[type="checkbox"] + span {
         <textarea id="terms_conditions" name="terms_conditions" class="materialize-textarea">{{ settings.terms_and_conditions }}</textarea>
         <label for="terms_conditions">Terms and Conditions</label>
       </div>
-      
+
       <script>
         document.addEventListener("DOMContentLoaded", function () {
           const MAX_VISIBLE = 6;
 
           const visible = document.getElementById("visible-fields");
           const available = document.getElementById("available-fields");
+          const saveButton = document.getElementById("save-button");
 
           const highlight = (element, className) => {
             element.classList.add(className);
             setTimeout(() => element.classList.remove(className), 1000);
           };
 
+          // Inicializa los drag and drop
           new Sortable(visible, {
             group: "fields",
             animation: 150,
@@ -310,7 +414,6 @@ input[type="checkbox"] + span {
               if (visible.children.length > MAX_VISIBLE) {
                 const addedItem = evt.item;
                 const removedItem = visible.lastElementChild;
-
                 available.appendChild(removedItem);
 
                 highlight(addedItem, "green-highlight");
@@ -324,13 +427,18 @@ input[type="checkbox"] + span {
             animation: 150,
           });
 
-          const form = document.querySelector("form");
-          form.addEventListener("submit", function (e) {
-            const getFieldNames = (container) =>
-              Array.from(container.children).map(li =>
-                li.textContent.trim().replace('drag_indicator', '').trim()
-              );
+          function getFieldNames(container) {
+            return Array.from(container.children).map(li => {
+              // Solo toma el texto real, no el ícono
+              return Array.from(li.childNodes)
+                .filter(node => node.nodeType === Node.TEXT_NODE)
+                .map(node => node.textContent.trim())
+                .join(" ");
+            });
+          }
 
+          // Aquí se actualizan los inputs ocultos justo antes del envío
+          saveButton.addEventListener("click", function () {
             const renderedFields = getFieldNames(visible);
             const omittedFields = getFieldNames(available);
 
@@ -338,13 +446,13 @@ input[type="checkbox"] + span {
             document.getElementById("omitted_fields_input").value = JSON.stringify(omittedFields);
           });
         });
-      </script>
+        </script>
 
       <input type="hidden" name="rendered_fields" id="rendered_fields_input" />
       <input type="hidden" name="omitted_fields" id="omitted_fields_input" />
     
       <div class="right-align">
-        <button type="submit" class="btn orange darken-2">
+        <button type="submit" id="save-button" class="btn orange darken-2">
           <i class="material-icons left">save</i> Save
         </button>
       </div>
@@ -359,24 +467,30 @@ input[type="checkbox"] + span {
   </div>
 
   {% if company %}
-    <div class="row">
-      <div class="input-field col s6">
-        <label class="active">Plan</label>
-        <p style="margin-top: 0.5rem;">{{ company.plan }}</p>
+    <!-- Agent Limits -->
+      <div class="row agent-limits">
+
+        <div class="input-field col s12 m6 l3">
+          <label class="active">Plan</label>
+          <p class="limit-value">{{ company.plan }}</p>
+        </div>
+
+        <div class="input-field col s12 m6 l3">
+          <label class="active">Actions&nbsp;Limit</label>
+          <p class="limit-value">{{ company.actions_limit }}</p>
+        </div>
+
+        <div class="input-field col s12 m6 l3">
+          <label class="active">Tenant&nbsp;ID</label>
+          <p class="limit-value">{{ company.tenant_id }}</p>
+        </div>
+
+        <div class="input-field col s12 m6 l3">
+          <label class="active">Version</label>
+          <p class="limit-value">{{ company.version }}</p>
+        </div>
+
       </div>
-      <div class="input-field col s6">
-        <label class="active">Actions Limit</label>
-        <p style="margin-top: 0.5rem;">{{ company.actions_limit }}</p>
-      </div>
-      <div class="input-field col s6">
-        <label class="active">Tenanat Id</label>
-        <p style="margin-top: 0.5rem;">{{ company.tenant_id }}</p>
-      </div>
-      <div class="input-field col s6">
-        <label class="active">Version</label>
-        <p style="margin-top: 0.5rem;">{{ company.version }}</p>
-      </div>
-    </div>
   {% endif %}
 </div>
 {% endblock %}

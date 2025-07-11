@@ -36,7 +36,7 @@ a:hover {
 
 /* === HEADER === */
 #header {
-  background: #313131;
+  background: #0c1c37;
   border-bottom: 4px solid #fc6a3d;
 }
 
@@ -53,8 +53,10 @@ a:hover {
 }
 
 #user-tools {
-  background: #233049;
   color: #ffffff;
+}
+#user-tools a {
+  color: #ffffff !important;
 }
 
 .module caption,
@@ -71,6 +73,7 @@ a:hover {
   padding: 20px;
   margin: 20px;
   box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  border-radius: 20px !important;
 }
 
 fieldset {

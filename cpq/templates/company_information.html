@@ -1,6 +1,7 @@
 {% extends "base.html" %}
-
+{% load static %}
 {% block content %}
+<script src="{% static 'js/agents/agent_main.js' %}" defer></script>
 <style>
   input:hover,
   textarea:hover,
@@ -25,6 +26,50 @@ textarea:focus + label,
 select:focus + label {
   color: #fc6a3d !important;
 }
+.container{
+      padding: 24px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+      max-width: none !important;
+      width: 100%;
+      
+    }
+.card-panel {
+    padding: 24px;
+    margin: .5rem 0 1rem 0;
+    border-radius: 10px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    box-shadow: none !important;
+}
+ .agent-limits{
+  padding: 24px;
+  margin: .5rem 0 1rem 0;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
+  box-shadow: none !important;
+}
+.btn, .btn-flat, .btn-small, .btn-large {
+        box-shadow: none !important;
+      }
+  .btn-standard {
+      border-radius: 20px;
+      font-weight: 500;
+      font-size: 14px;
+      padding: 10px 18px;
+      height: 42px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: none;
+      line-height: 1;
+      width: 169px;
+      background-color:#182740 !important;
+    }
+    .orange.darken-3 {
+      background-color: #182740 !important;
+    }
 </style>
 <div class="container">
   <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
@@ -104,7 +149,7 @@ select:focus + label {
       </div>
     
       <div class="right-align">
-        <button type="submit" class="btn orange darken-2">
+        <button type="submit" class="btn orange darken-3 white-text btn-standard">
           <i class="material-icons left">save</i> Save
         </button>
       </div>
@@ -112,7 +157,7 @@ select:focus + label {
 
     
   </div>
-  <div class="row">
+  <div class="row agent-limits">
     <div class="input-field col s6">
       <label class="active">Plan</label>
       <p style="margin-top: 0.5rem;">{{ company.plan }}</p>
