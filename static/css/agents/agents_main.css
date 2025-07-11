@@ -83,7 +83,7 @@ input[type="number"] {
   .quote-table th,
   .quote-table td {
     padding: 12px;
-    font-size: 14px;
+    font-size: 1.1rem;
     border-bottom: 1px solid #e0e0e0;
     text-align: center;
   }
@@ -370,7 +370,7 @@ h2 {
 }
 
 input[type=text]:not(.browser-default){
-  font-size: 1.5rem;
+  font-size: 1.2rem;
 }
 
 .chat-input {
@@ -379,6 +379,7 @@ input[type=text]:not(.browser-default){
   outline: none;
   background: transparent;
   padding: 10px;
+  font-size: 1.3rem !important;
 }
 .chat-input:focus,
 .chat-input:focus-visible {

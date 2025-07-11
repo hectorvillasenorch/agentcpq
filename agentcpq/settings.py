@@ -19,6 +19,7 @@ NGROK_FULL_URL = "https://0d0e3e34c51c.ngrok-free.app"
 NGROK_URI = "0d0e3e34c51c.ngrok-free.app"
 
 load_dotenv()
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -115,9 +116,9 @@ WSGI_APPLICATION = "agentcpq.wsgi.application"
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'agentcpq',
-        'USER': 'root',
-        'PASSWORD': 'password',  # If set
+        'NAME': os.getenv("DB_NAME"),
+        'USER': os.getenv("DB_USER"),
+        'PASSWORD': os.getenv("DB_PASSWORD"),  # If set
         'HOST': 'localhost',
         'PORT': '3306',
         'OPTIONS': {
