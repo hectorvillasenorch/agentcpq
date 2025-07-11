@@ -352,7 +352,7 @@ class QuoteLine(models.Model):
     parent_line = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)  # for nesting
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     special_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage")
+    discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage", null=True, blank=True)
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
