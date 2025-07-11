@@ -48,6 +48,8 @@ class Lead(models.Model):
     assigned_to = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_leads')
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_leads')
     def save(self, *args, **kwargs):
         if not self.leadId:
             self.leadId = generate_agentcpq_id()
@@ -79,6 +81,7 @@ class Account(models.Model):
     accid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='accounts')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_accounts')
      # Address fields
     street = models.CharField(max_length=255, blank=True, null=True)
     city = models.CharField(max_length=100, blank=True, null=True)
@@ -108,6 +111,8 @@ class Contact(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='contacts')
     contactId = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_contacts')
+    is_primary = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
         if not self.contactId:
@@ -121,32 +126,35 @@ class Contact(models.Model):
 
 class Opportunity(models.Model):
     """Represents a sales opportunity linked to an Account."""
-    # STAGE_CHOICES = [
-    #     ('Prospecting', 'Prospecting'),
-    #     ('Qualification', 'Qualification'),
-    #     ('Proposal', 'Proposal Sent'),
-    #     ('Negotiation', 'Negotiation'),
-    #     ('Closed Won', 'Closed Won'),
-    #     ('Closed Lost', 'Closed Lost'),
-    # ]
-
     STAGE_CHOICES = [
-        ("appointmentscheduled", "Appointment Scheduled"),
-        ("qualifiedtobuy", "Qualified to Buy"),
-        ("presentationscheduled", "Presentation Scheduled"),
-        ("decisionmakerboughtin", "Decision Maker Bought-In"),
-        ("contractsent", "Contract Sent"),
-        ("closedwon", "Closed Won"),
-        ("closedlost", "Closed Lost"),
+        ('Prospecting', 'Prospecting'),
+        ('Qualification', 'Qualification'),
+        ('Proposal', 'Proposal Sent'),
+        ('Negotiation', 'Negotiation'),
+        ('Closed Won', 'Closed Won'),
+        ('Closed Lost', 'Closed Lost'),
     ]
+
+    ### UNCOMENT FOR HUBSPOT INTEGRATION ###
+    # STAGE_CHOICES = [
+    #     ("appointmentscheduled", "Appointment Scheduled"),
+    #     ("qualifiedtobuy", "Qualified to Buy"),
+    #     ("presentationscheduled", "Presentation Scheduled"),
+    #     ("decisionmakerboughtin", "Decision Maker Bought-In"),
+    #     ("contractsent", "Contract Sent"),
+    #     ("closedwon", "Closed Won"),
+    #     ("closedlost", "Closed Lost"),
+    # ]
 
     name = models.CharField(max_length=255)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="opportunities")
     amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    stage = models.CharField(max_length=50, choices=STAGE_CHOICES, default='appointmentscheduled')
+    stage = models.CharField(max_length=50, choices=STAGE_CHOICES, default='Prospecting')
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     expected_close_date = models.DateField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_opportunities')
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     primary_quote = models.ForeignKey(
         "Quote", 
         on_delete=models.SET_NULL,  # Set to NULL if quote is deleted
@@ -192,9 +200,17 @@ class Activity(models.Model):
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_activities')
+    activityid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+
     class Meta:
         verbose_name = "Activity"
         verbose_name_plural = "Activities"
+
+    def save(self, *args, **kwargs):
+        if not self.activityid:
+            self.activityid = generate_agentcpq_id()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.subject} ({self.get_activity_type_display()})"
@@ -210,6 +226,7 @@ class Product(models.Model):
     family = models.CharField(max_length=50)
     prdid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_products')
     description = models.TextField(blank=True)
 
     def get_custom_fields(self):
@@ -273,6 +290,8 @@ class Quote(models.Model):
     hs_primary = models.BooleanField(default=False,help_text="Marks this quote as the primary quote for the HubSpot deal")
     synced = models.BooleanField(default=False)
     last_synced_at = models.DateTimeField(null=True, blank=True)
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_quotes')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quotes')
 
 
     def get_total_discount_percentage(self):
@@ -362,6 +381,7 @@ class QuoteLine(models.Model):
     is_subscription = models.BooleanField(default=False)
     is_bundle_parent = models.BooleanField(default=False)
     product_option = models.ForeignKey("Option", null=True, blank=True, on_delete=models.SET_NULL)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quote_lines')
     billing_frequency = models.CharField(
         max_length=20,
         choices=[("monthly", "monthly"), ("quarterly", "quarterly"), ("annual", "annual"), ("one_time", "one_time")],

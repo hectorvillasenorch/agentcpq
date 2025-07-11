@@ -48,9 +48,16 @@
             <a href="{% url 'cpq:custom_fields' %}">
                 <i class="material-icons">view_list</i> Manage Metadata
             </a>
-            <a href="{% url 'admin:auth_user_changelist' %}">
-                <i class="material-icons">group</i> Users
-            </a>
+            {% if request.user.is_superuser or perms.auth.view_user %}
+                <a href="{% url 'admin:auth_user_changelist' %}">
+                    <i class="material-icons">group</i> Users
+                </a>
+            {% endif %}
+            {% if perms.cpq %}  
+                <a href="{% url 'admin:app_list' 'cpq' %}">
+                    <i class="material-icons">settings</i> CPQ Admin
+                </a>
+            {% endif %}
             
             <p class="session-list-title">Rules</p>
             <a href="{% url 'cpq:business_rules' %}">

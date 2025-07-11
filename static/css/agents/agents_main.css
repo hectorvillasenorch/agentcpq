@@ -369,11 +369,14 @@ h2 {
   width: 100%;
 }
 
+input[type=text]:not(.browser-default){
+  font-size: 1.5rem;
+}
+
 .chat-input {
   flex-grow: 1;
   border: 0 !important;
   outline: none;
-  font-size: 20px;
   background: transparent;
   padding: 10px;
 }
