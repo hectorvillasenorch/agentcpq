@@ -291,7 +291,7 @@ async function sendMessage() {
         }
 
         // ✅ Append the final response message to the chat
-        appendMessage("agent", `<div class="senderagent"><img width="95px" src="/media/img/agentcpq-5.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
+        appendMessage("agent", `<div class="senderagent"><img width="95px" src="/static/img/agentcpq-5.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
 
         // ✅ Handle Temporary Quote Details After Update Quote Line, Add Product And Delete Quote Line Item
         if (data.response && data.response.update_details && data.response.temporaryMessage){

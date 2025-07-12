@@ -60,7 +60,7 @@
 
   .login-right {
     background-color: #313133;
-    background-image: url('/media/img/img-add-1.jpg');
+    background-image: url('/static/img/img-add-1.jpg');
     background-repeat: no-repeat;
     background-size: 100%; /* or 'contain' or custom like '100% 100%' */
     background-position: top center;
@@ -144,7 +144,7 @@
 
   <!-- Left: Login Form -->
   <div class="login-left">
-    <img src="/media/img/logo-bg-white.png" alt="AgentCPQ Logo" class="login-logo">
+    <img src="{% static 'img/logo-bg-white.png' %}" alt="AgentCPQ Logo" class="login-logo" />
     <div class="login-form-container">
       <form method="post" action="{% url 'login' %}">
         {% csrf_token %}
