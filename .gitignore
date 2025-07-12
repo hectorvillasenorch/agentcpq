@@ -34,4 +34,6 @@ db.sqlite3
 
 # 📌 Ignore static and media files (optional)
 staticfiles/
-media/
+
+/media/*
+!/media/img/
