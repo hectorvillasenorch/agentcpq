@@ -6,13 +6,13 @@ from django.contrib.contenttypes.models import ContentType
 # admin.site.register(Subscription)
 # admin.site.register(Asset)
 
-# @admin.register(CustomObject)
-# class CustomObjectAdmin(admin.ModelAdmin):
-#     list_display = ('name', 'label', 'description')  # Adjust as needed
+@admin.register(CustomObject)
+class CustomObjectAdmin(admin.ModelAdmin):
+    list_display = ('name', 'label', 'description')  # Adjust as needed
 
-# @admin.register(CustomField)
-# class CustomFieldAdmin(admin.ModelAdmin):
-#     list_display = ("label", "name", "data_type", "custom_object","object_type")
+@admin.register(CustomField)
+class CustomFieldAdmin(admin.ModelAdmin):
+    list_display = ("label", "name", "data_type", "custom_object","object_type")
 
 class DynamicCustomFieldAdmin(admin.ModelAdmin):
     def get_form(self, request, obj=None, **kwargs):
@@ -103,11 +103,11 @@ admin.site.register(Option, OptionAdmin)
 
 ### Uncomment to Enable This Feature ####
 
-# @admin.register(BusinessRule)
-# class BusinessRuleAdmin(admin.ModelAdmin):
-#     list_display = ('name', 'rule_type', 'active')  # replace with actual fields
-#     search_fields = ('name',)
-#     list_filter = ('rule_type', 'active')
+@admin.register(BusinessRule)
+class BusinessRuleAdmin(admin.ModelAdmin):
+    list_display = ('name', 'rule_type', 'active')  # replace with actual fields
+    search_fields = ('name',)
+    list_filter = ('rule_type', 'active')
 
 
 class QuoteLineAdmin(DynamicCustomFieldAdmin):
@@ -117,11 +117,11 @@ class QuoteLineAdmin(DynamicCustomFieldAdmin):
         return [(None, {'fields': list(self.form().fields.keys())})]
 admin.site.register(QuoteLine, QuoteLineAdmin)
 
-# @admin.register(ActionUsage)
-# class ActionUsageAdmin(admin.ModelAdmin):
-#     list_display = ("timestamp", "action", "user", "related_object_type", "related_object_id")
-#     list_filter = ("action", "related_object_type")
-#     search_fields = ("action", "related_object_id", "user__username")
+@admin.register(ActionUsage)
+class ActionUsageAdmin(admin.ModelAdmin):
+    list_display = ("timestamp", "action", "user", "related_object_type", "related_object_id")
+    list_filter = ("action", "related_object_type")
+    search_fields = ("action", "related_object_id", "user__username")
 
 class ContactAdmin(DynamicCustomFieldAdmin):
     # build a dynamic ModelForm for AgentCPQ → Contact

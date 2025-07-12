@@ -13,10 +13,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = False
 
+
 ALLOWED_HOSTS = ['.herokuapp.com', 'localhost', '127.0.0.1']
 
 # Allow Django to be embedded in an IFrame (required for Salesforce)
 # X_FRAME_OPTIONS = 'ALLOWALL'
+
 
 CSRF_COOKIE_SECURE = True 
 SESSION_COOKIE_SECURE = True
@@ -50,6 +52,7 @@ INSTALLED_APPS = [
     "salesforce",
     "hubspot",
     'django.contrib.humanize',
+    'storages',
 ]
 
 MIDDLEWARE = [
@@ -137,7 +140,6 @@ STATICFILES_DIRS = [
 ]
 
 
-
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
@@ -149,6 +151,14 @@ CSP_FONT_SRC = ("'self'", "https://fonts.gstatic.com")  # Allow Google Fonts
 CSP_IMG_SRC = ("'self'", "data:")  # Allow local images and data URIs
 CSP_CONNECT_SRC = ("'self'",)  # Restrict API calls to your own server
 
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 # ✅ Set default logging level (change to INFO if you want fewer logs)
 logging.basicConfig(
@@ -161,8 +171,23 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)  # Suppress HTTP client logs
 logging.getLogger("httpcore").setLevel(logging.WARNING)  # Suppress low-level HTTP logs
 
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+# Cloudflare R2 ENV Vars
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET")
+R2_STORAGE_BUCKET_NAME = os.getenv("R2_BUCKET_NAME")
+R2_S3_ENDPOINT_URL = os.getenv("R2_END_POINT")
+
+# AWS Settings Required by django-storages
+AWS_ACCESS_KEY_ID = R2_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY = R2_SECRET_ACCESS_KEY
+AWS_STORAGE_BUCKET_NAME = R2_STORAGE_BUCKET_NAME
+AWS_S3_ENDPOINT_URL = R2_S3_ENDPOINT_URL
+AWS_S3_REGION_NAME = "auto"
+AWS_S3_ADDRESSING_STYLE = "virtual"
+AWS_QUERYSTRING_AUTH = False
+
+# ⚠️ Must come after AWS_* settings
+DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
 # Salesforce OAuth settings for your connected app
 SALESFORCE_CLIENT_ID = os.getenv("SF_CID")
@@ -172,4 +197,3 @@ SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/authorize"
 SALESFORCE_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-
