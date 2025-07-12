@@ -1031,7 +1031,7 @@ def get_document_pdf(quote):
 
         # ✅ Generate filename with timestamp
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-        tenant = quote.account.tenant
+        tenant = company
         filename = f"quote_{quote.id}_{timestamp}.pdf"
         storage_path = f"tenant_{tenant.id}/quote_docs/{filename}"
 
