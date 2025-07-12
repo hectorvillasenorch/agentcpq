@@ -1007,24 +1007,24 @@ def get_document_pdf(quote):
                 
 
         # ✅ Save PDF to buffer
-        pdf.showPage()
         pdf.save()
 
-        # ✅ Ensure target folder exists before writing the PDF
-        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+        # # ✅ Ensure target folder exists before writing the PDF
+        # os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
 
-        # ✅ Save the buffer content to the file
-        with open(pdf_path, "wb") as f:
-            f.write(buffer.getvalue())
+        # # ✅ Save the buffer content to the file
+        # with open(pdf_path, "wb") as f:
+        #     f.write(buffer.getvalue())
 
 
-        # ✅ Save the buffer content to the file
-        with open(pdf_path, "wb") as f:
-            f.write(buffer.getvalue())
+        # # ✅ Save the buffer content to the file
+        # with open(pdf_path, "wb") as f:
+        #     f.write(buffer.getvalue())
 
-        buffer.close()
         buffer.seek(0)
         pdf_bytes = buffer.read()
+
+        
 
         
         # Step 2: Build tenant path and filename
@@ -1033,12 +1033,15 @@ def get_document_pdf(quote):
         filename = f"quote_{quote.id}_{timestamp}.pdf"
         storage_path = f"tenant_{tenant.id}/quote_docs/{filename}"
 
+        file = ContentFile(pdf_bytes)
+        saved_path = default_storage.save(storage_path, file)
+
         # ✅ Save record in QuoteDocument
         QuoteDocument.objects.create(
             quote=quote,
             version=next_version,
             name=pdf_filename,
-            file=f"quote_documents/{pdf_filename}",
+            file=f"{saved_path}",
             generated_by="system"
         )
         # Step 3: Upload to R2 via Django storage
