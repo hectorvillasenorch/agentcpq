@@ -275,12 +275,13 @@ def set_custom_fields_into_quote_document_settings(object_type):
 def get_document_pdf(quote):
     try:
         logger.info("📦 Starting PDF generation...")
-        logger.debug(f"Quote ID: {quote.id}, Tenant: {quote.account.tenant.id}")
+        
         # ✅ Fetch related quote lines
         quote_lines = QuoteLine.objects.filter(quote=quote)
-
+        
         # ✅ Fetch related company
         company = Tenant.objects.first()
+        logger.debug(f"Quote ID: {quote.id}, Tenant: {company.id}")
 
         # ✅ Fetch related quote document settings (template)
         template = QuoteDocumentSettings.objects.first()

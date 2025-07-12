@@ -501,7 +501,7 @@ def generate_quote_pdf(user,user_message, session_data):
     # Looking for active quote
     quote = get_active_quote(user_message, session_data)
     logger.info("📦 Starting PDF generation...")
-    logger.debug(f"Quote ID: {quote.id}, Tenant: {quote.account.tenant.id}")
+    # logger.debug(f"Quote ID: {quote.id}, Tenant: {quote.account.tenant.id}")
 
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
