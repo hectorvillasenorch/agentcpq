@@ -161,15 +161,31 @@ STORAGES = {
 }
 
 # ✅ Set default logging level (change to INFO if you want fewer logs)
-logging.basicConfig(
-    level=logging.DEBUG,  # Change to DEBUG if needed
-    format="%(levelname)s:%(name)s:%(message)s"
-)
-
-# ✅ Suppress noisy libraries (OpenAI, HTTPX, and HTTPCore)
-# logging.getLogger("openai").setLevel(logging.WARNING)  # Hide OpenAI debug logs
-logging.getLogger("httpx").setLevel(logging.WARNING)  # Suppress HTTP client logs
-logging.getLogger("httpcore").setLevel(logging.WARNING)  # Suppress low-level HTTP logs
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',  # or 'INFO' in production
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        '__main__': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}
 
 # Cloudflare R2 ENV Vars
 R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY")
