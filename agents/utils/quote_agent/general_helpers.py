@@ -3,7 +3,7 @@ import json
 import os
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
-from datetime import datetime, timezone
+from datetime import datetime
 from reportlab.lib.colors import HexColor, red
 from io import BytesIO
 from django.conf import settings
@@ -11,9 +11,9 @@ from django.contrib.contenttypes.models import ContentType
 from cpq.models import CustomFieldValue, CustomField, QuoteDocumentSettings, Tenant, Quote, QuoteLine, QuoteDocument
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-
 # DB Helpers
 from .db_helpers import get_or_create_quote_ui_render, log_action_usage
+from datetime import datetime, timezone
 
 def normalize_term_for_product(product, term):
     if product.is_subscription:
@@ -1013,45 +1013,39 @@ def get_document_pdf(quote):
         # os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
 
         # # ✅ Save the buffer content to the file
-        # with open(pdf_path, "wb") as f:
-        #     f.write(buffer.getvalue())
+        with open(pdf_path, "wb") as f:
+            f.write(buffer.getvalue())
 
 
-        # # ✅ Save the buffer content to the file
-        # with open(pdf_path, "wb") as f:
-        #     f.write(buffer.getvalue())
-
+        # ✅ Save the buffer content to the file
+        with open(pdf_path, "wb") as f:
+            f.write(buffer.getvalue())
+        
         buffer.seek(0)
         pdf_bytes = buffer.read()
+        buffer.close()
 
-        
-
-        
-        # Step 2: Build tenant path and filename
-        tenant = quote.account.tenant
+        # ✅ Generate filename with timestamp
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        tenant = quote.account.tenant
         filename = f"quote_{quote.id}_{timestamp}.pdf"
         storage_path = f"tenant_{tenant.id}/quote_docs/{filename}"
 
+        # ✅ Upload to R2
         file = ContentFile(pdf_bytes)
         saved_path = default_storage.save(storage_path, file)
 
-        # ✅ Save record in QuoteDocument
         QuoteDocument.objects.create(
             quote=quote,
             version=next_version,
-            name=pdf_filename,
-            file=f"{saved_path}",
+            name=filename,
+            file=storage_path,  # <- use actual path where file was saved
             generated_by="system"
         )
-        # Step 3: Upload to R2 via Django storage
-        file = ContentFile(pdf_bytes)
-        saved_path = default_storage.save(storage_path, file)
-        download_url = default_storage.url(f"tenant_{quote.tenant.id}/quote_docs/{pdf_filename}")
 
         return {
             "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
-            "download_url": download_url,
+            "download_url": default_storage.url(storage_path),
             "document_version": next_version,
             "success": True,
         }
