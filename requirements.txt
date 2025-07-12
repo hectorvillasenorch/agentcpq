@@ -121,3 +121,4 @@ webencodings==0.5.1
 websocket-client==1.8.0
 whitenoise==6.9.0
 widgetsnbextension==4.0.13
+django-storages==1.14.6
