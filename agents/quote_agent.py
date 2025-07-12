@@ -23,6 +23,8 @@ from django.db.models import Q
 from django.forms.models import model_to_dict
 from django.db.models import ForeignKey
 from datetime import datetime
+import logging
+logger = logging.getLogger(__name__)
 # LLM Utils
 from .utils.quote_agent.llm_helpers import extract_quote_details, extract_product_details, extract_quote_line_updates, extract_quote_line_items_to_delete, extract_quote_level_discount
 from .utils.quote_agent.llm_helpers import extract_quote_updates
@@ -498,6 +500,8 @@ def show_quote_notes(user_message, session_data):
 def generate_quote_pdf(user,user_message, session_data):
     # Looking for active quote
     quote = get_active_quote(user_message, session_data)
+    logger.info("📦 Starting PDF generation...")
+    logger.debug(f"Quote ID: {quote.id}, Tenant: {quote.account.tenant.id}")
 
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
@@ -505,6 +509,7 @@ def generate_quote_pdf(user,user_message, session_data):
     
     try:
         result = get_document_pdf(quote)
+        
 
         # ✅ Save quote in session data
         set_active_quote_to_session_data(session_data, quote)

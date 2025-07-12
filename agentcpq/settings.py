@@ -160,29 +160,43 @@ STORAGES = {
     },
 }
 
-# ✅ Set default logging level (change to INFO if you want fewer logs)
+#import sys
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+
+    'formatters': {
+        'simple': {
+            'format': '[{levelname}] {asctime} {name} | {message}',
+            'style': '{',
+        },
+    },
+
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
+            'stream': sys.stdout,
+            'formatter': 'simple',
         },
     },
+
     'root': {
         'handlers': ['console'],
-        'level': 'DEBUG',  # or 'INFO' in production
+        'level': 'DEBUG',
     },
+
     'loggers': {
         'django': {
             'handlers': ['console'],
-            'level': 'WARNING',
-            'propagate': False,
+            'level': 'INFO',
+            'propagate': True,
         },
-        '__main__': {
+        # 👇 optional: your app-specific logger
+        'agentcpq': {
             'handlers': ['console'],
             'level': 'DEBUG',
-            'propagate': True,
+            'propagate': False,
         },
     },
 }
