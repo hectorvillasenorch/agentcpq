@@ -782,6 +782,10 @@ class PricebookEntry(models.Model):
         return f"{self.product.name} in {self.pricebook.name} - ${self.unit_price}"
 
 
+def tenant_logo_upload_path(instance, filename):
+    tenant_id = instance.id or "unsaved"
+    return f"tenant_{tenant_id}/logos/{filename}"
+
 class Tenant(models.Model):
     PLAN_CHOICES = [
         ('solo', 'Solo'),
@@ -799,7 +803,7 @@ class Tenant(models.Model):
     city = models.CharField(max_length=100, blank=True, null=True)
     state = models.CharField(max_length=100, blank=True, null=True)
     version = models.CharField(max_length=50, default='1.0.0')
-    logo = models.ImageField(upload_to='tenant_logos/', blank=True, null=True)
+    logo = models.ImageField(upload_to=tenant_logo_upload_path, blank=True, null=True)
     billing_contact = models.EmailField(blank=True, null=True)
     plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default='solo')
     actions_limit = models.IntegerField(null=True, blank=True)

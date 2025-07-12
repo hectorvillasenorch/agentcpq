@@ -3,12 +3,14 @@ import json
 import os
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
-from datetime import datetime
+from datetime import datetime, timezone
 from reportlab.lib.colors import HexColor, red
 from io import BytesIO
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from cpq.models import CustomFieldValue, CustomField, QuoteDocumentSettings, Tenant, Quote, QuoteLine, QuoteDocument
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 
 # DB Helpers
 from .db_helpers import get_or_create_quote_ui_render, log_action_usage
@@ -1021,6 +1023,15 @@ def get_document_pdf(quote):
             f.write(buffer.getvalue())
 
         buffer.close()
+        buffer.seek(0)
+        pdf_bytes = buffer.read()
+
+        
+        # Step 2: Build tenant path and filename
+        tenant = quote.account.tenant
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        filename = f"quote_{quote.id}_{timestamp}.pdf"
+        storage_path = f"tenant_{tenant.id}/quote_docs/{filename}"
 
         # ✅ Save record in QuoteDocument
         QuoteDocument.objects.create(
@@ -1030,13 +1041,17 @@ def get_document_pdf(quote):
             file=f"quote_documents/{pdf_filename}",
             generated_by="system"
         )
+        # Step 3: Upload to R2 via Django storage
+        file = ContentFile(pdf_bytes)
+        saved_path = default_storage.save(storage_path, file)
+        download_url = default_storage.url(f"tenant_{quote.tenant.id}/quote_docs/{pdf_filename}")
 
         return {
             "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
-            "download_url": f"{settings.MEDIA_URL}quote_documents/{pdf_filename}",
+            "download_url": download_url,
             "document_version": next_version,
             "success": True,
-            }
+        }
     except Exception as e:
         return {
             "message": "⚠️ Error generating PDF: {str(e)}",
