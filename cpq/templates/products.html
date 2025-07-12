@@ -1,6 +1,7 @@
 {% load static %}
 {% load humanize %}
 <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+<script src="{% static 'js/agents/agent_main.js' %}" defer></script>
 <style>
   .icon-button {
     display: inline-flex;
@@ -79,36 +80,79 @@
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
     height: auto;
   }
+/* basic look (striped + hover) */
+.product-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+.product-table th,
+.product-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #e0e0e0;
+}
+.product-table tr:nth-child(even) {
+  background: #fafafa;
+}
+.product-table tr:hover {
+  background: #f1f7ff;
+}
+
+/* center “no products” row */
+.no-products {
+  text-align: center;
+  color: #9e9e9e;
+  padding: 16px;
+}
+
+/* ───── phone view: hide the extra columns ───── */
+@media only screen and (max-width: 599px) {
+  .mobile-hide {      /* cells & headers marked with this class disappear */
+    display: none;
+  }
+}
 </style>
 
 <div class="container-fluid">
   <h2><i class="material-icons"></i>Product Catalog</h2>
-  <table class="striped highlight responsive-table white">
-    <thead>
+  <table class="product-table">
+  <thead>
+    <tr>
+      <th>SKU</th>
+      <th>Name</th>
+      <th>Price</th>
+      <th class="mobile-hide">Subscription</th>
+      <th class="mobile-hide">Term</th>
+      <th class="mobile-hide">Bundle</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    {% for product in products %}
       <tr>
-        <th>SKU</th>
-        <th>Name</th>
-        <th>Price</th>
-        <th>Subscription</th>
-        <th>Term</th>
-        <th>Bundle</th>
+        <td>{{ product.sku }}</td>
+
+        <td>{{ product.name }}</td>
+
+        <td>${{ product.price|floatformat:2|intcomma }}</td>
+
+        <td class="mobile-hide">
+          {{ product.is_subscription|yesno:"✔️,✖️" }}
+        </td>
+
+        <td class="mobile-hide">
+          {{ product.term|default:"N/A" }}
+        </td>
+
+        <td class="mobile-hide">
+          {{ product.is_bundle|yesno:"✔️,✖️" }}
+        </td>
       </tr>
-    </thead>
-    <tbody>
-      {% for product in products %}
-        <tr>
-          <td>{{ product.sku }}</td>
-          <td>{{ product.name }}</td>
-          <td>${{ product.price|floatformat:2|intcomma }}</td>
-          <td>{{ product.is_subscription|yesno:"✔️,✖️" }}</td>
-          <td>{{ product.term|default:"N/A" }}</td>
-          <td>{{ product.is_bundle|yesno:"✔️,✖️" }}</td>
-        </tr>
-      {% empty %}
-        <tr>
-          <td colspan="7" class="center-align grey-text">No products found.</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+    {% empty %}
+      <tr>
+        <td colspan="6" class="no-products">No products found.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
 </div>

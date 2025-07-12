@@ -1,6 +1,6 @@
 from django.apps import apps
 from django.shortcuts import render, get_object_or_404, redirect
-from cpq.models import Product, Quote,QuoteLine, CustomObject, CustomField, CustomFieldValue, CustomRecord,Account
+from cpq.models import Product, Quote,QuoteLine, CustomObject, CustomField, CustomFieldValue, CustomRecord,Account, ActionUsage, Tenant
 from cpq.views import set_primary_quote
 from salesforce.models import SalesforceToken
 from hubspot.models import HubspotToken
@@ -14,10 +14,12 @@ from django.db.models import Prefetch
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseForbidden
+from django.db.models import Count
+from django.utils.timezone import now
+from django.db.models.functions import TruncMonth
 
 @login_required
 def dashboard(request):
-    
     view = request.GET.get("view", "agents")
     object_name = request.GET.get("object_name") 
     session_id = request.GET.get("session_id")
@@ -49,7 +51,6 @@ def dashboard(request):
 
     is_authenticated = SalesforceToken.objects.exists()
     is_setup = view == "setup"
-
     #user = User.objects.get(username="admin") or request.user
     chat_sessions = ChatSession.objects.filter(user=user).order_by("-created_at")
 
@@ -125,3 +126,5 @@ def get_lookup_data_for_form(custom_object):
         except Exception as e:
             lookup_data[field.name] = []
     return lookup_data
+
+

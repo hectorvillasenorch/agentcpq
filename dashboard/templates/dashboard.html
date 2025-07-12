@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="{% static 'materialize/materialize.min.css' %}">
     <script src="{% static 'materialize/materialize.min.js' %}" defer></script>
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <script src="{% static 'js/agents/agent_main.js' %}" defer></script>
     
     <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}">
 </head>
@@ -26,12 +27,12 @@
   <i class="material-icons">smart_toy</i>
   New Chat<span style="margin: 0 4px;">+</span> 
 </a>
-        <!-- <a href="{% url 'dashboard' %}?view=products">
+        <a href="{% url 'dashboard' %}?view=products">
             <i class="material-icons">inventory_2</i> Products
-        </a> -->
-        <!-- <a href="{% url 'dashboard' %}?view=quotes">
+        </a>
+        <a href="{% url 'dashboard' %}?view=quotes">
             <i class="material-icons">request_quote</i> Quotes
-        </a> -->
+        </a>
         {% if custom_objects %}
                 {% for obj in custom_objects %}
                      <a href="{% url 'dashboard' %}?view=custom&object_name={{ obj.name }}">
@@ -40,9 +41,9 @@
                 {% endfor %}
         {% endif %}
         {% if request.user.is_staff %}
-            <a href="{% url 'dashboard' %}?view=setup">
-            <i class="material-icons">settings</i> Setup
-        </a>
+            <a href="{% url 'cpq:get_company_information' %}">
+                <i class="material-icons">business</i> Setup
+            </a>
         {% endif %}
     
         <div class="divider"></div>

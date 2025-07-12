@@ -1,7 +1,8 @@
 import logging
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
-from cpq.models import Product, Opportunity, Account, QuoteLine
+from cpq.models import Product, Opportunity, Account, QuoteLine, ActionUsage, QuoteUIRender, CustomField, QuoteDocumentSettings
 from django.db.models import Q, Sum
+from django.db import transaction
 
 
 def find_product_and_normalize_variables(sku, name):
@@ -73,3 +74,42 @@ def update_opportunity_net_amount(opportunity):
         print(f"✅ Updated Opportunity {opportunity.id} Amount: {opportunity.amount}")
     except Exception as e:
         print(f"⚠️ Error updating amount for Opportunity {opportunity.id}: {str(e)}")
+
+def log_action_usage(action, user=None, related_object_type=None, related_object_id=None):
+    try:
+        ActionUsage.objects.create(
+            action=action,
+            user=user,
+            related_object_type=related_object_type,
+            related_object_id=related_object_id
+        )
+    except Exception as e:
+        # Optional: Add your logging here, or raise if critical
+        print(f"⚠️ Failed to log ActionUsage: {e}")
+
+def get_or_create_quote_ui_render():
+
+    quote_document_settings = QuoteDocumentSettings.objects.first()
+
+    quote_render_settings = QuoteUIRender.objects.first()
+
+    if quote_render_settings is None:
+        # Obtener los campos por defecto del modelo
+        rendered_fields = quote_document_settings.rendered_fields
+        omitted_fields = quote_document_settings.omitted_fields
+
+        # Crear un nuevo registro con esos valores
+        quote_render_settings = QuoteUIRender.objects.create(
+            rendered_fields=rendered_fields,
+            omitted_fields=omitted_fields
+        )
+    else:
+        # Already exist: check and update omitted_fields
+        rendered_fields = quote_document_settings.rendered_fields
+        omitted_fields = quote_document_settings.omitted_fields
+
+        quote_render_settings.rendered_fields = rendered_fields
+        quote_render_settings.omitted_fields = omitted_fields
+        quote_render_settings.save()
+    
+    return quote_render_settings

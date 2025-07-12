@@ -2,9 +2,10 @@ import logging
 import json
 import re
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
-from cpq.models import Product, Opportunity, Account, QuoteLine, Quote
+from cpq.models import Product, Opportunity, Account, QuoteLine, Quote, CustomFieldValue, ContentType
 from django.db.models import Q, Sum
 from django.db import transaction
+from django.contrib.contenttypes.models import ContentType
 from copy import deepcopy
 from datetime import datetime
 
@@ -12,7 +13,7 @@ from datetime import datetime
 from .db_helpers import find_product_and_normalize_variables, update_opportunity_net_amount
 
 # General Helpers
-from .general_helpers import normalize_term_for_product, get_quote_details, set_active_quote_to_session_data
+from .general_helpers import normalize_term_for_product, get_quote_details, set_active_quote_to_session_data, copy_custom_fields_values_from_product_to_quote_line
 
 #Rules Helpers
 from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules_quote_line_level, check_for_rules_quote_level
@@ -204,6 +205,10 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
                 is_subscription=product.is_subscription,
             )
 
+            # If Product has custom fields, then create custom fields to QuoteLine
+            copy_custom_fields_values_from_product_to_quote_line(quote_line)
+
+
             # ✅ Force saving and reloading from DB to verify
             quote_line.refresh_from_db()
             logging.info(f"=>>>>>>>>>>>>>>>>>>>> Saved Total Price in DB: {quote_line.total_price}")
@@ -351,6 +356,10 @@ def save_quote_line_update(request, quote):
                     "message": "⚠️ Error: A term cannot be assigned to a product that is not a subscription.",
                     "success": False
                 }
+            
+            # If product has custom fields, then create that custom fields to quote line
+            copy_custom_fields_values_from_product_to_quote_line(quote_line)
+
             original_quote_line = deepcopy(quote_line)
 
             # ✅ Update based on the field dynamically

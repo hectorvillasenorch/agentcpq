@@ -9,31 +9,39 @@ from django.db.models import Q
 from django.forms.models import model_to_dict
 
 #LLM helpers
-from .utils.admin_agent.llm_helpers import extract_validation_rules
+from .utils.admin_agent.llm_helpers import extract_validation_rules, extract_rules_details_to_render, extract_rule_updates, extract_rule_deletes
+
+#Rules helpers
+from .utils.admin_agent.rules_helpers import handle_extracted_rules_details, handle_rules_updates, handle_rules_deletes
+
+#General helpers
+from .utils.admin_agent.general_helpers import get_rules_details
 
 
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-#OPENAI_MODEL = "gpt-3.5-turbo"
 OPENAI_MODEL = "gpt-4"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-def admin_agent(action, user_message, session_data):
+def admin_agent(user, action, user_message, session_data):
 
     action_map = {
-        "CreateValidationRule": create_validation_rule
+        "CreateValidationRule": create_validation_rule,
+        "ShowRules": show_rules,
+        "UpdateRule": update_rule,
+        "DeleteRule": delete_rule
     }
 
     # ✅ Dynamically call the function if action exists in map
     if action in action_map:
-        return action_map[action](user_message, session_data)
+        return action_map[action](user, user_message, session_data)
 
     return {"message": "🤖 Sorry, I couldn’t understand your request."}
 
 
-def create_validation_rule(user_message, session_data):
+def create_validation_rule(user, user_message, session_data):
     logging.info("🔧 Creating Validation Rule...\n\n")
 
     # Extract rule with LLM        
@@ -48,7 +56,7 @@ def create_validation_rule(user_message, session_data):
     
     for index, item in enumerate(extracted_rules, start=1):
         try:
-            name = item["name"]
+            description = item["description"]
             rule_type = item["rule_type"]
             target_type = item["target_type"]
             priority = item["priority"]
@@ -63,7 +71,7 @@ def create_validation_rule(user_message, session_data):
 
         content_message = {
             "index": index,
-            "name": name,
+            "description": description,
             "rule_type": rule_type,
             "target_type": target_type,
             "priority": priority,
@@ -77,19 +85,19 @@ def create_validation_rule(user_message, session_data):
         #    response_message.append(content_message)
         #    continue
 
-        # NAME: must be a string
-        if not name:
-            content_message["error"] = "⚠️ Missing rule name: No name was provided for this rule. Please include a descriptive name to identify it clearly."
-            logging.warning("⚠️ Missing rule name: No name was provided for this rule. Please include a descriptive name to identify it clearly.")
+        # DESCRIPTION: must be a string
+        if not description:
+            content_message["error"] = "⚠️ Missing rule description: No description was provided for this rule. Please include a descriptive description to identify it clearly."
+            logging.warning("⚠️ Missing rule description: No description was provided for this rule. Please include a descriptive description to identify it clearly.")
             response_message.append(content_message)
             continue
-        if not isinstance(name, str):
+        if not isinstance(description, str):
             try:
-                name = str(name)
-                content_message["name"] = name
+                description = str(description)
+                content_message["description"] = description
             except Exception:
-                content_message["error"] = f"⚠️ Invalid type for name: expected text (string), but got {type(name).__name__}."
-                logging.warning(f"⚠️ Invalid type for name: expected text (string), but got {type(name).__name__}.")
+                content_message["error"] = f"⚠️ Invalid type for description: expected text (string), but got {type(description).__name__}."
+                logging.warning(f"⚠️ Invalid type for description: expected text (string), but got {type(description).__name__}.")
                 response_message.append(content_message)
                 continue
 
@@ -205,10 +213,10 @@ def create_validation_rule(user_message, session_data):
             continue
 
 
-        logging.info("\n✅ LLM returned a valid rule JSON. Ready to save the rule named {name} to the database.")
+        logging.info(f"\n✅ LLM returned a valid rule JSON. Ready to save the rule {description} to the database.")
         try:
             rule = BusinessRule.objects.create(
-                name=name,
+                description=description,
                 rule_type=rule_type,
                 target_type=target_type,
                 priority=priority,
@@ -216,7 +224,13 @@ def create_validation_rule(user_message, session_data):
                 active=active,
                 conditions=conditions,  # conditions JSON
             )
-            logging.info(f"✅ BusinessRule '{rule.name}' saved successfully with ID {rule.id}.")
+
+            # Set rule's name
+            rule.name = f"VR-{rule.id:05d}"
+            content_message["name"] = rule.name
+            rule.save()
+
+            logging.info(f"✅ BusinessRule '{rule.name}' ('{rule.description}') saved successfully with ID {rule.id}.")
             content_message["success"] = True
             response_message.append(content_message)
         except Exception as e:
@@ -232,3 +246,105 @@ def create_validation_rule(user_message, session_data):
         "validation_rules_details": response_message,
         "hiddenMessage": "True"
     }
+
+
+#< ----------------- SHOW VALIDATION RULES -------------------- >
+
+def show_rules(user, user_message, session_data):
+    """Fetches and formats quote details, including quote lines, based on user input or session data."""
+    try:
+        logging.info("🔄 Showing rules...")
+
+        # Extract rules details to render
+        extracted_rules_details = extract_rules_details_to_render(user_message)
+
+        # ✅ Format the response
+        handle_rules = handle_extracted_rules_details(extracted_rules_details)
+
+        if isinstance(handle_rules, dict) and "message" in handle_rules and len(handle_rules) == 1:
+            return {
+                "message": handle_rules["message"]
+            }
+        #print(f"{handle_rules}")
+        formatted_rules = get_rules_details(handle_rules)
+
+        logging.info(f"✅ Showing rules: {formatted_rules}")
+
+        return {
+            "message": "Here are the rules details to render:",
+            "rules": formatted_rules,
+            "hiddenMessage": "True",
+            "read_only": True
+        }
+    except Exception as e:
+        logging.error(f"❌ Error fetching rules: {e}")
+        return {
+            "message": f"❌ An unexpected error occurred while retrieving the rules: {str(e)}"
+        }
+    
+def update_rule(user, user_message, session_data):
+    """Updates only the modified fields in rules."""
+
+    logging.info("🔧 Updating rules...\n\n")
+    # ✅ Looking for active quote
+    
+        
+    # ✅ Extract quote line updates with LLM
+    extracted_updates = extract_rule_updates(user_message)
+
+    if not extracted_updates:
+        return {
+        "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
+        }
+    
+    response_message = ""
+
+
+
+    # ✅ Handle rules updates
+    response_message, updated_rules = handle_rules_updates(extracted_updates, response_message)
+
+
+    # ✅ Return
+    if not updated_rules:
+        return {
+            "message": f"No rules were updated. <br><br>{response_message}",
+            "temporaryMessage": True
+        } 
+    
+    return {
+        "message": response_message,
+        "temporaryMessage": True
+        }
+
+def delete_rule(user, user_message, session_data):
+    """Updates only the modified fields in rules."""
+
+    logging.info("🔧 Deleting rules...\n\n")
+    # ✅ Looking for active quote
+    
+        
+    # ✅ Extract quote line updates with LLM
+    extracted_updates = extract_rule_deletes(user_message)
+
+    if not extracted_updates:
+        return {
+        "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
+        }
+    
+    response_message = ""
+
+    # ✅ Handle rules deletes
+    response_message, updated_rules = handle_rules_deletes(extracted_updates, response_message)
+
+    # ✅ Return
+    if not updated_rules:
+        return {
+            "message": f"No rules were deleted. <br><br>{response_message}",
+            "temporaryMessage": True
+        } 
+    
+    return {
+        "message": response_message,
+        "temporaryMessage": True
+        }
