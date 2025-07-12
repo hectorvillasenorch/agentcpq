@@ -15,6 +15,8 @@ from django.core.files.storage import default_storage
 from .db_helpers import get_or_create_quote_ui_render, log_action_usage
 from datetime import datetime, timezone
 
+logger = logging.getLogger(__name__)
+
 def normalize_term_for_product(product, term):
     if product.is_subscription:
         term = 1 if term is None else int(term)
@@ -1042,10 +1044,10 @@ def get_document_pdf(quote):
             file=storage_path,  # <- use actual path where file was saved
             generated_by="system"
         )
-
+        logger.exception("Something went wrong")
         return {
             "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
-            "download_url": default_storage.url(storage_path),
+            "download_url": default_storage.url(saved_path),
             "document_version": next_version,
             "success": True,
         }
