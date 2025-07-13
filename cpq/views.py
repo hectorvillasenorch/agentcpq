@@ -315,8 +315,15 @@ def get_company_information(request):
         company.save()
         return redirect('cpq:get_company_information')
 
+    # Determine logo URL (public link)
+    logo_url = ''
+    if company and company.logo:
+        from django.core.files.storage import default_storage
+        logo_url = default_storage.url(company.logo.name)
+
     return render(request, 'company_information.html', {
-        'company': company or Tenant()
+        'company': company or Tenant(),
+        'logo_url': logo_url,
     })
 
 

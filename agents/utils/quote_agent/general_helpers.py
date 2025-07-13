@@ -15,6 +15,7 @@ from reportlab.lib.utils import ImageReader
 # DB Helpers
 from .db_helpers import get_or_create_quote_ui_render, log_action_usage
 from datetime import datetime, timezone
+import boto3
 
 logger = logging.getLogger(__name__)
 
@@ -1030,6 +1031,22 @@ def get_document_pdf(quote):
         # 4. Save to R2
         saved_path = default_storage.save(storage_path, file_content)
 
+        # Generate a signed URL for R2 object access
+        s3_client = boto3.client(
+            's3',
+            endpoint_url=settings.AWS_S3_ENDPOINT_URL,
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        )
+        download_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={
+                'Bucket': settings.CLOUDFLARE_R2_BUCKET_NAME,
+                'Key': saved_path,
+            },
+            ExpiresIn=3600,  # valid for 1 hour
+        )
+
         # Save QuoteDocument record
         document_record = QuoteDocument.objects.create(
             quote=quote,
@@ -1042,7 +1059,7 @@ def get_document_pdf(quote):
         logger.debug(f"File size: {file_content.size} bytes")
         return {
             "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
-            "download_url": default_storage.url(saved_path),
+            "download_url": download_url,
             "document_version": next_version,
             "success": True,
             }
