@@ -1045,14 +1045,14 @@ def get_document_pdf(quote):
             quote=quote,
             version=next_version,
             name=pdf_filename,
-            file=f"{saved_path}",
+            file=f"{relative_path}",
             generated_by="system"
         )
         print(f"document_record: {document_record}")
 
         return {
             "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
-            "download_url": f"{saved_path}",
+            "download_url": f"{relative_path}",
             "document_version": next_version,
             "success": True,
             }
