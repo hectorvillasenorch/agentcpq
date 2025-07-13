@@ -11,6 +11,7 @@ from django.contrib.contenttypes.models import ContentType
 from cpq.models import CustomFieldValue, CustomField, QuoteDocumentSettings, Tenant, Quote, QuoteLine, QuoteDocument
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from reportlab.lib.utils import ImageReader
 # DB Helpers
 from .db_helpers import get_or_create_quote_ui_render, log_action_usage
 from datetime import datetime, timezone
@@ -319,12 +320,19 @@ def get_document_pdf(quote):
         pdf.drawString(50, 730, f"Quote: {quote.name}")
         pdf.setFillColor(HexColor(CBLACK))
 
-        # ✅ Add Logo (Update path if needed)
-        if template.show_company_logo:
-            if company and company.logo:
-                logo_path = company.logo.path
-                if os.path.exists(logo_path):
-                    pdf.drawImage(logo_path, 430, 710, width=150, height=60, preserveAspectRatio=True, mask='auto')
+        # ✅ Add Logo (via default_storage, not .path)
+        if template.show_company_logo and company and company.logo:
+            logo_name = company.logo.name  # relative key in R2
+            if default_storage.exists(logo_name):
+                with default_storage.open(logo_name, 'rb') as logo_file:
+                    img = ImageReader(logo_file)
+                    pdf.drawImage(
+                        img,
+                        430, 710,
+                        width=150, height=60,
+                        preserveAspectRatio=True,
+                        mask='auto'
+                    )
 
         # ------------------------------------
         pdf.setStrokeColor(HexColor(SCOLOR))
@@ -1034,7 +1042,7 @@ def get_document_pdf(quote):
         logger.debug(f"File size: {file_content.size} bytes")
         return {
             "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
-            "download_url": f"{storage_path}",
+            "download_url": default_storage.url(saved_path),
             "document_version": next_version,
             "success": True,
             }
