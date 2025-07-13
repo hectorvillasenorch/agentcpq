@@ -1033,14 +1033,19 @@ def get_document_pdf(quote):
 
         # ✅ Upload to R2
         file = ContentFile(pdf_bytes)
-        saved_path = default_storage.save(storage_path, file)
-        storage_path = f"tenant_{company.id}/quote_docs/{file}"
+        
+        
+        relative_path = f"tenant_{company.id}/quote_docs/{file}"
+        file = ContentFile(pdf_bytes)
+        
+        saved_path = default_storage.save(file.name, file)
+    
         # ✅ Save record in QuoteDocument
         document_record = QuoteDocument.objects.create(
             quote=quote,
             version=next_version,
             name=pdf_filename,
-            file=f"{storage_path}",
+            file=f"{saved_path}",
             generated_by="system"
         )
         print(f"document_record: {document_record}")
