@@ -1041,7 +1041,7 @@ def get_document_pdf(quote):
         download_url = s3_client.generate_presigned_url(
             'get_object',
             Params={
-                'Bucket': settings.CLOUDFLARE_R2_BUCKET_NAME,
+                'Bucket': settings.R2_STORAGE_BUCKET_NAME,
                 'Key': saved_path,
             },
             ExpiresIn=3600,  # valid for 1 hour
