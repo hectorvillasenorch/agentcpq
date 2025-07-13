@@ -1012,47 +1012,34 @@ def get_document_pdf(quote):
         pdf.showPage()
         pdf.save()
 
-        # ✅ Ensure target folder exists before writing the PDF
-        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
-
-        # ✅ Save the buffer content to the file
-        with open(pdf_path, "wb") as f:
-            f.write(buffer.getvalue())
-
-
-        # ✅ Save the buffer content to the file
-        with open(pdf_path, "wb") as f:
-            f.write(buffer.getvalue())
-
+        # Read buffer before closing
         buffer.seek(0)
         pdf_bytes = buffer.read()
-        
-        print(f"PDF BYTES preview: {pdf_bytes[:100]}")
-
         buffer.close()
 
-        # ✅ Upload to R2
+        # Convert to ContentFile
         file = ContentFile(pdf_bytes)
-        
-        
-        relative_path = f"tenant_{company.id}/quote_docs/{file}"
-        file = ContentFile(pdf_bytes)
-        
-        saved_path = default_storage.save(file.name, file)
-    
-        # ✅ Save record in QuoteDocument
+
+        # Build relative path for R2
+        storage_path = f"tenant_{company.id}/quote_docs/{pdf_filename}"
+        logger.debug(f"Saving to path: {storage_path}")
+
+        # Save to R2
+        saved_path = default_storage.save(storage_path, file)
+
+        # Save QuoteDocument record
         document_record = QuoteDocument.objects.create(
             quote=quote,
             version=next_version,
             name=pdf_filename,
-            file=f"{relative_path}",
+            file=saved_path,  
             generated_by="system"
         )
-        print(f"document_record: {document_record}")
-
+        logger.debug(f"Saved to R2: {saved_path}")
+        logger.debug(f"File size: {file.size} bytes")
         return {
             "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
-            "download_url": f"{relative_path}",
+            "download_url": f"{storage_path}",
             "document_version": next_version,
             "success": True,
             }
