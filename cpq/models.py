@@ -782,9 +782,9 @@ class PricebookEntry(models.Model):
         return f"{self.product.name} in {self.pricebook.name} - ${self.unit_price}"
 
 
-def tenant_logo_upload_path(instance, filename):
-    tenant_id = instance.id or "unsaved"
-    return f"tenant_{tenant_id}/logos/{filename}"
+def temp_logo_path(instance, filename):
+    return f"temp/logos/{filename}"
+
 
 class Tenant(models.Model):
     PLAN_CHOICES = [
@@ -803,7 +803,7 @@ class Tenant(models.Model):
     city = models.CharField(max_length=100, blank=True, null=True)
     state = models.CharField(max_length=100, blank=True, null=True)
     version = models.CharField(max_length=50, default='1.0.0')
-    logo = models.ImageField(upload_to=tenant_logo_upload_path, blank=True, null=True)
+    logo = models.ImageField(upload_to=temp_logo_path, blank=True, null=True)
     billing_contact = models.EmailField(blank=True, null=True)
     plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default='solo')
     actions_limit = models.IntegerField(null=True, blank=True)
@@ -812,20 +812,36 @@ class Tenant(models.Model):
     secondary_color = models.CharField(max_length=7, blank=True, null=True)
 
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)  # Save first to get auto-incremented ID
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+
         if not self.tenant_id:
             self.tenant_id = generate_agentcpq_id()
-            super().save(update_fields=['tenant_id'])  # Only update the tenant_id
+            super().save(update_fields=['tenant_id'])
 
-    def __str__(self):
-        return self.name
+        if is_new and self.logo:
+            # move logo to new path
+            from django.core.files.storage import default_storage
+            from django.core.files.base import ContentFile
+
+            old_logo = self.logo
+            logo_content = old_logo.read()
+            old_logo.close()
+
+            new_path = f"tenant_{self.id}/logos/{os.path.basename(old_logo.name)}"
+            saved_path = default_storage.save(new_path, ContentFile(logo_content))
+            self.logo.name = saved_path
+            self.save(update_fields=["logo"])
+    
+def temp_file_path(instance, filename):
+    return f"temp/quotes/{filename}"
     
 class QuoteDocument(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name='documents')
     version = models.PositiveIntegerField()
     name = models.CharField(max_length=255)
     content = models.TextField(blank=True, null=True, help_text="Optional HTML/text content of the document")
-    file = models.FileField(upload_to='quote_documents/', blank=True, null=True)
+    file = models.FileField(upload_to=temp_file_path, blank=True, null=True)
     generated_at = models.DateTimeField(auto_now_add=True)
     generated_by = models.CharField(max_length=255, blank=True, null=True, help_text="Who generated this version (e.g., system, user email)")
 

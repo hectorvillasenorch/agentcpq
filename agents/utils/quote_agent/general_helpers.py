@@ -291,7 +291,7 @@ def get_document_pdf(quote):
         next_version = (last_doc.version if last_doc else 0) + 1
 
         pdf_filename = f"Quote_{quote.name}_v{next_version}.pdf"
-        pdf_path = os.path.join(settings.MEDIA_ROOT, "quote_documents", pdf_filename)
+        # pdf_path = os.path.join(settings.MEDIA_ROOT, "quote_documents", pdf_filename)
 
         # ✅ Create PDF in memory
         buffer = BytesIO()
@@ -1012,20 +1012,15 @@ def get_document_pdf(quote):
         pdf.showPage()
         pdf.save()
 
-        # Read buffer before closing
+        # 2. Create ContentFile
         buffer.seek(0)
-        pdf_bytes = buffer.read()
-        buffer.close()
+        file_content = ContentFile(buffer.read())
 
-        # Convert to ContentFile
-        file = ContentFile(pdf_bytes)
+        # 3. Define storage path (e.g., tenant_abc123/quote_documents/quote_42_v1.pdf)
+        storage_path = f"tenant_{company.id}/quote_documents/{pdf_filename}"
 
-        # Build relative path for R2
-        storage_path = f"tenant_{company.id}/quote_docs/{pdf_filename}"
-        logger.debug(f"Saving to path: {storage_path}")
-
-        # Save to R2
-        saved_path = default_storage.save(storage_path, file)
+        # 4. Save to R2
+        saved_path = default_storage.save(storage_path, file_content)
 
         # Save QuoteDocument record
         document_record = QuoteDocument.objects.create(
@@ -1036,7 +1031,7 @@ def get_document_pdf(quote):
             generated_by="system"
         )
         logger.debug(f"Saved to R2: {saved_path}")
-        logger.debug(f"File size: {file.size} bytes")
+        logger.debug(f"File size: {file_content.size} bytes")
         return {
             "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
             "download_url": f"{storage_path}",
