@@ -274,14 +274,11 @@ def set_custom_fields_into_quote_document_settings(object_type):
 
 def get_document_pdf(quote):
     try:
-        logger.info("📦 Starting PDF generation...")
-        
         # ✅ Fetch related quote lines
         quote_lines = QuoteLine.objects.filter(quote=quote)
-        
+
         # ✅ Fetch related company
         company = Tenant.objects.first()
-        logger.debug(f"Quote ID: {quote.id}, Tenant: {company.id}")
 
         # ✅ Fetch related quote document settings (template)
         template = QuoteDocumentSettings.objects.first()
@@ -1012,12 +1009,13 @@ def get_document_pdf(quote):
                 
 
         # ✅ Save PDF to buffer
+        pdf.showPage()
         pdf.save()
 
-        # # ✅ Ensure target folder exists before writing the PDF
-        # os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+        # ✅ Ensure target folder exists before writing the PDF
+        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
 
-        # # ✅ Save the buffer content to the file
+        # ✅ Save the buffer content to the file
         with open(pdf_path, "wb") as f:
             f.write(buffer.getvalue())
 
@@ -1025,37 +1023,36 @@ def get_document_pdf(quote):
         # ✅ Save the buffer content to the file
         with open(pdf_path, "wb") as f:
             f.write(buffer.getvalue())
-        
+
         buffer.seek(0)
         pdf_bytes = buffer.read()
-        buffer.close()
+        
+        print(f"PDF BYTES preview: {pdf_bytes[:100]}")
 
-        # ✅ Generate filename with timestamp
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-        tenant = company
-        filename = f"quote_{quote.id}_{timestamp}.pdf"
-        storage_path = f"tenant_{tenant.id}/quote_docs/{filename}"
+        buffer.close()
 
         # ✅ Upload to R2
         file = ContentFile(pdf_bytes)
         saved_path = default_storage.save(storage_path, file)
-
-        QuoteDocument.objects.create(
+        storage_path = f"tenant_{company.id}/quote_docs/{file}"
+        # ✅ Save record in QuoteDocument
+        document_record = QuoteDocument.objects.create(
             quote=quote,
             version=next_version,
-            name=filename,
-            file=storage_path,  # <- use actual path where file was saved
+            name=pdf_filename,
+            file=f"{storage_path}",
             generated_by="system"
         )
-        logger.exception("Something went wrong")
+        print(f"document_record: {document_record}")
+
         return {
             "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
-            "download_url": default_storage.url(saved_path),
+            "download_url": f"{saved_path}",
             "document_version": next_version,
             "success": True,
-        }
+            }
     except Exception as e:
         return {
-            "message": "⚠️ Error generating PDF: {str(e)}",
+            "message": f"⚠️ Error generating PDF: {str(e)}",
             "success": False
             }
