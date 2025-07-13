@@ -16,6 +16,7 @@ from reportlab.lib.utils import ImageReader
 from .db_helpers import get_or_create_quote_ui_render, log_action_usage
 from datetime import datetime, timezone
 import boto3
+from botocore.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -1037,6 +1038,7 @@ def get_document_pdf(quote):
             endpoint_url=settings.AWS_S3_ENDPOINT_URL,
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            config=Config(signature_version='s3v4'),
         )
         download_url = s3_client.generate_presigned_url(
             'get_object',
