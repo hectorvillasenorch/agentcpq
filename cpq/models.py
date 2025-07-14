@@ -12,6 +12,7 @@ from django.db.models import JSONField
 from dateutil.relativedelta import relativedelta
 from django.contrib.auth.models import User
 from django.conf import settings
+import os
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -828,7 +829,7 @@ class Tenant(models.Model):
             logo_content = old_logo.read()
             old_logo.close()
 
-            new_path = f"tenant_{self.id}/logos/{os.path.basename(old_logo.name)}"
+            new_path = f"tenant_{self.tenant_id}/logos/{os.path.basename(old_logo.name)}"
             saved_path = default_storage.save(new_path, ContentFile(logo_content))
             self.logo.name = saved_path
             self.save(update_fields=["logo"])
