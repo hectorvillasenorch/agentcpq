@@ -15,7 +15,7 @@ SECRET_KEY = config('SECRET_KEY')
 DEBUG = False
 
 
-ALLOWED_HOSTS = ['.herokuapp.com', 'localhost', '127.0.0.1','sympletech.agentcpq.ai']
+ALLOWED_HOSTS = ['.herokuapp.com', 'localhost', '127.0.0.1','sympletech-agentcpq.ai']
 
 # Allow Django to be embedded in an IFrame (required for Salesforce)
 # X_FRAME_OPTIONS = 'ALLOWALL'
