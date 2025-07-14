@@ -820,7 +820,7 @@ class Tenant(models.Model):
             self.tenant_id = generate_agentcpq_id()
             super().save(update_fields=['tenant_id'])
 
-        if is_new and self.logo:
+        if self.logo and self.logo.name.startswith('temp/logos/'):
             # move logo to new path
             from django.core.files.storage import default_storage
             from django.core.files.base import ContentFile
