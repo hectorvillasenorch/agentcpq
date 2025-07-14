@@ -1027,7 +1027,7 @@ def get_document_pdf(quote):
         file_content = ContentFile(buffer.read())
 
         # 3. Define storage path (e.g., tenant_abc123/quote_documents/quote_42_v1.pdf)
-        storage_path = f"tenant_{company.id}/quote_documents/{pdf_filename}"
+        storage_path = f"tenant_{company.tenant_id}/quote_documents/{pdf_filename}"
 
         # 4. Save to R2
         saved_path = default_storage.save(storage_path, file_content)
