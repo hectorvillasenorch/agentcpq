@@ -13,7 +13,7 @@ def find_product_and_normalize_variables(sku, name):
 
     return product, product.sku, product.name
 
-def get_or_create_account_and_opportunity(extracted_details, session_data):
+def get_or_create_account_and_opportunity(user,extracted_details, session_data):
     """
     Retrieves or creates an Account and Opportunity based on extracted details and session.
     Returns either:
@@ -52,8 +52,8 @@ def get_or_create_account_and_opportunity(extracted_details, session_data):
         }
 
     # Create or get Account and Opportunity
-    account, _ = Account.objects.get_or_create(name=account_name)
-    opportunity, _ = Opportunity.objects.get_or_create(name=opportunity_name, account=account)
+    account, _ = Account.objects.get_or_create(name=account_name, owner=user)
+    opportunity, _ = Opportunity.objects.get_or_create(name=opportunity_name, account=account, owner=user)
 
     return account, opportunity
 

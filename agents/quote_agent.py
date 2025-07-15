@@ -77,7 +77,7 @@ def create_quote(user,user_message, session_data):
     extracted_details = extract_quote_details(user_message)
 
     # ✅ Get or create account and opportunity
-    result_account_and_opportunity = get_or_create_account_and_opportunity(extracted_details, session_data)
+    result_account_and_opportunity = get_or_create_account_and_opportunity(user,extracted_details, session_data)
 
     # - If message in result (error or pending_action) return
     if isinstance(result_account_and_opportunity, dict) and "message" in result_account_and_opportunity:
@@ -91,7 +91,8 @@ def create_quote(user,user_message, session_data):
         account=account,
         opportunity=opportunity,
         status="Draft",
-        net_amount=Decimal("0.00")
+        net_amount=Decimal("0.00"),
+        owner=user
     )
 
     # ✅ Assign formatted name after creation using quote.id

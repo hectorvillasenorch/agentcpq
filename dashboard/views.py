@@ -17,7 +17,7 @@ from django.http import HttpResponseForbidden
 from django.db.models import Count
 from django.utils.timezone import now
 from django.db.models.functions import TruncMonth
-
+from django.db.models import Prefetch
 @login_required
 def dashboard(request):
     view = request.GET.get("view", "agents")
@@ -41,13 +41,26 @@ def dashboard(request):
 
     custom_objects = CustomObject.objects.all()
 
-    quotes = Quote.objects.select_related("opportunity__account").prefetch_related(
-        Prefetch("quote_lines", queryset=QuoteLine.objects.select_related("product"), to_attr="lines")
-    )
+        # 1) Build the base queryset with all the select_related/prefetchs
+    quotes = Quote.objects.select_related("opportunity__account") \
+        .prefetch_related(
+            Prefetch(
+                "quote_lines",
+                queryset=QuoteLine.objects.select_related("product"),
+                to_attr="lines"
+            )
+        )
 
+    # 2) If not a superuser, narrow it to only quotes they own
+    if not request.user.is_superuser:
+        quotes = quotes.filter(owner=request.user)
+
+    # 3) Group as before
     grouped_quotes = defaultdict(list)
-    for quote in quotes:
-        grouped_quotes[quote.opportunity].append(quote)
+    for q in quotes:
+        grouped_quotes[q.opportunity].append(q)
+    print(f"Grouped Quotes{grouped_quotes}")
+    
 
     is_authenticated = SalesforceToken.objects.exists()
     is_setup = view == "setup"
