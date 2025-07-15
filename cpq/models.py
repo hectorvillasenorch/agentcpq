@@ -12,7 +12,7 @@ from django.db.models import JSONField
 from dateutil.relativedelta import relativedelta
 from django.contrib.auth.models import User
 from django.conf import settings
-import os
+import os , uuid
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -784,7 +784,10 @@ class PricebookEntry(models.Model):
 
 
 def temp_logo_path(instance, filename):
-    return f"temp/logos/{filename}"
+    ext = os.path.splitext(filename)[1]
+    random_name = f"{uuid.uuid4().hex}{ext}"
+    tenant_id = instance.tenant_id or "unsaved"
+    return f"tenant_{tenant_id}/logos/{random_name}"
 
 
 class Tenant(models.Model):

@@ -20,7 +20,7 @@ from django.utils.timezone import make_aware
 from .forms import CustomFieldForm, BusinessRuleForm, get_rule_condition_formset
 from .forms import QUOTE_FIELDS, QUOTE_LINE_FIELDS, PRODUCT_FIELDS
 from django.utils.safestring import mark_safe
-
+import uuid, os
 # Agents General Helpers
 from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
 
