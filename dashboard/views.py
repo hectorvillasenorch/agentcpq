@@ -9,7 +9,6 @@ from agents.models import ChatSession, ChatMessage
 from django.utils.timezone import now
 import requests
 from cpq.forms import  generate_dynamic_form
-from collections import defaultdict
 from django.db.models import Prefetch
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.decorators import login_required
@@ -41,13 +40,8 @@ def dashboard(request):
 
     custom_objects = CustomObject.objects.all()
 
-    quotes = Quote.objects.select_related("opportunity__account").prefetch_related(
-        Prefetch("quote_lines", queryset=QuoteLine.objects.select_related("product"), to_attr="lines")
-    )
-
-    grouped_quotes = defaultdict(list)
-    for quote in quotes:
-        grouped_quotes[quote.opportunity].append(quote)
+    # Fetch only this user's quotes, grouped by opportunity
+    grouped_quotes = get_grouped_user_quotes(request)
 
     is_authenticated = SalesforceToken.objects.exists()
     is_setup = view == "setup"
@@ -128,3 +122,33 @@ def get_lookup_data_for_form(custom_object):
     return lookup_data
 
 
+def get_grouped_user_quotes(request):
+    user = request.user
+
+    # Base queryset: if superuser, all quotes; otherwise only quotes
+    # whose opportunity.account.owner is this user
+    if user.is_superuser:
+        base_qs = Quote.objects.all()
+    else:
+        base_qs = Quote.objects.filter(
+            opportunity__account__owner=user
+        )
+
+    # Eager-load opportunity → account and quote_lines → product,
+    # and stash lines in a .lines attribute
+    quotes = base_qs.select_related(
+        "opportunity__account"
+    ).prefetch_related(
+        Prefetch(
+            "quote_lines",
+            queryset=QuoteLine.objects.select_related("product"),
+            to_attr="lines"
+        )
+    )
+
+    # Group by opportunity
+    grouped_quotes = {}
+    for quote in quotes:
+        grouped_quotes.setdefault(quote.opportunity, []).append(quote)
+
+    return grouped_quotes
