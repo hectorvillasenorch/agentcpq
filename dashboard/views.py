@@ -41,7 +41,7 @@ def dashboard(request):
     custom_objects = CustomObject.objects.all()
 
     # Fetch only this user's quotes, grouped by opportunity
-    grouped_quotes = get_grouped_user_quotes(request)
+    grouped_quotes = get_grouped_user_quotes(user)
 
     is_authenticated = SalesforceToken.objects.exists()
     is_setup = view == "setup"
@@ -122,8 +122,7 @@ def get_lookup_data_for_form(custom_object):
     return lookup_data
 
 
-def get_grouped_user_quotes(request):
-    user = request.user
+def get_grouped_user_quotes(user):
 
     # Base queryset: if superuser, all quotes; otherwise only quotes
     # whose opportunity.account.owner is this user
@@ -131,7 +130,7 @@ def get_grouped_user_quotes(request):
         base_qs = Quote.objects.all()
     else:
         base_qs = Quote.objects.filter(
-            opportunity__account__owner=user
+            owner=user
         )
 
     # Eager-load opportunity → account and quote_lines → product,
