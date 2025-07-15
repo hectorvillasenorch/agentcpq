@@ -42,6 +42,7 @@ def dashboard(request):
 
     # Fetch only this user's quotes, grouped by opportunity
     grouped_quotes = get_grouped_user_quotes(user)
+    print("📦 Grouped quotes:", grouped_quotes)
 
     is_authenticated = SalesforceToken.objects.exists()
     is_setup = view == "setup"
