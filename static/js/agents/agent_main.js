@@ -1263,7 +1263,7 @@ async function updateQuoteLine(input) {
     const sku = input.dataset.sku;
     const field = input.dataset.field;
     let newValue = input.value.trim();
-    console.log("Entra a updateQuoteLine");
+    //console.log("Entra a updateQuoteLine");
   
     if (["quantity", "discount_amount", "discount_percentage", "term"].includes(field)) {
       newValue = parseFloat(newValue);
@@ -1452,10 +1452,14 @@ async function updateQuote(input) {
 
             alert("✅ Quote updated successfully!");
         } else {
-            alert("⚠️ Failed to update quote.");
+            // ⬅️ Restart original value of the input field
+            input.value = data.response.original_value
+            alert(data.response.message.replace(/<br\s*\/?>/gi, '\n'));
         }
     } catch (error) {
         console.error("❌ Error updating quote:", error);
+        // ⬅️ Restart original value of the input field
+        input.value = data.response.original_value
         alert("❌ Error occurred while updating quote.");
     }
 }

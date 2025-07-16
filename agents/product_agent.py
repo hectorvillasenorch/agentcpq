@@ -6,6 +6,12 @@ import os
 import logging
 from .utils.quote_agent.db_helpers import log_action_usage
 
+#LLM Helpers
+from .utils.product_agent.llm_helpers import extract_bundle_components
+
+# Record Helpers
+from .utils.product_agent.record_helpers import handle_bundle_components
+
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -19,6 +25,7 @@ def product_agent(user, action, user_message, session_data):
     action_map = {
         "CreateProductRecord": create_product,
         "UpdateProductRecord": update_product,
+        "AddProductToBundle": create_bundle_components
         # "UpdateBundle": generate_quote_pdf,
     }
 
@@ -38,9 +45,13 @@ def create_product(user, user_message, session_data):
         if "error" in product_details:
             return {"message": product_details["error"]}
 
-        # ✅ Validate required fields
-        required_fields = ["sku", "name", "price"]
-        missing_fields = [field for field in required_fields if not product_details.get(field)]
+        # ✅ Validate required fields if product is not a bundle
+        if product_details.get("is_bundle") == True:
+            required_fields = ["sku", "name"]
+            missing_fields = [field for field in required_fields if not product_details.get(field)]
+        else:
+            required_fields = ["sku", "name", "price"]
+            missing_fields = [field for field in required_fields if not product_details.get(field)]
 
         if missing_fields:
             return {"message": f"⚠️ Missing required fields: {', '.join(missing_fields)}. Please provide them."}
@@ -286,3 +297,29 @@ def gpt_modify_product_details(user_message, product_details):
     except Exception as e:
         print(f"⚠️ Error modifying product details: {str(e)}")
         return None
+    
+
+def create_bundle_components(user, user_message, session_data): #Using Option model
+    """Handle bundle components."""
+    logging.info("🔄 Creating bundle components...")
+
+    extracted_components = extract_bundle_components(user_message)
+
+    if not extracted_components or not isinstance(extracted_components, list):
+        return {
+            "message": "⚠️ Could not parse the bundle structure. Please include a bundle SKU, name, and a list of components with fields like product SKU, quantity, and required status."
+        }
+    
+    components_created = []
+    response_message = ""
+
+    response_message, components_created = handle_bundle_components(extracted_components, response_message)
+
+    if components_created:
+        return {
+            "message": response_message
+        }
+    else:
+        return {
+            "message": f"⚠️ Error: Something went wrong — no product(s) was added to the bundle. Please try again or verify your input.<br><br>{response_message}"
+        }

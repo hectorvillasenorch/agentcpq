@@ -180,6 +180,20 @@ def get_backup_value_from_quote_line(json_payload, quote):
 
     return float(value)
 
+def get_backup_value_from_quote(json_payload, quote):
+    # Transform to valid JSON
+    update_quote = json.loads(json_payload)
+
+    # Get quote line item from db
+    quote = Quote.objects.get(id=quote.id)
+
+    field = update_quote["field"]
+
+    if field in {"discount_percentage", "discount_amount"}:
+        value = getattr(quote, field)
+
+    return float(value)
+
 def format_currency(value):
     """Formats a Decimal value into currency format with commas and two decimal places."""
     return f"{value:,.2f}"  # Example: 3,000.00 instead of 3000.0

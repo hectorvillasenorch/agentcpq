@@ -98,6 +98,21 @@
   background: #f1f7ff;
 }
 
+/* Bunlde CSS COnfiguration*/
+
+.bundle-product {
+  border-top: 2px solid #9d9d9d ;
+}
+
+.bundle-product th {
+  background-color: #e8e8e8;
+}
+
+.bundle-components {
+  font-weight: bold;
+  text-decoration: underline;
+}
+
 /* center “no products” row */
 .no-products {
   text-align: center;
@@ -129,25 +144,27 @@
 
   <tbody>
     {% for product in products %}
-      <tr>
-        <td>{{ product.sku }}</td>
+      {% if product.is_bundle == False %}
+        <tr>
+          <td>{{ product.sku }}</td>
 
-        <td>{{ product.name }}</td>
+          <td>{{ product.name }}</td>
 
-        <td>${{ product.price|floatformat:2|intcomma }}</td>
+          <td>${{ product.price|floatformat:2|intcomma }}</td>
 
-        <td class="mobile-hide">
-          {{ product.is_subscription|yesno:"✔️,✖️" }}
-        </td>
+          <td class="mobile-hide">
+            {{ product.is_subscription|yesno:"✔️,✖️" }}
+          </td>
 
-        <td class="mobile-hide">
-          {{ product.term|default:"N/A" }}
-        </td>
+          <td class="mobile-hide">
+            {{ product.term|default:"N/A" }}
+          </td>
 
-        <td class="mobile-hide">
-          {{ product.is_bundle|yesno:"✔️,✖️" }}
-        </td>
-      </tr>
+          <td class="mobile-hide">
+            {{ product.is_bundle|yesno:"✔️,✖️" }}
+          </td>
+        </tr>
+      {% endif %}
     {% empty %}
       <tr>
         <td colspan="6" class="no-products">No products found.</td>
@@ -156,3 +173,73 @@
   </tbody>
 </table>
 </div>
+
+{% if options %}
+  <br>
+  <div class="container-fluid">
+    <h2><i class="material-icons"></i>Bundle Catalog</h2>
+    <table class="product-table">
+    <thead>
+      <tr>
+        <th>SKU</th>
+        <th>Name</th>
+        <th>Price</th>
+        <th class="mobile-hide">Subscription</th>
+        <th class="mobile-hide">Term</th>
+        <th class="mobile-hide">Bundle</th>
+        <th class="mobile-hide"></th>
+        <th class="mobile-hide"></th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for product in products %}
+        {% if product.is_bundle %}
+          <tr class="bundle-product">
+            <th>{{ product.sku }}</th>
+            <th>{{ product.name }}</th>
+            <th>${{ product.price|floatformat:2|intcomma }}</th>
+            <th class="mobile-hide">{{ product.is_subscription|yesno:"✔️,✖️" }}</th>
+            <th class="mobile-hide">{{ product.term|default:"N/A" }}</th>
+            <th class="mobile-hide">{{ product.is_bundle|yesno:"✔️,✖️" }}</th>
+            <th></th>
+            <th></th>
+          </tr>
+
+          {% if product.bundle_options %}
+            <tr class="bundle-components">
+              <td></td>
+              <td>Product</td>
+              <td>Quantity</td>
+              <td>Min Quantity</td>
+              <td>Max Quantity</td>
+              <td>Group Name</td>
+              <td>Required</td>
+              <td>Default Selected</td>
+            </tr>
+            {% for option in product.bundle_options %}
+              <tr>
+                <td></td>
+                <td>{{ option.product_option }}</td>
+                <td>{{ option.quantity }}</td>
+                <td>{{ option.min_quantity }}</td>
+                <td>{{ option.max_quantity }}</td>
+                <td>{{ option.group_name }}</td>
+                <td>{{ option.is_required|yesno:"✔️,✖️" }}</td>
+                <td>{{ option.default_selected|yesno:"✔️,✖️" }}</td>
+              </tr>
+            {% endfor %}
+          {% else %}
+              <tr>
+                <td></td>
+                <td colspan="7" style="font-style: italic; color: #777;">
+                  No products have been added to this bundle.
+                </td>
+              </tr>
+          {% endif %}
+        {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endif %}

@@ -239,6 +239,13 @@ class Product(models.Model):
     def save(self, *args, **kwargs):
         if not self.prdid:
             self.prdid = generate_agentcpq_id()
+
+        if self.is_bundle:
+            total_price = 0
+            for option in self.options.all():
+                if option.product_option:  # aseguramos que no sea None
+                    total_price += option.quantity * option.product_option.price
+            self.price = total_price
         super().save(*args, **kwargs)
     def __str__(self):
         bundle_tag = " - BUNDLE" if self.is_bundle else ""
@@ -368,7 +375,6 @@ class QuoteLine(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="quote_lines")
     product_name = models.CharField(max_length=255, blank=True, null=True)
     quantity = models.IntegerField(default=1)
-    parent_line = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)  # for nesting
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     special_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage", null=True, blank=True)
@@ -380,6 +386,7 @@ class QuoteLine(models.Model):
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     is_subscription = models.BooleanField(default=False)
     is_bundle_parent = models.BooleanField(default=False)
+    parent_line = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE)  # for nesting
     product_option = models.ForeignKey("Option", null=True, blank=True, on_delete=models.SET_NULL)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quote_lines')
     billing_frequency = models.CharField(
@@ -464,8 +471,9 @@ class QuoteLine(models.Model):
         # Auto-calculate price for bundles
         if self.product.is_bundle:
             self.unit_price = sum(
-                bundle_item.product.price * bundle_item.quantity
-                for bundle_item in self.product.bundle_items.all()
+                Decimal(option.product_option.price) * Decimal(option.quantity)
+                for option in self.product.options.all()
+                if option.product_option
             ) or Decimal("0.00")
         elif self.unit_price is None:
             self.unit_price = self.product.price

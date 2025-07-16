@@ -107,6 +107,10 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
         # ✅ If the product already exists in the quote and updates are allowed,
         #    update the existing quote line instead of creating a new one
         if existing_line and allow_updates:
+            if existing_line.is_bundle:
+                response_message += f"⚠️ The product `{existing_line.sku}/{existing_line.name}` already in quote. You can modify it if you want"
+                added_products.append(existing_line)
+
             logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🔁 Product `{sku}/{name}` already in quote. Updating instead of creating.")
 
             # Update quantity (previous quantity + new quantity)
@@ -185,25 +189,59 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
 
         if discount_type == "percentage":
             discount_fields["discount_type"] = discount_type
-            discount_fields["discount_percentage"] = Decimal(discount_value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            discount_fields["discount_percentage"] = Decimal(str(discount_value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         elif discount_type == "amount":
             discount_fields["discount_type"] = discount_type
-            discount_fields["discount_amount"] = Decimal(discount_value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            discount_fields["discount_amount"] = Decimal(str(discount_value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         else:
+            print("Discount type is null")
             discount_fields["discount_type"] = "Null"
             discount_fields["discount_amount"] = Decimal("0.00")
             discount_fields["discount_percentage"] = Decimal("0.00")
 
         try:
-            quote_line = QuoteLine.objects.create(
-                quote=quote,
-                product=product,
-                quantity=quantity,
-                term=term,
-                **discount_fields,
-                description=product.description,
-                is_subscription=product.is_subscription,
-            )
+            if product.is_bundle:
+                print("Product is a bundle")
+                try:
+                    # Parent Quote Line
+                    quote_line = QuoteLine.objects.create(
+                        quote=quote,
+                        product=product,
+                        quantity=quantity,
+                        term=term,
+                        **discount_fields,
+                        description=product.description,
+                        is_subscription=product.is_subscription,
+                        is_bundle_parent=True, #Asign tru to bundle parent
+                        parent_line=None, #This is the parent line
+                    )
+
+                    # Children Quote Line(s)
+                    for option in product.options.all():
+                        if option.default_selected and option.product_option:
+                            QuoteLine.objects.create(
+                                quote=quote,
+                                product=option.product_option,
+                                quantity=int(option.quantity),
+                                parent_line=quote_line,
+                                is_bundle_parent=False,
+                                product_option=option,
+                                is_subscription=option.product_option.is_subscription,
+                                term=None
+                            )
+                except Exception as e:
+                    print(f"Error: {e}")
+
+            else:
+                quote_line = QuoteLine.objects.create(
+                    quote=quote,
+                    product=product,
+                    quantity=quantity,
+                    term=term,
+                    **discount_fields,
+                    description=product.description,
+                    is_subscription=product.is_subscription,
+                )
 
             # If Product has custom fields, then create custom fields to QuoteLine
             copy_custom_fields_values_from_product_to_quote_line(quote_line)
