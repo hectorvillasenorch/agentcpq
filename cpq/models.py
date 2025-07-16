@@ -12,6 +12,7 @@ from django.db.models import JSONField
 from dateutil.relativedelta import relativedelta
 from django.contrib.auth.models import User
 from django.conf import settings
+import secrets
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -87,6 +88,7 @@ class Account(models.Model):
     city = models.CharField(max_length=100, blank=True, null=True)
     state = models.CharField(max_length=100, blank=True, null=True)
     zip_code = models.CharField(max_length=20, blank=True, null=True)
+    tenant_id = models.CharField(max_length=30, unique=True)
     # country = models.CharField(max_length=100, blank=True, null=True)
     
 
@@ -782,6 +784,14 @@ class PricebookEntry(models.Model):
         return f"{self.product.name} in {self.pricebook.name} - ${self.unit_price}"
 
 
+
+
+
+def gen_api_key():
+    # 32 bytes → ~43 URL-safe chars; trim or base-64 as you like
+    return secrets.token_urlsafe(32)
+
+
 class Tenant(models.Model):
     PLAN_CHOICES = [
         ('solo', 'Solo'),
@@ -806,6 +816,8 @@ class Tenant(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     primary_color = models.CharField(max_length=7, blank=True, null=True)
     secondary_color = models.CharField(max_length=7, blank=True, null=True)
+    api_key = models.CharField(max_length=43,null=True,editable=False,default=gen_api_key,help_text="Public API key, auto-generated")
+    api_secret = models.CharField(max_length=43,null=True,editable=False,default=gen_api_key,help_text="Private key used for request signing")
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)  # Save first to get auto-incremented ID
@@ -1036,3 +1048,64 @@ class ActionUsage(models.Model):
 
     def __str__(self):
         return f"{self.action} by {self.user or 'System'} on {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+
+class TenantUsageReport(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="usage_reports"
+    )
+    tenant_long_id = models.CharField(max_length=100, blank=True, null=True)
+    # Use the first day of the month to represent a billing period
+    billing_period = models.DateField(
+        help_text="First day of the month this report covers"
+    )
+    total_actions = models.PositiveBigIntegerField(
+        default=0,
+        help_text="Total number of actions performed by this tenant in the period"
+    )
+    overflow_actions = models.PositiveBigIntegerField(
+        default=0,
+        help_text="Number of actions beyond the tenant’s plan limit"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this report row was created"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        help_text="When this report row was last updated"
+    )
+
+    class Meta:
+        unique_together = ("tenant", "billing_period")
+        ordering = ["-billing_period"]
+        indexes = [
+            models.Index(fields=["tenant", "billing_period"]),
+        ]
+
+    def __str__(self):
+        return f"{self.tenant.tenant_id} – {self.billing_period:%Y-%m}"
+    
+class TenantUsageLog(models.Model):
+    tenant_id = models.CharField(max_length=50, db_index=True)
+    billing_period = models.DateField()
+    
+    status = models.CharField(max_length=20, choices=[
+        ("success", "Success"),
+        ("failure", "Failure")
+    ])
+    
+    http_status = models.IntegerField(null=True, blank=True)
+    message = models.TextField(blank=True, help_text="Response body or error message")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant_id", "billing_period", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.tenant_id} ({self.billing_period}) – {self.status}"
