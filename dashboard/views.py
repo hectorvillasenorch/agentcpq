@@ -39,6 +39,7 @@ def dashboard(request):
     
     products = Product.objects.all() if view == "products" else None
     options = Option.objects.all() if view == "products" else None
+    bundles = Product.objects.filter(is_bundle=True) 
 
     if products:
         for product in products:
@@ -86,6 +87,7 @@ def dashboard(request):
     return render(request, "dashboard.html", {
         "products": products,
         "options": options,
+        "bundles": bundles,
         "grouped_quotes": grouped_quotes.items(),
         "is_setup": is_setup,
         "is_authenticated": is_authenticated,

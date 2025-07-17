@@ -171,8 +171,9 @@ def extract_product_details(user_request, session_data):
     - is_subscription (boolean, default: false)
     - term (integer, default: 12 if is_subscription is True, otherwise null)
     - is_bundle (boolean, default: false)
+    - description (string, default: null if not specified by the user)
 
-    Example request: "Create a product called AI Sales Assistant with SKU CRM-001 and price 59.99. It is a subscription."
+    Example request: "Create a product called AI Sales Assistant with SKU CRM-001 and price 59.99. It is a subscription. With a description: Description: "AI-powered tool to streamline sales processes."
     Example response:
     {{
         "sku": "CRM-001",
@@ -180,7 +181,8 @@ def extract_product_details(user_request, session_data):
         "price": 59.99,
         "is_subscription": true,
         "term": 12,
-        "is_bundle": false
+        "is_bundle": false,
+        "description": "AI-powered tool to streamline sales processes."
     }}
 
     If the user is confirming a previous product creation (e.g., "Yes, confirm"), use the following pending product details:
@@ -225,6 +227,7 @@ def create_product_record(user,product_details):
             is_subscription=product_details["is_subscription"],
             term=product_details.get("term", 12),  # Default term is 12
             is_bundle=product_details["is_bundle"],
+            description=product_details["description"] if product_details["description"] else ''
         )
 
         print("✅ DEBUG: Created Product:", product)  # Debugging step

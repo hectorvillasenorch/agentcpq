@@ -212,27 +212,35 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
                         **discount_fields,
                         description=product.description,
                         is_subscription=product.is_subscription,
-                        is_bundle_parent=True, #Asign tru to bundle parent
+                        is_bundle_parent=True, #Asign true to bundle parent
                         parent_line=None, #This is the parent line
                     )
 
                     # Children Quote Line(s)
+                    bundle_response_message = ""
                     for option in product.options.all():
                         if option.default_selected and option.product_option:
                             QuoteLine.objects.create(
                                 quote=quote,
                                 product=option.product_option,
                                 quantity=int(option.quantity),
-                                parent_line=quote_line,
+                                parent_line=quote_line, # Bundle parent quote line
                                 is_bundle_parent=False,
+                                is_bundle_child=True,
                                 product_option=option,
                                 is_subscription=option.product_option.is_subscription,
-                                term=None
+                                term=None,
+                                discount_type=None,
+                                discount_percentage=Decimal("0.00"),
+                                discount_amount=Decimal("0.00")
                             )
+
+                            bundle_response_message += f"&emsp;🔧 Added {option.quantity}x {option.product_option.sku}/{option.product_option.name} ({option.parent_product})<br>"
                 except Exception as e:
                     print(f"Error: {e}")
 
             else:
+                bundle_response_message = "" #Restart variable for no bundle products
                 quote_line = QuoteLine.objects.create(
                     quote=quote,
                     product=product,
@@ -259,6 +267,8 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
                 response_message += f"✅ Added {quantity}x {sku}/{name} to quote {quote.name} with a ${discount_value} discount.<br>"
             else:
                 response_message += f"✅ Added {quantity}x {sku}/{name} to quote {quote.name}.<br>"
+
+            response_message += bundle_response_message
         except Exception as e:
             logging.error(f"❌ Error adding product {sku}/{name}: {str(e)}")
             response_message += f"❌ Error adding product {sku}/{name} to quote {quote.name}.<br>"
@@ -444,10 +454,15 @@ def save_quote_line_update(request, quote):
             # Save the quote line to calculate general values of quote line (subtotal, discounts, etc.)
             quote_line.save()
 
+            if quote_line.is_bundle_child:
+                bundle = quote_line.parent_line
+                bundle.save()
+
             # ✅ Update quote (subtotal, discounts fields and net amount)
             quote.save()
             update_opportunity_net_amount(quote.opportunity)
             #########################################################################################################
+
         
             response_message = "✅ Quote line updated successfully."
 

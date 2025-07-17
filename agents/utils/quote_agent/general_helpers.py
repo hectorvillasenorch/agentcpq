@@ -82,6 +82,8 @@ def get_quote_details(quote):
             "discount_amount": str(f"${ql.discount_amount}" if ql.discount_amount else "$0"),
             "is_subscription": ql.is_subscription,
             "term": ql.term,
+            "is_bundle_child": ql.is_bundle_child,
+            "bundle_name": ql.parent_line.product_name if ql.is_bundle_child else ""
         }
 
         # Agregar los campos custom

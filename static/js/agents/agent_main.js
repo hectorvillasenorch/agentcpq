@@ -471,7 +471,6 @@ function renderQuoteDetails(quote) {
 
   var has_printed_subscription_header = false;
 
-
   quote.line_items.forEach(item => {
     if(item.is_subscription == true){
       if(!has_printed_subscription_header){
@@ -513,7 +512,7 @@ function renderQuoteDetails(quote) {
         has_printed_subscription_header = true;
       }
 
-      html += `<tr>`;
+      html += `<tr${item.is_bundle_child ? ' class="bundle-child"' : ''}>`;
 
       quote.rendered_fields.forEach(field => {
         // Limpiar campos como Product.UOM
@@ -525,16 +524,19 @@ function renderQuoteDetails(quote) {
             <td>
               <div class="centered-td">${item.sku}</div>
               <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "Product") {
           html += `
             <td>
               <div class="centered-td">${item.product}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "SKU") {
           html += `
             <td>
               <div class="centered-td">${item.sku}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "Quantity") {
           html += `
@@ -664,7 +666,7 @@ function renderQuoteDetails(quote) {
         none_suscription_bool = 1;
       }
 
-      html += `<tr>`;
+      html += `<tr${item.is_bundle_child ? ' class="bundle-child"' : ''}>`;
 
       quote.rendered_fields.forEach(field => {
         // Limpiar campos como Product.UOM
@@ -675,16 +677,19 @@ function renderQuoteDetails(quote) {
             <td>
               <div class="centered-td">${item.sku}</div>
               <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "Product") {
           html += `
             <td>
               <div class="centered-td">${item.product}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "SKU") {
           html += `
             <td>
               <div class="centered-td">${item.sku}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "Quantity") {
           html += `
@@ -700,7 +705,7 @@ function renderQuoteDetails(quote) {
             </td>`;
         } else if (field === "Unit Price") {
           html += `
-            <td>
+            <td class="unit-price" data-sku="${item.sku}">
               ${parseFloat(item.unit_price.replace('$', '')).toLocaleString('en-US', {
                 style: 'currency',
                 currency: 'USD'
@@ -903,7 +908,7 @@ function renderReadOnlyQuoteDetails(quote) {
         has_printed_subscription_header = true;
       }
 
-      html += `<tr>`;
+      html += `<tr${item.is_bundle_child ? ' class="bundle-child"' : ''}>`;
 
       quote.rendered_fields.forEach(field => {
         // Limpiar campos como Product.UOM
@@ -914,16 +919,19 @@ function renderReadOnlyQuoteDetails(quote) {
             <td>
               <div class="centered-td">${item.sku}</div>
               <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "Product") {
           html += `
             <td>
               <div class="centered-td">${item.product}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "SKU") {
           html += `
             <td>
               <div class="centered-td">${item.sku}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "Quantity") {
           html += `
@@ -1055,7 +1063,7 @@ function renderReadOnlyQuoteDetails(quote) {
         none_suscription_bool = 1;
       }
 
-      html += `<tr>`;
+      html += `<tr${item.is_bundle_child ? ' class="bundle-child"' : ''}>`;
 
       quote.rendered_fields.forEach(field => {
         // Limpiar campos como Product.UOM
@@ -1066,16 +1074,19 @@ function renderReadOnlyQuoteDetails(quote) {
             <td>
               <div class="centered-td">${item.sku}</div>
               <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "Product") {
           html += `
             <td>
               <div class="centered-td">${item.product}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "SKU") {
           html += `
             <td>
               <div class="centered-td">${item.sku}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "Quantity") {
           html += `
@@ -1297,12 +1308,14 @@ async function updateQuoteLine(input) {
         if (data.response && data.response.quote_details) {
             const updatedQuote = data.response.quote_details;
             const quoteContainer = input.closest(".quote-container");
+            //console.log(updatedQuote); #For debugging
 
             //First we update every single quote line total price
             const row =input.closest("tr");
 
             updatedQuote.line_items.forEach(item => {
-                const totalCell = row.querySelector(`.total-price[data-sku="${item.sku}"]`);
+                const totalCell = quoteContainer.querySelector(`.total-price[data-sku="${item.sku}"]`); //Use quoteContainer to update every total price
+                //console.log("Total Cell: ", totalCell); #For debugging
                 if (totalCell) {
                     //1. Get the total price from quote line
                     const total = parseFloat(item.total_price);
@@ -1312,6 +1325,18 @@ async function updateQuoteLine(input) {
 
                     //3. Upgrade the DOM immediately
                     totalCell.textContent = formattedTotal;
+                }
+
+                const unitCell = quoteContainer.querySelector(`.unit-price[data-sku="${item.sku}"]`)
+                if (unitCell) {
+                    //1. Get the total price from quote line
+                    const unit_price = parseFloat(item.unit_price);
+
+                    //2. Formatted
+                    const formattedUnitPrice = `$${unit_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+                    //3. Upgrade the DOM immediately
+                    unitCell.textContent = formattedUnitPrice;
                 }
 
                 if (field == "discount_percentage" || field == "discount_amount"){
@@ -1611,7 +1636,7 @@ function showTemporaryQuoteDetails(quote) {
         has_printed_subscription_header = true;
       }
 
-      html += `<tr>`;
+      html += `<tr${item.is_bundle_child ? ' class="bundle-child"' : ''}>`;
 
       quote.rendered_fields.forEach(field => {
         // Limpiar campos como Product.UOM
@@ -1622,16 +1647,19 @@ function showTemporaryQuoteDetails(quote) {
             <td>
               <div class="centered-td">${item.sku}</div>
               <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "Product") {
           html += `
             <td>
               <div class="centered-td">${item.product}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "SKU") {
           html += `
             <td>
               <div class="centered-td">${item.sku}</div>
+              ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
             </td>`;
         } else if (field === "Quantity") {
           html += `
@@ -1731,7 +1759,7 @@ function showTemporaryQuoteDetails(quote) {
         none_suscription_bool = 1;
       }
 
-      html += `<tr>`;
+      html += `<tr${item.is_bundle_child ? ' class="bundle-child"' : ''}>`;
 
       quote.rendered_fields.forEach(field => {
         // Limpiar campos como Product.UOM
