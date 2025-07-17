@@ -352,7 +352,14 @@ def delete_quote_line(user, user_message, session_data):
             # Check is quote line exists in active quote
             try:
                 quote_line = QuoteLine.objects.get(quote=quote, product=product)
-                quote_line.delete()
+
+                if quote_line.is_bundle_child: # If quote line is a bundle child, preload bundle parent, then delete quote line bundle child, finally save bundle update Unit_Price
+                    bundle = quote_line.parent_line
+                    quote_line.delete()
+                    bundle.save()
+                else: # If quote line is not a bundle child
+                    quote_line.delete()
+                
                 log_action_usage("DeleteQuoteLine", user, "Quote", quote.name)
 
                 response_message += f"✅ The quote line with product SKU '{product.sku}' was successfully deleted from quote '{quote.name}'.<br>"

@@ -83,7 +83,8 @@ def get_quote_details(quote):
             "is_subscription": ql.is_subscription,
             "term": ql.term,
             "is_bundle_child": ql.is_bundle_child,
-            "bundle_name": ql.parent_line.product_name if ql.is_bundle_child else ""
+            "bundle_name": ql.parent_line.product_name if ql.is_bundle_child else "",
+            "is_bundle_component_required": ql.product_option.is_required if ql.is_bundle_child else ""
         }
 
         # Agregar los campos custom

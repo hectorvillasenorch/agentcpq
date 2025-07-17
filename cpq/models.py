@@ -490,7 +490,9 @@ class QuoteLine(models.Model):
                 self.unit_price = self.product.price
         else:
             if self.product.is_bundle:
+                print(f"{self.product_name} is a bundle")
                 self.update_unit_price_bundle_post_created()
+                print(f"Unit Price before update: {self.unit_price}")
             else:
                 self.unit_price = self.product.price
 

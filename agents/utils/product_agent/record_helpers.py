@@ -216,7 +216,7 @@ def save_option(request):
             is_required=is_required,
             min_quantity=min_quantity,
             max_quantity=max_quantity,
-            default_selected=default_selected,
+            default_selected=default_selected if default_selected == False else True,
             group_name=group_name
         )
 
