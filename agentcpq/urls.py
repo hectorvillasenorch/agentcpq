@@ -19,9 +19,12 @@ urlpatterns = [
     path('login/', auth_views.LoginView.as_view(template_name='auth/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
     
-    ### API USAGE
+    ### API Endpoints
     path('api/usage/', get_tenant_usage, name='get_tenant_usage'),
+    path("api/v1/", include("api.urls")),
 ]
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+
