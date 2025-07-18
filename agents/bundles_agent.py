@@ -6,11 +6,15 @@ import os
 import logging
 from .utils.quote_agent.db_helpers import log_action_usage
 
+# FROM QUOTE ANGENT
+
+from .utils.quote_agent.general_helpers import get_active_quote
+
 #LLM Helpers
-from .utils.product_agent.llm_helpers import extract_bundle_components
+from .utils.bundles_agent.llm_helpers import extract_bundle_components, extract_delete_options_from_quote
 
 # Record Helpers
-from .utils.product_agent.record_helpers import handle_bundle_components
+from .utils.bundles_agent.record_helpers import handle_bundle_components, handle_delete_options_from_quote
 
 
 load_dotenv()
@@ -23,7 +27,8 @@ def bundles_agent(user, action, user_message, session_data):
 
     # ✅ Action-to-function mapping
     action_map = {
-        "AddProductToBundle": create_bundle_components
+        "AddProductToBundle": create_bundle_components,
+        "DeleteBundleComponentFromQuote": delete_bundle_option_from_quote,
         # "UpdateBundle": generate_quote_pdf,
     }
 
@@ -60,3 +65,34 @@ def create_bundle_components(user, user_message, session_data): #Using Option mo
             "message": f"⚠️ Error: Something went wrong — no product(s) was added to the bundle. Please try again or verify your input.<br><br>{response_message}"
         }
     
+def delete_bundle_option_from_quote(user, user_message, session_data):
+    """Delete Bundle Option From Quote."""
+    logging.info("🔄 Deleting bundle components...")
+
+    # ✅ Looking for active quote
+    quote = get_active_quote(user_message, session_data)
+
+    # ⚠️ Verify if function return an error
+    if isinstance(quote, dict) and "message" in quote:
+        return quote
+
+    extracted_delete_options =  extract_delete_options_from_quote(user_message)
+
+    if not extracted_delete_options or not isinstance(extracted_delete_options, list):
+        return {
+            "message": "⚠️ Failed to extract bundle options correctly. Please try again."
+        }
+    
+    options_deleted = []
+    response_message = ""
+
+    response_message, options_deleted = handle_delete_options_from_quote(extracted_delete_options, response_message, quote)
+
+    if options_deleted:
+        return {
+            "message": response_message
+        }
+    else:
+        return {
+            "message": f"⚠️ Error: Something went wrong — no bundle component(s) quote line was deleted from the quote. Please try again or verify your input.<br><br>{response_message}"
+        }

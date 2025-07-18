@@ -102,14 +102,11 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
         #################################################
 
         # ✅ Check if existing line
-        existing_line = QuoteLine.objects.filter(quote=quote, product=product).first()
+        existing_line = QuoteLine.objects.filter(quote=quote, product=product, is_bundle_child=False).first()
 
         # ✅ If the product already exists in the quote and updates are allowed,
         #    update the existing quote line instead of creating a new one
         if existing_line and allow_updates:
-            if existing_line.is_bundle:
-                response_message += f"⚠️ The product `{existing_line.sku}/{existing_line.name}` already in quote. You can modify it if you want"
-                added_products.append(existing_line)
 
             logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🔁 Product `{sku}/{name}` already in quote. Updating instead of creating.")
 
