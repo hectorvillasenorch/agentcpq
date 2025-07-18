@@ -1,6 +1,6 @@
 from django.apps import apps
 from django.shortcuts import render, get_object_or_404, redirect
-from cpq.models import Product, Quote,QuoteLine, CustomObject, CustomField, CustomFieldValue, CustomRecord,Account, ActionUsage, Tenant
+from cpq.models import Product, Quote,QuoteLine, CustomObject, CustomField, CustomFieldValue, CustomRecord,Account, ActionUsage, Tenant, TenantUsageLog, Option
 from cpq.views import set_primary_quote
 from salesforce.models import SalesforceToken
 from hubspot.models import HubspotToken
@@ -12,10 +12,23 @@ from cpq.forms import  generate_dynamic_form
 from django.db.models import Prefetch
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponseForbidden
+from django.http import JsonResponse, HttpResponseForbidden, HttpResponseBadRequest
 from django.db.models import Count
 from django.utils.timezone import now
 from django.db.models.functions import TruncMonth
+from django.db.models import Prefetch
+import hmac
+import hashlib
+from datetime import date
+from django.views.decorators.http import require_GET
+from django.utils.dateparse import parse_date
+from django.utils import timezone
+from django.db.models import Sum
+from cpq.models import Tenant, ActionUsage, TenantUsageReport
+from django.utils.dateparse import parse_datetime
+import logging
+logger = logging.getLogger(__name__)
+from datetime import datetime, timezone as dt_timezone
 
 @login_required
 def dashboard(request):
@@ -37,6 +50,12 @@ def dashboard(request):
         return HttpResponseForbidden("You do not have access to the setup view.")
     
     products = Product.objects.all() if view == "products" else None
+    options = Option.objects.all() if view == "products" else None
+    bundles = Product.objects.filter(is_bundle=True) 
+
+    if products:
+        for product in products:
+            product.bundle_options = [opt for opt in options if opt.parent_product == product]
 
     custom_objects = CustomObject.objects.all()
 
@@ -75,6 +94,8 @@ def dashboard(request):
 
     return render(request, "dashboard.html", {
         "products": products,
+        "options": options,
+        "bundles": bundles,
         "grouped_quotes": grouped_quotes.items(),
         "is_setup": is_setup,
         "is_authenticated": is_authenticated,
@@ -152,3 +173,124 @@ def get_grouped_user_quotes(user):
         grouped_quotes.setdefault(quote.opportunity, []).append(quote)
 
     return grouped_quotes
+
+@require_GET
+def get_tenant_usage(request):
+    # 1) Authentication headers
+    api_key   = request.headers.get("X-API-KEY")
+    ts_header = request.headers.get("X-Timestamp")
+    sig       = request.headers.get("X-Signature")
+
+    if not (api_key and ts_header and sig):
+        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=403,message="Missing authentication headers")
+        return HttpResponseForbidden("Missing authentication headers")
+
+    # 2) Tenant lookup
+    try:
+        tenant = Tenant.objects.get(api_key=api_key)
+    except Tenant.DoesNotExist:
+        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=403,message="Invalid API key")
+        return HttpResponseForbidden("Invalid API key")
+
+    # 3) Parse & validate the X-Timestamp header
+    ts_header = request.headers.get("X-Timestamp")
+    if not ts_header:
+        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=403,message="Missing timestamp")
+        return HttpResponseForbidden("Missing timestamp")
+
+    # Normalize “Z” to “+00:00” and attempt ISO‐8601 parse
+    try:
+        # e.g. "2025-07-15T19:04:07Z" → "2025-07-15T19:04:07+00:00"
+        iso_ts = ts_header.replace("Z", "+00:00")
+        ts = datetime.fromisoformat(iso_ts)
+    except ValueError:
+        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=403,message="Bad timestamp format")
+        return HttpResponseForbidden("Bad timestamp format")
+
+    # Ensure it’s timezone‐aware in UTC
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=dt_timezone.utc)
+
+    # Reject if older than 5 minutes
+    if abs((timezone.now() - ts).total_seconds()) > 300:
+        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=403,message="Stale timestamp")
+        return HttpResponseForbidden("Stale timestamp")
+    # Ensure it's timezone-aware in UTC
+    if timezone.is_naive(ts):
+        ts = timezone.make_aware(ts, timezone.utc)
+
+    # Reject if older than 5 minutes
+    if abs((timezone.now() - ts).total_seconds()) > 300:
+        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=403,message="Stale timestamp")
+        return HttpResponseForbidden("Stale timestamp")
+
+    # 4) Build the string to sign
+    path = request.get_full_path()                # e.g. "/api/usage/?start=…&end=…"
+    ts_header = request.headers.get("X-Timestamp")
+    # NOTE: request.body.decode() is "" for GET
+    raw = f"{request.method}{path}{request.body.decode()}{ts_header}"
+    message = raw.encode()
+
+    # 5) Log both sides
+    logger.debug("📫 Django sees path+query: %s", path)
+    logger.debug("📝 Raw message string: %r", raw)
+    expected = hmac.new(tenant.api_secret.encode(), message, hashlib.sha256).hexdigest()
+    logger.debug("✅ Expected signature: %s", expected)
+    logger.debug("🔑 Incoming X-Signature header: %s", request.headers.get("X-Signature"))
+
+    # 5) Parse billing window
+    start_str = request.GET.get("start")
+    end_str   = request.GET.get("end")
+    if not (start_str and end_str):
+        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=400,message="start and end parameters required")
+        return HttpResponseBadRequest("start and end parameters required")
+    try:
+        start = timezone.datetime.fromisoformat(start_str).date()
+        end   = timezone.datetime.fromisoformat(end_str).date()
+    except Exception:
+        TenantUsageLog.objects.create(
+            tenant_id=tenant.tenant_id,
+            billing_period=start,
+            status="failure",
+            http_status=400,
+            message="Invalid date format for start/end"
+        )
+        return HttpResponseBadRequest("Invalid date format for start/end")
+    
+        
+
+    # 6) Aggregate usage
+    total_actions = (
+        ActionUsage.objects
+        .filter(timestamp__date__gte=start, timestamp__date__lte=end)
+        .aggregate(total=Count("id"))["total"]
+        or 0
+    )
+    overflow = max(0, total_actions - (tenant.actions_limit or 0))
+
+    # 7) Upsert the usage report
+    billing_period = start.replace(day=1)
+    TenantUsageReport.objects.update_or_create(
+        tenant=tenant,
+        tenant_long_id=tenant.tenant_id,
+        billing_period=billing_period,
+        defaults={
+            "total_actions":    total_actions,
+            "overflow_actions": overflow,
+        }
+    )
+    # After each request
+    TenantUsageLog.objects.create(
+        tenant_id=tenant.tenant_id,
+        billing_period=start,
+        status="success",
+        http_status=200,
+        message="Fetched successfully"
+    )
+    # 8) Return JSON
+    return JsonResponse({
+        "tenant_id":        tenant.tenant_id,
+        "billing_period":   billing_period.isoformat(),
+        "total_actions":    total_actions,
+        "overflow_actions": overflow,
+    })

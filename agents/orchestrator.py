@@ -2,8 +2,9 @@ import openai
 import json
 import os
 import logging
-from agents.quote_agent import add_product_to_quote, quote_agent
+from agents.quote_agent import quote_agent
 from agents.product_agent import product_agent
+from agents.bundles_agent import bundles_agent
 from agents.admin_agent import admin_agent
 from agents.approvals_agent import approval_agent
 from dotenv import load_dotenv
@@ -121,6 +122,8 @@ def orchestrate_request(user, user_message, session_data):
     - "ShowRules"
     - "UpdateRule" (Use this when the user wants to update a rule)
     - "DeleteRule" (Use this when the user wants to delete a rule)
+    - "AddProductToBundle" (Use this when the user wants to add any product to bundle)
+    - "DeleteBundleComponentFromQuote" (Use this when the user wants to delete any bundle option from quote)
     """
     try:
         response = client.chat.completions.create(
@@ -347,6 +350,10 @@ def get_action_map():
         # Product-related actions handled by product_agent
         "CreateProductRecord": product_agent,
         "UpdateProductRecord": product_agent,
+
+        # Bundles-related actions handled by bundles_agent
+        "AddProductToBundle": bundles_agent,
+        "DeleteBundleComponentFromQuote": bundles_agent,
 
         # Approval-related actions handled by approval_agent
         "SubmitForApproval": approval_agent,

@@ -6,6 +6,7 @@ from django.contrib.auth import views as auth_views
 from django.shortcuts import redirect
 from django.contrib.auth.decorators import login_required
 from cpq.views import root_redirect
+from dashboard.views import get_tenant_usage
 
 urlpatterns = [
     path('', root_redirect),
@@ -17,7 +18,13 @@ urlpatterns = [
     path('hubspot/', include('hubspot.urls')),
     path('login/', auth_views.LoginView.as_view(template_name='auth/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
+    
+    ### API Endpoints
+    path('api/usage/', get_tenant_usage, name='get_tenant_usage'),
+    path("api/v1/", include("api.urls")),
 ]
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+

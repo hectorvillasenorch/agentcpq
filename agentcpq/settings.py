@@ -10,6 +10,7 @@ NGROK_FULL_URL = "https://0d0e3e34c51c.ngrok-free.app"
 NGROK_URI = "0d0e3e34c51c.ngrok-free.app"
 
 load_dotenv()
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = False
@@ -53,12 +54,14 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "cpq",
+    "agentcpq",
     "agents",
     "dashboard",
     "salesforce",
     "hubspot",
     'django.contrib.humanize',
     'storages',
+    'api',
 ]
 
 MIDDLEWARE = [
@@ -96,7 +99,6 @@ WSGI_APPLICATION = "agentcpq.wsgi.application"
 
 # Database
 DATABASES = {
-
     'default': dj_database_url.config(default=config('DATABASE_URL'))
 }
 
