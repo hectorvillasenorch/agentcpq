@@ -35,7 +35,7 @@ from .utils.quote_agent.db_helpers import get_or_create_account_and_opportunity,
 
 # General Helpers
 from .utils.quote_agent.general_helpers import get_active_quote, set_active_quote_to_session_data, get_quote_details, get_backup_value_from_quote_line, format_currency, wrap_text
-from .utils.quote_agent.general_helpers import get_document_pdf
+from .utils.quote_agent.general_helpers import get_document_pdf, get_backup_value_from_quote
 
 # ✅ Load environment variables
 load_dotenv()
@@ -352,8 +352,15 @@ def delete_quote_line(user, user_message, session_data):
             
             # Check is quote line exists in active quote
             try:
-                quote_line = QuoteLine.objects.get(quote=quote, product=product)
-                quote_line.delete()
+                quote_line = QuoteLine.objects.get(quote=quote, product=product, is_bundle_child=False)
+
+                if quote_line.is_bundle_child: # If quote line is a bundle child, preload bundle parent, then delete quote line bundle child, finally save bundle update Unit_Price
+                    bundle = quote_line.parent_line
+                    quote_line.delete()
+                    bundle.save()
+                else: # If quote line is not a bundle child
+                    quote_line.delete()
+                
                 log_action_usage("DeleteQuoteLine", user, "Quote", quote.name)
 
                 response_message += f"✅ The quote line with product SKU '{product.sku}' was successfully deleted from quote '{quote.name}'.<br>"
@@ -591,13 +598,13 @@ def update_quote_from_ui(user,user_message, session_data):
         json_match = re.search(r'\{.*\}', user_message)
 
         if user_message.startswith("Update Quote: ") and json_match:
+            print(f"mensaje: {user_message}")
             json_payload = user_message.replace("Update Quote: ", "", 1).strip()
 
             data = json.loads(json_payload)
             quote_name = data["quote"]
             print(f"\n\n{quote_name}\n\n")
 
-            # Save original values in case something went wrong and restart values on UI
             #original_value = get_backup_value_from_quote_line(json_payload, quote)
             try:
                 quote = Quote.objects.get(name=quote_name)
@@ -612,9 +619,14 @@ def update_quote_from_ui(user,user_message, session_data):
             data["quote_id"] = quote.id
             del data["quote"]  # Delete previous key
 
+            # Save original values in case something went wrong and restart values on UI
+            original_value = get_backup_value_from_quote(json_payload, quote)
+
             json_payload = json.dumps(data)
 
             response = save_quote_update(json_payload)
+
+            print(f"Duque hijo de puta: {response}")
 
             quote.refresh_from_db()
 
@@ -630,7 +642,7 @@ def update_quote_from_ui(user,user_message, session_data):
             else:
                 return {
                     "message": response.get("message"),
-                    "original_value": "original_value",
+                    "original_value": original_value,
                     "hiddenMessage": True
                 }
     except Exception as e:

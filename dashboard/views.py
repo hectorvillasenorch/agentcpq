@@ -1,6 +1,6 @@
 from django.apps import apps
 from django.shortcuts import render, get_object_or_404, redirect
-from cpq.models import Product, Quote,QuoteLine, CustomObject, CustomField, CustomFieldValue, CustomRecord,Account, ActionUsage, Tenant, TenantUsageLog
+from cpq.models import Product, Quote,QuoteLine, CustomObject, CustomField, CustomFieldValue, CustomRecord,Account, ActionUsage, Tenant, TenantUsageLog, Option
 from cpq.views import set_primary_quote
 from salesforce.models import SalesforceToken
 from hubspot.models import HubspotToken
@@ -51,6 +51,12 @@ def dashboard(request):
         return HttpResponseForbidden("You do not have access to the setup view.")
     
     products = Product.objects.all() if view == "products" else None
+    options = Option.objects.all() if view == "products" else None
+    bundles = Product.objects.filter(is_bundle=True) 
+
+    if products:
+        for product in products:
+            product.bundle_options = [opt for opt in options if opt.parent_product == product]
 
     custom_objects = CustomObject.objects.all()
 
@@ -106,6 +112,8 @@ def dashboard(request):
 
     return render(request, "dashboard.html", {
         "products": products,
+        "options": options,
+        "bundles": bundles,
         "grouped_quotes": grouped_quotes.items(),
         "is_setup": is_setup,
         "is_authenticated": is_authenticated,

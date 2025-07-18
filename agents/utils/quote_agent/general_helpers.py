@@ -82,6 +82,9 @@ def get_quote_details(quote):
             "discount_amount": str(f"${ql.discount_amount}" if ql.discount_amount else "$0"),
             "is_subscription": ql.is_subscription,
             "term": ql.term,
+            "is_bundle_child": ql.is_bundle_child,
+            "bundle_name": ql.parent_line.product_name if ql.is_bundle_child else "",
+            "is_bundle_component_required": ql.product_option.is_required if ql.is_bundle_child else ""
         }
 
         # Agregar los campos custom
@@ -177,6 +180,20 @@ def get_backup_value_from_quote_line(json_payload, quote):
 
     if field in {"quantity", "term", "unit_price", "discount_percentage", "discount_amount"}:
         value = getattr(quote_line, field)
+
+    return float(value)
+
+def get_backup_value_from_quote(json_payload, quote):
+    # Transform to valid JSON
+    update_quote = json.loads(json_payload)
+
+    # Get quote line item from db
+    quote = Quote.objects.get(id=quote.id)
+
+    field = update_quote["field"]
+
+    if field in {"discount_percentage", "discount_amount"}:
+        value = getattr(quote, field)
 
     return float(value)
 

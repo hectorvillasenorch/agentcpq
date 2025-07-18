@@ -1,5 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage
+from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage, Option
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt 
 from django.apps import apps
@@ -33,10 +33,12 @@ def root_redirect(request):
 def product_list(request):
     """Fetch all products and display them in a table."""
     products = Product.objects.all()
-    return render(request, "products.html", {"products": products})
+    options = Option.objects.all()
+    return render(request, "products.html", {"products": products, "options": options})
 
 def product_detail(request, product_id):
     """View detailed product information."""
+    print("product detail")
     product = get_object_or_404(Product, id=product_id)
     return render(request, "product_detail.html", {"product": product})
 
