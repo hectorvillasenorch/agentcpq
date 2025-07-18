@@ -1,0 +1,119 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap');
+
+/* =============== Base =============== */
+html,body{height:100%;margin:0;font-family:'Euclid Circular A',sans-serif;background:#12223c;color:#313133}
+.login-wrapper{display:flex;height:100vh;overflow:hidden}
+
+/* =============== Left pane =============== */
+/* ==== Left pane ==== */
+.login-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: #fff;
+}
+
+/* ==== Logo ==== */
+.login-logo {
+  width: 220px;
+  margin-bottom: 24px;
+}
+
+/* ==== Form ==== */
+.login-form {
+  width: 100%;
+  max-width: 360px;
+}
+
+/* ==== Inputs & Labels ==== */
+.input-field {
+  position: relative;
+  margin-top: 1.5rem; /* space between fields */
+}
+
+/* the text/pw input itself */
+.input-field input[type="text"],
+.input-field input[type="password"] {
+  width: 100%;
+  padding: 14px 16px;           /* <-- restored padding */
+  font-size: 16px;
+  color: #333;
+  background: #f4f5f7;
+  border: none;
+  border-radius: 6px;
+  box-shadow: none;             /* remove any Materialize underline */
+}
+
+/* 1) Increase the base label size */
+.input-field label {
+  left: 10px;
+  font-size: 1.2rem;       /* 16px instead of 14px */
+  color: #777;           /* your default label color */
+}
+
+/* 2) Float the label up but keep the same color, slightly larger */
+.input-field input:focus + label,
+.input-field input:not(:placeholder-shown) + label {
+  top: -33px;
+  font-size: 0.975rem;   /* 14px floating size */
+  /* no color: … here, so it stays #777 */
+  background: #fff;
+  padding: 0 4px;
+}
+/* remove default Materialize bottom-border on focus */
+.input-field input:focus {
+  box-shadow: none !important;
+  border-bottom: none !important;
+  color:#777;
+}
+input:not([type]):focus:not([readonly])+label, input[type=text]:not(.browser-default):focus:not([readonly])+label, input[type=password]:not(.browser-default):focus:not([readonly])+label, input[type=email]:not(.browser-default):focus:not([readonly])+label, input[type=url]:not(.browser-default):focus:not([readonly])+label, input[type=time]:not(.browser-default):focus:not([readonly])+label, input[type=date]:not(.browser-default):focus:not([readonly])+label, input[type=datetime]:not(.browser-default):focus:not([readonly])+label, input[type=datetime-local]:not(.browser-default):focus:not([readonly])+label, input[type=tel]:not(.browser-default):focus:not([readonly])+label, input[type=number]:not(.browser-default):focus:not([readonly])+label, input[type=search]:not(.browser-default):focus:not([readonly])+label, textarea.materialize-textarea:focus:not([readonly])+label{
+  color: #fc6a3d !important;
+}
+/* ===== Adjust login button width & rounding ===== */
+.login-form .login-btn {
+    width: 100%;
+    border-radius: 24px;
+    margin-top: 1.5rem;
+    font-size: 1rem;
+    padding: 0.5rem 6rem 0.5rem 6rem;
+    height: 3.5rem;
+    margin: 2rem 1rem;
+    background: #1a2739;
+}
+
+/* keep hover state consistent */
+.login-form .login-btn:hover {
+  background-color: #fc6a3d; 
+}
+
+
+/* =============== Right pane =============== */
+.login-right{flex:1;position:relative;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#1f2937 0%,#12223c 50%, #233049 100%);color:#fff;overflow:hidden}
+
+#node-canvas{position:absolute;inset:0;z-index:0; width:100%;}
+
+.robot-scene{position:relative;z-index:2;text-align:center}
+.robot{width:300px;animation:floatBot 3s ease-in-out infinite}
+/* .takeover-text{font-size:1.5rem;white-space:nowrap;overflow:hidden;border-right:2px solid #fff;width:0;opacity:0} */
+.takeover-text {
+  opacity: 0;                   /* keep it hidden until JS runs */
+  white-space: nowrap;          /* keep the text on one line */
+  overflow: hidden;             /* hides the “backspacing” effect if you want */
+  /* border-right: 2px solid #fff; */
+  width: 2px;
+  font-size: 1.5rem;  
+  text-shadow: 1px 1px 1.5px #1f1f1f;
+}
+
+/* =============== Animations =============== */
+@keyframes floatBot{0%,100%{transform:translateY(-6px)}50%{transform:translateY(6px)}}
+
+/* =============== Responsive =============== */
+@media(max-width:992px){
+  .login-wrapper{flex-direction:column}
+  .login-right{display:none}
+}
