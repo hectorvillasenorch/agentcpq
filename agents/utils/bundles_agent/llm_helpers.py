@@ -174,6 +174,169 @@ def extract_bundle_components(user_message):
         logging.error(f"❌ Error extracting bundle components details: {str(e)}")
         return None
     
+# FUNCTION TO UPDATE OPTION (UPDATE_BUNBLE_OPTION)
+def extract_option_updates(user_message):
+    """Uses GPT to extract the option updates."""
+
+    prompt = f"""
+    Extract structured option updates from the following request.
+    Return a JSON array where each object represents an option update and contains:
+
+    - "parent_product_sku" (string): The SKU of the bundle
+    - "parent_product_name" (string):  The name of the bundle
+    - "updates" (array): a list of product to update
+        - "product_option_sku" (string): The sku of the product_option to update
+        - "product_option_name" (string): The name of the product_option to update
+        - "quantity" (int)
+        - "is_required" (boolean)
+        - "min_quantity" (int)
+        - "max_quantity" (int)
+        - "default_selected" (boolean)
+        - "group_name" (string)
+
+    **Example Input & Output:**
+    User: "update option for component Product1 in bundle KIT-001 set quantity to 2, required and max quantity to 15."
+    Response:
+    [
+        {{
+            "parent_product_sku": "KIT-001",
+            "parent_product_name": null,
+            "updates": {{
+                {{
+                    "product_option_sku": null,
+                    "product_option_name": "Product1",
+                    "quantity": 2,
+                    "is_required": true,
+                    "min_quantity": 15,
+                    "max_quantity": null,
+                    "default_selected": null,
+                    "group_name": null
+                }}
+            }}
+        }}
+    ]
+
+    **Example Input & Output 2:**
+    User: "udpate option for product YHGT-UJI-654 in bundle Example Kit Bundle set quantity to 15, not required, min quantity to 5, max quantity to 20, selected and Expensive Products as group name."
+    Response:
+    [
+        {{
+            "parent_product_sku": null,
+            "parent_product_name": "Example Kit Bundle",
+            "updates": {{
+                {{
+                    "product_option_sku": "YHGT-UJI-654",
+                    "product_option_name": null,
+                    "quantity": 15,
+                    "is_required": false,
+                    "min_quantity": 5,
+                    "max_quantity": 20,
+                    "default_selected": true,
+                    "group_name": "Expensive Products"
+                }}
+            }}
+        }}
+    ]
+    
+    
+    **Example Input & Output 2:**
+    User: "udpate option for product SKU-987 in bundle JHU-098 and Easy Tool in bundle Construction Tool Kit set required and selected."
+    Response:
+    [
+        {{
+            "parent_product_sku": "JHU-098",
+            "parent_product_name": null,
+            "updates": {{
+                {{
+                    "product_option_sku": "SKU-987",
+                    "product_option_name": null,
+                    "quantity": null,
+                    "is_required": true,
+                    "min_quantity": null,
+                    "max_quantity": null,
+                    "default_selected": true,
+                    "group_name": null
+                }}
+            }}
+        }},
+        {{
+            "parent_product_sku": null,
+            "parent_product_name": "Construction Tool Kit",
+            "updates": {{
+                {{
+                    "product_option_sku": null",
+                    "product_option_name": "Easy Tool",
+                    "quantity": null,
+                    "is_required": true,
+                    "min_quantity": null,
+                    "max_quantity": null,
+                    "default_selected": true,
+                    "group_name": null
+                }}
+            }}
+        }}
+    ]
+
+    **Requirements:**
+    - If no parent_product_sku are found in the message, return null as parent_product_sku
+    - If no parent_product_name are found in the message, return null as parent_product_name
+    - If no updates are found in the message, return null as updates
+        - If no product_option_sku are found in the message, return null as product_option_sku
+        - If no product_option_name are found in the message, return null as product_option_name
+        - If no quantity are found in the message, return null as quantity
+        - If no is_required are found in the message, return null as is_required
+        - If no min_quantity are found in the message, return null as min_quantity
+        - If no max_quantity are found in the message, return null as max_quantity
+        - If no default_selected are found in the message, return null as default_selected
+        - If no group_name are found in the message, return null as group_name
+
+    **IMPORTANT:** **Return a valid JSON array only of product objects. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
+
+    User Request: "{user_message}"
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Extract structured updates details for quote line."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        # ✅ Extract raw response
+        raw_response = response.choices[0].message.content.strip()
+        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+
+        # ✅ Ensure valid JSON response
+        try:
+            extracted_updates = json.loads(raw_response)
+            if isinstance(extracted_updates, list) and all(
+                isinstance(bundle, dict) and
+                "parent_product_sku" in bundle and
+                "parent_product_name" in bundle and
+                "updates" in bundle and
+                isinstance(bundle["updates"], list) and all(
+                    isinstance(component, dict) and
+                    all(key in component for key in [
+                        "product_option_sku", "product_option_name", "quantity", "is_required", "min_quantity", "max_quantity", "default_selected", "group_name"
+                    ])
+                    for component in bundle["updates"]
+                )
+                for bundle in extracted_updates
+            ):
+                return extracted_updates
+            else:
+                logging.warning("⚠️ GPT response is not in expected format.")
+                return None
+        except json.JSONDecodeError:
+            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
+            return None
+
+    except Exception as e:
+        logging.error(f"❌ Error extracting option updates: {str(e)}")
+        return None
+    
 # FUNCTION TO EXTRACT DELETING OPTIONS (DELETE_BUNDLE_OPTION_FROM_QUOTE)
 def extract_delete_options_from_quote(user_message):
     """Uses GPT to extract the bundle options that will be deleted."""

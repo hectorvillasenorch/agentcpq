@@ -229,10 +229,31 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
                                 term=None,
                                 discount_type=None,
                                 discount_percentage=Decimal("0.00"),
-                                discount_amount=Decimal("0.00")
+                                discount_amount=Decimal("0.00"),
+                                is_bundle_component_selected=True # Indicates that it is and option selected
                             )
 
                             bundle_response_message += f"&emsp;🔧 Added {option.quantity}x {option.product_option.sku}/{option.product_option.name} ({option.parent_product})<br>"
+                        
+                        elif option.default_selected == False and option.product_option:
+                            QuoteLine.objects.create(
+                                quote=quote,
+                                product=option.product_option,
+                                quantity=int(option.quantity),
+                                parent_line=quote_line, # Bundle parent quote line
+                                is_bundle_parent=False,
+                                is_bundle_child=True,
+                                product_option=option,
+                                is_subscription=option.product_option.is_subscription,
+                                term=None,
+                                discount_type=None,
+                                discount_percentage=Decimal("0.00"),
+                                discount_amount=Decimal("0.00"),
+                                is_bundle_component_selected=False # Indicates that it is and option selected
+                            )
+
+                            bundle_response_message += f"&emsp;🔘 Pending: {option.quantity}x {option.product_option.sku}/{option.product_option.name} - You can add this item to the quote.<br>"
+
                 except Exception as e:
                     print(f"Error: {e}")
 

@@ -691,6 +691,43 @@ function renderQuoteDetails(quote) {
       html += `<tr${item.is_bundle_child ? ' class="bundle-child"' : ''}>`;
       console.log("Item: ", item);
 
+      if (item.is_bundle_child == true && item.is_bundle_component_selected == false) {
+        quote.rendered_fields.forEach((field, index) => {
+          if (index == 0 && field != "Discount"){
+            html += `
+                <td>
+                  <div class="centered-td" style="color: gray; font-size: 0.65em">
+                  Product available but not selected: ${item.sku}
+                  </div>
+                </td>
+              `;
+          }
+          else if (field == "Discount"){
+            html += `
+                <td>
+                  <div class="centered-td" style="color: gray; font-size: 0.65em">
+                  </div>
+                </td>
+              `;
+            html += `
+              <td>
+                <div class="centered-td" style="color: gray; font-size: 0.65em">
+                </div>
+              </td>
+            `;
+          }
+          else {
+            html += `
+                <td>
+                  <div class="centered-td" style="color: gray; font-size: 0.65em">
+                  </div>
+                </td>
+              `;
+          }
+        });
+      }
+      else {
+
       quote.rendered_fields.forEach(field => {
         // Limpiar campos como Product.UOM
         const cleanedField = field.replace(/^Product\./, "");
@@ -787,6 +824,8 @@ function renderQuoteDetails(quote) {
             <td class="centered-td">${item[cleanedField] ?? "---"}</td>`;
         }
       });
+
+      }
 
       html += `</tr>`;
     }

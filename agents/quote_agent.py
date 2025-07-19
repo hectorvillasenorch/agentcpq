@@ -353,12 +353,7 @@ def delete_quote_line(user, user_message, session_data):
             try:
                 quote_line = QuoteLine.objects.get(quote=quote, product=product, is_bundle_child=False)
 
-                if quote_line.is_bundle_child: # If quote line is a bundle child, preload bundle parent, then delete quote line bundle child, finally save bundle update Unit_Price
-                    bundle = quote_line.parent_line
-                    quote_line.delete()
-                    bundle.save()
-                else: # If quote line is not a bundle child
-                    quote_line.delete()
+                quote_line.delete()
                 
                 log_action_usage("DeleteQuoteLine", user, "Quote", quote.name)
 

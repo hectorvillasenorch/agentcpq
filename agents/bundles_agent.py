@@ -11,10 +11,10 @@ from .utils.quote_agent.db_helpers import log_action_usage
 from .utils.quote_agent.general_helpers import get_active_quote
 
 #LLM Helpers
-from .utils.bundles_agent.llm_helpers import extract_bundle_components, extract_delete_options_from_quote
+from .utils.bundles_agent.llm_helpers import extract_bundle_components, extract_delete_options_from_quote, extract_option_updates
 
 # Record Helpers
-from .utils.bundles_agent.record_helpers import handle_bundle_components, handle_delete_options_from_quote
+from .utils.bundles_agent.record_helpers import handle_bundle_components, handle_delete_options_from_quote, handle_option_updates
 
 
 load_dotenv()
@@ -27,7 +27,10 @@ def bundles_agent(user, action, user_message, session_data):
 
     # ✅ Action-to-function mapping
     action_map = {
-        "AddProductToBundle": create_bundle_components,
+        "AddProductToBundle": create_bundle_components, # For the future, modify this function name to create_bundle_option
+        "UpdateBundleOption": update_bundle_option,
+        #"DeleteBundleOption": delete_bundle_option,
+        #"UpdateBundleComponentInQuote": update_bundle_component_in_quote,
         "DeleteBundleComponentFromQuote": delete_bundle_option_from_quote,
         # "UpdateBundle": generate_quote_pdf,
     }
@@ -95,4 +98,34 @@ def delete_bundle_option_from_quote(user, user_message, session_data):
     else:
         return {
             "message": f"⚠️ Error: Something went wrong — no bundle component(s) quote line was deleted from the quote. Please try again or verify your input.<br><br>{response_message}"
+        }
+    
+def update_bundle_option(user, user_message, session_data):
+    """Updatins Bundle Option"""
+    logging.info("🔄 Updating bundle option...")
+
+    extracted_option_updates = extract_option_updates(user_message)
+
+    if not extracted_option_updates:
+        
+        return {
+        "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
+        }
+    
+    response_message = ""
+
+    # ✅ Handle updates option
+    response_message, updated_options = handle_option_updates(extracted_option_updates, response_message)
+
+    # ✅ Return
+    if not updated_options:
+        return {
+            "message": f"No options were updated. <br><br>{response_message}",
+            "temporaryMessage": True
+        } 
+    
+    return {
+        "message": response_message,
+        "temporaryMessage": True
+        
         }

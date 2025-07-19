@@ -117,7 +117,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'agentcpq',
         'USER': 'root',
-        'PASSWORD': 'password',  # If set
+        'PASSWORD': 'agentcpq2025!',  # If set
         'HOST': 'localhost',
         'PORT': '3306',
         'OPTIONS': {
