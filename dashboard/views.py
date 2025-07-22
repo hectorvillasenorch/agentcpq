@@ -275,7 +275,7 @@ def get_tenant_usage(request):
 
     # 7) Upsert
     TenantUsageReport.objects.update_or_create(
-        tenant=tenant,
+        tenant_id=tenant.id,
         tenant_long_id=tenant.tenant_id,
         billing_period=billing_period,
         defaults={
