@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact
+from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact,Tenant
 from .forms import  get_dynamic_form
 from django.contrib.contenttypes.models import ContentType
 
@@ -28,7 +28,7 @@ admin.site.register(Lead, LeadAdmin)
 
 class AccountAdmin(DynamicCustomFieldAdmin):
     form = get_dynamic_form(Account, crm="AgentCPQ", object_type="Account")
-
+    list_display = ('tenant_id','name', 'industry', 'website', 'phone', 'created_at', 'updated_at')
     def get_fieldsets(self, request, obj=None):
         return [(None, {'fields': list(self.form().fields.keys())})]
 admin.site.register(Account, AccountAdmin)
@@ -36,6 +36,7 @@ admin.site.register(Account, AccountAdmin)
 
 class QuoteAdmin(DynamicCustomFieldAdmin):
     form = get_dynamic_form(Quote, crm="AgentCPQ", object_type="Quote")
+    list_display = ('name','account', 'opportunity', 'net_amount', 'status', 'expiration_date', 'created_at', 'updated_at')
 
 admin.site.register(Quote, QuoteAdmin)
 # admin.site.register(Account)
@@ -47,7 +48,7 @@ class ActivityInline(admin.TabularInline):  # or admin.StackedInline
 
 class OpportunityAdmin(DynamicCustomFieldAdmin):
     form = get_dynamic_form(Opportunity, crm="AgentCPQ", object_type="Opportunity")
-
+    list_display = ('name','amount', 'account', 'stage', 'expected_close_date', 'primary_quote', 'created_at', 'updated_at')
     def get_fieldsets(self, request, obj=None):
         return [(None, {'fields': list(self.form().fields.keys())})]
 
@@ -147,3 +148,13 @@ class ContactAdmin(DynamicCustomFieldAdmin):
 
 # register with the admin site
 admin.site.register(Contact, ContactAdmin)
+
+class TenantAdmin(DynamicCustomFieldAdmin):
+    form = get_dynamic_form(Tenant, crm="AgentCPQ", object_type="Tenant")
+
+    def get_fieldsets(self, request, obj=None):
+        return [(None, {'fields': list(self.form().fields.keys())})]
+
+    list_display = ('name', 'api_key', 'api_secret', 'logo')
+
+admin.site.register(Tenant, TenantAdmin)
