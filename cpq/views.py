@@ -283,7 +283,7 @@ def create_custom_field(request):
             
             return redirect('cpq:custom_fields')  # or wherever you want to go after save
     else:
-        form = CustomFieldForm()
+        form = CustomFieldForm(initial={'crm': 'AgentCPQ'})
     return render(request, 'create_custom_field.html', {'form': form})
 
 @login_required

@@ -193,9 +193,19 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)  # Suppress low-level HT
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
+
 # Salesforce OAuth settings for your connected app
 SALESFORCE_CLIENT_ID = os.getenv("SF_CID")
 SALESFORCE_CLIENT_SECRET = os.getenv("SF_SECRET")
 SALESFORCE_REDIRECT_URI = "https://b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.ngrok-free.app/salesforce/callback"
 SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/authorize"
 SALESFORCE_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
+
+# For restar password
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'temporal1.wetransfer@gmail.com'
+EMAIL_HOST_PASSWORD = 'xatf wbzy vles rwua'
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER

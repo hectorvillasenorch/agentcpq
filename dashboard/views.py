@@ -17,6 +17,9 @@ from django.http import HttpResponseForbidden
 from django.db.models import Count
 from django.utils.timezone import now
 from django.db.models.functions import TruncMonth
+from django.contrib.auth.views import PasswordResetView
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
 
 @login_required
 def dashboard(request):
@@ -135,4 +138,17 @@ def get_lookup_data_for_form(custom_object):
             lookup_data[field.name] = []
     return lookup_data
 
+class CustomPasswordResetView(PasswordResetView):
+    def send_mail(self, subject_template_name, email_template_name,
+                  context, from_email, to_email, html_email_template_name=None):
 
+        subject = render_to_string(subject_template_name, context).strip()
+        body = render_to_string(email_template_name, context)
+
+        email_message = EmailMultiAlternatives(subject, body, from_email, [to_email])
+
+        if html_email_template_name:
+            html_email = render_to_string(html_email_template_name, context)
+            email_message.attach_alternative(html_email, 'text/html')
+
+        email_message.send()
