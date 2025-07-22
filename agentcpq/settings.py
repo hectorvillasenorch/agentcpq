@@ -17,6 +17,7 @@ DEBUG = False
 
 
 ALLOWED_HOSTS = [
+    '.herokuapp.com', 
     'rcontractorspv.agentcpq.ai'
     ]
 
