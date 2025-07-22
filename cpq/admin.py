@@ -155,6 +155,6 @@ class TenantAdmin(DynamicCustomFieldAdmin):
     def get_fieldsets(self, request, obj=None):
         return [(None, {'fields': list(self.form().fields.keys())})]
 
-    list_display = ('name', 'api_key', 'api_secret', 'logo')
+    list_display = ('tenant_id','name', 'plan', 'actions_limit', 'created_at', 'version')
 
 admin.site.register(Tenant, TenantAdmin)
