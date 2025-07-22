@@ -90,7 +90,7 @@ class Account(models.Model):
     city = models.CharField(max_length=100, blank=True, null=True)
     state = models.CharField(max_length=100, blank=True, null=True)
     zip_code = models.CharField(max_length=20, blank=True, null=True)
-    tenant_id = models.CharField(max_length=30, unique=True)
+    tenant_id = models.CharField(max_length=30, unique=True,null=True)
     # country = models.CharField(max_length=100, blank=True, null=True)
     
 
