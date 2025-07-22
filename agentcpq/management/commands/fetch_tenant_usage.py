@@ -24,7 +24,7 @@ class Command(BaseCommand):
                 "end": end.isoformat()
             }
             path = f"/api/usage/?{urlencode(params)}"
-            use_dev = True  # ← Toggle for testing
+            use_dev = False  # ← Toggle for testing
 
             if use_dev:
                 # Local development
