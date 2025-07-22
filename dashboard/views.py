@@ -176,20 +176,39 @@ def get_grouped_user_quotes(user):
 
 @require_GET
 def get_tenant_usage(request):
-    # 1) Authentication headers
     api_key   = request.headers.get("X-API-KEY")
     ts_header = request.headers.get("X-Timestamp")
     sig       = request.headers.get("X-Signature")
 
+    # Parse start param early so we can use it in logs
+    start_str = request.GET.get("start")
+    try:
+        start = timezone.datetime.fromisoformat(start_str).date() if start_str else None
+    except Exception:
+        start = None
+
+    # 1) Check headers early
     if not (api_key and ts_header and sig):
-        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=403,message="Missing authentication headers")
+        TenantUsageLog.objects.create(
+            tenant_id=None,
+            billing_period=start,
+            status="failure",
+            http_status=403,
+            message="Missing authentication headers"
+        )
         return HttpResponseForbidden("Missing authentication headers")
 
-    # 2) Tenant lookup
+    # 2) Lookup tenant by API key
     try:
         tenant = Tenant.objects.get(api_key=api_key)
     except Tenant.DoesNotExist:
-        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=403,message="Invalid API key")
+        TenantUsageLog.objects.create(
+            tenant_id=None,
+            billing_period=start,
+            status="failure",
+            http_status=403,
+            message=f"Invalid API key: {api_key}"
+        )
         return HttpResponseForbidden("Invalid API key")
 
     # 3) Parse & validate the X-Timestamp header
