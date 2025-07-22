@@ -55,7 +55,10 @@ class Command(BaseCommand):
                     continue
 
                 data = res.json()
+                print(f"✅ ✅ ✅ ✅ ✅ DATA ✅ ✅ ✅  {tenant.id}: {data['tenant_id']}")
+                
                 usage_report, created = TenantUsageReport.objects.update_or_create(
+                    tenant_id=tenant.id,
                     tenant_long_id=data["tenant_id"],
                     billing_period=start,
                     defaults={
