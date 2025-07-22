@@ -23,7 +23,7 @@
   <script src="{% static 'js/agents/login.js' %}" defer></script>
   <div class="login-wrapper">
     <section class="login-left z-depth-1">
-      <img src="/media/company_logo.png" class="login-logo" alt="AgentCPQ" />
+      <img src="/static/img/company_logo.png" class="login-logo" alt="AgentCPQ" />
       <form class="login-form" method="post" action="{% url 'login' %}">
         {% csrf_token %}
         {{ form.non_field_errors }}
