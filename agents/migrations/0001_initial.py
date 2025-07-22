@@ -41,15 +41,6 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="ChatMessage",
             fields=[
-<<<<<<< HEAD
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('sender', models.CharField(max_length=10)),
-                ('content', models.TextField()),
-                ('timestamp', models.DateTimeField(auto_now_add=True)),
-                ('hiddenMessage', models.BooleanField(default=False)),
-                ('session', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='messages', to='agents.chatsession')),
-
-=======
                 (
                     "id",
                     models.BigAutoField(
@@ -71,7 +62,6 @@ class Migration(migrations.Migration):
                         to="agents.chatsession",
                     ),
                 ),
->>>>>>> 024c4bf5ff500b67de1ba357f93c40a4ac8780c4
             ],
         ),
     ]
