@@ -5,148 +5,26 @@
   <meta charset="UTF-8" />
   <title>Login | AgentCPQ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Materialize & Icons -->
   <link rel="stylesheet" href="{% static 'materialize/materialize.min.css' %}" />
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+
+  <!-- Your custom CSS -->
   <link rel="stylesheet" href="{% static 'css/login.css' %}" />
+
+  <!-- 1️⃣ GSAP core (must come first) -->
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js?plugins=TextPlugin,ScrollTrigger"></script>
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'materialize/materialize.min.css' %}">
-  <script src="{% static 'materialize/materialize.min.js' %}" defer></script>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap');
 
-  html, body {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    font-family: 'Space Grotesk', sans-serif;
-    color: #313133;
-  }
-
-  .login-wrapper {
-    display: flex;
-    height: 100vh;
-    overflow: hidden;
-  }
-  .login-btn {
-    background-color: #fc6a3d;
-    border-radius: 4px !important;
-    margin-top: 20px;
-    font-weight: bold;
-    box-shadow: none;
-    width: 130px;
-}
-
-  .login-btn:hover {
-    background-color: #fc6a3d;
-    border-radius: 4px;
-    margin-top: 20px;
-    font-weight: bold;
-    box-shadow: none;
-    width: 130px;
-}
-
-  .login-left, .login-right {
-    flex: 1;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 40px;
-  }
-
-  .login-left {
-    flex-direction: column;
-    background-color: #ffffff;
-  }
-
-  .login-right {
-    background-color: #313133;
-    background-image: url('/static/img/img-add-1.jpg');
-    background-repeat: no-repeat;
-    background-size: 100%; /* or 'contain' or custom like '100% 100%' */
-    background-position: top center;
-
-    flex-direction: column;
-    text-align: center;
-  }
-
-  .login-logo {
-    width: 250px;
-    margin-bottom: 20px;
-  }
-
-  .login-title {
-    font-size: 36px;
-    color: #fc6a3d;
-    font-weight: bold;
-    margin-bottom: 16px;
-  }
-
-  .login-form-container {
-    width: 100%;
-    max-width: 400px;
-  }
-
-  .login-btn {
-    background-color: #fc6a3d;
-    border-radius: 8px;
-    margin-top: 20px;
-    font-weight: bold;
-  }
-
-  .input-field input {
-    font-size: 18px;
-    background-color: #1f2937;
-    color: #313133;
-    border-radius: 6px;
-    
-  }
-
-  input:not([type]), input[type=text]:not(.browser-default), input[type=password]:not(.browser-default), input[type=email]:not(.browser-default), input[type=url]:not(.browser-default), input[type=time]:not(.browser-default), input[type=date]:not(.browser-default), input[type=datetime]:not(.browser-default), input[type=datetime-local]:not(.browser-default), input[type=tel]:not(.browser-default), input[type=number]:not(.browser-default), input[type=search]:not(.browser-default), textarea.materialize-textarea:focus {
-   border-bottom: #d7d7d7 solid 1px !important;
-   box-shadow: none !important;
-  }
+  <!-- 3️⃣ Your login logic (deferred so DOM is ready) -->
   
-  .update-box {
-    max-width: 400px;
-    color: #f5f5f5;
-  }
-
-  .update-box h5 {
-    color: #fc6a3d;
-    font-weight: bold;
-  }
-
-  .update-box ul li {
-    padding-left: 8px;
-    margin-bottom: 8px;
-  }
-
-  @media (max-width: 992px) {
-    .login-wrapper {
-      flex-direction: column;
-    }
-
-    .login-right {
-      display: none;
-    }
-
-    .login-left {
-      padding: 20px;
-      height: 100%;
-    }
-  }
-</style>
-
 </head>
 <body>
-<div class="login-wrapper">
-
-  <!-- Left: Login Form -->
-  <div class="login-left">
-    <img src="{% static 'img/logo-bg-white.png' %}" alt="AgentCPQ Logo" class="login-logo" />
-    <div class="login-form-container">
-      <form method="post" action="{% url 'login' %}">
+  <script src="{% static 'js/agents/login.js' %}" defer></script>
+  <div class="login-wrapper">
+    <section class="login-left z-depth-1">
+     <img src="{% static 'img/logo-bg-white.png' %}" alt="AgentCPQ Logo" class="login-logo" />
+      <form class="login-form" method="post" action="{% url 'login' %}">
         {% csrf_token %}
         {{ form.non_field_errors }}
 
