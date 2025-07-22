@@ -13,12 +13,6 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.AddField(
-            model_name="account",
-            name="tenant_id",
-            field=models.CharField(default=1, max_length=30, unique=True),
-            preserve_default=False,
-        ),
-        migrations.AddField(
             model_name="quoteline",
             name="is_bundle_child",
             field=models.BooleanField(default=False),
