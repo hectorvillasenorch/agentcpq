@@ -48,7 +48,7 @@ class ActivityInline(admin.TabularInline):  # or admin.StackedInline
 
 class OpportunityAdmin(DynamicCustomFieldAdmin):
     form = get_dynamic_form(Opportunity, crm="AgentCPQ", object_type="Opportunity")
-    list_display = ('name','amount', 'account', 'stage', 'expected_close_date', 'primary_quote', 'created_at', 'updated_at')
+    list_display = ('name','amount', 'account', 'stage', 'expected_close_date', 'primary_quote', 'created_at')
     def get_fieldsets(self, request, obj=None):
         return [(None, {'fields': list(self.form().fields.keys())})]
 
