@@ -203,6 +203,7 @@ def get_tenant_usage(request):
 
     try:
         tenant = Tenant.objects.get(api_key=api_key)
+        logger.debug("******** TENANT: %s", tenant)
     except Tenant.DoesNotExist:
         TenantUsageLog.objects.create(
             tenant_id=None,
