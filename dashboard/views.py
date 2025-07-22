@@ -180,103 +180,88 @@ def get_tenant_usage(request):
     ts_header = request.headers.get("X-Timestamp")
     sig       = request.headers.get("X-Signature")
 
-    # Parse start param early so we can use it in logs
+    # Parse billing window early
     start_str = request.GET.get("start")
+    end_str   = request.GET.get("end")
     try:
         start = timezone.datetime.fromisoformat(start_str).date() if start_str else None
+        end   = timezone.datetime.fromisoformat(end_str).date() if end_str else None
     except Exception:
-        start = None
+        start, end = None, None
 
-    # 1) Check headers early
+    billing_period = start.replace(day=1) if start else None
+
     if not (api_key and ts_header and sig):
         TenantUsageLog.objects.create(
             tenant_id=None,
-            billing_period=start,
+            billing_period=billing_period,
             status="failure",
             http_status=403,
             message="Missing authentication headers"
         )
         return HttpResponseForbidden("Missing authentication headers")
 
-    # 2) Lookup tenant by API key
     try:
         tenant = Tenant.objects.get(api_key=api_key)
     except Tenant.DoesNotExist:
         TenantUsageLog.objects.create(
             tenant_id=None,
-            billing_period=start,
+            billing_period=billing_period,
             status="failure",
             http_status=403,
             message=f"Invalid API key: {api_key}"
         )
         return HttpResponseForbidden("Invalid API key")
 
-    # 3) Parse & validate the X-Timestamp header
-    ts_header = request.headers.get("X-Timestamp")
-    if not ts_header:
-        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=403,message="Missing timestamp")
-        return HttpResponseForbidden("Missing timestamp")
-
-    # Normalize “Z” to “+00:00” and attempt ISO‐8601 parse
     try:
-        # e.g. "2025-07-15T19:04:07Z" → "2025-07-15T19:04:07+00:00"
         iso_ts = ts_header.replace("Z", "+00:00")
         ts = datetime.fromisoformat(iso_ts)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=dt_timezone.utc)
+        if timezone.is_naive(ts):
+            ts = timezone.make_aware(ts, timezone.utc)
     except ValueError:
-        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=403,message="Bad timestamp format")
-        return HttpResponseForbidden("Bad timestamp format")
-
-    # Ensure it’s timezone‐aware in UTC
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=dt_timezone.utc)
-
-    # Reject if older than 5 minutes
-    if abs((timezone.now() - ts).total_seconds()) > 300:
-        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=403,message="Stale timestamp")
-        return HttpResponseForbidden("Stale timestamp")
-    # Ensure it's timezone-aware in UTC
-    if timezone.is_naive(ts):
-        ts = timezone.make_aware(ts, timezone.utc)
-
-    # Reject if older than 5 minutes
-    if abs((timezone.now() - ts).total_seconds()) > 300:
-        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=403,message="Stale timestamp")
-        return HttpResponseForbidden("Stale timestamp")
-
-    # 4) Build the string to sign
-    path = request.get_full_path()                # e.g. "/api/usage/?start=…&end=…"
-    ts_header = request.headers.get("X-Timestamp")
-    # NOTE: request.body.decode() is "" for GET
-    raw = f"{request.method}{path}{request.body.decode()}{ts_header}"
-    message = raw.encode()
-
-    # 5) Log both sides
-    logger.debug("📫 Django sees path+query: %s", path)
-    logger.debug("📝 Raw message string: %r", raw)
-    expected = hmac.new(tenant.api_secret.encode(), message, hashlib.sha256).hexdigest()
-    logger.debug("✅ Expected signature: %s", expected)
-    logger.debug("🔑 Incoming X-Signature header: %s", request.headers.get("X-Signature"))
-
-    # 5) Parse billing window
-    start_str = request.GET.get("start")
-    end_str   = request.GET.get("end")
-    if not (start_str and end_str):
-        TenantUsageLog.objects.create(tenant_id=tenant.tenant_id,billing_period=start,status="failure",http_status=400,message="start and end parameters required")
-        return HttpResponseBadRequest("start and end parameters required")
-    try:
-        start = timezone.datetime.fromisoformat(start_str).date()
-        end   = timezone.datetime.fromisoformat(end_str).date()
-    except Exception:
         TenantUsageLog.objects.create(
             tenant_id=tenant.tenant_id,
-            billing_period=start,
+            billing_period=billing_period,
+            status="failure",
+            http_status=403,
+            message="Bad timestamp format"
+        )
+        return HttpResponseForbidden("Bad timestamp format")
+
+    if abs((timezone.now() - ts).total_seconds()) > 300:
+        TenantUsageLog.objects.create(
+            tenant_id=tenant.tenant_id,
+            billing_period=billing_period,
+            status="failure",
+            http_status=403,
+            message="Stale timestamp"
+        )
+        return HttpResponseForbidden("Stale timestamp")
+
+    if not (start and end):
+        TenantUsageLog.objects.create(
+            tenant_id=tenant.tenant_id,
+            billing_period=billing_period,
             status="failure",
             http_status=400,
-            message="Invalid date format for start/end"
+            message="start and end parameters required or invalid format"
         )
-        return HttpResponseBadRequest("Invalid date format for start/end")
-    
-        
+        return HttpResponseBadRequest("start and end parameters required")
+
+    # HMAC verification
+    path = request.get_full_path()
+    raw = f"{request.method}{path}{request.body.decode()}{ts_header}"
+    message = raw.encode()
+    expected = hmac.new(tenant.api_secret.encode(), message, hashlib.sha256).hexdigest()
+
+    logger.debug("📫 Path+query: %s", path)
+    logger.debug("📝 Raw message: %r", raw)
+    logger.debug("✅ Expected: %s", expected)
+    logger.debug("🔑 Provided: %s", sig)
+
+    # TODO: Optionally check if `sig != expected`
 
     # 6) Aggregate usage
     total_actions = (
@@ -287,26 +272,25 @@ def get_tenant_usage(request):
     )
     overflow = max(0, total_actions - (tenant.actions_limit or 0))
 
-    # 7) Upsert the usage report
-    billing_period = start.replace(day=1)
+    # 7) Upsert
     TenantUsageReport.objects.update_or_create(
         tenant=tenant,
         tenant_long_id=tenant.tenant_id,
         billing_period=billing_period,
         defaults={
-            "total_actions":    total_actions,
+            "total_actions": total_actions,
             "overflow_actions": overflow,
         }
     )
-    # After each request
+
     TenantUsageLog.objects.create(
         tenant_id=tenant.tenant_id,
-        billing_period=start,
+        billing_period=billing_period,
         status="success",
         http_status=200,
         message="Fetched successfully"
     )
-    # 8) Return JSON
+
     return JsonResponse({
         "tenant_id":        tenant.tenant_id,
         "billing_period":   billing_period.isoformat(),
