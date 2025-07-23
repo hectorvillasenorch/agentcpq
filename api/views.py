@@ -3,7 +3,7 @@ import uuid
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from cpq.models import Lead  # Adjust path as needed
+from cpq.models import Lead, Tenant  # Adjust path as needed
 
 @csrf_exempt
 def receive_lead(request):
