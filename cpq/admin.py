@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact,Tenant
+from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact,Tenant, ChatMessage, ChatSession
 from .forms import  get_dynamic_form
 from django.contrib.contenttypes.models import ContentType
 
@@ -158,3 +158,13 @@ class TenantAdmin(DynamicCustomFieldAdmin):
     list_display = ('tenant_id','name', 'plan', 'actions_limit', 'created_at', 'version')
 
 admin.site.register(Tenant, TenantAdmin)
+
+class ChatSessionAdmin(DynamicCustomFieldAdmin):
+    list_display = ('title','user', 'session_id','created_at')
+    
+admin.site.register(ChatSession, ChatSessionAdmin)
+
+class ChatMessageAdmin(DynamicCustomFieldAdmin):
+    list_display = ('session','sender', 'timestamp')
+    
+admin.site.register(ChatMessage, ChatMessageAdmin)
