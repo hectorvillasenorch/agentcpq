@@ -15,6 +15,7 @@
   max-height: 250px;
 }
 </style>
+
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
     <!-- Limit Summary -->
     <div class="bg-white p-4 rounded shadow">
@@ -64,6 +65,30 @@
     <h3 class="text-xl font-semibold mb-4">Actions by User</h3>
     <canvas id="userChart"></canvas>
   </div>
+  <section class="tenants_usage">
+    <table border="1" cellspacing="0" cellpadding="6">
+      <thead>
+          <tr>
+              <th>ID</th>
+              <th>Tenant ID</th>
+              <th>Billing Period</th>
+              <th>Total Actions</th>
+              <th>Overflow</th>
+          </tr>
+      </thead>
+      <tbody>
+          {% for usage in tenants_usage %}
+          <tr>
+              <td>{{ usage.id }}</td>
+              <td>{{ usage.tenant_id }}</td>
+              <td>{{ usage.billing_period }}</td>
+              <td>{{ usage.total_actions }}</td>
+              <td>{{ usage.overflow_actions }}</td>
+          </tr>
+          {% endfor %}
+      </tbody>
+      </table>
+  </section>
 <script>
   const actionsByMonth = {{ actions_by_month_json|safe }};
 </script>

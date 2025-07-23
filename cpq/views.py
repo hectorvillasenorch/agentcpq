@@ -1,5 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage, Option
+from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage, Option, TenantUsageReport
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt 
 from django.apps import apps
@@ -540,6 +540,8 @@ def search_accounts(request):
 def usage_dashboard(request):
     current_tenant = Tenant.objects.first()
     usage_logs = ActionUsage.objects.all()
+
+    tenants_usage = TenantUsageReport.objects.all()
  
 
     # ---- Total Actions by Month ----
@@ -599,6 +601,7 @@ def usage_dashboard(request):
         "monthly_count": monthly_count,
         "limit": action_limit,
         "overflow": max(0, overflow),
+        "tenants_usage": tenants_usage,
     }
 
     return render(request, "usage.html", context)
