@@ -541,7 +541,7 @@ def usage_dashboard(request):
     current_tenant = Tenant.objects.first()
     usage_logs = ActionUsage.objects.all()
 
-    tenants_usage = TenantUsageReport.objects.all()
+    tenants_usage = TenantUsageReport.objects.select_related('tenant')
  
 
     # ---- Total Actions by Month ----

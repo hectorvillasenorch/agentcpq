@@ -66,28 +66,27 @@
     <canvas id="userChart"></canvas>
   </div>
   <section class="tenants_usage">
-    <table border="1" cellspacing="0" cellpadding="6">
+    <h2>Tenants Usage</h2>
+    <table class="table">
       <thead>
-          <tr>
-              <th>ID</th>
-              <th>Tenant ID</th>
-              <th>Billing Period</th>
-              <th>Total Actions</th>
-              <th>Overflow</th>
-          </tr>
+        <tr>
+          <th>Tenant Name</th>
+          <th>Billing Period</th>
+          <th>Total Actions</th>
+          <th>Overflow</th>
+        </tr>
       </thead>
       <tbody>
-          {% for usage in tenants_usage %}
+        {% for usage in tenants_usage %}
           <tr>
-              <td>{{ usage.id }}</td>
-              <td>{{ usage.tenant_id }}</td>
-              <td>{{ usage.billing_period }}</td>
-              <td>{{ usage.total_actions }}</td>
-              <td>{{ usage.overflow_actions }}</td>
+            <td>{{ usage.tenant.name }}</td>
+            <td>{{ usage.billing_period }}</td>
+            <td>{{ usage.total_actions }}</td>
+            <td>{{ usage.overflow_actions }}</td>
           </tr>
-          {% endfor %}
+        {% endfor %}
       </tbody>
-      </table>
+    </table>
   </section>
 <script>
   const actionsByMonth = {{ actions_by_month_json|safe }};
