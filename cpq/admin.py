@@ -1,6 +1,7 @@
 from django.contrib import admin
-from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact,Tenant, ChatMessage, ChatSession
+from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact,Tenant
 from .forms import  get_dynamic_form
+from agents.models import ChatMessage, ChatSession
 from django.contrib.contenttypes.models import ContentType
 
 # admin.site.register(Subscription)
