@@ -19,8 +19,11 @@ class DynamicCustomFieldAdmin(admin.ModelAdmin):
     def get_form(self, request, obj=None, **kwargs):
         return self.form  # Already set per model
 
+    # def get_fieldsets(self, request, obj=None):
+    #     return [(None, {'fields': list(self.form().fields.keys())})]
     def get_fieldsets(self, request, obj=None):
-        return [(None, {'fields': list(self.form().fields.keys())})]
+        form = self.get_form(request, obj=obj)
+        return [(None, {'fields': list(form.base_fields.keys())})]
 
 class LeadAdmin(DynamicCustomFieldAdmin):
     form = get_dynamic_form(Lead, crm="AgentCPQ", object_type="Lead")
