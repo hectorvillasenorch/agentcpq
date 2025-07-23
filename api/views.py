@@ -7,20 +7,33 @@ from cpq.models import Lead  # Adjust path as needed
 
 @csrf_exempt
 def receive_lead(request):
+    # ✅ Validate method
     if request.method != "POST":
         return JsonResponse({"error": "Only POST allowed"}, status=405)
 
+    # ✅ Extract and check API key
+    api_key = request.headers.get("X-API-KEY")
+    if not api_key:
+        return JsonResponse({"error": "Missing X-API-KEY header"}, status=403)
+
+    try:
+        tenant = Tenant.objects.get(api_key=api_key)
+    except Tenant.DoesNotExist:
+        return JsonResponse({"error": "Invalid API key"}, status=403)
+
+    # ✅ Parse JSON
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    # ✅ Required fields
+    # ✅ Check required fields
     required_fields = ["first_name", "last_name", "email"]
     missing = [f for f in required_fields if not data.get(f)]
     if missing:
         return JsonResponse({"error": f"Missing required fields: {', '.join(missing)}"}, status=400)
 
+    # ✅ Create lead
     try:
         lead = Lead.objects.create(
             first_name=data["first_name"],
@@ -32,7 +45,7 @@ def receive_lead(request):
             assigned_to=data.get("assigned_to", ""),
             status=data.get("status", "new"),
             created_at=timezone.now(),
-            created_by_id=1,
+            created_by_id=1,  # adjust if needed
         )
         return JsonResponse({"message": "Lead created", "leadId": lead.leadId}, status=201)
     except Exception as e:
