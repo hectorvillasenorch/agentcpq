@@ -163,12 +163,14 @@ class TenantAdmin(DynamicCustomFieldAdmin):
 
 admin.site.register(Tenant, TenantAdmin)
 
-class ChatSessionAdmin(DynamicCustomFieldAdmin):
-    list_display = ('title','user', 'session_id','created_at')
-    
-admin.site.register(ChatSession, ChatSessionAdmin)
+class ChatMessageInline(admin.TabularInline):
+    model = ChatMessage
+    extra = 0
+    fields = ('sender', 'content', 'timestamp')
+    readonly_fields = ('timestamp',)
 
-class ChatMessageAdmin(DynamicCustomFieldAdmin):
-    list_display = ('session','sender', 'timestamp')
-    
-admin.site.register(ChatMessage, ChatMessageAdmin)
+@admin.register(ChatSession)
+class ChatSessionAdmin(admin.ModelAdmin):
+    list_display = ('session_id', 'user', 'title', 'created_at')
+    readonly_fields = ('created_at',)
+    inlines = [ChatMessageInline]
