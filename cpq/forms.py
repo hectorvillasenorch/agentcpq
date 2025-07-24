@@ -104,6 +104,7 @@ class CustomObjectForm(forms.ModelForm):
         fields = ['label', 'name', 'description']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3}),
+            'class': 'materialize-textarea'
         }
 
 class BusinessRuleForm(forms.ModelForm):

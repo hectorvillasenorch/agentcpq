@@ -17,7 +17,7 @@ def handle_bundle_components(extracted_components, response_message):
         product_bundle_name = bundle_item.get("bundle_name", None)
 
         if product_bundle_sku is None and product_bundle_name is None:
-            logging.warning(f"⚠️ No bundle product was found in your message. Please provide a bundle SKU or name. Skipping...")
+            logging.warning(f"⚠️ No bundle product was found in your message. Please provide a bundle SKU or name. Request omitted.")
             response_message += f"⚠️ No bundle product was found in your message. Please provide a bundle SKU or name.<br><br>"
             continue
 
@@ -25,7 +25,7 @@ def handle_bundle_components(extracted_components, response_message):
             bundle = Product.objects.get(Q(is_bundle=True) & (Q(sku=product_bundle_sku) | Q(sku=product_bundle_name) | Q(name=product_bundle_sku) | Q(name=product_bundle_name)))
             logging.info(f"🔍 Parent product (bundle) was found - {bundle.name}")
         except Product.DoesNotExist:
-            logging.warning("⚠️ No matching bundle product was found. Skipping...")
+            logging.warning("⚠️ No matching bundle product was found. Request omitted.")
             response_message += f"⚠️ No matching bundle product was found for <b>'{product_bundle_sku if product_bundle_sku is not None else product_bundle_name}'</b>. Please verify the name or SKU and try again.<br><br>"
             continue
 
@@ -33,8 +33,8 @@ def handle_bundle_components(extracted_components, response_message):
         bundle_components = bundle_item.get("components", [])
 
         if not bundle_components:
-            logging.warning("⚠️ No components were extracted for this bundle. Skipping...")
-            response_message += f"⚠️ No components were extracted for this bundle <b>'{product_bundle_sku if product_bundle_sku is not None else product_bundle_name}'</b>. Please provide at least one product to add (SKU or name). Skipping...</b><br><br>"
+            logging.warning("⚠️ No components were extracted for this bundle. Request omitted.")
+            response_message += f"⚠️ No components were extracted for this bundle <b>'{product_bundle_sku if product_bundle_sku is not None else product_bundle_name}'</b>. Please provide at least one product to add (SKU or name). Request omitted.</b><br><br>"
             continue
 
         for index, component in enumerate(bundle_components, start=1):
@@ -50,8 +50,8 @@ def handle_bundle_components(extracted_components, response_message):
             group_name = component.get("group_name", None)
 
             if product_sku is None and product_name is None:
-                logging.warning(f"⚠️ No product component was found in your message. Please provide a product component SKU or name. Skipping...")
-                response_message += f"⚠️ No product component was found in your message. Please provide a product component SKU or name. Skipping...</b><br><br>"
+                logging.warning(f"⚠️ No product component was found in your message. Please provide a product component SKU or name. Request omitted.")
+                response_message += f"⚠️ No product component was found in your message. Please provide a product component SKU or name. Request omitted.</b><br><br>"
                 continue
 
             # Validate if product component exists in database
@@ -59,8 +59,8 @@ def handle_bundle_components(extracted_components, response_message):
                 product_component = Product.objects.get(Q(sku=product_sku) | Q(sku=product_name) | Q(name=product_sku) | Q(name=product_name))
                 logging.info(f"🔍 Product (component) was found - {product_component.name}")
             except Product.DoesNotExist:
-                logging.warning("⚠️ No matching product component was found. Skipping...")
-                response_message += f"⚠️ No matching product component was found. Verify your name or sku product component. Skipping...</b><br><br>"
+                logging.warning("⚠️ No matching product component was found. Request omitted.")
+                response_message += f"⚠️ No matching product component was found. Verify your name or sku product component. Request omitted.</b><br><br>"
                 continue
 
             # Validate if product component exists in actual bundle
@@ -429,7 +429,7 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
         product_bundle_name = bundle_item.get("bundle_name", None)
 
         if product_bundle_sku is None and product_bundle_name is None:
-            logging.warning(f"⚠️ No bundle product was found in your message. Please provide a bundle SKU or name. Skipping...")
+            logging.warning(f"⚠️ No bundle product was found in your message. Please provide a bundle SKU or name. Request omitted.")
             response_message += f"⚠️ No bundle product was found in your message. Please provide a bundle SKU or name.<br><br>"
             continue
 
@@ -437,7 +437,7 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
             bundle = Product.objects.get(Q(is_bundle=True) & (Q(sku=product_bundle_sku) | Q(sku=product_bundle_name) | Q(name=product_bundle_sku) | Q(name=product_bundle_name)))
             logging.info(f"🔍 Parent product (bundle) was found - {bundle.name}")
         except Product.DoesNotExist:
-            logging.warning("⚠️ No matching bundle product was found. Skipping...")
+            logging.warning("⚠️ No matching bundle product was found. Request omitted.")
             response_message += f"⚠️ No matching bundle product was found for <b>'{product_bundle_sku if product_bundle_sku is not None else product_bundle_name}'</b>. Please verify the name or SKU and try again.<br><br>"
             continue
 
@@ -445,8 +445,8 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
         options = bundle_item.get("options", [])
 
         if not options:
-            logging.warning("⚠️ No options were extracted for this bundle. Skipping...")
-            response_message += f"⚠️ No options were extracted to delete for this bundle <b>'{product_bundle_sku if product_bundle_sku is not None else product_bundle_name}'</b>. Please provide at least one product to add (SKU or name). Skipping...</b><br><br>"
+            logging.warning("⚠️ No options were extracted for this bundle. Request omitted.")
+            response_message += f"⚠️ No options were extracted to delete for this bundle <b>'{product_bundle_sku if product_bundle_sku is not None else product_bundle_name}'</b>. Please provide at least one product to add (SKU or name). Request omitted.</b><br><br>"
             continue
 
         for index, option in enumerate(options, start=1):
@@ -456,8 +456,8 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
             product_name = option.get("product_name", None)
 
             if product_sku is None and product_name is None:
-                logging.warning(f"⚠️ No product option was found in your message. Please provide a product option SKU or name. Skipping...")
-                response_message += f"⚠️ No product option was found in your message. Please provide a product option SKU or name. Skipping...</b><br><br>"
+                logging.warning(f"⚠️ No product option was found in your message. Please provide a product option SKU or name. Request omitted.")
+                response_message += f"⚠️ No product option was found in your message. Please provide a product option SKU or name. Request omitted.</b><br><br>"
                 continue
 
             # Validate if product exists
@@ -465,8 +465,8 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
                 product = Product.objects.get(Q(sku=product_sku) | Q(sku=product_name) | Q(name=product_sku) | Q(name=product_name))
                 logging.info(f"🔍 Product was found - {product.name}")
             except Product.DoesNotExist:
-                logging.warning("⚠️ No matching product was found. Skipping...")
-                response_message += f"⚠️ No matching product was found. Verify your name or sku product. Skipping...</b><br><br>"
+                logging.warning("⚠️ No matching product was found. Request omitted.")
+                response_message += f"⚠️ No matching product was found. Verify your name or sku product. Request omitted.</b><br><br>"
                 continue
 
             # Validate if exists a relation between product and bundle
@@ -474,8 +474,8 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
                 option_record = Option.objects.get(parent_product=bundle, product_option=product)
                 logging.info(f"🔍 Option has been found between {bundle} and {product}")
             except Option.DoesNotExist:
-                logging.warning(f"⚠️ No matching option was found between {bundle} and {product}. Skipping...")
-                response_message += f"⚠️ No matching option was found between {bundle} and {product}. Verify your bundle and/or product option. Skipping...</b><br><br>"
+                logging.warning(f"⚠️ No matching option was found between {bundle} and {product}. Request omitted.")
+                response_message += f"⚠️ No matching option was found between {bundle} and {product}. Verify your bundle and/or product option. Request omitted.</b><br><br>"
                 continue
 
             # Validate if exists any quote line with the product
@@ -484,7 +484,7 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
                 logging.info(f"🔍 Quote Line has been found. Line: {bundle_child_line}")
             except QuoteLine.DoesNotExist:
                 logging.warning(f"⚠️ No quote line was found in quote {quote.name} with the relation between {bundle} and {product}.")
-                response_message += f"⚠️ No quote line was found in quote <b>{quote.name}</b> with the relation between <b>{bundle}</b> and <b>{product}</b>. Please verify your bundle and/or product option. Skipping...<br><br>"
+                response_message += f"⚠️ No quote line was found in quote <b>{quote.name}</b> with the relation between <b>{bundle}</b> and <b>{product}</b>. Please verify your bundle and/or product option. Request omitted.<br><br>"
                 continue
 
             try:

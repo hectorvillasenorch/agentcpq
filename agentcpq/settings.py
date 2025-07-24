@@ -151,11 +151,10 @@ LOGOUT_REDIRECT_URL = '/login/'
 
 LANGUAGE_CODE = "en-us"
 
+USE_TZ = True
 TIME_ZONE = "UTC"
 
 USE_I18N = True
-
-USE_TZ = True
 
 
 # Static files (CSS, JavaScript, Images)
@@ -201,7 +200,7 @@ SALESFORCE_REDIRECT_URI = "https://b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.n
 SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/authorize"
 SALESFORCE_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
 
-# For restar password
+# For reset password
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587

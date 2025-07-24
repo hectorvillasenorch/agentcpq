@@ -882,6 +882,9 @@ class CustomObject(models.Model):
     label = models.CharField(max_length=255)              
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_custom_objects')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_objects')
 
     def __str__(self):
         return self.label or self.name
@@ -889,6 +892,7 @@ class CustomObject(models.Model):
     class Meta:
         verbose_name = "Custom Object"
         verbose_name_plural = "Custom Objects"
+        
 #dummy model for all custom objects
 class CustomRecord(models.Model):
     object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE)
@@ -916,6 +920,9 @@ class CustomField(models.Model):
     data_type = models.CharField(max_length=50)  # text, number, date, etc.
     required = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='creted_custom_fields')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_fields')
     custom_object = models.ForeignKey(CustomObject, on_delete=models.SET_NULL, null=True, blank=True)
     lookup_model = models.CharField(
         max_length=100,

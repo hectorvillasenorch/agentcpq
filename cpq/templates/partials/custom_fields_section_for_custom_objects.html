@@ -1,31 +1,50 @@
+
+
 <div class="section">
 
   <!-- 🔹 STANDARD FIELDS -->
   <div class="card z-depth-1">
     <div class="card-content" style="padding-bottom:0;">
       <span class="card-title grey-text text-darken-3" style="font-size:1.2rem;font-family:'Euclid Circular A',sans-serif;">
-        {{ object_name }} Standard Fields
+        {{ object_name }} information.
       </span>
 
-      {% if standard_fields %}
-      <table class="striped highlight responsive-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Type</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for field in standard_fields %}
-          <tr>
-            <td>{{ field.name }}</td>
-            <td>{{ field.data_type }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      {% if records %}
+        <!-- floating “add” button -->
+        <a href="{% url 'cpq:edit_custom_object' object_name %}"
+          class="btn-floating halfway-fab waves-effect waves-light deep-orange accent-4 tooltipped"
+          data-tooltip="Edit Custom Object Record">
+          <i class="material-icons">edit</i>
+        </a>
+
+        <table class="striped highlight responsive-table">
+          <thead>
+            <tr>
+              <th>Label</th>
+              <th>Name</th>
+              <th>Description</th>
+              <th>Last Modified By</th>
+              <th>Created By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for record in records %}
+            <tr>
+              <td>{{ record.label }}</td>
+              <td>{{ record.name }}</td>
+              <td class="description-cell">{{ record.description }}</td> 
+              {% if record.updated_by %}
+                <td class="datetime-objects" data-datetime-object="{{ record.updated_at|date:'c' }}">{{ record.updated_by }}</td>
+              {% else %}
+                <td>No updates yet.</td>
+              {% endif %}
+              <td class="datetime-objects" data-datetime-object="{{ record.created_at|date:'c' }}">{{ record.created_by }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       {% else %}
-      <p class="grey-text">No standard fields for {{ object_name }}.</p>
+        <p>No records found for {{ object_name }}.</p>
       {% endif %}
     </div>
   </div>
@@ -38,7 +57,7 @@
       </span>
 
       <!-- floating “add” button -->
-      <a href="{% url 'cpq:create_custom_field' %}"
+      <a href="{% url 'cpq:create_custom_field' object_name %}"
          class="btn-floating halfway-fab waves-effect waves-light deep-orange accent-4 tooltipped"
          data-tooltip="Add Custom Field">
         <i class="material-icons">add</i>
@@ -73,4 +92,12 @@
     </div>
   </div>
 
+  <style>
+    .description-cell {
+      white-space: normal !important;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+  </style>
+  
 </div>

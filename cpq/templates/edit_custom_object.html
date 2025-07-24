@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Custom Fields - AgentCPQ{% endblock %}
+{% block title %}Edit Custom Object - AgentCPQ{% endblock %}
 
 {% block content %}
   <h2 class="text-2xl font-semibold mb-4">Custom Fields</h2>
@@ -8,11 +8,11 @@
 
 <div class="max-w-4xl mx-auto py-10">
   <h4 class="text-center text-xl font-semibold text-orange-600 mb-6">
-      Create New Custom Field
+      Edit Custom Object
   </h4>
 
   <form method="post"
-        action="{% url 'cpq:create_custom_field' object_name %}"
+        action="{% url 'cpq:edit_custom_object' object_name %}"
         class="bg-white shadow rounded-2xl p-8 space-y-6">
     {% csrf_token %}
 
@@ -29,48 +29,16 @@
         {{ form.name }}
       </div>
 
-      <!-- CRM (pick-list) -->
-      <div>
-        {{ form.crm.label_tag }}
-        {{ form.crm }}
+      <!-- Description -->
+      <div class="input-field md: col-span-2">
+        {{ form.description.label_tag }}
+        {{ form.description }}
       </div>
+    </div>
 
-     <!-- Object Type -->
-      <div>
-        {{ form.object_type.label_tag }}
-        {{ form.object_type }}
-      </div>
-
-      <!-- 
-      ject (optional) -->
-      <div>
-        {{ form.custom_object.label_tag }}
-        {{ form.custom_object }}
-      </div>
-
-      <!-- Data Type -->
-      <div>
-        <label for="id_data_type" class="block text-sm font-medium text-gray-700">Data Type</label>
-        <select id="id_data_type" name="data_type" class="w-full mt-1 border rounded-lg p-2">
-          <option value="text">Text</option>
-          <option value="number">Number</option>
-          <option value="date">Date</option>
-          <option value="boolean">Boolean</option>
-          <option value="dropdown">Dropdown</option>
-          <option value="textarea">Text Area</option>
-          <option value="lookup">Look Up</option>
-        </select>
-      </div>
-     <div id="lookup-model-field" style="display: none;">
-      <label for="id_lookup_model" class="block text-sm font-medium text-gray-700">Lookup Model</label>
-        {{ form.lookup_model }}
-      </div>
-
-      <!-- Required -->
-      <div class="flex items-center space-x-2">
-        {{ form.required }}
-        <span class="text-sm">Required</span>
-      </div>
+    <div class="divider"></div>
+    <div>
+      <a class="btn red modal-trigger" href="#deleteModal">Delete Custom Object</a>
     </div>
 
     <div class="flex justify-end space-x-4 pt-6">
@@ -83,18 +51,20 @@
 </div>
 </div>
 
-
-
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     // Init materialize selects
     const selects = document.querySelectorAll('select');
     M.FormSelect.init(selects);
 
-    // Removes labels from being on the field.
-    const labels = document.querySelectorAll('label');
-    labels.forEach(label => label.classList.add('active'));
-    
+    // Añadir clase 'active' SOLO a los labels de los campos específicos
+    const fields = ['label', 'name', 'description'];
+    fields.forEach(fieldId => {
+      const label = document.querySelector(`label[for="id_${fieldId}"]`);
+      if (label) {
+        label.classList.add('active');
+      }
+    });
 
     // Auto-generate API name from label
     const labelInput = document.getElementById("id_label");
@@ -104,13 +74,14 @@
       labelInput.addEventListener("input", function () {
         const raw = labelInput.value;
         const formatted = raw.trim()
-                             .toLowerCase()
-                             .replace(/\s+/g, "_")
-                             .replace(/[^\w]/g, "") + "__c";
+                            .toLowerCase()
+                            .replace(/\s+/g, "_")
+                            .replace(/[^\w]/g, "") + "__c";
         nameInput.value = formatted;
       });
     }
   });
+
   document.addEventListener('DOMContentLoaded', function () {
     const dataTypeSelect = document.getElementById('id_data_type');
     const lookupField = document.getElementById('lookup-model-field');
@@ -126,5 +97,24 @@
     dataTypeSelect.addEventListener('change', toggleLookupField);
     toggleLookupField();  // Run on load in case "lookup" is pre-selected
   });
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const modals = document.querySelectorAll('.modal');
+    M.Modal.init(modals);
+  });
 </script>
+
+<div id="deleteModal" class="modal">
+  <div class="modal-content">
+    <h4 class="red-text">Confirm Deletion</h4>
+    <p>Are you sure you want to delete this custom object?</p>
+  </div>
+  <div class="modal-footer">
+    <form method="post" action="{% url 'cpq:delete_custom_object' object_name %}">
+      {% csrf_token %}
+      <a href="#!" class="modal-close btn grey">Cancel</a>
+      <button type="submit" class="btn red">Delete</button>
+    </form>
+  </div>
+</div>
 {% endblock %}
