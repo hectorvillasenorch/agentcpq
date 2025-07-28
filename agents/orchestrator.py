@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 # TDOO STOP Call to GPT 
 # Pything to understand request, and catch before hitting LLM
 
+# Context Session Helpers
+from .utils.orchestrator.context_handle_helpers import get_existing_context, build_context_prompt
+
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -93,6 +96,20 @@ def orchestrate_request(user, user_message, session_data):
         sender="user",
         content=user_message
     )
+
+    # 🧠🧠 Check if any context exist for this user and this session id
+    conversation_context = get_existing_context(user, session_data)
+    if conversation_context:
+        context_data = conversation_context.data
+        intention = conversation_context.intent
+
+        if context_data and is_continuation_prompt(context_data, user_message, intention):
+            user_message = build_context_prompt(context_data, intention, user_message)
+            conversation_context.delete()
+
+    print(f"\n\nThis is the new user message: {user_message}\n\n")
+
+    #return {"message": user_message}
 
     action_prompt = f"""
     You are an AI assistant that classifies user requests into predefined actions.
@@ -384,3 +401,39 @@ def get_trigger_phrases():
         "generate pdf",
         "create quote pdf",
     ]
+
+# Check if new message is continuation
+
+def is_continuation_prompt(previous_data, new_user_message, intention):
+    conversation_history = ""
+
+    conversation_history += f"""
+        Intention: "{intention}"
+        Data extracted: "{previous_data}"
+        """
+
+    prompt = f"""
+    You are determining whether a user's new message is a continuation of the previous conversation or a new, unrelated request.
+
+    Take into account the following rules:
+    - If the new message contains words like "update", "update quote line", "create", "add", or any other indication that it refers to creating or modifying data (like a new quote line), then it should be treated as a NEW request, even if the intent is similar to the previous one.
+    - Otherwise, if the message logically continues the last request or depends on previous information, then it is a continuation.
+
+    Conversation history:
+    {conversation_history}
+    New message: "{new_user_message}"
+
+    Return YES if it is a continuation. Return NO if it's a new, unrelated request.
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Determine continuation status"},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return "YES" in response.choices[0].message.content.upper()
+    except:
+        return False

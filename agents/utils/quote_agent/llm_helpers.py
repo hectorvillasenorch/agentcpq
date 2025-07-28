@@ -135,6 +135,13 @@ def extract_quote_line_updates(user_message):
     allowed_fields_str = '", "'.join(["quantity", "discount_amount", "discount_percentage", "term"])
 
     prompt = f"""
+    **IMPORTANT FOR CONVERSATION CONTEXT:**
+    If the user message is accompanied by previously extracted data entries , you must:
+    - Use that data to preserve the context of each item, assuming the user is continuing an incomplete task.
+    - Only update the items the user refers, and retain the others as incomplete.
+    - Return a list of all items (updated and pending) with the following structure.
+    However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
+    **--FINAL CONVERSATION CONTEXT--**
     Extract structured update details from the following request.
     Return a JSON array with objects containing:
     - "sku" (string, required)

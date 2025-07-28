@@ -18,6 +18,9 @@ from .general_helpers import normalize_term_for_product, get_quote_details, set_
 #Rules Helpers
 from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules_quote_line_level, check_for_rules_quote_level
 
+# Session Context Helpers
+from ..orchestrator.context_handle_helpers import save_or_update_conversation_context
+
 
 def save_quote_products(products, quote, response_message, allow_updates=False):
     """
@@ -293,7 +296,7 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
     
     return quote, response_message, added_products
 
-def handle_quote_line_update_request(extracted_updates, quote, response_message):
+def handle_quote_line_update_request(extracted_updates, quote, response_message, session_context):
 
     logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🛠️ Creating record for update products 🛠️")
 
@@ -306,6 +309,10 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
         name = item.get("name", None)
         field = item.get("field", None)
         value = item.get("value", None)
+
+        # Add full item for session context
+        session_context["item_index"] = index
+        session_context["extracted"] = item
 
         field_labels = {
             "quantity": "Quantity",
@@ -322,28 +329,40 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
             continue
 
         if field is None:
+            agent_response = "Missing fields: quantity, discount or term"
+            save_or_update_conversation_context(session_context, agent_response)
             response_message += f"⚠️ Error: No field to update was detected in your request. Please specify which attribute (e.g., quantity, discount or term) you want to modify.<br><br>"
             continue
 
         if field not in field_labels:
+            agent_response = f"Invalid field: `{field}` is not a recognized field. Valid fields are: {', '.join(field_labels.keys())}."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message += f"⚠️ Error: No valid field to update was detected in your request. Please specify which attribute (e.g., quantity, discount or term) you want to modify.<br><br>"
             continue
 
         if value is None:
+            agent_response = "No value was detected in your request"
+            save_or_update_conversation_context(session_context, agent_response)
             response_message += f"⚠️ Error: No value was detected in your request. Please specify the new value for the update.<br><br>"
             continue
         
         try:
             numeric_value = Decimal(value)
         except (InvalidOperation, ValueError, TypeError):
+            agent_response = f"Error: The value {value} is not a valid number. Please replace value with a valid numeric value."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message += f"⚠️ Error: The value \"{value}\" is not a valid number. Please enter a valid numeric value.<br><br>"
             continue
 
         if field.startswith("discount") and Decimal(value) < 0:
+            agent_response = f"Error: The value for discounts cannot be less than 0. Provide a valida number"
+            save_or_update_conversation_context(session_context, agent_response)
             response_message += f"⚠️ Error: The value for discounts cannot be less than 0. Please provide a valid number.<br><br>"
             continue
 
         if field == "term" and int(value) < 0:
+            agent_response = "Error: The value for terms cannot be less than 0. Please provide a valida number."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message += f"⚠️ Error: The value for terms cannot be less than 0. Please provide a valid number.<br><br>"
             continue
 
@@ -366,6 +385,8 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
         #Validate if product exist in actual quote line item
         quote_line = QuoteLine.objects.filter(quote=quote, product=product).first()
         if not quote_line:
+            agent_response = f"Error: The product {sku}/{name} is not in the current quote. Do not modify anything, just reply data."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message += f"⚠️ Error: The product `{sku}/{name}` is not in the current quote.<br><br>"
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Error: The product `{sku}/{name}` is not in the current quote.")
             continue

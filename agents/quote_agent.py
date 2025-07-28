@@ -37,6 +37,8 @@ from .utils.quote_agent.db_helpers import get_or_create_account_and_opportunity,
 from .utils.quote_agent.general_helpers import get_active_quote, set_active_quote_to_session_data, get_quote_details, get_backup_value_from_quote_line, format_currency, wrap_text
 from .utils.quote_agent.general_helpers import get_document_pdf, get_backup_value_from_quote
 
+from .utils.orchestrator.context_handle_helpers import save_or_update_conversation_context
+
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -176,7 +178,7 @@ def add_product_to_quote(user, user_message, session_data):
 
     if not extracted_products or not isinstance(extracted_products, list):
         return {
-            "message": "⚠️ Error: Could not extract product details. Please specify SKU, quantity, and discount for each product."
+            "message": "⚠️ Error: Could not extract product details. Please specify SKU, quantity, or discount for each product."
         }
 
     added_products = []
@@ -223,6 +225,7 @@ def update_quote_line(user, user_message, session_data):
     """Updates only the modified fields in quote lines."""
 
     logging.info("🔧 Updating quote line...\n\n")
+    print(f"\n\n User Message: {user_message}\n\n")
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)
 
@@ -241,10 +244,20 @@ def update_quote_line(user, user_message, session_data):
         "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
         }
     
+    # 🧠 Make the session context
+    session_context = {
+        "user": user,
+        "intent": "UpdateQuoteLine",
+        "agent_name": "quote_agent",
+        "session_data": session_data,
+        "user_message": user_message,
+        "extracted": None
+    }
+
     response_message = ""
 
     # ✅ Handle quote line update request
-    quote, response_message, updated_products = handle_quote_line_update_request(extracted_updates, quote, response_message)
+    quote, response_message, updated_products = handle_quote_line_update_request(extracted_updates, quote, response_message, session_context)
     log_action_usage("UpdateQuoteLine", user, "Quote", quote.name)
     # ✅ Update quote (subtotal, discounts fields and net amount)
     quote.save()
