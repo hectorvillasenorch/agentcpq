@@ -22,7 +22,7 @@ from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules_q
 from ..orchestrator.context_handle_helpers import save_or_update_conversation_context
 
 
-def save_quote_products(products, quote, response_message, allow_updates=False):
+def save_quote_products(products, quote, response_message, session_context, allow_updates=False):
     """
     Creates QuoteLine records for a given quote using a list of already structured product dictionaries.
 
@@ -44,12 +44,16 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
     # ✅ Add products to the quote if provided
     added_products = []
 
-    for product_data in products:
+    for index, product_data in enumerate(products):
         # ✅ Set up variables
         sku = product_data.get("sku")
         name = product_data.get("name")
         discount_type = product_data.get("discount_type", None)
         term = product_data.get("term", None)
+
+        # Add full item for session context
+        session_context["item_index"] = index
+        session_context["extracted"] = product_data
 
         # - Validate quantity
         raw_quantity = product_data.get("quantity", 1)
@@ -59,10 +63,14 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
             if quantity <= 0:
                 logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Invalid quantity '{quantity}' for product {sku or name}. Request omitted.")
                 response_message += f"⚠️ Invalid quantity '{quantity}' for product {sku or name}. Request omitted.<br>"
+                agent_response = "Invalid quantity '{quantity}' for product {sku or name}."
+                save_or_update_conversation_context(session_context, agent_response)
                 continue
         except (ValueError, TypeError):
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Quantity '{raw_quantity}' is not a valid integer for product {sku or name}. Request omitted.")
             response_message += f"⚠️ Quantity '{raw_quantity}' is not a valid integer for product {sku or name}. Request omitted.<br>"
+            agent_response = "Quantity '{raw_quantity}' is not a valid integer for product {sku or name}."
+            save_or_update_conversation_context(session_context, agent_response)
             continue
 
         # - Validate discount_value
@@ -70,6 +78,8 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
             discount_value = Decimal(product_data.get("discount_value", 0))
             if discount_value < 0:
                 response_message += f"⚠️ Discount '{discount_value}' cannot be less than 0. Please enter a valid discount.<br>"
+                agent_response = "Discount '{discount_value}' cannot be less than 0. Please enter a valid discount.<br>"
+                save_or_update_conversation_context(session_context, agent_response)
                 continue
         except (TypeError, InvalidOperation):
             discount_value = Decimal(0)
@@ -100,6 +110,8 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
             response_message += f"🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑<br>{validations_message}"
             added_products.append(f"🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑")
             print(f"\n\nValidation rule was triggered by product {product.name}/{product.sku}. Request omitted.\n\n")
+            agent_response = f"Product {product.name}/{product.sku} triggered one or more validation rules: {validations_message}"
+            save_or_update_conversation_context(session_context, agent_response)
             continue
 
         #################################################
@@ -146,6 +158,8 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
 
             successful_fields = []
             failed_fields = []
+            # Update session context with update information
+            session_context["extracted"] = update_payload
 
             for update in update_payload:
                 request = json.dumps(update)
@@ -160,6 +174,9 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
                         f"⚠️ Error updating field `{update['field']}` for product `{update['sku']}` "
                         f"(details: {response.get('message')}).<br>"
                     )
+                    agent_response = f"Update Failed for field {update['field']}: {response.get('message')}"
+                    save_or_update_conversation_context(session_context, agent_response)
+
                     logging.warning(f"⚠️ Update Failed for field {update['field']}: {response.get('message')}")
 
 
@@ -194,7 +211,6 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
             discount_fields["discount_type"] = discount_type
             discount_fields["discount_amount"] = Decimal(str(discount_value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         else:
-            print("Discount type is null")
             discount_fields["discount_type"] = "Null"
             discount_fields["discount_amount"] = Decimal("0.00")
             discount_fields["discount_percentage"] = Decimal("0.00")
@@ -291,6 +307,8 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
 
             response_message += bundle_response_message
         except Exception as e:
+            agent_response = f"Error adding product {sku}/{name}: {str(e)}"
+            save_or_update_conversation_context(session_context, agent_response)
             logging.error(f"❌ Error adding product {sku}/{name}: {str(e)}")
             response_message += f"❌ Error adding product {sku}/{name} to quote {quote.name}.<br>"
     
@@ -525,7 +543,7 @@ def save_quote_line_update(request, quote):
 
 
 # Handle quote update request
-def handle_quote_update_request(extracted_updates, quote, response_message):
+def handle_quote_update_request(extracted_updates, quote, response_message, session_context):
 
     logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🛠️ Creating record for update quote 🛠️")
 
@@ -546,6 +564,10 @@ def handle_quote_update_request(extracted_updates, quote, response_message):
             "notes": "Notes"
         }
 
+        # Add full item for session context
+        session_context["item_index"] = index
+        session_context["extracted"] = item
+
         response_message += f"<b>🔄 <u>Quote Update Request #{index}</u> 🔄</b><br>"
 
         # General validations
@@ -554,24 +576,34 @@ def handle_quote_update_request(extracted_updates, quote, response_message):
             if not (isinstance(quote_name, str) and re.match(r"^Q-\d{5}$", quote_name)):
                 logging.warning(f"⚠️ Invalid quote name format: {quote_name}. Skipping update.")
                 response_message += f"⚠️ Invalid quote name format: {quote_name}."
+                agent_response = f"Invalid quote name format: {quote_name}."
+                save_or_update_conversation_context(session_context, agent_response)
                 continue
 
         if field is None:
+            agent_response = f"Error: No field to update was detected in user request. Please specify one of these: status, discount, expiration date or notes."
+            save_or_update_conversation_context(session_context, agent_response)
             logging.warning(f"⚠️ Error: No field to update was detected in your request.")
             response_message += f"⚠️ Error: No field to update was detected in your request. Please specify which attribute (e.g., status, discount, expiration date or notes) you want to modify.<br><br>"
             continue
 
         if field not in field_labels:
+            agent_response = f"Error: Field '{field}' is not a valid field to update was detected in your request."
+            save_or_update_conversation_context(session_context, agent_response)
             logging.warning(f"⚠️ Error: Field '{field}' is not a valid field to update was detected in your request.")
             response_message += f"⚠️ Error: Field '{field}' is not a valid field to update was detected in your request. Please specify which attribute (e.g., status, discount, expiration date or notes) you want to modify.<br><br>"
             continue
 
         if value is None:
+            agent_response = f"Error: No value was detected in your request. Please specify the new value for the update."
+            save_or_update_conversation_context(session_context, agent_response)
             logging.warning(f"⚠️ Error: No value was detected in your request. Please specify the new value for the update.")
             response_message += f"⚠️ Error: No value was detected in your request. Please specify the new value for the update.<br><br>"
             continue
 
         if field.startswith("discount") and Decimal(value) <= 0:
+            agent_response = f"Error: The value for discounts cannot be less than or equals 0. Please provide a valid number."
+            save_or_update_conversation_context(session_context, agent_response)
             logging.warning("⚠️ Error: The value for discounts cannot be less than or equals 0. Please provide a valid number.")
             response_message += f"⚠️ Error: The value for discounts cannot be less than or equals 0. Please provide a valid number.<br><br>"
             continue
@@ -579,6 +611,8 @@ def handle_quote_update_request(extracted_updates, quote, response_message):
         allowed_status = ["Draft", "Pending Approval", "Approved", "Rejected", "Closed"]
 
         if field == "status" and value not in allowed_status:
+            agent_response = f"Error: '{value}' is not a valid status. Please use one of: Draft, Pending Approval, Approved, Rejected, or Closed."
+            save_or_update_conversation_context(session_context, agent_response)
             logging.warning(f"⚠️ Error: '{value}' is not a valid status. Please use one of: Draft, Pending Approval, Approved, Rejected, or Closed.")
             response_message += f"⚠️ Error: '{value}' is not a valid status. Please use one of: Draft, Pending Approval, Approved, Rejected, or Closed.<br><br>"
             continue
@@ -589,6 +623,8 @@ def handle_quote_update_request(extracted_updates, quote, response_message):
             try:
                 parsed_date = datetime.strptime(value, "%Y-%m-%d").date()
             except (ValueError, TypeError):
+                agent_response = f"Error: '{value}' is not a valid date. Use the format YYYY-MM-DD (e.g., 2025-07-30)."
+                save_or_update_conversation_context(session_context, agent_response)
                 logging.warning(f"⚠️ Error: '{value}' is not a valid date. Use the format YYYY-MM-DD (e.g., 2025-07-30).")
                 response_message += f"⚠️ Error: '{value}' is not a valid date. Use the format YYYY-MM-DD (e.g., 2025-07-30).<br><br>"
                 continue
@@ -600,6 +636,8 @@ def handle_quote_update_request(extracted_updates, quote, response_message):
             try:
                 current_quote = Quote.objects.get(name=quote_name)
             except Quote.DoesNotExist:
+                agent_response = f"Quote with name '{quote_name}' not found. Please enter a valid quote name."
+                save_or_update_conversation_context(session_context, agent_response)
                 logging.warning(f"⚠️ Quote with name '{quote_name}' not found. Skipping update.")
                 response_message += f"⚠️ Quote with name '{quote_name}' not found."
                 continue
@@ -633,6 +671,8 @@ def handle_quote_update_request(extracted_updates, quote, response_message):
             updated_quotes.append(update_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
+            agent_response = f"Something were wrong when trying to update quote. Error: {error_msg}"
+            save_or_update_conversation_context(session_context, agent_response)
             error_msg = response.get("message", "Unknown error.")
             response_message += f"{error_msg}<br>"
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")

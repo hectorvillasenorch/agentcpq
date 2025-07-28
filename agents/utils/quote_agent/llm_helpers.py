@@ -17,6 +17,14 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 def extract_quote_details(user_message):
     """Use GPT to extract details for quote creation."""
     prompt = f"""
+    **IMPORTANT FOR CONVERSATION CONTEXT:**
+    If the user message is accompanied by previously extracted data entries , you must:
+    - Use that data to preserve the context of each item, assuming the user is continuing an incomplete task.
+    - Only update the items the user refers, and retain the others as incomplete.
+    - Return a list of all items (updated and pending) with the following structure.
+    However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
+    **--FINAL CONVERSATION CONTEXT--**
+    
     Extract the following details from the user's request for quote creation:
     - Account Name
     - Opportunity Name (if applicable)
@@ -67,6 +75,14 @@ def extract_quote_details(user_message):
 def extract_product_details(user_message):
     """Extract multiple product SKUs, quantities, and discounts from user input using GPT."""
     prompt = f"""
+    **IMPORTANT FOR CONVERSATION CONTEXT:**
+    If the user message is accompanied by previously extracted data entries , you must:
+    - Use that data to preserve the context of each item, assuming the user is continuing an incomplete task.
+    - Only update the items the user refers, and retain the others as incomplete.
+    - Return a list of all items (updated and pending) with the following structure.
+    However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
+    **--FINAL CONVERSATION CONTEXT--**
+
     Extract all product details from the user's request. The user may specify multiple products in a single message.
 
     **Expected fields per product:**
@@ -86,7 +102,7 @@ def extract_product_details(user_message):
     **Example Input:** 
     "Add AI-CPQ-001 x 5 with 10% discount, Agency PQ Solo x 2 with $20 discount, and AI-CPQ-004 x 10."
 
-    **Expected JSON Output:**
+    **Example Output:**
     [
         {{"sku": "AI-CPQ-001", "name": "Null", "quantity": 5, "discount_type": "percentage", "discount_value": 10, "term": null}},
         {{"sku": "Null", "name": "Agency PQ Solo", "quantity": 2, "discount_type": "amount", "discount_value": 20, "term": null}},
@@ -233,6 +249,14 @@ def extract_quote_updates(user_message):
     print(f"Current Date: {current_date}")
 
     prompt = f"""
+    **IMPORTANT FOR CONVERSATION CONTEXT:**
+    If the user message is accompanied by previously extracted data entries , you must:
+    - Use that data to preserve the context of each item, assuming the user is continuing an incomplete task.
+    - Only update the items the user refers, and retain the others as incomplete.
+    - Return a list of all items (updated and pending) with the following structure.
+    However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
+    **--FINAL CONVERSATION CONTEXT--**
+
     Extract structured update details from the following request.
     Return a JSON array with objects containing:
     - "quote_name" (string, required)
@@ -321,6 +345,14 @@ def extract_quote_line_items_to_delete(user_message):
     """Uses GPT to extract quote line name."""
 
     prompt = f"""
+    **IMPORTANT FOR CONVERSATION CONTEXT:**
+    If the user message is accompanied by previously extracted data entries , you must:
+    - Use that data to preserve the context of each item, assuming the user is continuing an incomplete task.
+    - Only update the items the user refers, and retain the others as incomplete.
+    - Return a list of all items (updated and pending) with the following structure.
+    However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
+    **--FINAL CONVERSATION CONTEXT--**
+    
     Extract the SKU (product code) or name mentioned in the following user request. 
 
     Return only the SKU and name string inside a JSON object like this:

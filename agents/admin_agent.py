@@ -17,6 +17,9 @@ from .utils.admin_agent.rules_helpers import handle_extracted_rules_details, han
 #General helpers
 from .utils.admin_agent.general_helpers import get_rules_details
 
+# Session Context Helpers
+from .utils.orchestrator.context_handle_helpers import save_or_update_conversation_context, make_session_context
+
 
 # ✅ Load environment variables
 load_dotenv()
@@ -29,10 +32,10 @@ def admin_agent(user, action, user_message, session_data):
 
     action_map = {
         "UpdateCustomObject": update_custom_object,
-        "CreateValidationRule": create_validation_rule,
-        "ShowRules": show_rules,
-        "UpdateRule": update_rule,
-        "DeleteRule": delete_rule
+        "CreateValidationRule": create_validation_rule, #CONTEXT READY
+        "ShowRules": show_rules, #CONTEXT READY
+        "UpdateRule": update_rule, #CONTEXT READY
+        "DeleteRule": delete_rule #CONTEXT READY
     }
 
     # ✅ Dynamically call the function if action exists in map
@@ -49,15 +52,18 @@ def update_custom_object(user, user_message, session_data):
 
 
 def create_validation_rule(user, user_message, session_data):
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "CreateValidationRule", "admin_agent", session_data, user_message)
+
     logging.info("🔧 Creating Validation Rule...\n\n")
 
     # Extract rule with LLM        
     extracted_rules = extract_validation_rules(user_message)
 
     if not extracted_rules:
-            return {
-                "message": "⚠️ The AgentCPQ assistant could not correctly extract your rules. Please try again."
-            }
+        return {
+            "message": "⚠️ The AgentCPQ assistant could not correctly extract your rules. Please try again."
+        }
     
     response_message = []
     
@@ -75,6 +81,10 @@ def create_validation_rule(user, user_message, session_data):
             return {
                 "message": f"🚫 Error: {e}"
             }
+        
+        # Add full item for session context
+        session_context["item_index"] = index
+        session_context["extracted"] = item
 
         content_message = {
             "index": index,
@@ -87,15 +97,12 @@ def create_validation_rule(user, user_message, session_data):
             "conditions": conditions
         }
 
-        #if conflicts:
-        #    content_message["error"] = conflicts
-        #    response_message.append(content_message)
-        #    continue
-
         # DESCRIPTION: must be a string
         if not description:
             content_message["error"] = "⚠️ Missing rule description: No description was provided for this rule. Please include a descriptive description to identify it clearly."
             logging.warning("⚠️ Missing rule description: No description was provided for this rule. Please include a descriptive description to identify it clearly.")
+            agent_response = f"Missing rule description: No description was provided for this rule. Please include a descriptive description to identify it clearly."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message.append(content_message)
             continue
         if not isinstance(description, str):
@@ -105,6 +112,8 @@ def create_validation_rule(user, user_message, session_data):
             except Exception:
                 content_message["error"] = f"⚠️ Invalid type for description: expected text (string), but got {type(description).__name__}."
                 logging.warning(f"⚠️ Invalid type for description: expected text (string), but got {type(description).__name__}.")
+                agent_response = f"Invalid type for description: expected text (string), but got {type(description).__name__}."
+                save_or_update_conversation_context(session_context, agent_response)
                 response_message.append(content_message)
                 continue
 
@@ -113,6 +122,8 @@ def create_validation_rule(user, user_message, session_data):
         if not rule_type:
             content_message["error"] = "⚠️ Missing rule type: Please specify whether this rule is validation, inclusion, or exclusion."
             logging.warning("⚠️ Missing rule type: Please specify whether this rule is validation, inclusion, or exclusion.")
+            agent_response = f"Missing rule type: Please specify whether this rule is validation, inclusion, or exclusion."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message.append(content_message)
             continue
         if not isinstance(rule_type, str):
@@ -121,12 +132,16 @@ def create_validation_rule(user, user_message, session_data):
             except Exception:
                 content_message["error"] = f"⚠️ Invalid type for rule_type: expected text (string), but got {type(rule_type).__name__}."
                 logging.warning(f"⚠️ Invalid type for rule_type: expected text (string), but got {type(rule_type).__name__}.")
+                agent_response = f"Invalid type for rule_type: expected text (string), but got {type(rule_type).__name__}."
+                save_or_update_conversation_context(session_context, agent_response)
                 response_message.append(content_message)
                 continue
         rule_type_lower = rule_type.lower()
         if rule_type_lower not in valid_rule_types:
             content_message["error"] = f"⚠️ Invalid value for rule_type: expected one of {valid_rule_types}, but got '{rule_type}'."
             logging.warning(f"⚠️ Invalid value for rule_type: expected one of {valid_rule_types}, but got '{rule_type}'.")
+            agent_response = f"Invalid value for rule_type: expected one of {valid_rule_types}, but got '{rule_type}'."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message.append(content_message)
             continue
         rule_type = rule_type_lower
@@ -137,6 +152,8 @@ def create_validation_rule(user, user_message, session_data):
         if not target_type:
             content_message["error"] = "⚠️ Missing target type: Please define the level where this rule applies (quote, quote_line, product, or multiple)."
             logging.warning("⚠️ Missing target type: Please define the level where this rule applies (quote, quote_line, product, or multiple).")
+            agent_response = f"Missing target type: Please define the level where this rule applies (quote, quote_line, product, or multiple)."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message.append(content_message)
             continue
         if not isinstance(target_type, str):
@@ -145,12 +162,16 @@ def create_validation_rule(user, user_message, session_data):
             except Exception:
                 content_message["error"] = f"⚠️ Invalid type for target_type: expected text (string), but got {type(target_type).__name__}."
                 logging.warning(f"⚠️ Invalid type for target_type: expected text (string), but got {type(target_type).__name__}.")
+                agent_response = f"Invalid type for target_type: expected text (string), but got {type(target_type).__name__}."
+                save_or_update_conversation_context(session_context, agent_response)
                 response_message.append(content_message)
                 continue
         target_type_lower = target_type.lower()
         if target_type_lower not in valid_target_types:
             content_message["error"] = f"⚠️ Invalid value for target_type: expected one of {valid_target_types}, but got '{target_type}'."
             logging.warning(f"⚠️ Invalid value for target_type: expected one of {valid_target_types}, but got '{target_type}'.")
+            agent_response = f"Invalid value for target_type: expected one of {valid_target_types}, but got '{target_type}'."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message.append(content_message)
             continue
         target_type = target_type_lower
@@ -160,6 +181,8 @@ def create_validation_rule(user, user_message, session_data):
         if priority is None:
             content_message["error"] = "⚠️ Missing priority: No priority value was provided. Please assign a priority number."
             logging.warning("⚠️ Missing priority: No priority value was provided. Please assign a priority number.")
+            agent_response = f"Missing priority: No priority value was provided. Please assign a priority number."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message.append(content_message)
             continue
         if not isinstance(priority, int):
@@ -172,6 +195,8 @@ def create_validation_rule(user, user_message, session_data):
             except Exception:
                 content_message["error"] = f"⚠️ Invalid type for priority: expected integer, but got {type(priority).__name__}."
                 logging.warning(f"⚠️ Invalid type for priority: expected integer, but got {type(priority).__name__}.")
+                agent_response = f"Invalid type for priority: expected integer, but got {type(priority).__name__}."
+                save_or_update_conversation_context(session_context, agent_response)
                 response_message.append(content_message)
                 continue
         content_message["priority"] = priority
@@ -180,6 +205,8 @@ def create_validation_rule(user, user_message, session_data):
         if not error_message:
             content_message["error"] = "⚠️ Missing error message: Please include a message that describes what should happen when the rule is triggered."
             logging.warning("⚠️ Missing error message: Please include a message that describes what should happen when the rule is triggered.")
+            agent_response = f"Missing error message: Please include a message that describes what should happen when the rule is triggered."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message.append(content_message)
             continue
         if not isinstance(error_message, str):
@@ -188,6 +215,8 @@ def create_validation_rule(user, user_message, session_data):
             except Exception:
                 content_message["error"] = f"⚠️ Invalid type for error_message: expected text (string), but got {type(error_message).__name__}."
                 logging.warning(f"⚠️ Invalid type for error_message: expected text (string), but got {type(error_message).__name__}.")
+                agent_response = f"Invalid type for error_message: expected text (string), but got {type(error_message).__name__}."
+                save_or_update_conversation_context(session_context, agent_response)
                 response_message.append(content_message)
                 continue
         content_message["error_message"] = error_message
@@ -196,11 +225,15 @@ def create_validation_rule(user, user_message, session_data):
         if not conditions:
             content_message["error"] = "⚠️ Missing conditions: Please provide the logic and fields that define when this rule is triggered."
             logging.warning("⚠️ Missing conditions: Please provide the logic and fields that define when this rule is triggered.")
+            agent_response = f"Missing conditions: Please provide the logic and fields that define when this rule is triggered."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message.append(content_message)
             continue
         if not isinstance(conditions, dict):
             content_message["error"] = f"⚠️ Invalid type for conditions: expected an object (dict), but got {type(conditions).__name__}."
             logging.warning(f"⚠️ Invalid type for conditions: expected an object (dict), but got {type(conditions).__name__}.")
+            agent_response = f"Invalid type for conditions: expected an object (dict), but got {type(conditions).__name__}."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message.append(content_message)
             continue
 
@@ -210,6 +243,8 @@ def create_validation_rule(user, user_message, session_data):
         if not isinstance(logic, str):
             content_message["error"] = f"⚠️ Invalid type for conditions -> logic: expected text (string), but got {type(logic).__name__}."
             logging.warning(f"⚠️ Invalid type for conditions -> logic: expected text (string), but got {type(logic).__name__}.")
+            agent_response = f"Invalid type for conditions -> logic: expected text (string), but got {type(logic).__name__}."
+            save_or_update_conversation_context(session_context, agent_response)
             response_message.append(content_message)
             continue
 
@@ -243,6 +278,8 @@ def create_validation_rule(user, user_message, session_data):
         except Exception as e:
             logging.error(f"❌ Error saving Rule: {e}")
             content_message["error"] = f"❌ Error saving rule to database: {str(e)}"
+            agent_response = f"Error saving rule to database: {str(e)}"
+            save_or_update_conversation_context(session_context, agent_response)
             response_message.append(content_message)
             continue
         
@@ -259,6 +296,10 @@ def create_validation_rule(user, user_message, session_data):
 
 def show_rules(user, user_message, session_data):
     """Fetches and formats quote details, including quote lines, based on user input or session data."""
+
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "ShowRules", "admin_agent", session_data, user_message)
+
     try:
         logging.info("🔄 Showing rules...")
 
@@ -285,12 +326,18 @@ def show_rules(user, user_message, session_data):
         }
     except Exception as e:
         logging.error(f"❌ Error fetching rules: {e}")
+        session_context["item_index"] = 1
+        session_context["extracted"] = extracted_rules_details
+        agent_response = f"An unexpected error occurred while retrieving the rules: {str(e)}"
+        save_or_update_conversation_context(session_context, agent_response)
         return {
             "message": f"❌ An unexpected error occurred while retrieving the rules: {str(e)}"
         }
     
 def update_rule(user, user_message, session_data):
     """Updates only the modified fields in rules."""
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "UpdateRule", "admin_agent", session_data, user_message)
 
     logging.info("🔧 Updating rules...\n\n")
     # ✅ Looking for active quote
@@ -300,16 +347,18 @@ def update_rule(user, user_message, session_data):
     extracted_updates = extract_rule_updates(user_message)
 
     if not extracted_updates:
+        session_context["item_index"] = 1
+        session_context["extracted"] = extracted_updates
+        agent_response = f"AgentCPQ: An error occurred while extracting your updates. Please try again."
+        save_or_update_conversation_context(session_context, agent_response)
         return {
         "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
         }
     
     response_message = ""
 
-
-
     # ✅ Handle rules updates
-    response_message, updated_rules = handle_rules_updates(extracted_updates, response_message)
+    response_message, updated_rules = handle_rules_updates(extracted_updates, response_message, session_context)
 
 
     # ✅ Return
@@ -326,6 +375,8 @@ def update_rule(user, user_message, session_data):
 
 def delete_rule(user, user_message, session_data):
     """Updates only the modified fields in rules."""
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "DeleteRule", "admin_agent", session_data, user_message)
 
     logging.info("🔧 Deleting rules...\n\n")
     # ✅ Looking for active quote
@@ -335,6 +386,10 @@ def delete_rule(user, user_message, session_data):
     extracted_updates = extract_rule_deletes(user_message)
 
     if not extracted_updates:
+        session_context["item_index"] = 1
+        session_context["extracted"] = "No data, user just wants to delete any rule."
+        agent_response = f"An error occurred while extracting your updates. Please try again."
+        save_or_update_conversation_context(session_context, agent_response)
         return {
         "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
         }
@@ -342,7 +397,7 @@ def delete_rule(user, user_message, session_data):
     response_message = ""
 
     # ✅ Handle rules deletes
-    response_message, updated_rules = handle_rules_deletes(extracted_updates, response_message)
+    response_message, updated_rules = handle_rules_deletes(extracted_updates, response_message, session_context)
 
     # ✅ Return
     if not updated_rules:

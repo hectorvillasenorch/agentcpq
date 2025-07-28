@@ -83,3 +83,17 @@ def build_context_prompt(data_entries, intention, new_user_message):
 
     messages.append("New user message: " + new_user_message)
     return "\n".join(messages)
+
+
+def make_session_context(user, intention, agent_name, session_data, user_message):
+    # 🧠 Make the session context
+    session_context = {
+        "user": user,
+        "intent": intention,
+        "agent_name": agent_name,
+        "session_data": session_data,
+        "user_message": user_message,
+        "extracted": None
+    }
+
+    return session_context
