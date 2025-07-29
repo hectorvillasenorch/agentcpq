@@ -283,6 +283,7 @@ class Quote(models.Model):
     sf_opportunity_id = models.CharField(max_length=18, blank=True, null=True)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
     net_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    tax_percentage = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Draft')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -988,6 +989,11 @@ class QuoteDocumentSettings(models.Model):
     show_quote_created_at = models.BooleanField(default=True)
     show_quote_expires_at = models.BooleanField(default=True)
     show_quote_notes = models.BooleanField(default=True)
+    show_quote_tax_information = models.BooleanField(default=True)
+    show_quote_tax_percentage = models.BooleanField(default=True)
+    show_quote_tax_amount = models.BooleanField(default=True)
+
+    quote_tax = models.DecimalField(max_digits=10, decimal_places=2, default=7.25)
 
     # Quote Line Items
     show_line_discount_percentage = models.BooleanField(default=False)

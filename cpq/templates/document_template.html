@@ -77,26 +77,37 @@ input[type="checkbox"]:checked + span:before {
   background-color: {{ company.secondary_color }};
 }
 
+/* Switch tax information color when it is activated */
+#tax-information-switch:checked + .lever {
+  background-color: {{ company.secondary_color }};
+}
+#tax-information-switch:checked + .lever:after {
+  background-color: {{ company.secondary_color }};
+}
+
 /* Change the span color for checkbox */
 input[type="checkbox"] + span {
   color: #212121 !important;  /* o el color que prefieras */
 }
 .container{
-      padding: 24px;
-      background: #fff;
-      border-radius: 16px;
-      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-      max-width: none !important;
-      width: 100%;
-      
-    }
-    .card-panel {
-    padding: 24px;
-    margin: .5rem 0 1rem 0;
-    border-radius: 10px;
-    background-color: #fff;
-    border: 1px solid #e0e0e0;
-    box-shadow: none !important;
+  padding: 24px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+  max-width: none !important;
+  width: 100%;
+  
+}
+.card-panel {
+  padding: 24px;
+  margin: .5rem 0 1rem 0;
+  border-radius: 10px;
+  background-color: #fff;
+  border: 1px solid #e0e0e0;
+  box-shadow: none !important;
+  overflow: hidden !important;
+  max-height: none !important;
+  height: auto !important;
 }
  .agent-limits{
   padding: 24px;
@@ -180,10 +191,6 @@ input[type="checkbox"]:checked + span:before{
           </div>
         </div>
       </div>
-
-      <style>
-        
-      </style>
 
       <h6 class="tenant-title left-align">Tenant Information</h6>
 
@@ -356,7 +363,7 @@ input[type="checkbox"]:checked + span:before{
           </div>
         
 
-              <!--  Responsive grid: Show Discount / Term / Sign  -->
+        <!--  Responsive grid: Show Discount / Term / Sign  -->
         <div class="row line-display-options">
           <div class="col s12 m6 l4">
             <h6 class="option-title">Show Discount</h6>
@@ -385,6 +392,58 @@ input[type="checkbox"]:checked + span:before{
             </label>
           </div>
         </div>
+      </div>
+
+      <!-- 1️⃣  Grid of check-boxes -->
+      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Tax Information</h6>
+
+      <!-- 2️⃣  Grid of check-boxes -->
+      <div class="row">
+        <div class="col s12">
+          <div class="switch detail-switch">
+            <label>
+              Hide Tax Info
+              <input type="checkbox"
+                name="tax-information-switch"
+                id="tax-information-switch"
+                {% if settings.show_quote_tax_information == True %} checked {% endif %}/>
+              <span class="lever"></span>
+              Show Tax Info
+            </label>
+          </div>
+        </div>
+      </div>
+  
+      <!-- ✅ Contenedor que se muestra/oculta -->
+      <div id="tax_info_section" style="display: none;">
+
+        <!-- Input del Tax Rate -->
+        <div class="row">
+          <div class="input-field col s12 m4">
+            <input id="tax_rate" name="tax_rate" type="number" step="0.01" min="0" max="100" value="{{ settings.quote_tax}}">
+            <label for="tax_rate">Tax Rate (%)</label>
+          </div>
+        </div>
+
+        <!-- Checkboxes para mostrar tax info -->
+        <div class="row line-display-options">
+          <div class="col s12 m6 l4">
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_tax_percentage" 
+                {% if settings.show_quote_tax_percentage %} checked {% endif %}/>
+              <span>Show Tax as Percentage</span>
+            </label>
+          </div>
+
+          <div class="col s12 m6 l4">
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_tax_amount"
+                {% if settings.show_quote_tax_amount %} checked {% endif %}/>
+              <span>Show Tax as Amount</span>
+            </label>
+          </div>
+        </div>
+      </div>
 
       <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Terms and Conditions</h6>
 
@@ -445,6 +504,21 @@ input[type="checkbox"]:checked + span:before{
             document.getElementById("rendered_fields_input").value = JSON.stringify(renderedFields);
             document.getElementById("omitted_fields_input").value = JSON.stringify(omittedFields);
           });
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+          const taxSwitch = document.getElementById('tax-information-switch');
+          const taxSection = document.getElementById('tax_info_section');
+
+          // Mostrar/ocultar al cambiar el switch
+          taxSwitch.addEventListener('change', function () {
+            taxSection.style.display = taxSwitch.checked ? 'block' : 'none';
+          });
+
+          // Opcional: si ya está activado al cargar
+          if (taxSwitch.checked) {
+            taxSection.style.display = 'block';
+          }
         });
         </script>
 
