@@ -16,7 +16,6 @@ from django.http import JsonResponse, HttpResponseForbidden, HttpResponseBadRequ
 from django.db.models import Count
 from django.utils.timezone import now
 from django.db.models.functions import TruncMonth
-<<<<<<< HEAD
 from django.db.models import Prefetch
 import hmac
 import hashlib
@@ -30,11 +29,9 @@ from django.utils.dateparse import parse_datetime
 import logging
 logger = logging.getLogger(__name__)
 from datetime import datetime, timezone as dt_timezone
-=======
 from django.contrib.auth.views import PasswordResetView
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
->>>>>>> 5508af3eae99a1653481e8ce3b408d32e1740a5f
 
 @login_required
 def dashboard(request):
@@ -153,7 +150,6 @@ class CustomPasswordResetView(PasswordResetView):
     def send_mail(self, subject_template_name, email_template_name,
                   context, from_email, to_email, html_email_template_name=None):
 
-<<<<<<< HEAD
 def get_grouped_user_quotes(user):
 
     # Base queryset: if superuser, all quotes; otherwise only quotes
@@ -308,7 +304,6 @@ def get_tenant_usage(request):
         "total_actions":    total_actions,
         "overflow_actions": overflow,
     })
-=======
         subject = render_to_string(subject_template_name, context).strip()
         body = render_to_string(email_template_name, context)
 
@@ -319,4 +314,3 @@ def get_tenant_usage(request):
             email_message.attach_alternative(html_email, 'text/html')
 
         email_message.send()
->>>>>>> 5508af3eae99a1653481e8ce3b408d32e1740a5f
