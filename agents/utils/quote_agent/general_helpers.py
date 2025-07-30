@@ -30,7 +30,12 @@ def get_quote_details(quote):
     # Add or delete Product Custom Fields into quote document settings
     set_custom_fields_into_quote_document_settings("Product")
 
-    quote_details_settings = get_or_create_quote_ui_render()
+    quote_details_settings, quote_document_settings = get_or_create_quote_ui_render()
+    if quote_document_settings is None:
+        return{
+            "error": True, 
+            "message": "⚠️ The quote data can’t be rendered because there’s no quote template available. Please create one in <b>Admin > Manage Document</b>"
+        }
     print(f"\nRendered fields on UI Quote Details: {quote_details_settings.rendered_fields}")
     print(f"\nOmitted fields on UI Quote Details: {quote_details_settings.omitted_fields}\n")
 
@@ -117,6 +122,11 @@ def get_quote_details(quote):
         "discount_type": str(quote.discount_type) if quote_details_settings.show_quote_discount else None,
         "discount_amount": str(quote.discount_amount) if quote_details_settings.show_quote_discount else None,
         "discount_percentage": str(quote.discount_percentage) if quote_details_settings.show_quote_discount else None,
+        "show_tax_information": True if quote_document_settings.show_quote_tax_information else False,
+        "show_quote_tax_percentage": True if quote_document_settings.show_quote_tax_percentage else False,
+        "show_quote_tax_amount": True if quote_document_settings.show_quote_tax_amount else False,
+        "tax_percentage": str(quote.tax_percentage) if quote_document_settings.show_quote_tax_information and quote_document_settings.show_quote_tax_percentage else None,
+        "tax_amount": str(quote.tax_amount) if quote_document_settings.show_quote_tax_information and quote_document_settings.show_quote_tax_amount else None,
         "line_items": line_items
     }
 
@@ -902,7 +912,7 @@ def get_document_pdf(quote):
 
             # === Discount ===
             discount_label = "Discount:"
-            discount_value = f"{quote.discount_percentage:.2f}% (-{format_currency(quote.discount_amount)})"
+            discount_value = f"{quote.discount_percentage:.2f}% (- ${format_currency(quote.discount_amount)})"
 
             discount_label_width = pdf.stringWidth(discount_label, label_font, label_size)
             discount_value_width = pdf.stringWidth(discount_value, value_font, value_size)
@@ -918,6 +928,35 @@ def get_document_pdf(quote):
             pdf.drawString(right_margin - discount_value_width, y_position, discount_value)
 
             y_position -= 30
+
+            # === Tax information ===
+            if template.show_quote_tax_information and (template.show_quote_tax_percentage or template.show_quote_tax_amount):
+                discount_label = "Tax:"
+                discount_value = ""
+
+                tax_label = "Tax:"
+
+                tax_value = (
+                    (f"{quote.tax_percentage:.2f}%" if template.show_quote_tax_percentage else '') +
+                    (' (' if template.show_quote_tax_percentage and template.show_quote_tax_amount else '') +
+                    (f"${format_currency(quote.tax_amount)}" if template.show_quote_tax_amount else '') +
+                    (')' if template.show_quote_tax_percentage and template.show_quote_tax_amount else '')
+                )
+
+                tax_label_width = pdf.stringWidth(tax_label, label_font, label_size)
+                tax_value_width = pdf.stringWidth(tax_value, value_font, value_size)
+
+                start_x = right_margin - 150 - tax_label_width
+
+                pdf.setFont(label_font, label_size)
+                pdf.setFillColor(HexColor(CBLACK))
+                pdf.drawString(start_x, y_position, tax_label)
+
+                pdf.setFont(value_font, value_size)
+                pdf.setFillColor(CBLACK)
+                pdf.drawString(right_margin - tax_value_width, y_position, tax_value)
+
+                y_position -= 30
 
             # === Net Amount ===
             net_label = "Net Amount:"

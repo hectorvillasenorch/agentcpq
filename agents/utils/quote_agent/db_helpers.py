@@ -102,6 +102,9 @@ def get_or_create_quote_ui_render():
 
     quote_document_settings = QuoteDocumentSettings.objects.first()
 
+    if quote_document_settings is None:
+        return None, None
+
     quote_render_settings = QuoteUIRender.objects.first()
 
     if quote_render_settings is None:
@@ -123,4 +126,4 @@ def get_or_create_quote_ui_render():
         quote_render_settings.omitted_fields = omitted_fields
         quote_render_settings.save()
     
-    return quote_render_settings
+    return quote_render_settings, quote_document_settings

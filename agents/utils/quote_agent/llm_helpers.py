@@ -294,6 +294,13 @@ def extract_quote_updates(user_message):
         {{"quote_name": "Q-00048", "field": "notes", "value": "Urgent request from client."}}
     ]
 
+    **Example Input & Output:**
+    User: "update tax to 7% to quote Q-00076"
+    Response:
+    [
+        {{"quote_name": "Q-00076", "field": "tax_percentage", "value": 7.00}}
+    ]
+
     **Requirements:**
     - For discounts, if the user specifies a percentage (e.g., "15% discount"), return field: "discount_percentage" and value: 15. If the user specifies a dollar amount (e.g., "$150 off", "150 dollars discount" or just a number like "150"), return field: "discount_amount" and value: 150. Always extract only the numeric value — remove symbols like % or $, and ignore words like "off", "discount", or "dollars".
     - Always normalize discount values to plain numbers.

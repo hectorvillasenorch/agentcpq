@@ -689,7 +689,7 @@ function renderQuoteDetails(quote) {
       }
 
       html += `<tr${item.is_bundle_child ? ' class="bundle-child"' : ''}>`;
-      console.log("Item: ", item);
+      //console.log("Item: ", item);
 
       if (item.is_bundle_child == true && item.is_bundle_component_selected == false) {
         quote.rendered_fields.forEach((field, index) => {
@@ -838,8 +838,31 @@ function renderQuoteDetails(quote) {
             style: 'currency',
             currency: 'USD'
         })}
+      </p>`;
+  if(quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)){
+    html += `
+      <p class="subtotal-amount">
+        Tax: 
+        ${
+          quote.show_quote_tax_percentage && quote.show_quote_tax_amount
+            ? `(${parseFloat(quote.tax_percentage)}%) `
+            : quote.show_quote_tax_percentage
+            ? `${parseFloat(quote.tax_percentage)}% `
+            : ''
+        }
+        ${
+          quote.show_quote_tax_amount
+            ? parseFloat(quote.tax_amount).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })
+            : ''
+        }
       </p>
-      <p class="total-amount">
+    `;
+  }
+
+  html += `    <p class="total-amount">
         Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
             style: 'currency',
             currency: 'USD'

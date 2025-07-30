@@ -296,6 +296,7 @@ def update_quote(user, user_message, session_data):
     """Updates only the modified fields in quote lines."""
 
     logging.info("🔧 Updating quote...\n\n")
+    
     # 🧠 Make the session context
     session_context = make_session_context(user, "UpdateQuote", "quote_agent", session_data, user_message)
         
@@ -531,6 +532,13 @@ def show_quote_details(user, user_message, session_data):
         # ✅ Format the response
         quote_details = get_quote_details(quote)
 
+        # If quote document settings has not been created
+        if isinstance(quote_details, dict) and "message" in quote_details and "error" in quote_details:
+            if quote_details["message"] and quote_details["error"]:
+                return {
+                    "message": quote_details["message"]
+                }
+
 
         set_active_quote_to_session_data(session_data, quote)
 
@@ -539,9 +547,9 @@ def show_quote_details(user, user_message, session_data):
     except Exception as e:
         session_context["item_index"] = 1
         session_context["extracted"] = "No extracted data, user just wants to show quote details."
-        agent_response = f"Error: Something went wrong when trying to show qutoe details: {str(e)}."
+        agent_response = f"Error: Something went wrong when trying to show quote details: {str(e)}."
         save_or_update_conversation_context(session_context, agent_response)
-        return {"message": f"⚠️ Error: Something went wrong when trying to show qutoe details: {str(e)}."}
+        return {"message": f"⚠️ Error: Something went wrong when trying to show quote details: {str(e)}."}
 
 #< ----------------- SHOW QUOTE DETAILS -------------------- >
 

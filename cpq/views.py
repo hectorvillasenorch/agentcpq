@@ -21,6 +21,7 @@ from .forms import CustomFieldForm, BusinessRuleForm, get_rule_condition_formset
 from .forms import QUOTE_FIELDS, QUOTE_LINE_FIELDS, PRODUCT_FIELDS
 from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_POST
+from decimal import Decimal, InvalidOperation
 
 # Agents General Helpers
 from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
@@ -472,7 +473,7 @@ def get_document_template(request):
             'show_account_name', 'show_account_website', 'show_account_phone',
             'show_quote_opportunity', 'show_quote_status', 'show_quote_created_at',
             'show_quote_expires_at', 'show_quote_notes',
-            'show_line_discount', 'show_subscription_term', 'show_sign'
+            'show_line_discount', 'show_subscription_term', 'show_sign', 'show_quote_tax_percentage', 'show_quote_tax_amount'
         ]
         
         for field in boolean_fields:
@@ -486,11 +487,24 @@ def get_document_template(request):
             settings.omitted_fields = json.loads(omitted_fields_raw)
         except json.JSONDecodeError:
             print("Error decodificando los JSON\n\n")
+
+        # Tax Switch
+        tax_switch = True if request.POST.get('tax-information-switch') == 'on' else False
+        settings.show_quote_tax_information = tax_switch
+
+
+        # Tax Rate
+        settings.quote_tax = request.POST.get("tax_rate", "")
         
         # Terms and conditions
         settings.terms_and_conditions = request.POST.get("terms_conditions", "")
 
         settings.save()
+
+        #Update every quote tax amount
+        for quote in Quote.objects.all():
+            quote.update_tax()
+            quote.save()
         return redirect('cpq:get_document_template')
     
     if document_settings is None:

@@ -561,7 +561,8 @@ def handle_quote_update_request(extracted_updates, quote, response_message, sess
             "discount_percentage": "Discount Percentage",
             "discount_amount": "Discount Amount",
             "expiration_date": "Expiration Date",
-            "notes": "Notes"
+            "notes": "Notes",
+            "tax_percentage": "Tax Percentage"
         }
 
         # Add full item for session context
@@ -692,10 +693,9 @@ def save_quote_update(request):
             quote = Quote.objects.get(id=quote_id)
         except Quote.DoesNotExist:
             return {
-            "message": f"Quote with ID {quote.id} was not found in the database.",
-            "success": False
-        }
-
+                "message": f"Quote with ID {quote.id} was not found in the database.",
+                "success": False
+            }
         
         with transaction.atomic():
             
@@ -706,6 +706,8 @@ def save_quote_update(request):
 
             if field in fields:
                 setattr(quote, field, new_value)
+            elif field == "tax_percentage":
+                quote.tax_percentage = Decimal(str(new_value))
             else:
                 if field == "discount_percentage":
                     quote.discount_type = "percentage"

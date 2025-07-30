@@ -347,7 +347,20 @@ class Quote(models.Model):
         discount = min(discount, self.subtotal) #Avoid discount will be more than subtotal
 
         self.net_amount = (subtotal - discount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    
+
+        if self.tax_percentage != Decimal("0.00"):
+            self.tax_amount = (self.net_amount * self.tax_percentage / Decimal("100.00")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            self.net_amount = (self.net_amount + self.tax_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    def update_tax(self):
+        try:
+            settings = QuoteDocumentSettings.objects.first()
+            if settings and settings.quote_tax:
+                self.tax_percentage = settings.quote_tax
+            else:
+                self.tax_amount = Decimal("0.00")
+        except QuoteDocumentSettings.DoesNotExist:
+            self.tax_amount = Decimal("0.00")
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -360,6 +373,7 @@ class Quote(models.Model):
             super().save(*args, **kwargs)
 
             # Actualizar campos dependientes y volver a guardar
+            self.update_tax()
             self.subtotal = self.get_subtotal_amount()
             self.update_discount_fields()
             self.update_net_amount()
@@ -989,6 +1003,7 @@ class QuoteDocumentSettings(models.Model):
     show_quote_created_at = models.BooleanField(default=True)
     show_quote_expires_at = models.BooleanField(default=True)
     show_quote_notes = models.BooleanField(default=True)
+
     show_quote_tax_information = models.BooleanField(default=True)
     show_quote_tax_percentage = models.BooleanField(default=True)
     show_quote_tax_amount = models.BooleanField(default=True)

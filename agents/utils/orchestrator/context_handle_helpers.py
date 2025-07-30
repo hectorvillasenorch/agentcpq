@@ -40,6 +40,9 @@ def save_or_update_conversation_context(session_context, agent_response):
         logging.info(f"📍 Agent Session Founded: {session}")
 
 def extract_non_null_fields(data):
+    if not isinstance(data, dict):
+        # If data is not a dictionary, just return
+        return data
     result = {}
     for key, value in data.items():
         if value is None:
