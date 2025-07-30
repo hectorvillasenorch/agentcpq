@@ -922,7 +922,8 @@ class CustomRecord(models.Model):
             value_parts = [
                 f"{v.field.label}: {v.value}" for v in values if v.field and v.value
             ]
-            return f"{label} — {' | '.join(value_parts)}" if value_parts else label
+            #return f"{label} — {' | '.join(value_parts)}" if value_parts else label
+            return label
         except Exception:
             return label
 
@@ -938,7 +939,7 @@ class CustomField(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='creted_custom_fields')
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_fields')
-    custom_object = models.ForeignKey(CustomObject, on_delete=models.SET_NULL, null=True, blank=True)
+    custom_object = models.ForeignKey(CustomObject, on_delete=models.CASCADE, null=True, blank=True, related_name='custom_fields')
     lookup_model = models.CharField(
         max_length=100,
         blank=True,

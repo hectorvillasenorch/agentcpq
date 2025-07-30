@@ -86,11 +86,11 @@ class CustomFieldForm(forms.ModelForm):
         data_type = cleaned_data.get("data_type")
         lookup_model = cleaned_data.get("lookup_model")
 
-        if not object_type and not custom_object:
-            raise forms.ValidationError("You must select either an Object Type or a Custom Object.")
+        if custom_object:
+            cleaned_data["object_type"] = custom_object.name
 
-        if object_type and custom_object:
-            raise forms.ValidationError("Select only one: Object Type or Custom Object.")
+        if not object_type and not custom_object:
+            raise forms.ValidationError("You must select an Object Type and a Custom Object if required.")
 
         if data_type == "lookup" and not lookup_model:
             raise forms.ValidationError("Lookup fields require a lookup model (e.g., cpq.Account).")

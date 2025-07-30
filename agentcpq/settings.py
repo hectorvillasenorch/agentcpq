@@ -117,7 +117,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'agentcpq',
         'USER': 'root',
-        'PASSWORD': 'password',  # If set
+        'PASSWORD': 'agentcpq2025!',  # If set
         'HOST': 'localhost',
         'PORT': '3306',
         'OPTIONS': {
@@ -205,6 +205,6 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'temporal1.wetransfer@gmail.com'
-EMAIL_HOST_PASSWORD = 'xatf wbzy vles rwua'
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+#EMAIL_HOST_USER = WAITING FOR HECTOR UPDATES
+#EMAIL_HOST_PASSWORD = WAITING FOR HECTOR UPDATES
+#DEFAULT_FROM_EMAIL = EMAIL_HOST_USER

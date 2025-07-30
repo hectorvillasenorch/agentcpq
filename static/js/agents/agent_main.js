@@ -839,6 +839,7 @@ function renderQuoteDetails(quote) {
             currency: 'USD'
         })}
       </p>`;
+
   if(quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)){
     html += `
       <p class="subtotal-amount">
@@ -914,6 +915,30 @@ function renderQuoteDetailsMobile(quote) {
       <p style="margin-top:12px"><b>Subtotal:</b> ${parseFloat(
         quote.subtotal.replace("$", "")
       ).toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
+
+      ${
+        quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)
+          ? `<p>
+              <b>Tax:</b> 
+              ${
+                quote.show_quote_tax_percentage && quote.show_quote_tax_amount
+                  ? `(${parseFloat(quote.tax_percentage)}%) `
+                  : quote.show_quote_tax_percentage
+                  ? `${parseFloat(quote.tax_percentage)}% `
+                  : ''
+              }
+              ${
+                quote.show_quote_tax_amount
+                  ? parseFloat(quote.tax_amount).toLocaleString("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                    })
+                  : ''
+              }
+            </p>`
+          : ''
+      }
+
       <p>💰 <b>Net Amount:</b> ${parseFloat(
         quote.net_amount.replace("$", "")
       ).toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
@@ -1303,8 +1328,32 @@ function renderReadOnlyQuoteDetails(quote) {
             style: 'currency',
             currency: 'USD'
         })}
+      </p>`;
+
+  if(quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)){
+    html += `
+      <p class="subtotal-amount">
+        Tax: 
+        ${
+          quote.show_quote_tax_percentage && quote.show_quote_tax_amount
+            ? `(${parseFloat(quote.tax_percentage)}%) `
+            : quote.show_quote_tax_percentage
+            ? `${parseFloat(quote.tax_percentage)}% `
+            : ''
+        }
+        ${
+          quote.show_quote_tax_amount
+            ? parseFloat(quote.tax_amount).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })
+            : ''
+        }
       </p>
-      <p class="total-amount">
+    `;
+  }
+
+  html += `    <p class="total-amount">
         Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
             style: 'currency',
             currency: 'USD'
@@ -2027,8 +2076,32 @@ function showTemporaryQuoteDetails(quote) {
             style: 'currency',
             currency: 'USD'
         })}
+      </p>`;
+
+  if(quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)){
+    html += `
+      <p class="subtotal-amount">
+        Tax: 
+        ${
+          quote.show_quote_tax_percentage && quote.show_quote_tax_amount
+            ? `(${parseFloat(quote.tax_percentage)}%) `
+            : quote.show_quote_tax_percentage
+            ? `${parseFloat(quote.tax_percentage)}% `
+            : ''
+        }
+        ${
+          quote.show_quote_tax_amount
+            ? parseFloat(quote.tax_amount).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })
+            : ''
+        }
       </p>
-      <p class="total-amount">
+    `;
+  }
+
+  html += `    <p class="total-amount">
         Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
             style: 'currency',
             currency: 'USD'

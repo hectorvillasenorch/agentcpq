@@ -22,6 +22,7 @@ from .forms import QUOTE_FIELDS, QUOTE_LINE_FIELDS, PRODUCT_FIELDS
 from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_POST
 from decimal import Decimal, InvalidOperation
+from collections import defaultdict 
 
 # Agents General Helpers
 from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
@@ -220,6 +221,7 @@ def custom_fields_view(request):
         if form.is_valid():
             custom_object = form.save(commit=False)
             custom_object.created_by = request.user
+            custom_object.updated_by = request.user
             custom_object.save()
             request.session['custom_object_success'] = True
             return redirect('cpq:custom_fields')
@@ -252,7 +254,7 @@ def custom_fields_view(request):
         else:
             try:
                 custom_obj = CustomObject.objects.get(name=obj_type)
-                custom_fields = CustomField.objects.filter(custom_object=custom_obj)
+                custom_fields = CustomField.objects.filter(object_type=custom_obj.name)
             except CustomObject.DoesNotExist:
                 custom_fields = []
 
@@ -307,9 +309,21 @@ def edit_custom_object(request, object_name):
     else:
         form = CustomObjectForm(instance=custom_object)
 
+        # Get related values
+        related_customfields = custom_object.custom_fields.all()
+
+        related_data = defaultdict(list)
+
+        for custom_field in related_customfields:
+            related_values = custom_field.values.all()
+            related_data[custom_field.label].extend(related_values)
+        
+        related_data = dict(related_data)
+
     return render(request, 'edit_custom_object.html', {
         'form': form,
-        'object_name': object_name
+        'object_name': object_name,
+        'related_data': related_data
     })
 
 @require_POST
@@ -323,12 +337,15 @@ def delete_custom_object(request, object_name):
     return redirect('cpq:custom_fields')
 
 def create_custom_field(request, object_name):
-    print("Entra al segundo")
     if request.method == 'POST':
         form = CustomFieldForm(request.POST)
+
         if form.is_valid():
+            # Buscamos si el object_type es un objeto custom
+
             field = form.save(commit=False)
             field.created_by = request.user
+            field.updated_by = request.user
             field.save()
 
             # 🔧 Lógica personalizada aquí
@@ -343,8 +360,16 @@ def create_custom_field(request, object_name):
                     quote_document_settings.save()
             
             return redirect('cpq:custom_fields')  # or wherever you want to go after save
+        else:
+            print("Form errors:", form.errors)
     else:
-        form = CustomFieldForm(initial={'crm': 'AgentCPQ', 'object_type': object_name})
+        # Buscar si object_type es un objeto custom
+        try:
+            custom_obj = CustomObject.objects.get(name=object_name)
+            form = CustomFieldForm(initial={'crm': 'AgentCPQ', 'object_type': object_name, 'custom_object': custom_obj})
+        except ObjectDoesNotExist:
+            form = CustomFieldForm(initial={'crm': 'AgentCPQ', 'object_type': object_name})
+
     return render(request, 'create_custom_field.html', {'form': form, 'object_name': object_name})
 
 
@@ -362,7 +387,8 @@ def edit_custom_field(request, field_id):
         form = CustomFieldForm(instance=custom_field)
         # Get related values
         related_values = custom_field.values.all()
-        print(f"Valores relacionados: {related_values}")
+
+        print(f"\n\nRelated Values: {related_values}\n\n")
 
     return render(request, 'edit_custom_field.html', {
         'form': form,
