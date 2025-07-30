@@ -304,6 +304,10 @@ def get_tenant_usage(request):
         "total_actions":    total_actions,
         "overflow_actions": overflow,
     })
+
+class CustomPasswordResetView(PasswordResetView):
+    def send_mail(self, subject_template_name, email_template_name,
+                  context, from_email, to_email, html_email_template_name=None):
         subject = render_to_string(subject_template_name, context).strip()
         body = render_to_string(email_template_name, context)
 
