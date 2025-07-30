@@ -123,6 +123,8 @@ def orchestrate_request(user, user_message, session_data):
     - "UpdateRule" (Use this when the user wants to update a rule)
     - "DeleteRule" (Use this when the user wants to delete a rule)
     - "AddProductToBundle" (Use this when the user wants to add any product to bundle)
+    - "UpdateBundleOption" (Use this when the user wants to update any bundle option)
+    - "DeleteBundleOption" (Use this when the user wants to delete any bundle option)
     - "DeleteBundleComponentFromQuote" (Use this when the user wants to delete any bundle option from quote)
     """
     try:
@@ -353,6 +355,8 @@ def get_action_map():
 
         # Bundles-related actions handled by bundles_agent
         "AddProductToBundle": bundles_agent,
+        "UpdateBundleOption": bundles_agent,
+        "DeleteBundleOption": bundles_agent,
         "DeleteBundleComponentFromQuote": bundles_agent,
 
         # Approval-related actions handled by approval_agent

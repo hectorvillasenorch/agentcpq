@@ -47,7 +47,7 @@ def create_product(user, user_message, session_data):
             missing_fields = [field for field in required_fields if not product_details.get(field)]
 
         if missing_fields:
-            return {"message": f"⚠️ Missing required fields: {', '.join(missing_fields)}. Please provide them."}
+            return {"message": f"⚠️ Missing required fields: {', '.join(missing_fields)}. Please enter a value to proceed."}
 
         # ✅ Check if SKU exists
         if Product.objects.filter(sku=product_details["sku"]).exists():

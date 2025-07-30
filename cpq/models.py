@@ -391,6 +391,7 @@ class QuoteLine(models.Model):
     is_subscription = models.BooleanField(default=False)
     is_bundle_parent = models.BooleanField(default=False)
     is_bundle_child = models.BooleanField(default=False)
+    is_bundle_component_selected = models.BooleanField(default=False)
     parent_line = models.ForeignKey('self', null=True, blank=True, related_name="child_lines", on_delete=models.CASCADE)  # for nesting
     product_option = models.ForeignKey("Option", null=True, blank=True, on_delete=models.SET_NULL)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quote_lines')
@@ -474,9 +475,14 @@ class QuoteLine(models.Model):
 
     def update_unit_price_bundle_post_created(self):
         total = sum(
-            (child.total_price or Decimal("0.00")) for child in self.child_lines.all()
+            (child.total_price or Decimal("0.00"))
+            for child in self.child_lines.filter(is_bundle_component_selected=True)
         )
         self.unit_price = total
+    
+    def check_if_is_bundle_component_deselected(self):
+        if self.is_bundle_child and self.is_bundle_component_selected == False:
+            self.total_price = Decimal("0.00")
         
 
     def save(self, *args, **kwargs):
@@ -488,7 +494,7 @@ class QuoteLine(models.Model):
                 self.unit_price = sum(
                     Decimal(option.product_option.price) * Decimal(option.quantity)
                     for option in self.product.options.all()
-                    if option.product_option
+                    if option.product_option and option.default_selected
                 ) or Decimal("0.00")
             elif self.unit_price is None:
                 self.unit_price = self.product.price
@@ -515,6 +521,10 @@ class QuoteLine(models.Model):
         self.update_subtotal()
         #Update total price
         self.update_total_price()
+
+        # Set total price to 0 if is a bundle component deselected
+        if self.is_bundle_child:
+            self.check_if_is_bundle_component_deselected()
         
         super().save(*args, **kwargs)
 
@@ -906,6 +916,9 @@ class CustomObject(models.Model):
     label = models.CharField(max_length=255)              
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_custom_objects')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_objects')
 
     def __str__(self):
         return self.label or self.name
@@ -913,6 +926,7 @@ class CustomObject(models.Model):
     class Meta:
         verbose_name = "Custom Object"
         verbose_name_plural = "Custom Objects"
+        
 #dummy model for all custom objects
 class CustomRecord(models.Model):
     object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE)
@@ -940,6 +954,9 @@ class CustomField(models.Model):
     data_type = models.CharField(max_length=50)  # text, number, date, etc.
     required = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='creted_custom_fields')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_fields')
     custom_object = models.ForeignKey(CustomObject, on_delete=models.SET_NULL, null=True, blank=True)
     lookup_model = models.CharField(
         max_length=100,

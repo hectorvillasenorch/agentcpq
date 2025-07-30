@@ -92,5 +92,23 @@
       </div>
     </main>
   </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const labelInput = document.getElementById("id_label");
+      const nameInput = document.getElementById("id_name");
+
+      if (labelInput && nameInput) {
+        labelInput.addEventListener("input", function () {
+          const raw = labelInput.value;
+          const formatted = raw.trim()
+                              .toLowerCase()
+                              .replace(/\s+/g, "_")
+                              .replace(/[^\w]/g, "") + "__c";
+          nameInput.value = formatted;
+        });
+      }
+    });
+  </script>
 </body>
 </html>

@@ -8,11 +8,11 @@
 
 <div class="max-w-4xl mx-auto py-10">
   <h4 class="text-center text-xl font-semibold text-orange-600 mb-6">
-      Create New Custom Field
+      Edit Custom Field
   </h4>
 
   <form method="post"
-        action="{% url 'cpq:create_custom_field' object_name %}"
+        action="{% url 'cpq:edit_custom_field' field_id %}"
         class="bg-white shadow rounded-2xl p-8 space-y-6">
     {% csrf_token %}
 
@@ -73,10 +73,15 @@
       </div>
     </div>
 
+    <div class="divider"></div>
+    <div>
+      <a class="btn red modal-trigger" href="#deleteModal">Delete Custom Field</a>
+    </div>
+
     <div class="flex justify-end space-x-4 pt-6">
       <a href="{% url 'cpq:custom_fields' %}" class="px-4 py-2 text-gray-600">Cancel</a>
-     <button class="btn orange darken-2 white-text" type="submit">
-      Save
+      <button type="submit" class="px-6 py-2 bg-orange-600 text-white rounded-lg">
+        Save
       </button>
     </div>
   </form>
@@ -126,5 +131,34 @@
     dataTypeSelect.addEventListener('change', toggleLookupField);
     toggleLookupField();  // Run on load in case "lookup" is pre-selected
   });
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const modals = document.querySelectorAll('.modal');
+    M.Modal.init(modals);
+  });
 </script>
+
+<div id="deleteModal" class="modal">
+  <div class="modal-content">
+    <h4 class="red-text">Confirm Deletion</h4>
+    <p>Are you sure you want to delete this custom field?</p>
+    {% if related_values %}
+      <div style="margin-top: 15px;">
+        <p>This field is currently in use and has the following values assigned. <strong>These will also be deleted:</strong></p>
+        <ul class="browser-default red-text">
+          {% for value in related_values %}
+            <li>{{ value.content_object }} — <em><strong>{{ value.value }}</strong></em></li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+  <div class="modal-footer">
+    <form method="post" action="{% url 'cpq:delete_custom_field' field_id %}">
+      {% csrf_token %}
+      <a href="#!" class="modal-close btn grey">Cancel</a>
+      <button type="submit" class="btn red">Delete</button>
+    </form>
+  </div>
+</div>
 {% endblock %}

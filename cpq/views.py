@@ -1,6 +1,6 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage, Option
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt 
 from django.apps import apps
 from salesforce.models import SalesforceToken
@@ -21,6 +21,8 @@ from .forms import CustomFieldForm, BusinessRuleForm, get_rule_condition_formset
 from .forms import QUOTE_FIELDS, QUOTE_LINE_FIELDS, PRODUCT_FIELDS
 from django.utils.safestring import mark_safe
 import uuid, os
+from django.views.decorators.http import require_POST
+
 # Agents General Helpers
 from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
 
@@ -161,7 +163,7 @@ def set_primary_quote(request, quote_id):
     return JsonResponse({"error": "Invalid method"}, status=405)
 
 
-
+# Maybe it is not used
 def create_custom_field(request):
     if request.method == "POST":
         crm = request.POST["crm"]
@@ -216,7 +218,9 @@ def custom_fields_view(request):
     if request.method == 'POST':
         form = CustomObjectForm(request.POST)
         if form.is_valid():
-            form.save()
+            custom_object = form.save(commit=False)
+            custom_object.created_by = request.user
+            custom_object.save()
             request.session['custom_object_success'] = True
             return redirect('cpq:custom_fields')
     else:
@@ -256,19 +260,76 @@ def custom_fields_view(request):
             "standard": standard_fields,
             "custom": custom_fields,
         }
+
+    # New dictionary for real data of custom objects
+    custom_objects_data = {}
+
+    for custom_obj in custom_objects:
+        custom_objects_data[custom_obj.name] = [{
+            "label": custom_obj.label,
+            "name": custom_obj.name,
+            "description": custom_obj.description,
+            "created_at": custom_obj.created_at,
+            "created_by": custom_obj.created_by.username if custom_obj.created_by else "",
+            "updated_at": custom_obj.updated_at,
+            "updated_by": custom_obj.updated_by.username if custom_obj.updated_by else ""
+        }]
+
+    object_type_kinds = {}
+    for obj in all_object_types:
+        if obj in object_types:
+            object_type_kinds[obj] = 'standard'
+        else:
+            object_type_kinds[obj] = 'custom'
+
     success = request.session.pop('custom_object_success', False)
     return render(request, "custom_fields.html", {
         "fields_by_object_type": fields_by_object_type,
         "models": all_object_types,
+        "standard_models": object_types,
+        "custom_models": custom_object_names,
+        "custom_object_records": custom_objects_data,
+        "object_type_kinds": object_type_kinds,
         "form": form,  # ✅ Pass the form to the template
         "success": success  # ✅ Add to context
     })
 
-def create_custom_field(request):
+def edit_custom_object(request, object_name):
+    custom_object = get_object_or_404(CustomObject, name=object_name)
+
+    if request.method == 'POST':
+        form = CustomObjectForm(request.POST, instance=custom_object)
+        if form.is_valid():
+            updated_object = form.save(commit=False)
+            updated_object.updated_by = request.user
+            updated_object.save()
+            return redirect('cpq:custom_fields')  # O donde quieras regresar
+    else:
+        form = CustomObjectForm(instance=custom_object)
+
+    return render(request, 'edit_custom_object.html', {
+        'form': form,
+        'object_name': object_name
+    })
+
+@require_POST
+def delete_custom_object(request, object_name):
+    custom_object = get_object_or_404(CustomObject, name=object_name)
+
+    if not request.user.is_superuser and not request.user.is_staff:
+        return HttpResponseForbidden("You do not have permission to delete this custom object.")
+
+    custom_object.delete()
+    return redirect('cpq:custom_fields')
+
+def create_custom_field(request, object_name):
+    print("Entra al segundo")
     if request.method == 'POST':
         form = CustomFieldForm(request.POST)
         if form.is_valid():
-            field = form.save()
+            field = form.save(commit=False)
+            field.created_by = request.user
+            field.save()
 
             # 🔧 Lógica personalizada aquí
             quote_document_settings = QuoteDocumentSettings.objects.first()
@@ -283,8 +344,44 @@ def create_custom_field(request):
             
             return redirect('cpq:custom_fields')  # or wherever you want to go after save
     else:
-        form = CustomFieldForm()
-    return render(request, 'create_custom_field.html', {'form': form})
+        form = CustomFieldForm(initial={'crm': 'AgentCPQ', 'object_type': object_name})
+    return render(request, 'create_custom_field.html', {'form': form, 'object_name': object_name})
+
+
+def edit_custom_field(request, field_id):
+    custom_field = get_object_or_404(CustomField, id=field_id)
+
+    if request.method == 'POST':
+        form = CustomFieldForm(request.POST, instance=custom_field)
+        if form.is_valid():
+            updated_field = form.save(commit=False)
+            updated_field.updated_by = request.user
+            updated_field.save()
+            return redirect('cpq:custom_fields')
+    else:
+        form = CustomFieldForm(instance=custom_field)
+        # Get related values
+        related_values = custom_field.values.all()
+        print(f"Valores relacionados: {related_values}")
+
+    return render(request, 'edit_custom_field.html', {
+        'form': form,
+        'field_id': field_id,
+        'related_values': related_values
+    })
+
+@require_POST
+def delete_custom_field(request, field_id):
+    custom_field = get_object_or_404(CustomField, id=field_id)
+
+    # Only admins can delete custom fields
+    if not request.user.is_superuser and not request.user.is_staff:
+        return HttpResponseForbidden("You do not have permission to delete this custom field.")
+    
+    
+    custom_field.delete()
+    return redirect('cpq:custom_fields')
+
 
 @login_required
 def get_company_information(request):
@@ -329,11 +426,15 @@ def get_company_information(request):
     })
 
 
+# No dont require this function (apparently)
 def create_custom_object(request):
     if request.method == 'POST':
         form = CustomObjectForm(request.POST)
         if form.is_valid():
-            form.save()
+            custom_object = form.save(commit=False)
+            custom_object.created_by = request.user
+            print(f"User: {request.user}")
+            custom_object.save()
             return redirect('cpq:custom_object_list')  # or some success view
     else:
         form = CustomObjectForm()

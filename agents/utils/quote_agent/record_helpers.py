@@ -54,12 +54,12 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
         try:
             quantity = int(raw_quantity)
             if quantity <= 0:
-                logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Invalid quantity '{quantity}' for product {sku or name}. Skipping...")
-                response_message += f"⚠️ Invalid quantity '{quantity}' for product {sku or name}. Skipping...<br>"
+                logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Invalid quantity '{quantity}' for product {sku or name}. Request omitted.")
+                response_message += f"⚠️ Invalid quantity '{quantity}' for product {sku or name}. Request omitted.<br>"
                 continue
         except (ValueError, TypeError):
-            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Quantity '{raw_quantity}' is not a valid integer for product {sku or name}. Skipping...")
-            response_message += f"⚠️ Quantity '{raw_quantity}' is not a valid integer for product {sku or name}. Skipping...<br>"
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Quantity '{raw_quantity}' is not a valid integer for product {sku or name}. Request omitted.")
+            response_message += f"⚠️ Quantity '{raw_quantity}' is not a valid integer for product {sku or name}. Request omitted.<br>"
             continue
 
         # - Validate discount_value
@@ -78,8 +78,8 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
         product, sku, name = find_product_and_normalize_variables(sku, name)
 
         if not product:
-            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Product `{sku if sku else name}` not found in the database. Skipping...")
-            response_message += f"⚠️ Product `{sku if sku else name}` not found. Skipping...<br>"
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Product `{sku if sku else name}` not found in the database. Request omitted.")
+            response_message += f"⚠️ Product `{sku if sku else name}` not found. Request omitted.<br>"
             continue  # Skip this product and move to the next
 
         ################################################# ✅ Checkrules
@@ -96,7 +96,7 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
                 validations_message += f"- {v}<br>"
             response_message += f"🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑<br>{validations_message}"
             added_products.append(f"🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑")
-            print(f"\n\nValidation rule was triggered by product {product.name}/{product.sku}. Skipping...\n\n")
+            print(f"\n\nValidation rule was triggered by product {product.name}/{product.sku}. Request omitted.\n\n")
             continue
 
         #################################################
@@ -172,7 +172,7 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
         #    This avoids creating duplicate quote lines when the same SKU is mentioned multiple times
         elif existing_line and not allow_updates:
             logging.warning(f"⚠️ Product `{sku}` already exists in quote. Skipping creation.")
-            response_message += f"⚠️ Product `{sku}` already exists in the quote. Skipping...<br>"
+            response_message += f"⚠️ Product `{sku}` already exists in the quote. Request omitted.<br>"
             continue
 
         logging.info(f"=>>>>>>>>>>>>>>>>>>>> SKU: {sku}")
@@ -229,10 +229,31 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
                                 term=None,
                                 discount_type=None,
                                 discount_percentage=Decimal("0.00"),
-                                discount_amount=Decimal("0.00")
+                                discount_amount=Decimal("0.00"),
+                                is_bundle_component_selected=True # Indicates that it is and option selected
                             )
 
                             bundle_response_message += f"&emsp;🔧 Added {option.quantity}x {option.product_option.sku}/{option.product_option.name} ({option.parent_product})<br>"
+                        
+                        elif option.default_selected == False and option.product_option:
+                            QuoteLine.objects.create(
+                                quote=quote,
+                                product=option.product_option,
+                                quantity=int(option.quantity),
+                                parent_line=quote_line, # Bundle parent quote line
+                                is_bundle_parent=False,
+                                is_bundle_child=True,
+                                product_option=option,
+                                is_subscription=option.product_option.is_subscription,
+                                term=None,
+                                discount_type=None,
+                                discount_percentage=Decimal("0.00"),
+                                discount_amount=Decimal("0.00"),
+                                is_bundle_component_selected=False # Indicates that it is and option selected
+                            )
+
+                            bundle_response_message += f"&emsp;🔘 Pending: {option.quantity}x {option.product_option.sku}/{option.product_option.name} - You can add this item to the quote.<br>"
+
                 except Exception as e:
                     print(f"Error: {e}")
 
@@ -332,8 +353,8 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
         product, sku, name = find_product_and_normalize_variables(sku, name)
 
         if not product:
-            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Product `{sku if sku else name}` not found in the database. Skipping...")
-            response_message += f"⚠️ Product `{sku if sku else name}` not found. Skipping...<br>"
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Product `{sku if sku else name}` not found in the database. Request omitted.")
+            response_message += f"⚠️ Product `{sku if sku else name}` not found. Request omitted.<br>"
             continue  # Skip this product and move to the next
 
         # ✅ Format response message
@@ -444,7 +465,7 @@ def save_quote_line_update(request, quote):
             if validations:
                 validations_message = "".join(f"- {v}<br>" for v in validations)
                 response_message = f"🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑<br>{validations_message}"
-                print(f"\n\n🛑 Validation rule was triggered by product {product.name}/{product.sku} 🛑. Skipping...\n\n")
+                print(f"\n\n🛑 Validation rule was triggered by product {product.name}/{product.sku} 🛑. Request omitted.\n\n")
 
                 raise ValueError(response_message)
 
@@ -645,7 +666,7 @@ def save_quote_update(request):
             if triggered_rules:
                 validations_message = "".join(f"- {v}<br>" for v in triggered_rules)
                 response_message = f"🛑 Quote {quote.name} triggered one or more validation rules 🛑<br>{validations_message}"
-                print(f"\n\n🛑 Validation rule was triggered by quote {quote.name} 🛑. Skipping...\n\n")
+                print(f"\n\n🛑 Validation rule was triggered by quote {quote.name} 🛑. Request omitted.\n\n")
 
                 raise ValueError(response_message)
 

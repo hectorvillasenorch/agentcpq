@@ -126,11 +126,10 @@ LOGOUT_REDIRECT_URL = '/login/'
 
 LANGUAGE_CODE = "en-us"
 
+USE_TZ = True
 TIME_ZONE = "UTC"
 
 USE_I18N = True
-
-USE_TZ = True
 
 
 # Static files (CSS, JavaScript, Images)
@@ -226,6 +225,7 @@ AWS_S3_CUSTOM_DOMAIN = "media.agentcpq.com"
 # ⚠️ Must come after AWS_* settings
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
+
 # Salesforce OAuth settings for your connected app
 SALESFORCE_CLIENT_ID = os.getenv("SF_CID")
 SALESFORCE_CLIENT_SECRET = os.getenv("SF_SECRET")
@@ -234,3 +234,11 @@ SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/authorize"
 SALESFORCE_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# For reset password
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'temporal1.wetransfer@gmail.com'
+EMAIL_HOST_PASSWORD = 'xatf wbzy vles rwua'
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
