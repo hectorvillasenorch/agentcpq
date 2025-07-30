@@ -146,9 +146,6 @@ def get_lookup_data_for_form(custom_object):
             lookup_data[field.name] = []
     return lookup_data
 
-class CustomPasswordResetView(PasswordResetView):
-    def send_mail(self, subject_template_name, email_template_name,
-                  context, from_email, to_email, html_email_template_name=None):
 
 def get_grouped_user_quotes(user):
 
