@@ -305,13 +305,25 @@ def get_tenant_usage(request):
 class CustomPasswordResetView(PasswordResetView):
     def send_mail(self, subject_template_name, email_template_name,
                   context, from_email, to_email, html_email_template_name=None):
+        # Render and clean subject
         subject = render_to_string(subject_template_name, context).strip()
+        subject = subject.replace('\xa0', ' ')  # Remove non-breaking spaces
+
+        # Render and clean plain body
         body = render_to_string(email_template_name, context)
+        body = body.replace('\xa0', ' ')
 
-        email_message = EmailMultiAlternatives(subject, body, from_email, [to_email])
+        email_message = EmailMultiAlternatives(
+            subject, body, from_email, [to_email]
+        )
 
+        # Render and clean HTML version if provided
         if html_email_template_name:
             html_email = render_to_string(html_email_template_name, context)
+            html_email = html_email.replace('\xa0', ' ')
             email_message.attach_alternative(html_email, 'text/html')
+
+        # Force UTF-8 encoding
+        email_message.encoding = 'utf-8'
 
         email_message.send()
