@@ -973,12 +973,11 @@ class CustomFieldValue(models.Model):
 
         if hasattr(self, 'updated_by_user') and self.updated_by_user and hasattr(self.field, 'updated_by'):
             self.field.updated_by = self.updated_by_user
-            self.field.save(update_fields=['updated_by', 'updated_at'])  # Django actualizará updated_at
+            self.field.save(update_fields=['updated_by', 'updated_at'])
 
-    updated_by_user = None  # atributo temporal
+    updated_by_user = None  # Temporary field (part of django admin view)
 
     def save(self, *args, **kwargs):
-        # Detectar si el valor cambió ANTES de guardar
         is_changed = False
         if self.pk:
             try:
@@ -987,11 +986,10 @@ class CustomFieldValue(models.Model):
             except CustomFieldValue.DoesNotExist:
                 is_changed = True
         else:
-            is_changed = True  # es nuevo
+            is_changed = True
 
         super().save(*args, **kwargs)
 
-        # Si cambió el valor, actualiza el campo padre
         if is_changed and self.updated_by_user:
             self.field.updated_by = self.updated_by_user
             self.field.save(update_fields=['updated_by', 'updated_at'])

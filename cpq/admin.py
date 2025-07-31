@@ -90,7 +90,6 @@ class ProductAdmin(DynamicCustomFieldAdmin):
         return [(None, {'fields': list(form.fields.keys())})]
     
     def save_model(self, request, obj, form, change):
-        # Mantener la lógica de created_by
         if hasattr(obj, 'created_by'):
             if not change:
                 obj.created_by = request.user
@@ -98,10 +97,9 @@ class ProductAdmin(DynamicCustomFieldAdmin):
                 original = self.model.objects.get(pk=obj.pk)
                 obj.created_by = original.created_by
 
-        # Guardar el objeto principal (producto)
         super().save_model(request, obj, form, change)
 
-        # Lógica para manejar los campos personalizados (CustomFieldValue)
+        # Keep custom fields (CustomFieldValue)
         for field in CustomField.objects.filter(crm="AgentCPQ", object_type="Product"):
             field_name = field.name
             if field_name in form.cleaned_data:
@@ -112,7 +110,7 @@ class ProductAdmin(DynamicCustomFieldAdmin):
                     field=field,
                 )
                 cf_value.value = value
-                cf_value.updated_by_user = request.user  # Usuario válido aquí
+                cf_value.updated_by_user = request.user
                 cf_value.save()
     
     def format_datetime(self, dt):
@@ -147,11 +145,9 @@ class ProductAdmin(DynamicCustomFieldAdmin):
     display_name_sku.short_description = "Product"
 
     def get_list_display(self, request):
-        # Campos fijos antes y después
         initial_fields = ['display_name_sku', 'price', 'family']
         trailing_fields = ['display_updated_by', 'display_created_by']
         
-        # Campos dinámicos (custom fields)
         custom_fields = CustomField.objects.filter(crm="AgentCPQ", object_type="Product")
         dynamic_fields = []
 
@@ -159,13 +155,11 @@ class ProductAdmin(DynamicCustomFieldAdmin):
             method_name = f"custom_field_{field.id}"
             dynamic_fields.append(method_name)
 
-            # Elimina si ya existía (para forzar nuevo label)
             if hasattr(self, method_name):
                 delattr(self, method_name)
 
             setattr(self, method_name, self.build_custom_field_method(field))
 
-        # Retornar con orden: fijos iniciales + dinámicos + fijos finales
         return initial_fields + dynamic_fields + trailing_fields
     
     def build_custom_field_method(self, field):
@@ -181,7 +175,7 @@ class ProductAdmin(DynamicCustomFieldAdmin):
             except CustomFieldValue.DoesNotExist:
                 return "---"
         method.short_description = field.label or field.name
-        method.admin_order_field = None  # desactiva ordenación
+        method.admin_order_field = None
         return method
     
     def get_form(self, request, obj=None, **kwargs):
