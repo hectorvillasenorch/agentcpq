@@ -12,6 +12,7 @@ from django.db.models import JSONField
 from dateutil.relativedelta import relativedelta
 from django.contrib.auth.models import User
 from django.conf import settings
+from django.utils.timezone import now
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -226,7 +227,12 @@ class Product(models.Model):
     family = models.CharField(max_length=50)
     prdid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_products')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_products')
+    
     description = models.TextField(blank=True)
 
     def get_custom_fields(self):
@@ -961,6 +967,34 @@ class CustomFieldValue(models.Model):
     content_object = GenericForeignKey("content_type", "object_id")
     value = models.TextField()
     record = models.ForeignKey(CustomRecord, null=True, blank=True, on_delete=models.CASCADE)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+
+        if hasattr(self, 'updated_by_user') and self.updated_by_user and hasattr(self.field, 'updated_by'):
+            self.field.updated_by = self.updated_by_user
+            self.field.save(update_fields=['updated_by', 'updated_at'])  # Django actualizará updated_at
+
+    updated_by_user = None  # atributo temporal
+
+    def save(self, *args, **kwargs):
+        # Detectar si el valor cambió ANTES de guardar
+        is_changed = False
+        if self.pk:
+            try:
+                original = CustomFieldValue.objects.get(pk=self.pk)
+                is_changed = original.value != self.value
+            except CustomFieldValue.DoesNotExist:
+                is_changed = True
+        else:
+            is_changed = True  # es nuevo
+
+        super().save(*args, **kwargs)
+
+        # Si cambió el valor, actualiza el campo padre
+        if is_changed and self.updated_by_user:
+            self.field.updated_by = self.updated_by_user
+            self.field.save(update_fields=['updated_by', 'updated_at'])
 
     def __str__(self):
         return f"{self.content_object} - {self.field.label}: {self.value}"

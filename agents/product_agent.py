@@ -176,7 +176,7 @@ def update_product(user, user_message, session_data):
             "user_message": user_message,
             "item_index": 1,
             "extracted": {
-                "updated_product": update_product
+                "updated_product": sku
             }
         }
 
@@ -216,8 +216,8 @@ def update_product(user, user_message, session_data):
         product_update_executed = update_product_record(user, updated_product)
 
         return {
-            "message": f"🔹 Updated product details:\n```json\n{json_preview}\n```\n\n {product_update_executed}",
-            "product_details": updated_product
+            "message": product_update_executed,
+            #"product_details": updated_product
         }
 
     except Exception as e:
@@ -314,7 +314,9 @@ def create_product_record(user,product_details):
             is_subscription = product_details.get("is_subscription") or False,
             term=product_details.get("term", 12),  # Default term is 12
             is_bundle = product_details.get("is_bundle") or False,
-            description=product_details["description"] if product_details["description"] else ''
+            description=product_details["description"] if product_details["description"] else '',
+            created_by=user,
+            updated_by=user
         )
 
         print("✅ DEBUG: Created Product:", product)  # Debugging step
@@ -343,6 +345,7 @@ def update_product_record(user,updated_product_details):
         product.is_subscription = updated_product_details.get("is_subscription", product.is_subscription)
         product.term = updated_product_details.get("term", product.term)
         product.is_bundle = updated_product_details.get("is_bundle", product.is_bundle)
+        product.updated_by = user
 
         # ✅ Save the updated product
         product.save()

@@ -2,6 +2,7 @@ from django import forms
 from .models import CustomField, BusinessRule, RuleCondition, CustomObject, QuoteLine, CustomFieldValue, ContentType
 from django.forms import modelformset_factory
 from django.apps import apps
+from django.contrib.auth import get_user_model
 
 
 DATA_TYPE_CHOICES = [
@@ -176,8 +177,17 @@ def get_dynamic_form(model_class, crm, object_type):
             model = model_class
             fields = '__all__'
 
-        def __init__(self, *args, **kwargs):
+        def __init__(self, *args, user=None, **kwargs):
+            self.user = user
             super().__init__(*args, **kwargs)
+            User = get_user_model()
+            for system_field in ['updated_by']:
+                if hasattr(self._meta.model, system_field) and system_field not in self.fields:
+                    self.fields[system_field] = forms.ModelChoiceField(
+                        queryset=User.objects.all(),
+                        required=False,
+                        widget=forms.HiddenInput()
+                    )
             instance = kwargs.get("instance")
             self._custom_fields = CustomField.objects.filter(crm=crm, object_type=object_type)
 
@@ -205,10 +215,13 @@ def get_dynamic_form(model_class, crm, object_type):
                 return ""
 
         def save(self, commit=True):
-            instance = super().save(commit)
+            instance = super().save(commit=False)
 
-            # If this is a new object (add form), save again to get the ID
-            if not instance.id:
+            # Set updated_by if applicable
+            if hasattr(instance, "updated_by") and self.user:
+                instance.updated_by = self.user
+
+            if commit:
                 instance.save()
 
             content_type = ContentType.objects.get_for_model(instance)
@@ -216,12 +229,14 @@ def get_dynamic_form(model_class, crm, object_type):
             for field in self._custom_fields:
                 value = self.cleaned_data.get(field.name)
                 if value is not None:
-                    CustomFieldValue.objects.update_or_create(
+                    cfv, created = CustomFieldValue.objects.get_or_create(
                         content_type=content_type,
                         object_id=instance.id,
                         field=field,
-                        defaults={"value": value}
                     )
+                    cfv.value = value
+                    cfv.updated_by_user = self.user  # ← esto es clave
+                    cfv.save()
 
             return instance
 
