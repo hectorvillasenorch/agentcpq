@@ -17,7 +17,7 @@ def handle_bundle_components(extracted_components, response_message):
         product_bundle_name = bundle_item.get("bundle_name", None)
 
         if product_bundle_sku is None and product_bundle_name is None:
-            logging.warning(f"⚠️ No bundle product was found in your message. Please provide a bundle SKU or name. Skipping...")
+            logging.warning(f"⚠️ No bundle product was found in your message. Please provide a bundle SKU or name. Request omitted.")
             response_message += f"⚠️ No bundle product was found in your message. Please provide a bundle SKU or name.<br><br>"
             continue
 
@@ -25,7 +25,7 @@ def handle_bundle_components(extracted_components, response_message):
             bundle = Product.objects.get(Q(is_bundle=True) & (Q(sku=product_bundle_sku) | Q(sku=product_bundle_name) | Q(name=product_bundle_sku) | Q(name=product_bundle_name)))
             logging.info(f"🔍 Parent product (bundle) was found - {bundle.name}")
         except Product.DoesNotExist:
-            logging.warning("⚠️ No matching bundle product was found. Skipping...")
+            logging.warning("⚠️ No matching bundle product was found. Request omitted.")
             response_message += f"⚠️ No matching bundle product was found for <b>'{product_bundle_sku if product_bundle_sku is not None else product_bundle_name}'</b>. Please verify the name or SKU and try again.<br><br>"
             continue
 
@@ -33,8 +33,8 @@ def handle_bundle_components(extracted_components, response_message):
         bundle_components = bundle_item.get("components", [])
 
         if not bundle_components:
-            logging.warning("⚠️ No components were extracted for this bundle. Skipping...")
-            response_message += f"⚠️ No components were extracted for this bundle <b>'{product_bundle_sku if product_bundle_sku is not None else product_bundle_name}'</b>. Please provide at least one product to add (SKU or name). Skipping...</b><br><br>"
+            logging.warning("⚠️ No components were extracted for this bundle. Request omitted.")
+            response_message += f"⚠️ No components were extracted for this bundle <b>'{product_bundle_sku if product_bundle_sku is not None else product_bundle_name}'</b>. Please provide at least one product to add (SKU or name). Request omitted.</b><br><br>"
             continue
 
         for index, component in enumerate(bundle_components, start=1):
@@ -50,8 +50,8 @@ def handle_bundle_components(extracted_components, response_message):
             group_name = component.get("group_name", None)
 
             if product_sku is None and product_name is None:
-                logging.warning(f"⚠️ No product component was found in your message. Please provide a product component SKU or name. Skipping...")
-                response_message += f"⚠️ No product component was found in your message. Please provide a product component SKU or name. Skipping...</b><br><br>"
+                logging.warning(f"⚠️ No product component was found in your message. Please provide a product component SKU or name. Request omitted.")
+                response_message += f"⚠️ No product component was found in your message. Please provide a product component SKU or name. Request omitted.</b><br><br>"
                 continue
 
             # Validate if product component exists in database
@@ -59,8 +59,8 @@ def handle_bundle_components(extracted_components, response_message):
                 product_component = Product.objects.get(Q(sku=product_sku) | Q(sku=product_name) | Q(name=product_sku) | Q(name=product_name))
                 logging.info(f"🔍 Product (component) was found - {product_component.name}")
             except Product.DoesNotExist:
-                logging.warning("⚠️ No matching product component was found. Skipping...")
-                response_message += f"⚠️ No matching product component was found. Verify your name or sku product component. Skipping...</b><br><br>"
+                logging.warning("⚠️ No matching product component was found. Request omitted.")
+                response_message += f"⚠️ No matching product component was found. Verify your name or sku product component. Request omitted.</b><br><br>"
                 continue
 
             # Validate if product component exists in actual bundle
@@ -242,6 +242,180 @@ def save_option(request):
             "success": False
         }
     
+def handle_option_updates(extracted_updates, response_message):
+
+    logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🛠️ Updating bundle options 🛠️")
+
+    # ✅ Add products to the quote if provided
+    updated_options = []
+
+    for bundle_index, bundle_item in enumerate(extracted_updates, start=1):
+
+        parent_product_sku = bundle_item.get("parent_product_sku", None)
+        parent_product_name = bundle_item.get("parent_product_name", None)
+        updates = bundle_item.get("updates", None)
+
+        # Verify if parent bundle exists
+        try:
+            bundle = Product.objects.get(
+                (Q(sku=parent_product_sku) | Q(sku=parent_product_name) | Q(name=parent_product_sku) | Q(name=parent_product_name))
+                & Q(is_bundle=True)
+            )
+            logging.info("✅ Product bundle found successfully.")
+        except Product.DoesNotExist:
+            logging.warning("⚠️ Product bundle was not found in the database.")
+            response_message += (
+                f"⚠️ Product bundle '{parent_product_sku or parent_product_name}' was not found in the database, "
+                f"or it is not marked as a bundle.<br>"
+            )
+
+        response_message += f"<b>📦 <u>Bundle Option Update #{bundle_index} in {bundle}</u> 📦</b><br>"
+
+        for index, update in enumerate(updates, start=1):
+            product_option_sku = update.get("product_option_sku", None)
+            product_option_name = update.get("product_option_name", None)
+
+            try:
+                child_product = Product.objects.get(
+                    (Q(sku=product_option_sku) | Q(sku=product_option_name) | Q(name=product_option_sku) | Q(name=product_option_name))
+                    & Q(is_bundle=False)
+                )
+                logging.info("✅ Product option found successfully.")
+            except Product.DoesNotExist:
+                logging.warning("⚠️ Product option was not found in the database.")
+                response_message += (
+                    f"⚠️ Product option '{product_option_sku or product_option_name}' was not found in the database, "
+                    f"or it is marked as a bundle.<br>"
+                )
+
+            try:
+                option = Option.objects.get(parent_product=bundle, product_option=child_product)
+                logging.info(f"✅ Option between {bundle} and {child_product} found successfully.")
+            except Option.DoesNotExist:
+                logging.warning("⚠️ Option between {bundle} and {child_product} was not found in the database.")
+                response_message += f"⚠️ Option between {bundle} and {child_product} was not found in the database. <br>"
+
+            response_message += f"<b>🔄 <u>Option Update #{index} | {child_product}</u> 🔄</b><br>"
+                
+            # General validations
+
+            quantity = update.get("quantity", None)
+            is_required = update.get("is_required", None)
+            min_quantity = update.get("min_quantity", None)
+            max_quantity = update.get("max_quantity", None)
+            default_selected = update.get("default_selected", None)
+            group_name = update.get("group_name", None)
+
+            if quantity is not None and not isinstance(quantity, int):
+                response_message += "⚠️ 'quantity' must be an integer.\n"
+            if is_required is not None and not isinstance(is_required, bool):
+                response_message += "⚠️ 'is_required' must be a boolean.\n"
+            if min_quantity is not None and not isinstance(min_quantity, int):
+                response_message += "⚠️ 'min_quantity' must be an integer.\n"
+            if max_quantity is not None and not isinstance(max_quantity, int):
+                response_message += "⚠️ 'max_quantity' must be an integer.\n"
+            if default_selected is not None and not isinstance(default_selected, bool):
+                response_message += "⚠️ 'default_selected' must be a boolean.\n"
+            if group_name is not None and not isinstance(group_name, str):
+                response_message += "⚠️ 'group_name' must be a string.\n"
+
+            update_payload = {
+                key: value for key, value in {
+                    "quantity": quantity,
+                    "is_required": is_required,
+                    "min_quantity": min_quantity,
+                    "max_quantity": max_quantity,
+                    "default_selected": default_selected,
+                    "group_name": group_name
+                }.items() if value is not None
+            }
+
+            if quantity is not None:
+                response_message += f"🔢 Quantity: {quantity}<br>"
+            if is_required is not None:
+                response_message += f"🔒 Required: {is_required}<br>"
+            if min_quantity is not None:
+                response_message += f"➖ Min Quantity: {min_quantity}<br>"
+            if max_quantity is not None:
+                response_message += f"➕ Max Quantity: {max_quantity}<br>"
+            if default_selected is not None:
+                response_message += f"🏷️ Default Selected: {default_selected}<br>"
+            if group_name is not None:
+                response_message += f"📦 Group Name: {group_name}<br>"
+
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Trying to update option: {update_payload}")
+
+            response_message += "<br>"
+            
+            #Convert list to valid JSON
+            item_json = json.dumps(update_payload)
+
+            # Try to update option
+            response = save_update_option(item_json, option)
+
+            if response.get("success"):
+                response_message += f"{response.get("message")}<br><br>"
+                updated_options.append(update_payload)
+                logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
+            else:
+                error_msg = response.get("message", "Unknown error.")
+                response_message += f"{error_msg}<br>"
+                logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
+        
+
+    return response_message, updated_options
+
+
+def save_update_option(request, option):
+    try:
+        update = json.loads(request)  # Extract JSON array
+
+        print(f"\n\noption: {option}\n\n")
+        print(f"\n\nRequest: {update}\n\n")
+
+        quantity = update.get("quantity")
+        is_required = update.get("is_required")
+        min_quantity = update.get("min_quantity")
+        max_quantity = update.get("max_quantity")
+        default_selected = update.get("default_selected")
+        group_name = update.get("group_name")
+
+        if quantity is not None:
+            option.quantity = quantity
+        if is_required is not None:
+            option.is_required = is_required
+        if min_quantity is not None:
+            option.min_quantity = min_quantity
+        if max_quantity is not None:
+            option.max_quantity = max_quantity
+        if default_selected is not None:
+            option.default_selected = default_selected
+        if group_name is not None:
+            option.group_name = group_name
+
+        option.save()
+        
+        response_message = "✅ Option updated successfully."
+
+        return {
+            "message": response_message,
+            "success": True
+        }
+    
+    except ValueError as ve:
+        return {
+            "message": str(ve),
+            "success": False
+        }
+
+    except Exception as e:
+        logging.warning(f"⚠️ Error updating option: {str(e)}")
+        return {
+            "message": f"Error updating option: {str(e)}",
+            "success": False
+        }
+
+    
 def handle_delete_options_from_quote(extracted_delete_options, response_message, quote):
     logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🗑️ Deleting options from bundle 🗑️")
 
@@ -255,7 +429,7 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
         product_bundle_name = bundle_item.get("bundle_name", None)
 
         if product_bundle_sku is None and product_bundle_name is None:
-            logging.warning(f"⚠️ No bundle product was found in your message. Please provide a bundle SKU or name. Skipping...")
+            logging.warning(f"⚠️ No bundle product was found in your message. Please provide a bundle SKU or name. Request omitted.")
             response_message += f"⚠️ No bundle product was found in your message. Please provide a bundle SKU or name.<br><br>"
             continue
 
@@ -263,7 +437,7 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
             bundle = Product.objects.get(Q(is_bundle=True) & (Q(sku=product_bundle_sku) | Q(sku=product_bundle_name) | Q(name=product_bundle_sku) | Q(name=product_bundle_name)))
             logging.info(f"🔍 Parent product (bundle) was found - {bundle.name}")
         except Product.DoesNotExist:
-            logging.warning("⚠️ No matching bundle product was found. Skipping...")
+            logging.warning("⚠️ No matching bundle product was found. Request omitted.")
             response_message += f"⚠️ No matching bundle product was found for <b>'{product_bundle_sku if product_bundle_sku is not None else product_bundle_name}'</b>. Please verify the name or SKU and try again.<br><br>"
             continue
 
@@ -271,8 +445,8 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
         options = bundle_item.get("options", [])
 
         if not options:
-            logging.warning("⚠️ No options were extracted for this bundle. Skipping...")
-            response_message += f"⚠️ No options were extracted to delete for this bundle <b>'{product_bundle_sku if product_bundle_sku is not None else product_bundle_name}'</b>. Please provide at least one product to add (SKU or name). Skipping...</b><br><br>"
+            logging.warning("⚠️ No options were extracted for this bundle. Request omitted.")
+            response_message += f"⚠️ No options were extracted to delete for this bundle <b>'{product_bundle_sku if product_bundle_sku is not None else product_bundle_name}'</b>. Please provide at least one product to add (SKU or name). Request omitted.</b><br><br>"
             continue
 
         for index, option in enumerate(options, start=1):
@@ -282,8 +456,8 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
             product_name = option.get("product_name", None)
 
             if product_sku is None and product_name is None:
-                logging.warning(f"⚠️ No product option was found in your message. Please provide a product option SKU or name. Skipping...")
-                response_message += f"⚠️ No product option was found in your message. Please provide a product option SKU or name. Skipping...</b><br><br>"
+                logging.warning(f"⚠️ No product option was found in your message. Please provide a product option SKU or name. Request omitted.")
+                response_message += f"⚠️ No product option was found in your message. Please provide a product option SKU or name. Request omitted.</b><br><br>"
                 continue
 
             # Validate if product exists
@@ -291,8 +465,8 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
                 product = Product.objects.get(Q(sku=product_sku) | Q(sku=product_name) | Q(name=product_sku) | Q(name=product_name))
                 logging.info(f"🔍 Product was found - {product.name}")
             except Product.DoesNotExist:
-                logging.warning("⚠️ No matching product was found. Skipping...")
-                response_message += f"⚠️ No matching product was found. Verify your name or sku product. Skipping...</b><br><br>"
+                logging.warning("⚠️ No matching product was found. Request omitted.")
+                response_message += f"⚠️ No matching product was found. Verify your name or sku product. Request omitted.</b><br><br>"
                 continue
 
             # Validate if exists a relation between product and bundle
@@ -300,8 +474,8 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
                 option_record = Option.objects.get(parent_product=bundle, product_option=product)
                 logging.info(f"🔍 Option has been found between {bundle} and {product}")
             except Option.DoesNotExist:
-                logging.warning(f"⚠️ No matching option was found between {bundle} and {product}. Skipping...")
-                response_message += f"⚠️ No matching option was found between {bundle} and {product}. Verify your bundle and/or product option. Skipping...</b><br><br>"
+                logging.warning(f"⚠️ No matching option was found between {bundle} and {product}. Request omitted.")
+                response_message += f"⚠️ No matching option was found between {bundle} and {product}. Verify your bundle and/or product option. Request omitted.</b><br><br>"
                 continue
 
             # Validate if exists any quote line with the product
@@ -310,7 +484,7 @@ def handle_delete_options_from_quote(extracted_delete_options, response_message,
                 logging.info(f"🔍 Quote Line has been found. Line: {bundle_child_line}")
             except QuoteLine.DoesNotExist:
                 logging.warning(f"⚠️ No quote line was found in quote {quote.name} with the relation between {bundle} and {product}.")
-                response_message += f"⚠️ No quote line was found in quote <b>{quote.name}</b> with the relation between <b>{bundle}</b> and <b>{product}</b>. Please verify your bundle and/or product option. Skipping...<br><br>"
+                response_message += f"⚠️ No quote line was found in quote <b>{quote.name}</b> with the relation between <b>{bundle}</b> and <b>{product}</b>. Please verify your bundle and/or product option. Request omitted.<br><br>"
                 continue
 
             try:

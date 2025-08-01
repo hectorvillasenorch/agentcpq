@@ -9,7 +9,7 @@ from django.db.models import Q
 from django.forms.models import model_to_dict
 
 #LLM helpers
-from .utils.admin_agent.llm_helpers import extract_validation_rules, extract_rules_details_to_render, extract_rule_updates, extract_rule_deletes
+from .utils.admin_agent.llm_helpers import extract_validation_rules, extract_rules_details_to_render, extract_rule_updates, extract_rule_deletes, extract_custom_object_updates
 
 #Rules helpers
 from .utils.admin_agent.rules_helpers import handle_extracted_rules_details, handle_rules_updates, handle_rules_deletes
@@ -28,6 +28,7 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 def admin_agent(user, action, user_message, session_data):
 
     action_map = {
+        "UpdateCustomObject": update_custom_object,
         "CreateValidationRule": create_validation_rule,
         "ShowRules": show_rules,
         "UpdateRule": update_rule,
@@ -39,6 +40,12 @@ def admin_agent(user, action, user_message, session_data):
         return action_map[action](user, user_message, session_data)
 
     return {"message": "🤖 Sorry, I couldn’t understand your request."}
+
+def update_custom_object(user, user_message, session_data):
+    logging.info("🔧 Updating Custom Object...\n\n")
+
+    # Extract update with LLM
+    extraced_updates = extract_custom_object_updates(user_message)
 
 
 def create_validation_rule(user, user_message, session_data):

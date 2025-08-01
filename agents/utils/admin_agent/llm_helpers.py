@@ -594,3 +594,148 @@ def extract_rule_deletes(user_message):
     except Exception as e:
         logging.error(f"❌ Error extracting discount details: {str(e)}")
         return None
+    
+# FUNCTION TO EXTRACT CUSTOM OBJECT UPDATES (UPDATE_CUSTOM_OBJECT)    
+def extract_custom_object_updates(user_message):
+    """Uses GPT to extract custom object name, label, and new values for custom object updates."""
+
+    prompt = f"""
+    Extract structured update details from the following request.
+    Return a JSON array of objects, where each object must include:
+
+    - "label" (string): The label of the Custom Object
+    - "name" (string): The name of the Custom Object
+    - "updates" (list): A list of fields to update
+        - "label" (string): If user wants to update the label
+        - "name" (string): If user wants to update the name
+        - "description" (string): If user wants to update the description
+
+    **Example Input & Output:**
+
+    User: "Update rule IR-08763 type to inclusion and priority to 7."
+    User: "update payment custom object"
+    Response:
+    [
+        {{
+            "label": null
+            "name": "payment",
+            "updates": {{
+                "label": null,
+                "name": null,
+                "description": null
+            }}
+            
+        }}
+    ]
+
+    User: "Update rule target to quote"
+    Response:
+    [
+        {{
+            "name": null,
+            "field": "target_type",
+            "value": "quote"
+        }}
+    ]
+
+    User: "Update rule ER-00065 error message to 'You can't add the product UHTY-876 and ACPQ-001 at the same time' and set disabled"
+    Response:
+    [
+        {{
+            "name": "ER-00065",
+            "field": "error_message",
+            "value": "You can't add the product UHTY-876 and ACPQ-001 at the same time."
+        }},
+        {{
+            "name": "ER-00065",
+            "field": "active",
+            "value": false
+        }}
+    ]
+
+    User: "Update VR-00032 rule description to 'No discounts > 45%'"
+    Response:
+    [
+        {{
+            "name": "VR-00032",
+            "field": "description",
+            "value": "No discounts > 45%"
+        }}
+    ]
+
+    User: "Update the conditions of rule VR-00012. The new rule should prevent adding a discount greater than or equal to 15% to products with SKU QTGY-HY-009."
+    Response:
+    [
+        {{
+            "name": "VR-00012",
+            "field": "conditions",
+            "value": {{
+                "logic": "AND",
+                "items": [
+                    {{
+                        "fieldName": "quote_line.discount_percentage",
+                        "operator": ">=",
+                        "value": 15
+                    }},
+                    {{
+                        "fieldName": "quote_line.sku",
+                        "operator": "==",
+                        "value": "QTGY-HY-009"
+                    }}
+                ]
+            }}
+        }},
+        {{
+            "name": "VR-00012",
+            "field": "error_message",
+            "value": "Discount cannot exceed 15% for product with SKU QTGY-HY-009"
+        }},
+        {{
+            "name": "VR-00012",
+            "field": "description",
+            "value": "Prevent discounts ≥ 15% for product QTGY-HY-009"
+        }}
+    ]
+
+    If the user asks to update only the conditions of a rule but does not mention updating the error_message or description, then automatically infer and include appropriate values for those fields based on the intent or logic of the new rule. Add them as separate update objects using the same rule name.
+
+    **Requirements:**
+    - If no name are found in the message, return null as name
+    - The `"name"` must always follow the format: one of `VR`, `IR`, or `ER` followed by a hyphen (`-`) and exactly 5 digits (e.g., `"VR-00012"`).
+    - If no field are found in the message, return null as field
+    - If no value are found in the message, return null as value
+    - Only return a structured JSON object in `"value"` when the `"field"` is equal to `"conditions"`.
+
+    **IMPORTANT:** **Return a valid JSON array only of product objects. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
+
+    User Request: "{user_message}"
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Extract structured updates details for rules."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        # ✅ Extract raw response
+        raw_response = response.choices[0].message.content.strip()
+        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+
+        # ✅ Ensure valid JSON response
+        try:
+            extracted_updates = json.loads(raw_response)
+            if isinstance(extracted_updates, list) and all("name" in p and "field" in p and "value" in p for p in extracted_updates):
+                return extracted_updates
+            else:
+                logging.warning("⚠️ GPT response is not in expected format.")
+                return None
+        except json.JSONDecodeError:
+            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
+            return None
+
+    except Exception as e:
+        logging.error(f"❌ Error extracting discount details: {str(e)}")
+        return None

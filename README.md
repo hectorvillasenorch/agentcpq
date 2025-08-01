@@ -328,3 +328,9 @@ curl "${BASE_URL}${PATH}" \
 	•	total_actions: count of ActionUsage rows in the window
 	•	overflow_actions: max(0, total_actions – tenant.actions_limit)
 
+
+⚙️ Tenant Provisioning
+	1.	Create a Tenant
+	•	tenant_id: e.g. "tenant_0003"
+	•	api_key & api_secret are auto-generated.
+	•	Set actions_limit per plan.

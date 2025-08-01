@@ -68,7 +68,8 @@
 
   <!-- Left Sidebar -->
   <div class="sidebar">
-    <h4>System Objects</h4>        
+    <h4>System Objects</h4>
+    <br>
     <div style="width: 100%; margin-bottom: 20px;">
       <button id="toggle-create-form" 
         class="btn btn-small tooltipped" 
@@ -88,21 +89,25 @@
   <!-- Right Content Area -->
   <div class="content-area">
     <div id="create-object-form" style="display: none; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px; margin-bottom: 30px;">
-  <h5 style="color: #fc6a3d;">Create New Custom Object</h5>
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <div class="right-align">
-      <button class="btn waves-effect waves-light" type="submit" style="background-color: #fc6a3d;">
-        Save
-      </button>
+      <h5 style="color: #fc6a3d;">Create New Custom Object</h5>
+      <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <div class="right-align">
+          <button class="btn waves-effect waves-light" type="submit" style="background-color: #fc6a3d;">
+            Save
+          </button>
+        </div>
+      </form>
     </div>
-  </form>
-</div>
     {% for object_type in models %}
       <div id="tab-{{ object_type }}" class="object-content" style="{% if not forloop.first %}display: none;{% endif %}">
         {% with fields_by_object_type|dict_get:object_type as obj_fields %}
-          {% include "partials/custom_fields_section.html" with object_name=object_type standard_fields=obj_fields.standard custom_fields=obj_fields.custom %}
+          {% if object_type_kinds|dict_get:object_type == "standard" %}
+            {% include "partials/custom_fields_section_for_standard_objects.html" with object_name=object_type standard_fields=obj_fields.standard custom_fields=obj_fields.custom %}
+          {% else %}
+            {% include "partials/custom_fields_section_for_custom_objects.html" with object_name=object_type custom_fields=obj_fields.custom obj_type=object_type records=custom_object_records|dict_get:object_type %}
+          {% endif %}
         {% endwith %}
       </div>
     {% endfor %}
@@ -131,6 +136,9 @@
         const targetId = this.getAttribute('href');
         document.querySelector(targetId).style.display = 'block';
         this.classList.add('active');
+
+        // 🔥 Aquí formateamos fechas cada vez que cambiamos de tab
+        formatDateElements();
       });
     });
   });
@@ -151,6 +159,57 @@
     });
   });
 </script>
+<script>
+  function formatDateElements() {
+    const dateElements = document.querySelectorAll('.datetime-objects:not([data-formatted="true"])');
+
+    dateElements.forEach(el => {
+      const isoDate = el.dataset.datetimeObject;
+      if (!isoDate) return;
+
+      const localDate = new Date(isoDate);
+      const user = el.textContent.trim();
+
+      const formattedDate = localDate.toLocaleString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+
+      el.textContent = `${user} - ${formattedDate}`;
+      el.dataset.formatted = "true";
+    });
+  }
+
+  // 🔁 Formatea los que estén visibles al cargar
+  document.addEventListener("DOMContentLoaded", formatDateElements);
+</script>
+<script>
+    //Script for set correct datatime format
+    document.addEventListener("DOMContentLoaded", function () {
+      const dateElements = document.querySelectorAll('.datetime-custom-fields');
+
+      dateElements.forEach(el => {
+        const isoDate = el.dataset.datetimeField;
+        const localDate = new Date(isoDate);
+        const user = el.textContent.trim();
+
+        const formattedDate = localDate.toLocaleString('en-US', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+
+        el.textContent = `${user} - ${formattedDate}`;
+      });
+    });
+  </script>
 {% if success %}
 <script>
   document.addEventListener('DOMContentLoaded', function () {
