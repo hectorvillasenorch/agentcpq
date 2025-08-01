@@ -40,13 +40,55 @@ def dashboard(request):
     if view == "setup" and not user.is_staff:
         return HttpResponseForbidden("You do not have access to the setup view.")
     
-    products = Product.objects.all() if view == "products" else None
-    options = Option.objects.all() if view == "products" else None
-    bundles = Product.objects.filter(is_bundle=True) 
+    products = None
+    options = None
+    bundles = None
+    product_data = []
+    account_data = []
+    bundle_data = []
 
-    if products:
+    if view == "products":
+        products = Product.objects.all().order_by('name')
+        options = Option.objects.all()
+        bundles = Product.objects.filter(is_bundle=True).order_by('name')
+        
         for product in products:
             product.bundle_options = [opt for opt in options if opt.parent_product == product]
+    
+    elif view == "agents":
+        products = Product.objects.filter(is_bundle=False).order_by('name')
+        options = Option.objects.all()
+        bundles = Product.objects.filter(is_bundle=True).order_by('name')
+
+        accounts = Account.objects.all().order_by('name')
+
+        product_data = list(products.values('id', 'name', 'sku', 'family', 'price', 'description', 'is_subscription', 'term'))
+        account_data = list(accounts.values('id', 'name', 'industry', 'website', 'phone'))
+
+        bundle_data = []
+        for bundle in bundles:
+            related_options = [opt for opt in options if opt.parent_product_id == bundle.id]
+            component_list = [
+                {
+                    'name': opt.product_option.name,
+                    'sku': opt.product_option.sku,
+                    'price': float(opt.product_option.price or 0),
+                    'quantity': opt.quantity,
+                }
+                for opt in related_options
+            ]
+
+            bundle_data.append({
+                'id': bundle.id,
+                'name': bundle.name,
+                'sku': bundle.sku,
+                'family': bundle.family,
+                'price': float(bundle.price or 0),
+                'description': bundle.description,
+                'is_subscription': bundle.is_subscription,
+                'term': bundle.term,
+                'components': component_list,
+            })
 
     custom_objects = CustomObject.objects.all()
 
@@ -89,8 +131,12 @@ def dashboard(request):
 
     return render(request, "dashboard.html", {
         "products": products,
+        "product_data": product_data,
         "options": options,
         "bundles": bundles,
+        "bundle_data": bundle_data,
+        "accounts": accounts,
+        "account_data": account_data,
         "grouped_quotes": grouped_quotes.items(),
         "is_setup": is_setup,
         "is_authenticated": is_authenticated,

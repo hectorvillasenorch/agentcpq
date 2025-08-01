@@ -2380,3 +2380,42 @@ function extractJson(raw) {
   // Si no se cerró el JSON, devolver null
   return null;
 }
+
+/* For Show Me Functionality */
+function openTabMenu() {
+    const menu = document.getElementById("tab-menu");
+    menu.style.display = "flex";
+}
+
+function loadTabContent(type) {
+    const contentArea = document.getElementById("tab-content");
+    contentArea.classList.remove("hidden");
+
+    if (type === "products") {
+        contentArea.innerHTML = `
+            <h5>Search Products</h5>
+            <input type="text" id="product-search" placeholder="Type to search..." class="browser-default">
+            <ul id="product-list"></ul>
+        `;
+
+        // Fake product list for demo, replace with AJAX call later
+        const products = ["Table", "Chair", "Laptop", "Mouse", "Desk"];
+        const input = document.getElementById("product-search");
+        const list = document.getElementById("product-list");
+
+        input.addEventListener("input", () => {
+            const query = input.value.toLowerCase();
+            list.innerHTML = "";
+            products
+                .filter(p => p.toLowerCase().includes(query))
+                .forEach(p => {
+                    const li = document.createElement("li");
+                    li.textContent = p;
+                    li.style.padding = "6px 0";
+                    list.appendChild(li);
+                });
+        });
+    }
+
+    // Puedes hacer lo mismo para 'bundles' y 'accounts'
+}

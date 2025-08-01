@@ -1,0 +1,266 @@
+<style>
+  .floating-drawer {
+    position: fixed;
+    top: 0;
+    right: -260px;
+    width: 260px;
+    background-color: white;
+    border-radius: 0 0 0 8px;
+    box-shadow: -2px 2px 8px rgba(0, 0, 0, 0.1);
+    transition: right 0.3s;
+    z-index: 999;
+  }
+
+  .floating-drawer.open {
+    right: 0;
+  }
+
+  .drawer-tab {
+    position: absolute;
+    left: -40px;
+    top: 0;
+    background-color: #1976d2;
+    color: white;
+    width: 40px;
+    height: 52px; /* mismo alto que menu-option */
+    border-radius: 8px 0 0 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 18px;
+    font-weight: bold;
+  }
+
+  .drawer-content {
+    padding: 12px 16px;
+  }
+
+  .drawer-content .menu-option {
+    cursor: pointer;
+    padding: 10px 0;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    transition: background-color 0.2s;
+  }
+
+  .drawer-content .menu-option:hover {
+    font-weight: 500;
+    background-color: #f2f2f2;
+    border-radius: 4px;
+  }
+
+  .menu-option span {
+    margin-left: 8px;
+  }
+
+  .search-area {
+    padding-top: 8px;
+  }
+
+  .search-area input {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 8px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+  }
+
+  .search-results {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .search-result {
+    padding: 6px;
+    border-bottom: 1px solid #eee;
+    font-size: 14px;
+  }
+
+  .menu-option:first-child {
+    border-bottom: 1px solid #eee;
+    margin-bottom: 6px;
+  }
+</style>
+
+<div class="floating-drawer" id="drawer">
+  <div class="drawer-tab" id="drawerTab">»</div>
+  <div class="drawer-content" id="drawerContent">
+    <div class="menu-option" onclick="loadDrawerContent('products')">📦 <span>Products</span></div>
+    <div class="menu-option" onclick="loadDrawerContent('bundles')">🧰 <span>Bundles</span></div>
+    <div class="menu-option" onclick="loadDrawerContent('accounts')">👤 <span>Accounts</span></div>
+  </div>
+</div>
+
+<script>
+  const drawer = document.getElementById('drawer');
+  const tab = document.getElementById('drawerTab');
+  const content = document.getElementById('drawerContent');
+
+  // Mostrar al pasar el mouse por encima de la flecha
+  tab.addEventListener('mouseenter', () => {
+    drawer.classList.add('open');
+  });
+
+  // Ocultar cuando el mouse sale completamente del drawer
+  drawer.addEventListener('mouseleave', () => {
+    drawer.classList.remove('open');
+    resetDrawerMenu();
+  });
+
+  function resetDrawerMenu() {
+    content.innerHTML = `
+      <div class="menu-option" onclick="loadDrawerContent('products')"> 📦 <span>Products</span></div>
+      <div class="menu-option" onclick="loadDrawerContent('bundles')"> 🧰 <span>Bundles</span></div>
+      <div class="menu-option" onclick="loadDrawerContent('accounts')"> 👤 <span>Accounts</span></div>
+    `;
+  }
+
+  function showProductDetails(id) {
+    const productsScript = document.getElementById("products-data");
+    if (!productsScript) return;
+
+    const products = JSON.parse(productsScript.textContent);
+    const product = products.find(p => p.id === id);
+    if (!product) return;
+
+    const content = document.getElementById("drawerContent");
+
+    content.innerHTML = `
+      <div class="menu-option" onclick="loadDrawerContent('products')">⬅ <span>Back to Products</span></div>
+      <h6><b>${product.name} (${product.sku})</b></h6>
+      <p><strong>Family:</strong> ${product.family || 'No family'}</p>
+      <p><strong>Price:</strong> ${
+        isNaN(Number(product.price)) ? 'N/A' : '$' + Number(product.price).toFixed(2)
+      }</p>
+      <p><strong>Description:</strong> ${product.description || 'No description'}</p>
+      <p><strong>Subscription:</strong> ${product.is_subscription ? '✅' : '❌'}</p>
+      <p><strong>Term:</strong> ${product.term || '---'}</p>
+    `;
+  }
+
+  function showBundleDetails(id) {
+    const bundlesScript = document.getElementById("bundles-data");
+    if (!bundlesScript) return;
+
+    const bundles = JSON.parse(bundlesScript.textContent);
+    const bundle = bundles.find(b => b.id === id);
+    if (!bundle) return;
+
+    const content = document.getElementById("drawerContent");
+
+    content.innerHTML = `
+      <div class="menu-option" onclick="loadDrawerContent('bundles')">⬅ <span>Back to Bundles</span></div>
+      <h6><b>${bundle.name} (${bundle.sku})</b></h6>
+      <p><strong>Family:</strong> ${bundle.family || 'No family'}</p>
+      <p><strong>Price:</strong> ${
+        isNaN(Number(bundle.price)) ? 'N/A' : '$' + Number(bundle.price).toFixed(2)
+      }</p>
+      <p><strong>Description:</strong> ${bundle.description || 'No description'}</p>
+      <p><strong>Subscription:</strong> ${bundle.is_subscription ? '✅' : '❌'}</p>
+      <p><strong>Term:</strong> ${bundle.term || '---'}</p>
+      <p><strong>Components:</strong><br>
+        <i>
+        ${bundle.components?.map(c => `${c.name} (${c.sku}) - $${Number(c.price).toFixed(2)} x${c.quantity}`).join('<br>') || 'N/A'}
+        </i>
+      </p>
+    `;
+  }
+
+  function showAccountDetails(id) {
+    const accountsScript = document.getElementById("accounts-data");
+    if (!accountsScript) return;
+
+    const accounts = JSON.parse(accountsScript.textContent);
+    const account = accounts.find(a => a.id === id);
+    if (!account) return;
+
+    const content = document.getElementById("drawerContent");
+
+    content.innerHTML = `
+      <div class="menu-option" onclick="loadDrawerContent('accounts')">⬅ <span>Back to Accounts</span></div>
+      <h6><b>${account.name}</b></h6>
+      <p><strong>Email:</strong> ${account.email || 'N/A'}</p>
+      <p><strong>Phone:</strong> ${account.phone || 'N/A'}</p>
+    `;
+  }
+
+  function getClickHandler(type, id) {
+    if (type === 'products') return `showProductDetails(${id})`;
+    if (type === 'bundles') return `showBundleDetails(${id})`;
+    if (type === 'accounts') return `showAccountDetails(${id})`;
+    return '';
+  }
+
+  function loadDrawerContent(type) {
+    let title = '';
+    let items = [];
+
+    if (type === 'products') {
+        title = 'Products';
+        const productsScript = document.getElementById('products-data');
+        if (productsScript) {
+        items = JSON.parse(productsScript.textContent);
+        } else {
+        items = ['No products loaded'];
+        }
+    } else if (type === 'bundles') {
+        title = 'Bundles';
+        const bundlesScript = document.getElementById('bundles-data');
+        if (bundlesScript) {
+        items = JSON.parse(bundlesScript.textContent);
+        } else {
+        items = ['No bundles loaded'];
+        }
+    } else if (type === 'accounts') {
+        title = 'Accounts';
+        const accountsScript = document.getElementById('accounts-data');
+        if (accountsScript) {
+        items = JSON.parse(accountsScript.textContent);
+        } else {
+        items = ['No accounts loaded'];
+        }
+    }
+
+    content.innerHTML = `
+      <div class="menu-option" onclick="resetDrawerMenu()">⬅ <span>Back</span></div>
+      <div class="menu-option" style="font-weight: 500;">🔍 <span>Search ${title}</span></div>
+      <div class="search-area">
+        <input type="text" id="searchInput" placeholder="Search ${title}...">
+        <div class="search-results" id="searchResults">
+          <div class="search-results" id="searchResults">
+            ${items.map(p => `
+              <div class="search-result">
+                <a href="#" onclick="${getClickHandler(type, p.id)}; return false;">
+                  ${p.name}
+                </a>
+              </div>`).join('')}
+          </div>
+      </div>
+    `;
+
+    const input = document.getElementById('searchInput');
+    const results = document.getElementById('searchResults');
+
+    input.addEventListener('input', () => {
+      const query = input.value.toLowerCase();
+      const filtered = items.filter(i => i.name.toLowerCase().includes(query));
+      results.innerHTML = filtered.length
+      ? filtered.map(p => `
+          <div class="search-result">
+            <a href="#" onclick="${getClickHandler(type, p.id)}; return false;">
+              ${p.name}
+            </a>
+          </div>
+        `).join('')
+      : '<div class="search-result">No results</div>';
+    });
+    }
+</script>
+
+{{ product_data|json_script:"products-data" }}
+
+{{ bundle_data|json_script:"bundles-data" }}
+
+{{ account_data|json_script:"accounts-data" }}
