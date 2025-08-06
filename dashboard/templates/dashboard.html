@@ -92,8 +92,8 @@
             {% endif %}
             {% if form and custom_object and request.GET.object_name %}
                 <div class="section">
-                <h2><i class="material-icons" style="vertical-align: middle; margin-right: 8px;">description</i>{{ custom_object.label }}</h2>
-                {% include "custom_objects/record_form.html" with form=form custom_object=custom_object %}
+                    <h2><i class="material-icons" style="vertical-align: middle; margin-right: 8px;">description</i>{{ custom_object.label }}</h2>
+                    {% include "custom_objects/record_form.html" with form=form custom_object=custom_object %}
                 </div>
             {% endif %}
         </div>

@@ -618,7 +618,7 @@ def extract_rule_deletes(user_message):
     except Exception as e:
         logging.error(f"❌ Error extracting discount details: {str(e)}")
         return None
-    
+        
 # FUNCTION TO EXTRACT CUSTOM OBJECT UPDATES (UPDATE_CUSTOM_OBJECT)    
 def extract_custom_object_updates(user_message):
     """Uses GPT to extract custom object name, label, and new values for custom object updates."""

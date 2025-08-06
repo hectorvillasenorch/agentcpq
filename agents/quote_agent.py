@@ -39,6 +39,9 @@ from .utils.quote_agent.general_helpers import get_document_pdf, get_backup_valu
 
 from .utils.orchestrator.context_handle_helpers import save_or_update_conversation_context, make_session_context
 
+# Notification Email Functions
+from cpq.notifications.quote_notifications import notify_opportunity_created
+
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -81,7 +84,7 @@ def create_quote(user,user_message, session_data):
     extracted_details = extract_quote_details(user_message)
 
     # ✅ Get or create account and opportunity
-    result_account_and_opportunity = get_or_create_account_and_opportunity(extracted_details, session_data, session_context)
+    result_account_and_opportunity = get_or_create_account_and_opportunity(user, extracted_details, session_data, session_context)
 
     # - If message in result (error or pending_action) return
     if isinstance(result_account_and_opportunity, dict) and "message" in result_account_and_opportunity:
@@ -131,6 +134,10 @@ def create_quote(user,user_message, session_data):
 
     # ✅ Update amount in Opportunity
     update_opportunity_net_amount(quote.opportunity)
+
+    # Send email notification with opportunity
+    if quote.opportunity:
+        notify_opportunity_created(quote.opportunity)
 
     # ✅ Reset pending action and update session
     session_data["pending_action"] = None

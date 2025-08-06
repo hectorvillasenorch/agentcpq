@@ -7,17 +7,20 @@ from agents.product_agent import product_agent
 from agents.bundles_agent import bundles_agent
 from agents.admin_agent import admin_agent
 from agents.approvals_agent import approval_agent
+from agents.custom_object_agent import custom_object_agent
 from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
 from django.contrib.auth.models import User
 from uuid import uuid4
 logger = logging.getLogger(__name__)
 
+from cpq.models import CustomObject
+
 # TDOO STOP Call to GPT 
 # Pything to understand request, and catch before hitting LLM
 
 # Context Session Helpers
-from .utils.orchestrator.context_handle_helpers import get_existing_context, build_context_prompt
+from .utils.orchestrator.context_handle_helpers import get_existing_context, build_context_prompt_json
 
 
 load_dotenv()
@@ -104,12 +107,19 @@ def orchestrate_request(user, user_message, session_data):
         intention = conversation_context.intent
 
         if context_data and is_continuation_prompt(context_data, user_message, intention):
-            user_message = build_context_prompt(context_data, intention, user_message)
+            user_message = build_context_prompt_json(context_data, intention, user_message)
             conversation_context.delete()
 
     print(f"\n\nThis is the new user message: {user_message}\n\n")
 
     #return {"message": user_message}
+
+    custom_objects = CustomObject.objects.all()
+    custom_objects_list = []
+
+    for co in custom_objects:
+        custom_objects_list.append(co.label)
+
 
     action_prompt = f"""
     You are an AI assistant that classifies user requests into predefined actions.
@@ -126,7 +136,7 @@ def orchestrate_request(user, user_message, session_data):
     - "ShowQuoteNotes"
     - "DeleteQuoteLine"
     - "DeleteQuote" (Use this ONLY for messages that not includes SKU or product's names)
-    - "CreateProductRecord"
+    - "CreateProductRecord" (Use this when the user wants to create a new product record, not add a product to quote)
     - "UpdateProductRecord"
     - "SubmitForApproval" 
     - "CheckApprovalStatus"
@@ -143,6 +153,10 @@ def orchestrate_request(user, user_message, session_data):
     - "UpdateBundleOption" (Use this when the user wants to update any bundle option)
     - "DeleteBundleOption" (Use this when the user wants to delete any bundle option)
     - "DeleteBundleComponentFromQuote" (Use this when the user wants to delete any bundle option from quote)
+    - "CreateCustomObject" (Use this when the user wants to create a new custom object)
+    - "CreateCustomField" (Use this when the user wants to create a new custom field)
+    - "CreateCustomObjectRecord" (Use this when the user wants to create a record for an existing custom object like {custom_objects_list})
+
     """
     try:
         response = client.chat.completions.create(
@@ -390,7 +404,12 @@ def get_action_map():
         "CreateValidationRule": admin_agent,
         "ShowRules": admin_agent,
         "UpdateRule": admin_agent,
-        "DeleteRule": admin_agent
+        "DeleteRule": admin_agent,
+
+        # Custom Objects
+        "CreateCustomObject": custom_object_agent,
+        "CreateCustomField": custom_object_agent,
+        "CreateCustomObjectRecord": custom_object_agent
     }
 
 

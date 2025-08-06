@@ -35,7 +35,7 @@ def admin_agent(user, action, user_message, session_data):
         "CreateValidationRule": create_validation_rule, #CONTEXT READY
         "ShowRules": show_rules, #CONTEXT READY
         "UpdateRule": update_rule, #CONTEXT READY
-        "DeleteRule": delete_rule #CONTEXT READY
+        "DeleteRule": delete_rule, #CONTEXT READY
     }
 
     # ✅ Dynamically call the function if action exists in map
@@ -340,7 +340,6 @@ def update_rule(user, user_message, session_data):
     session_context = make_session_context(user, "UpdateRule", "admin_agent", session_data, user_message)
 
     logging.info("🔧 Updating rules...\n\n")
-    # ✅ Looking for active quote
     
         
     # ✅ Extract quote line updates with LLM

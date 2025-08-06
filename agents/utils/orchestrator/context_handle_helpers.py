@@ -70,22 +70,27 @@ def get_existing_context(user, session_data):
     
 # Merge prior + current user messages
 
-def build_context_prompt(data_entries, intention, new_user_message):
-    messages = []
-
-    messages.append("Intention: " + intention)
-    messages.append("Previous data extracted:")
+def build_context_prompt_json(data_entries, intention, new_user_message):
+    previous_data_extracted = []
 
     for data in data_entries:
         item_index = data.get("item_index")
         response = data.get("agent_response", "")
         extracted = data.get("extracted_data", {})
-        extracted_str = json.dumps(extracted, ensure_ascii=False)  # lo hace legible
+        # No es necesario convertir extracted a string, lo dejamos como dict
+        previous_data_extracted.append({
+            "item_index": item_index,
+            "extracted_data": extracted,
+            "agent_response": response
+        })
 
-        messages.append(f"- [{item_index}] Extracted: {extracted_str} | Agent_response: {response}")
+    context = {
+        "previous_intention": intention,
+        "previous_data_extracted": previous_data_extracted,
+        "new_user_message": new_user_message
+    }
 
-    messages.append("New user message: " + new_user_message)
-    return "\n".join(messages)
+    return json.dumps(context, ensure_ascii=False, indent=2)
 
 
 def make_session_context(user, intention, agent_name, session_data, user_message):

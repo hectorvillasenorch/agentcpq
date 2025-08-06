@@ -917,9 +917,11 @@ class CustomObject(models.Model):
 #dummy model for all custom objects
 class CustomRecord(models.Model):
     object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE)
-    # record_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     record_id = models.UUIDField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_custom_records')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_records')
     def __str__(self):
         label = f"{self.object_type.name} record"
         try:
@@ -952,6 +954,7 @@ class CustomField(models.Model):
         null=True,
         help_text="Format: 'app_label.ModelName' (e.g., 'cpq.Account')"
     )
+    options = models.JSONField(blank=True, null=True, help_text="Used for Dropdown data_type. List of options.")
     class Meta:
         verbose_name = "Custom Field"
         verbose_name_plural = "Custom Fields"
@@ -966,7 +969,7 @@ class CustomFieldValue(models.Model):
     object_id = models.PositiveIntegerField(null=True, blank=True)
     content_object = GenericForeignKey("content_type", "object_id")
     value = models.TextField()
-    record = models.ForeignKey(CustomRecord, null=True, blank=True, on_delete=models.CASCADE)
+    record = models.ForeignKey(CustomRecord, null=True, blank=True, on_delete=models.CASCADE, related_name="custom_field_values")
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
@@ -1133,3 +1136,11 @@ class ActionUsage(models.Model):
 
     def __str__(self):
         return f"{self.action} by {self.user or 'System'} on {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+
+
+class EmailNotification(models.Model):
+    recipient = models.EmailField()
+    subject = models.CharField(max_length=255)
+    template_name = models.CharField(max_length=100)
+    context = models.JSONField()
+    sent_at = models.DateTimeField(auto_now_add=True)

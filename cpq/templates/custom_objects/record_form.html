@@ -152,6 +152,7 @@
             <th>{{ value.field.label }}</th>
           {% endfor %}
         {% endwith %}
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -160,10 +161,16 @@
           {% for value in record.customfieldvalue_set.all %}
             <td>{{ value.value }}</td>
           {% endfor %}
+          <td>
+            <a href="" class="btn-flat">
+              <i class="material-icons">edit</i>
+            </a>
+          </td>
         </tr>
       {% endfor %}
     </tbody>
   </table>
+  
 {% else %}
   <p>No records found for this object yet.</p>
 {% endif %}
