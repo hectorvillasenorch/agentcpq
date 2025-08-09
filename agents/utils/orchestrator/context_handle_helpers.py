@@ -3,6 +3,11 @@ from django.utils.timezone import now
 import logging, json
 
 def save_or_update_conversation_context(session_context, agent_response):
+    print(f"For the future, this is the session context: {session_context}")
+
+
+# Change the name to save_or_update_conversation_context when session context is ready
+def save_or_update_conversation_context2(session_context, agent_response):
     user = session_context.get("user")
     intent = session_context.get("intent")
     agent_name = session_context.get("agent_name")

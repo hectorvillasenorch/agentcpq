@@ -118,6 +118,7 @@
 }
 
 </style>
+{% load custom_filters %}
 
 <button onclick="toggleModal()" class="submit-button">➕ Create {{ custom_object.label }}</button>
 
@@ -147,33 +148,31 @@
   <table class="record-table">
     <thead>
       <tr>
-        {% with records_custom_object.0.customfieldvalue_set.all as first_record_fields %}
-          {% for value in first_record_fields %}
-            <th>{{ value.field.label }}</th>
-          {% endfor %}
-        {% endwith %}
+        {% for field in all_custom_fields %}
+          <th>{{ field.label }}</th>
+        {% endfor %}
         <th>Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for record in records_custom_object %}
         <tr>
-          {% for value in record.customfieldvalue_set.all %}
-            <td>{{ value.value }}</td>
+          {% for field in all_custom_fields %}
+            <td>
+              {{ record.custom_field_values.all|get_field_value:field }}
+            </td>
           {% endfor %}
           <td>
-            <a href="" class="btn-flat">
-              <i class="material-icons">edit</i>
-            </a>
+            <a href="" class="btn-flat"><i class="material-icons">edit</i></a>
           </td>
         </tr>
       {% endfor %}
     </tbody>
   </table>
-  
 {% else %}
-  <p>No records found for this object yet.</p>
+  <p>No records found.</p>
 {% endif %}
+ 
 <script>
 function toggleModal() {
   const modal = document.getElementById("recordModal");

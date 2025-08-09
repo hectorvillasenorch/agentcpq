@@ -129,6 +129,18 @@ def dashboard(request):
     records_custom_object, field_values_by_record = get_values_by_record(custom_object)
     lookup_options = get_lookup_data_for_form(custom_object)
 
+    records = CustomRecord.objects.all().prefetch_related('custom_field_values__field')
+
+    # Recolectar todos los campos únicos usados en todos los registros
+    all_fields_set = set()
+    for record in records:
+        for value in record.custom_field_values.all():
+            all_fields_set.add(value.field)
+
+    all_fields = sorted(all_fields_set, key=lambda f: f.label)
+
+
+
     return render(request, "dashboard.html", {
         "products": products,
         "product_data": product_data,
@@ -148,7 +160,9 @@ def dashboard(request):
         "custom_objects": custom_objects,
         "form": form,
         "accounts": accounts,
-        "records_custom_object": records_custom_object,
+        #"records_custom_object": records_custom_object,
+        'records_custom_object': records,
+        'all_custom_fields': all_fields,
         'field_values_by_record': field_values_by_record,
         'lookup_options': lookup_options,
 })

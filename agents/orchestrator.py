@@ -154,9 +154,14 @@ def orchestrate_request(user, user_message, session_data):
     - "DeleteBundleOption" (Use this when the user wants to delete any bundle option)
     - "DeleteBundleComponentFromQuote" (Use this when the user wants to delete any bundle option from quote)
     - "CreateCustomObject" (Use this when the user wants to create a new custom object)
+    - "UpdateCustomObject" (Use this when the user wants to update any custom object, an example of user message is: update custom object)
+    - "DeleteCustomObject" (Use this when the user wants to delete any custom object)
     - "CreateCustomField" (Use this when the user wants to create a new custom field)
-    - "CreateCustomObjectRecord" (Use this when the user wants to create a record for an existing custom object like {custom_objects_list})
-
+    - "UpdateCustomField" (Use this when the user wants to update any custom field)
+    - "DeleteCustomField" (Use this when the user wants to delete any custom field)
+    - "CreateCustomRecord" (Use this when the user wants to create a record for an existing custom object like {custom_objects_list})
+    - "UpdateCustomRecord" (Use this when the user wants to update any record for an existing custom object like {custom_objects_list})
+    - "DeleteCustomRecord" (Use this when the user wants to delete any record for an existing custom object like {custom_objects_list})
     """
     try:
         response = client.chat.completions.create(
@@ -408,8 +413,14 @@ def get_action_map():
 
         # Custom Objects
         "CreateCustomObject": custom_object_agent,
+        "UpdateCustomObject": custom_object_agent,
+        "DeleteCustomObject": custom_object_agent,
         "CreateCustomField": custom_object_agent,
-        "CreateCustomObjectRecord": custom_object_agent
+        "UpdateCustomField": custom_object_agent,
+        "DeleteCustomField": custom_object_agent,
+        "CreateCustomRecord": custom_object_agent,
+        "UpdateCustomRecord": custom_object_agent,
+        "DeleteCustomRecord": custom_object_agent
     }
 
 

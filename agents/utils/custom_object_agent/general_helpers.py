@@ -11,7 +11,7 @@ def validate_and_cast_value(field, value):
             return True, str(value)
 
         elif data_type == "number":
-            return True, float(value)
+            return True, int(value)
 
         elif data_type == "boolean":
             if isinstance(value, bool):
@@ -28,9 +28,10 @@ def validate_and_cast_value(field, value):
             return False, None
 
         elif data_type == "dropdown":
-            allowed_options = [str(opt).strip().lower() for opt in field.options or []]
-            if str(value).strip().lower() in allowed_options:
-                return True, str(value).strip()
+            input_value = str(value).strip().lower()
+            for opt in field.options or []:
+                if input_value == str(opt).strip().lower():
+                    return True, str(opt).strip()
             return False, None
 
         elif data_type == "lookup":

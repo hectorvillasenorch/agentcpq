@@ -916,12 +916,14 @@ class CustomObject(models.Model):
         
 #dummy model for all custom objects
 class CustomRecord(models.Model):
+    custom_identifier = models.CharField(max_length=10, unique=True, blank=True, null=True)
     object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE)
     record_id = models.UUIDField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_custom_records')
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_records')
+    
     def __str__(self):
         label = f"{self.object_type.name} record"
         try:
@@ -970,6 +972,7 @@ class CustomFieldValue(models.Model):
     content_object = GenericForeignKey("content_type", "object_id")
     value = models.TextField()
     record = models.ForeignKey(CustomRecord, null=True, blank=True, on_delete=models.CASCADE, related_name="custom_field_values")
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)

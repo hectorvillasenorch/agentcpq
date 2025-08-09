@@ -141,7 +141,6 @@ def get_rule_condition_formset(target_type, data=None):
     )(queryset=RuleCondition.objects.none(), form_kwargs={'target_type': target_type}, data=data)
 
 
-
 def generate_dynamic_form(custom_object):
     class DynamicCustomForm(forms.Form):
         def __init__(self, *args, **kwargs):
@@ -161,6 +160,21 @@ def generate_dynamic_form(custom_object):
                 elif field.data_type == 'text':
                     field_type = forms.CharField
                     # widget = forms.Textarea()
+                elif field.data_type == 'dropdown':
+                    field_type = forms.ChoiceField
+                    options = field.options or []
+
+                    # Si es string, conviértelo en lista
+                    if isinstance(options, str):
+                        options = [opt.strip() for opt in options.split(",")]
+
+                    choices = [(opt, opt) for opt in options]
+                    self.fields[field.name] = field_type(
+                        label=field.label or field.name,
+                        choices=choices,
+                        required=field.required
+                    )
+                    continue
 
                 self.fields[field.name] = field_type(
                     label=field.label or field.name,
