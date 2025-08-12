@@ -3,6 +3,7 @@ import openai
 from dotenv import load_dotenv
 import json
 import os
+import re
 import logging
 from .utils.quote_agent.db_helpers import log_action_usage
 from decimal import Decimal
@@ -42,78 +43,83 @@ def create_product(user, user_message, session_data):
         if "error" in product_details:
             return {"message": product_details["error"]}
         
+        response_message = ""
         
-        # ✅ Validate fields format
-        sku = product_details.get("sku", None)
-        name = product_details.get("name", None)
-        price = product_details.get("price", None)
-
-        # 🧠 Make the session context
-        session_context = {
-            "user": user,
-            "intent": "CreateProductRecord",
-            "agent_name": "product_agent",
-            "session_data": session_data,
-            "user_message": user_message,
-            "item_index": 1,
-            "extracted": {
-                "sku": sku,
-                "name": name,
-                "price": price
-            }
-        }
-
-        # ✅ Validate required fields if product is not a bundle
-        if product_details.get("is_bundle") == True:
-            required_fields = ["sku", "name"]
-            missing_fields = [field for field in required_fields if not product_details.get(field)]
-        else:
-            required_fields = ["sku", "name", "price"]
-            missing_fields = [field for field in required_fields if not product_details.get(field)]
-
-        if missing_fields:
-            agent_response = f"⚠️ Missing required fields: {', '.join(missing_fields)}. Please enter a value to proceed."
-            logging.warning(f"⚠️ Missing required fields: {', '.join(missing_fields)}. Please enter a value to proceed.")
-            save_or_update_conversation_context(session_context, agent_response) # Save conversation context before to return
-            return {"message": agent_response}
+        for product_detail in product_details:
         
-        if not isinstance(sku, str):
-            logging.warning(f"⚠️ SKU must be a string.")
-            agent_response = "Error: SKU must be a string."
-            save_or_update_conversation_context(session_context, agent_response)
-            return {
-                "message": f"⚠️ SKU must be a string."
+            # ✅ Validate fields format
+            sku = product_detail.get("sku", None)
+            name = product_detail.get("name", None)
+            price = product_detail.get("price", None)
+
+            # 🧠 Make the session context
+            session_context = {
+                "user": user,
+                "intent": "CreateProductRecord",
+                "agent_name": "product_agent",
+                "session_data": session_data,
+                "user_message": user_message,
+                "item_index": 1,
+                "extracted": {
+                    "sku": sku,
+                    "name": name,
+                    "price": price
+                }
             }
 
-        if not isinstance(name, str):
-            logging.warning(f"⚠️ Name must be a string.")
-            agent_response = "Error: Name must be a string"
-            save_or_update_conversation_context(session_context, agent_response)
-            return {
-                "message": f"⚠️ Name must be a string."
-            }
+            # ✅ Validate required fields if product is not a bundle
+            if product_detail.get("is_bundle") == True:
+                required_fields = ["sku", "name"]
+                missing_fields = [field for field in required_fields if not product_detail.get(field)]
+            else:
+                required_fields = ["sku", "name", "price"]
+                missing_fields = [field for field in required_fields if not product_detail.get(field)]
 
-        if not isinstance(price, (Decimal, float, int, str)):
-            try:
-                price = Decimal(str(price))
-            except:
-                logging.warning(f"⚠️ Price must be a number or numeric string")
+            if missing_fields:
+                agent_response = f"⚠️ Missing required fields: {', '.join(missing_fields)}. Please enter a value to proceed."
+                logging.warning(f"⚠️ Missing required fields: {', '.join(missing_fields)}. Please enter a value to proceed.")
+                save_or_update_conversation_context(session_context, agent_response) # Save conversation context before to return
+                return {"message": agent_response}
+            
+            if not isinstance(sku, str):
+                logging.warning(f"⚠️ SKU must be a string.")
+                agent_response = "Error: SKU must be a string."
+                save_or_update_conversation_context(session_context, agent_response)
+                return {
+                    "message": f"⚠️ SKU must be a string."
+                }
+
+            if not isinstance(name, str):
+                logging.warning(f"⚠️ Name must be a string.")
                 agent_response = "Error: Name must be a string"
                 save_or_update_conversation_context(session_context, agent_response)
                 return {
                     "message": f"⚠️ Name must be a string."
                 }
 
-        # ✅ Check if SKU exists
-        if Product.objects.filter(sku=product_details["sku"]).exists():
-            agent_response = f"Error: Product {product_details['sku']} already exists in the database"
-            save_or_update_conversation_context(session_context, agent_response)
-            return {"message": f"⚠️ Product `{product_details['sku']}` already exists in the database."}
+            if not isinstance(price, (Decimal, float, int, str)):
+                try:
+                    price = Decimal(str(price))
+                except:
+                    logging.warning(f"⚠️ Price must be a number or numeric string")
+                    agent_response = "Error: Name must be a string"
+                    save_or_update_conversation_context(session_context, agent_response)
+                    return {
+                        "message": f"⚠️ Name must be a string."
+                    }
 
-        # ✅ Create product record
-        success_message = create_product_record(user, product_details)
+            # ✅ Check if SKU exists
+            if Product.objects.filter(sku=product_detail["sku"]).exists():
+                agent_response = f"Error: Product {product_detail['sku']} already exists in the database"
+                save_or_update_conversation_context(session_context, agent_response)
+                return {"message": f"⚠️ Product `{product_detail['sku']}` already exists in the database."}
 
-        return {"message": success_message}  # ✅ Ensure correct response format
+            # ✅ Create product record
+            success_message = create_product_record(user, product_detail)
+
+            response_message += success_message
+
+        return {"message": response_message}  # ✅ Ensure correct response format
 
     except Exception as e:
         agent_response = f"Error: {e}"
@@ -237,7 +243,8 @@ def extract_product_details(user_request, session_data):
     - Return a list of all items (updated and pending) with the following structure.
     However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
     **--FINAL CONVERSATION CONTEXT--**
-    Extract product details from the following request and return them as JSON.
+
+    Extract product details from the following request and return them as JSON. The user may specify multiple products in a single message.
     Fields:
     - sku (string, unique)
     - name (string)
@@ -249,6 +256,7 @@ def extract_product_details(user_request, session_data):
 
     Example request: "Create a product called AI Sales Assistant with SKU CRM-001 and price 59.99. It is a subscription. With a description: Description: "AI-powered tool to streamline sales processes."
     Example response:
+    [
     {{
         "sku": "CRM-001",
         "name": "AI Sales Assistant",
@@ -258,6 +266,7 @@ def extract_product_details(user_request, session_data):
         "is_bundle": false,
         "description": "AI-powered tool to streamline sales processes."
     }}
+    ]
 
     Requirements:
     - If no SKU is found in the user message, set SKU as null
@@ -292,6 +301,7 @@ def extract_product_details(user_request, session_data):
 
         # ✅ Ensure it's a valid JSON response
         try:
+            raw_response = clean_llm_response(raw_response)
             extracted_data = json.loads(raw_response)
         except json.JSONDecodeError:
             logging.warning(f"⚠️ LLM returned an invalid response: {raw_response}")
@@ -324,7 +334,7 @@ def create_product_record(user,product_details):
         # ✅ Instead of returning JsonResponse, return a success message string
         log_action_usage("CreateProductRecord", user, "Product", product.sku)
 
-        return f"✅ Product `{product.sku}` successfully created."
+        return f"✅ Product `{product.sku}` successfully created.<br>"
        
 
     except Exception as e:
@@ -390,3 +400,12 @@ def gpt_modify_product_details(user_message, product_details):
     except Exception as e:
         print(f"⚠️ Error modifying product details: {str(e)}")
         return None
+    
+def clean_llm_response(raw_response: str) -> str:
+    # Clean triple backticks and text json if are present
+    pattern = r"```(?:json)?\s*(.*?)\s*```"
+    match = re.search(pattern, raw_response, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    else:
+        return raw_response.strip()

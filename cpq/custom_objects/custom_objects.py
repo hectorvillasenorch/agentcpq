@@ -8,7 +8,7 @@ def create_defaults_fields_for_custom_objects(custom_object):
         name = "custom_identifier__c",
         crm = "AgentCPQ",
         object_type = custom_object.name,
-        required = True,
+        required = False,
         lookup_model = "admin.LogEntry",
         custom_object = custom_object,
         created_by = custom_object.created_by,

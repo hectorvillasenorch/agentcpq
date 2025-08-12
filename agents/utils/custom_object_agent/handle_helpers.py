@@ -750,7 +750,7 @@ def handle_custom_object_records(user, extracted_custom_objects_records, respons
 
     records_created = []
 
-    for index, custom_object_data in enumerate(extracted_custom_objects_records, starts=1):
+    for index, custom_object_data in enumerate(extracted_custom_objects_records, start=1):
         custom_object_name = custom_object_data.get("custom_object_name", None)
         values = custom_object_data.get("values", None)
 
