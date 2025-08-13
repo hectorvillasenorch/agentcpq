@@ -27,6 +27,11 @@ class DynamicCustomFieldAdmin(admin.ModelAdmin):
 
 class LeadAdmin(DynamicCustomFieldAdmin):
     form = get_dynamic_form(Lead, crm="AgentCPQ", object_type="Lead")
+    def get_fieldsets(self, request, obj=None):
+        return [(None, {'fields': list(self.form().fields.keys())})]
+    search_fields = ['first_name', 'last_name', 'email']
+    list_filter = ['status', 'created_at']
+    
     list_display = ('first_name','last_name', 'phone', 'email', 'status', 'assigned_to', 'created_at', 'updated_at')
 admin.site.register(Lead, LeadAdmin)
 
