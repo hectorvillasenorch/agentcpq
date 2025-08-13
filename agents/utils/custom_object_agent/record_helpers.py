@@ -53,6 +53,8 @@ def update_custom_object(request, user=None):
 
             custom_object = CustomObject.objects.get(name=name)
 
+            fields = custom_object.custom_fields.all()
+
             
             if label_to_update:
                 custom_object.label = label_to_update
@@ -64,6 +66,11 @@ def update_custom_object(request, user=None):
             custom_object.updated_by = user
 
             custom_object.save()
+
+            for field in fields:
+                field.custom_object = custom_object
+                field.object_type = custom_object.name
+                field.save()
                 
  
         return {
@@ -180,6 +187,9 @@ def update_custom_field(request, user=None):
             
             if label_to_update:
                 custom_field.label = label_to_update
+
+                name_to_update = label_to_update.lower().replace(" ", "_") + "__c"
+                custom_field.name = name_to_update
             if crm_to_update:
                 custom_field.crm = crm_to_update
             if object_type_to_update:

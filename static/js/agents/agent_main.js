@@ -14,22 +14,19 @@ function getCurrentSessionId() {
 }
 
 function setupSessionSwitching() {
-    document.querySelectorAll(".chat-history-item").forEach(item => {
-      item.addEventListener("click", function (e) {
-        e.preventDefault();
-  
-        const sessionId = this.dataset.sessionId;
-        if (!sessionId) return;
-  
-        const url = new URL(window.location.href);
-        url.searchParams.set("view", "agents");
-        url.searchParams.set("session_id", sessionId);
-  
-        // Redirect to the same page with updated session_id
-        window.location.href = url.toString();
-      });
+  document.querySelectorAll(".chat-history-item").forEach(item => {
+    item.addEventListener("click", function (e) {
+      e.preventDefault();
+
+      const sessionId = this.dataset.sessionId;
+      if (!sessionId) return;
+
+      // Construir URL limpia sin parámetros previos
+      const baseUrl = `${window.location.origin}/dashboard/`;
+      window.location.href = `${baseUrl}?view=agents&session_id=${sessionId}`;
     });
-  }
+  });
+}
 
 function setupChatListeners() {
   console.log("Setting up chat listeners...");
