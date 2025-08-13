@@ -29,7 +29,7 @@ class ReadOnlyActivityInline(admin.TabularInline):
     model = Activity
     can_delete = False
     extra = 0
-    readonly_fields = ('activity_type', 'date', 'status')
+    readonly_fields = ('activity_type', 'status', 'due_date')
     show_change_link = True
 
     def has_add_permission(self, request, obj=None):
