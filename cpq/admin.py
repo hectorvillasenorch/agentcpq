@@ -35,7 +35,24 @@ class LeadAdmin(DynamicCustomFieldAdmin):
     list_display = ('first_name','last_name', 'phone', 'email', 'status', 'assigned_to', 'created_at', 'updated_at')
 admin.site.register(Lead, LeadAdmin)
 
+# class ActivityInline(admin.TabularInline):  # or admin.StackedInline
+#     model = Activity
+#     extra = 0  # don’t show extra empty rows
+#     fields = ('activity_type', 'date', 'status')  # customize visible fields
+#     show_change_link = True  # optional: show link to full edit form
+
+class ReadOnlyActivityInline(admin.TabularInline):
+    model = Activity
+    can_delete = False
+    extra = 0
+    readonly_fields = ('activity_type', 'date', 'status')
+    show_change_link = True
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
 class AccountAdmin(DynamicCustomFieldAdmin):
+    inlines = [ReadOnlyActivityInline]
     form = get_dynamic_form(Account, crm="AgentCPQ", object_type="Account")
     list_display = ('tenant_id','name', 'industry', 'website', 'phone', 'created_at', 'updated_at')
     def get_fieldsets(self, request, obj=None):
@@ -50,10 +67,10 @@ class QuoteAdmin(DynamicCustomFieldAdmin):
 admin.site.register(Quote, QuoteAdmin)
 # admin.site.register(Account)
 
-class ActivityInline(admin.TabularInline):  # or admin.StackedInline
-    model = Activity
-    extra = 1  # show 1 empty form by default
-    fields = ['notes','activity_type','status','due_date']  # fields you want editable inline
+# class ActivityInline(admin.TabularInline):  # or admin.StackedInline
+#     model = Activity
+#     extra = 1  # show 1 empty form by default
+#     fields = ['notes','activity_type','status','due_date']  # fields you want editable inline
 
 class OpportunityAdmin(DynamicCustomFieldAdmin):
     form = get_dynamic_form(Opportunity, crm="AgentCPQ", object_type="Opportunity")
