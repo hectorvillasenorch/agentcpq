@@ -71,7 +71,7 @@
             <th>Label</th>
             <th>Type</th>
             <th>Required</th>
-            <th>Values</th>
+            <th>Options</th>
             <th>Last Modified By</th>
             <th>Created By</th>
             <th>Actions</th>
@@ -84,8 +84,8 @@
               <td>{{ field.label }}</td>
               <td>{{ field.data_type }}</td>
               <td>{{ field.required|yesno:"Yes,No" }}</td>
-              {% if field.data_type in "dropdown,multiselect,radio" and field.values %}
-                <td>{{ field.values }}</td>
+              {% if field.data_type in "dropdown,multiselect,radio" and field.options %}
+                <td>{{ field.options }}</td>
               {% else %}
                 <td class="grey-text">—</td>
               {% endif %}

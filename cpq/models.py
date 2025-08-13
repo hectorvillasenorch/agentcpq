@@ -917,7 +917,7 @@ class CustomObject(models.Model):
 #dummy model for all custom objects
 class CustomRecord(models.Model):
     custom_identifier = models.CharField(max_length=10, unique=True, blank=True, null=True)
-    object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE)
+    object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE, related_name='records')
     record_id = models.UUIDField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_custom_records')

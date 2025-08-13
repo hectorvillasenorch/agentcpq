@@ -37,58 +37,28 @@ def dashboard(request):
         DynamicForm = generate_dynamic_form(custom_object)
         form = DynamicForm()
 
+    next_identifier = None
+    if custom_object:
+        last_record = custom_object.records.order_by('-created_at').first()
+        if last_record and last_record.custom_identifier:
+            next_identifier = get_next_custom_identifier(last_record.custom_identifier)
+        else:
+            # Puedes definir un valor por defecto para nuevos objetos sin registros
+            label = custom_object.label if hasattr(custom_object, 'label') else custom_object.name
+            prefix = label[:3].upper() if len(label) >= 3 else label[:1].upper()
+            next_identifier = f"{prefix}-00001"
+
+
     if view == "setup" and not user.is_staff:
         return HttpResponseForbidden("You do not have access to the setup view.")
     
-    products = None
-    options = None
-    bundles = None
-    product_data = []
-    account_data = []
-    bundle_data = []
+    products = Product.objects.all() if view == "products" else None
+    options = Option.objects.all() if view == "products" else None
+    bundles = Product.objects.filter(is_bundle=True) 
 
-    if view == "products":
-        products = Product.objects.all().order_by('name')
-        options = Option.objects.all()
-        bundles = Product.objects.filter(is_bundle=True).order_by('name')
-        
+    if products:
         for product in products:
             product.bundle_options = [opt for opt in options if opt.parent_product == product]
-    
-    elif view == "agents":
-        products = Product.objects.filter(is_bundle=False).order_by('name')
-        options = Option.objects.all()
-        bundles = Product.objects.filter(is_bundle=True).order_by('name')
-
-        accounts = Account.objects.all().order_by('name')
-
-        product_data = list(products.values('id', 'name', 'sku', 'family', 'price', 'description', 'is_subscription', 'term'))
-        account_data = list(accounts.values('id', 'name', 'industry', 'website', 'phone'))
-
-        bundle_data = []
-        for bundle in bundles:
-            related_options = [opt for opt in options if opt.parent_product_id == bundle.id]
-            component_list = [
-                {
-                    'name': opt.product_option.name,
-                    'sku': opt.product_option.sku,
-                    'price': float(opt.product_option.price or 0),
-                    'quantity': opt.quantity,
-                }
-                for opt in related_options
-            ]
-
-            bundle_data.append({
-                'id': bundle.id,
-                'name': bundle.name,
-                'sku': bundle.sku,
-                'family': bundle.family,
-                'price': float(bundle.price or 0),
-                'description': bundle.description,
-                'is_subscription': bundle.is_subscription,
-                'term': bundle.term,
-                'components': component_list,
-            })
 
     custom_objects = CustomObject.objects.all()
 
@@ -129,26 +99,11 @@ def dashboard(request):
     records_custom_object, field_values_by_record = get_values_by_record(custom_object)
     lookup_options = get_lookup_data_for_form(custom_object)
 
-    records = CustomRecord.objects.all().prefetch_related('custom_field_values__field')
-
-    # Recolectar todos los campos únicos usados en todos los registros
-    all_fields_set = set()
-    for record in records:
-        for value in record.custom_field_values.all():
-            all_fields_set.add(value.field)
-
-    all_fields = sorted(all_fields_set, key=lambda f: f.label)
-
-
 
     return render(request, "dashboard.html", {
         "products": products,
-        "product_data": product_data,
         "options": options,
         "bundles": bundles,
-        "bundle_data": bundle_data,
-        "accounts": accounts,
-        "account_data": account_data,
         "grouped_quotes": grouped_quotes.items(),
         "is_setup": is_setup,
         "is_authenticated": is_authenticated,
@@ -158,15 +113,13 @@ def dashboard(request):
         "selected_session_id": session_id,
         "custom_object": custom_object,
         "custom_objects": custom_objects,
+        "next_identifier": next_identifier,
         "form": form,
         "accounts": accounts,
-        #"records_custom_object": records_custom_object,
-        'records_custom_object': records,
-        'all_custom_fields': all_fields,
+        "records_custom_object": records_custom_object,
         'field_values_by_record': field_values_by_record,
         'lookup_options': lookup_options,
 })
-        
 
 def get_user_accounts(user):
     if user.is_superuser:
@@ -212,3 +165,21 @@ class CustomPasswordResetView(PasswordResetView):
             email_message.attach_alternative(html_email, 'text/html')
 
         email_message.send()
+
+import re
+
+def get_next_custom_identifier(last_identifier):
+    if not last_identifier:
+        return None
+    # Extraer prefijo y número
+    match = re.match(r"^([A-Z]+)-(\d{5})$", last_identifier)
+    if not match:
+        return None  # O manejar el error de formato
+    
+    prefix = match.group(1)
+    number = int(match.group(2))
+    
+    next_number = number + 1
+    next_number_str = str(next_number).zfill(5)
+    
+    return f"{prefix}-{next_number_str}"

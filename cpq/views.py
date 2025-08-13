@@ -1,5 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage, Option
+from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage, Option, Account
 from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt 
 from django.apps import apps
@@ -17,12 +17,14 @@ from django.utils.timezone import now
 from django.db.models.functions import TruncMonth
 from datetime import datetime
 from django.utils.timezone import make_aware
-from .forms import CustomFieldForm, BusinessRuleForm, get_rule_condition_formset
+from .forms import BusinessRuleForm, get_rule_condition_formset
 from .forms import QUOTE_FIELDS, QUOTE_LINE_FIELDS, PRODUCT_FIELDS
 from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_POST
 from decimal import Decimal, InvalidOperation
-from collections import defaultdict 
+from collections import defaultdict
+from django.contrib.auth.models import User
+from django.utils import timezone
 
 # Agents General Helpers
 from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
@@ -460,6 +462,57 @@ def create_custom_object(request):
     
     return render(request, 'create_custom_object.html', {'form': form})
 
+@login_required
+def get_custom_record_form(request, record_id):
+    record = get_object_or_404(CustomRecord, id=record_id)
+    DynamicForm = generate_dynamic_form(record.object_type)
+
+    initial_data = {v.field.name: v.value for v in record.custom_field_values.all()}
+    form = DynamicForm(initial=initial_data)
+
+    # Solo retornamos el HTML parcial
+    return render(request, 'custom_objects/partial_edit_form_fields.html', {'form': form})
+
+@login_required
+def edit_custom_record(request, record_id):
+    record = get_object_or_404(CustomRecord, id=record_id)
+    DynamicForm = generate_dynamic_form(record.object_type)
+
+    if request.method == "POST":
+        form = DynamicForm(request.POST)
+        if form.is_valid():
+            content_type = ContentType.objects.get_for_model(record)
+            for field_name, value in form.cleaned_data.items():
+                custom_field = CustomField.objects.get(name=field_name, custom_object=record.object_type)
+                cfv, created = CustomFieldValue.objects.get_or_create(
+                    record=record,
+                    field=custom_field,
+                    defaults={'content_type': content_type, 'object_id': record.id}
+                )
+                if not created:
+                    cfv.value = value
+                    cfv.save()
+            messages.success(request, f"{record.object_type.label} record updated successfully.")
+
+            # Actualizar usuario y fecha
+            record.updated_by = request.user
+            record.updated_at = timezone.now()
+            record.save()
+
+            # Redirigir o retornar JSON
+            return redirect(request.META.get('HTTP_REFERER', '/dashboard/'))
+        else:
+            messages.error(request, "Form contains errors. Please fix them.")
+    return redirect(request.META.get('HTTP_REFERER', '/dashboard/'))
+
+@csrf_exempt
+def delete_custom_record(request, record_id):
+    if request.method == "POST":
+        record = get_object_or_404(CustomRecord, id=record_id)
+        record.delete()
+        return JsonResponse({'status': 'success'})
+    return JsonResponse({'status': 'error'}, status=400)
+
 def get_document_template(request):
 
     try:
@@ -611,7 +664,7 @@ def create_business_rule(request):
     })
 
 
-def create_custom_record(request, object_name):
+def create_custom_record(request, object_name, user_id):
 
     custom_object = get_object_or_404(CustomObject, name=object_name)
     DynamicForm = generate_dynamic_form(custom_object)
@@ -619,7 +672,12 @@ def create_custom_record(request, object_name):
     if request.method == 'POST':
         form = DynamicForm(request.POST)
         if form.is_valid():
-            record = CustomRecord.objects.create(object_type=custom_object)
+            user = User.objects.get(id=user_id)
+            record = CustomRecord.objects.create(
+                    object_type=custom_object,
+                    created_by = user,
+                    updated_by = user
+                )
 
             content_type = ContentType.objects.get_for_model(record)
 
