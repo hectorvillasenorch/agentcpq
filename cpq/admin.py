@@ -45,7 +45,9 @@ class LeadAdmin(DynamicCustomFieldAdmin):
         rows = format_html_join(
             '',
             '<tr>'
-            '<td style="padding:6px 8px;white-space:normal;word-wrap:break-word;"><a href="{}">{}</a></td>'
+            '<td style="padding:6px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;">'
+            '<a href="{}" style="text-decoration:none;">{}</a>'
+            '</td>'
             '<td style="padding:6px 8px;white-space:nowrap;">{}</td>'
             '<td style="padding:6px 8px;white-space:nowrap;">{}</td>'
             '<td style="width:100%;white-space:normal;word-wrap:break-word;">{}</td>'
@@ -74,10 +76,10 @@ class LeadAdmin(DynamicCustomFieldAdmin):
         return format_html(
             '''
             <a href="{}" class="button" style="margin-bottom:10px;display:inline-block;background:#2b8dbf;color:white;padding:5px 10px;border-radius:3px;">+ Add Activity</a>
-            <table style="width:100%;border-collapse:collapse;">
+            <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
                 <thead>
                     <tr style="background:#333;color:white;">
-                        <th style="text-align:left;padding:6px 8px;">Subject</th>
+                        <th style="text-align:left;padding:6px 8px;width:22%;">Subject</th>
                         <th style="text-align:left;padding:6px 8px;">Status</th>
                         <th style="text-align:left;padding:6px 8px;">Due Date</th>
                         <th style="text-align:left;padding:6px 8px;">Notes</th>
@@ -202,6 +204,28 @@ class ActivityAdmin(DynamicCustomFieldAdmin):
             return super().response_change(request, obj)
         redirect = self._redirect_to_related(request, obj)
         return redirect or super().response_change(request, obj)
+
+    def delete_view(self, request, object_id, extra_context=None):
+        """On delete, send the user back to the related Lead/Contact/Opportunity if present."""
+        obj = self.get_object(request, object_id)
+        redirect_url = None
+        if obj is not None:
+            # Compute where to go back to, same priority as other redirects
+            if getattr(obj, 'lead_id', None):
+                redirect_url = reverse('admin:cpq_lead_change', args=[obj.lead_id])
+            elif getattr(obj, 'contact_id', None):
+                redirect_url = reverse('admin:cpq_contact_change', args=[obj.contact_id])
+            elif getattr(obj, 'opportunity_id', None):
+                redirect_url = reverse('admin:cpq_opportunity_change', args=[obj.opportunity_id])
+        # If it's a POST (confirmed), let the parent delete first, then override redirect
+        if request.method == 'POST':
+            # Let django handle the actual delete + messaging
+            response = super().delete_view(request, object_id, extra_context)
+            if redirect_url:
+                return HttpResponseRedirect(redirect_url)
+            return response
+        # GET confirms as usual
+        return super().delete_view(request, object_id, extra_context)
 
 admin.site.register(Activity, ActivityAdmin)
 
