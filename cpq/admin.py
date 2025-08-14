@@ -3,7 +3,7 @@ from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opport
 from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession
 from django.contrib.contenttypes.models import ContentType
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 from django.urls import reverse
 # admin.site.register(Subscription)
 # admin.site.register(Asset)
@@ -32,28 +32,59 @@ class LeadAdmin(DynamicCustomFieldAdmin):
     readonly_fields = ['related_activities']
 
     def related_activities(self, obj):
-        activities = obj.activity_set.all()  # or use related_name
-        add_url = reverse('admin:cpq_activity_add') + f'?account={obj.id}'
-        rows = "".join(
-            f"<tr><td>{a.subject}</td><td>{a.status}</td><td>{a.due_date}</td></tr>"
-            for a in activities
+        if not obj:
+            return ""
+
+        # Use the FK field name for prefill (lead)
+        add_url = f"{reverse('admin:cpq_activity_add')}?lead={obj.pk}"
+
+        # Use the declared related_name='activities'
+        activities_qs = obj.activities.all()
+
+        rows = format_html_join(
+            '',
+            '<tr>'
+            '<td><a href="{}">{}</a></td>'
+            '<td>{}</td>'
+            '<td>{}</td>'
+            '</tr>',
+            (
+                (
+                    reverse('admin:cpq_activity_change', args=[a.pk]),
+                    a.subject,
+                    a.get_status_display() if hasattr(a, 'get_status_display') else a.status,
+                    a.due_date or ''
+                )
+                for a in activities_qs
+            )
         )
+
+        if not rows:
+            rows = format_html('<tr><td colspan="3" style="padding:6px 8px;color:#777;">No activities yet.</td></tr>')
+
         return format_html(
-            f'''
-            <a href="{add_url}" class="button" style="margin-bottom: 10px; display:inline-block; background:#2b8dbf; color:white; padding:5px 10px; border-radius:3px;">+ Add Activity</a>
-            <table style="width:100%; border-collapse: collapse;">
-                <tr style="background:#333; color:white;">
-                    <th>Subject</th><th>Status</th><th>Due Date</th>
-                </tr>
-                {rows}
-            </table>
             '''
+            <a href="{}" class="button" style="margin-bottom:10px;display:inline-block;background:#2b8dbf;color:white;padding:5px 10px;border-radius:3px;">+ Add Activity</a>
+            <table style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#333;color:white;">
+                        <th style="text-align:left;padding:6px 8px;">Subject</th>
+                        <th style="text-align:left;padding:6px 8px;">Status</th>
+                        <th style="text-align:left;padding:6px 8px;">Due Date</th>
+                    </tr>
+                </thead>
+                <tbody>{}</tbody>
+            </table>
+            ''',
+            add_url,
+            rows
         )
 
     related_activities.short_description = "Activities"
     form = get_dynamic_form(Lead, crm="AgentCPQ", object_type="Lead")
     def get_fieldsets(self, request, obj=None):
-        return [(None, {'fields': list(self.form().fields.keys())})]
+        fields = list(self.form().fields.keys()) + ['related_activities']
+        return [(None, {'fields': fields})]
     search_fields = ['first_name', 'last_name', 'email']
     list_filter = ['status', 'created_at']
     
