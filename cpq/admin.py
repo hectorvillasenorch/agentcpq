@@ -5,6 +5,7 @@ from agents.models import ChatMessage, ChatSession
 from django.contrib.contenttypes.models import ContentType
 from django.utils.html import format_html, format_html_join
 from django.urls import reverse
+from django.http import HttpResponseRedirect
 # admin.site.register(Subscription)
 # admin.site.register(Asset)
 
@@ -171,6 +172,32 @@ class ActivityAdmin(DynamicCustomFieldAdmin):
 
     def get_fieldsets(self, request, obj=None):
         return [(None, {'fields': list(self.form().fields.keys())})]
+
+    def _redirect_to_related(self, request, obj):
+        """Return an HttpResponseRedirect to the related object's admin change page, if any."""
+        if getattr(obj, 'lead_id', None):
+            return HttpResponseRedirect(reverse('admin:cpq_lead_change', args=[obj.lead_id]))
+        if getattr(obj, 'contact_id', None):
+            return HttpResponseRedirect(reverse('admin:cpq_contact_change', args=[obj.contact_id]))
+        if getattr(obj, 'opportunity_id', None):
+            return HttpResponseRedirect(reverse('admin:cpq_opportunity_change', args=[obj.opportunity_id]))
+        return None
+
+    def response_add(self, request, obj, post_url_continue=None):
+        """After creating an Activity, go back to the related Lead/Contact/Opportunity unless the user chose continue/add another/save as new."""
+        # Respect standard admin buttons
+        if ('_continue' in request.POST) or ('_addanother' in request.POST) or ('_saveasnew' in request.POST):
+            return super().response_add(request, obj, post_url_continue)
+        # Default "Save" → redirect to related record if present
+        redirect = self._redirect_to_related(request, obj)
+        return redirect or super().response_add(request, obj, post_url_continue)
+
+    def response_change(self, request, obj):
+        """After editing an Activity and pressing plain Save, go back to the related object."""
+        if ('_continue' in request.POST) or ('_addanother' in request.POST) or ('_saveasnew' in request.POST):
+            return super().response_change(request, obj)
+        redirect = self._redirect_to_related(request, obj)
+        return redirect or super().response_change(request, obj)
 
 admin.site.register(Activity, ActivityAdmin)
 
