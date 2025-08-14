@@ -45,11 +45,14 @@ class LeadAdmin(DynamicCustomFieldAdmin):
         rows = format_html_join(
             '',
             '<tr>'
-            '<td><a href="{}">{}</a></td>'
-            '<td>{}</td>'
-            '<td>{}</td>'
+            '<td style="padding:6px 8px;white-space:normal;word-wrap:break-word;"><a href="{}">{}</a></td>'
+            '<td style="padding:6px 8px;white-space:nowrap;">{}</td>'
+            '<td style="padding:6px 8px;white-space:nowrap;">{}</td>'
             '<td style="width:100%;white-space:normal;word-wrap:break-word;">{}</td>'
-            '<td><a class="button" href="{}" style="display:inline-block;padding:4px 8px;border-radius:3px;background:#6b7280;color:white;text-decoration:none;">Edit</a></td>'
+            '<td style="padding:6px 8px;white-space:nowrap;">'
+            '<a href="{}" style="margin-right:8px;padding:4px 6px;color:#2563eb;text-decoration:none;" title="Edit">&#9998;</a>'
+            '<a href="{}" style="padding:4px 6px;color:#dc2626;text-decoration:none;" title="Delete">&#128465;</a>'
+            '</td>'
             '</tr>',
             (
                 (
@@ -58,7 +61,8 @@ class LeadAdmin(DynamicCustomFieldAdmin):
                     a.get_status_display() if hasattr(a, 'get_status_display') else a.status,
                     a.due_date or '',
                     a.notes or '',
-                    reverse('admin:cpq_activity_change', args=[a.pk])   # explicit Edit button target
+                    reverse('admin:cpq_activity_change', args=[a.pk]),   # edit icon link
+                    reverse('admin:cpq_activity_delete', args=[a.pk])    # delete icon link
                 )
                 for a in activities_qs
             )
