@@ -47,7 +47,7 @@ class LeadAdmin(DynamicCustomFieldAdmin):
             '<td><a href="{}">{}</a></td>'
             '<td>{}</td>'
             '<td>{}</td>'
-            '<td style="max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{}</td>'
+            '<td style="max-width:720px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{}</td>'
             '<td><a class="button" href="{}" style="display:inline-block;padding:4px 8px;border-radius:3px;background:#6b7280;color:white;text-decoration:none;">Edit</a></td>'
             '</tr>',
             (
