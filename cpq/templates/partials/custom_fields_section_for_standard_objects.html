@@ -60,28 +60,28 @@
         </thead>
         <tbody>
           {% for field in custom_fields %}
-          <tr>
-            <td>{{ field.name }}</td>
-            <td>{{ field.label }}</td>
-            <td>{{ field.data_type }}</td>
-            <td>{{ field.required|yesno:"Yes,No" }}</td>
-            {% if field.data_type in "dropdown,multiselect,radio" and field.values %}
-              <td>{{ field.values }}</td>
-            {% else %}
-              <td class="grey-text">—</td>
-            {% endif %}
-            {% if field.updated_by %}
-              <td class="datetime-custom-fields" data-datetime-field="{{ field.updated_at|date:'c' }}">{{ field.updated_by }}</td>
-            {% else %}
-              <td>No updates yet.</td>
-            {% endif %}
-            <td class="datetime-custom-fields" data-datetime-field="{{ field.created_at|date:'c' }}">{{ field.created_by }}</td>
-            <td>
-              <a href="{% url 'cpq:edit_custom_field' field.id %}" class="btn-flat">
-                <i class="material-icons">edit</i>
-              </a>
-            </td>
-          </tr>
+            <tr>
+              <td>{{ field.name }}</td>
+              <td>{{ field.label }}</td>
+              <td>{{ field.data_type }}</td>
+              <td>{{ field.required|yesno:"Yes,No" }}</td>
+              {% if field.data_type in "dropdown,multiselect,radio" and field.values %}
+                <td>{{ field.values }}</td>
+              {% else %}
+                <td class="grey-text">—</td>
+              {% endif %}
+              {% if field.updated_by %}
+                <td class="datetime-custom-fields" data-datetime-field="{{ field.updated_at|date:'c' }}">{{ field.updated_by }}</td>
+              {% else %}
+                <td>No updates yet.</td>
+              {% endif %}
+              <td class="datetime-custom-fields" data-datetime-field="{{ field.created_at|date:'c' }}">{{ field.created_by }}</td>
+              <td>
+                <a href="{% url 'cpq:edit_custom_field' field.id %}" class="btn-flat">
+                  <i class="material-icons">edit</i>
+                </a>
+              </td>
+            </tr>
           {% endfor %}
         </tbody>
       </table>

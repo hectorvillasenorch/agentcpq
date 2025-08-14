@@ -1,7 +1,6 @@
 from django.db import models
 from django.db.models import Sum
 from datetime import datetime
-import uuid
 from django.utils import timezone
 from django.core.validators import MinValueValidator
 from django.contrib.contenttypes.models import ContentType
@@ -14,6 +13,7 @@ from django.contrib.auth.models import User
 from django.conf import settings
 import os , uuid
 import secrets
+from django.utils.timezone import now
 
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -230,7 +230,12 @@ class Product(models.Model):
     family = models.CharField(max_length=50)
     prdid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_products')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_products')
+    
     description = models.TextField(blank=True)
 
     def get_custom_fields(self):
@@ -287,6 +292,7 @@ class Quote(models.Model):
     sf_opportunity_id = models.CharField(max_length=18, blank=True, null=True)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
     net_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    tax_percentage = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Draft')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -350,7 +356,20 @@ class Quote(models.Model):
         discount = min(discount, self.subtotal) #Avoid discount will be more than subtotal
 
         self.net_amount = (subtotal - discount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    
+
+        if self.tax_percentage != Decimal("0.00"):
+            self.tax_amount = (self.net_amount * self.tax_percentage / Decimal("100.00")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            self.net_amount = (self.net_amount + self.tax_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    def update_tax(self):
+        try:
+            settings = QuoteDocumentSettings.objects.first()
+            if settings and settings.quote_tax:
+                self.tax_percentage = settings.quote_tax
+            else:
+                self.tax_amount = Decimal("0.00")
+        except QuoteDocumentSettings.DoesNotExist:
+            self.tax_amount = Decimal("0.00")
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -363,6 +382,7 @@ class Quote(models.Model):
             super().save(*args, **kwargs)
 
             # Actualizar campos dependientes y volver a guardar
+            self.update_tax()
             self.subtotal = self.get_subtotal_amount()
             self.update_discount_fields()
             self.update_net_amount()
@@ -929,10 +949,14 @@ class CustomObject(models.Model):
         
 #dummy model for all custom objects
 class CustomRecord(models.Model):
-    object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE)
-    # record_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    custom_identifier = models.CharField(max_length=10, unique=True, blank=True, null=True)
+    object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE, related_name='records')
     record_id = models.UUIDField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_custom_records')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_records')
+    
     def __str__(self):
         label = f"{self.object_type.name} record"
         try:
@@ -941,7 +965,8 @@ class CustomRecord(models.Model):
             value_parts = [
                 f"{v.field.label}: {v.value}" for v in values if v.field and v.value
             ]
-            return f"{label} — {' | '.join(value_parts)}" if value_parts else label
+            #return f"{label} — {' | '.join(value_parts)}" if value_parts else label
+            return label
         except Exception:
             return label
 
@@ -957,13 +982,14 @@ class CustomField(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='creted_custom_fields')
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_fields')
-    custom_object = models.ForeignKey(CustomObject, on_delete=models.SET_NULL, null=True, blank=True)
+    custom_object = models.ForeignKey(CustomObject, on_delete=models.CASCADE, null=True, blank=True, related_name='custom_fields')
     lookup_model = models.CharField(
         max_length=100,
         blank=True,
         null=True,
         help_text="Format: 'app_label.ModelName' (e.g., 'cpq.Account')"
     )
+    options = models.JSONField(blank=True, null=True, help_text="Used for Dropdown data_type. List of options.")
     class Meta:
         verbose_name = "Custom Field"
         verbose_name_plural = "Custom Fields"
@@ -978,7 +1004,34 @@ class CustomFieldValue(models.Model):
     object_id = models.PositiveIntegerField(null=True, blank=True)
     content_object = GenericForeignKey("content_type", "object_id")
     value = models.TextField()
-    record = models.ForeignKey(CustomRecord, null=True, blank=True, on_delete=models.CASCADE)
+    record = models.ForeignKey(CustomRecord, null=True, blank=True, on_delete=models.CASCADE, related_name="custom_field_values")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+
+        if hasattr(self, 'updated_by_user') and self.updated_by_user and hasattr(self.field, 'updated_by'):
+            self.field.updated_by = self.updated_by_user
+            self.field.save(update_fields=['updated_by', 'updated_at'])
+
+    updated_by_user = None  # Temporary field (part of django admin view)
+
+    def save(self, *args, **kwargs):
+        is_changed = False
+        if self.pk:
+            try:
+                original = CustomFieldValue.objects.get(pk=self.pk)
+                is_changed = original.value != self.value
+            except CustomFieldValue.DoesNotExist:
+                is_changed = True
+        else:
+            is_changed = True
+
+        super().save(*args, **kwargs)
+
+        if is_changed and self.updated_by_user:
+            self.field.updated_by = self.updated_by_user
+            self.field.save(update_fields=['updated_by', 'updated_at'])
 
     def __str__(self):
         return f"{self.content_object} - {self.field.label}: {self.value}"
@@ -1022,6 +1075,12 @@ class QuoteDocumentSettings(models.Model):
     show_quote_created_at = models.BooleanField(default=True)
     show_quote_expires_at = models.BooleanField(default=True)
     show_quote_notes = models.BooleanField(default=True)
+
+    show_quote_tax_information = models.BooleanField(default=True)
+    show_quote_tax_percentage = models.BooleanField(default=True)
+    show_quote_tax_amount = models.BooleanField(default=True)
+
+    quote_tax = models.DecimalField(max_digits=10, decimal_places=2, default=7.25)
 
     # Quote Line Items
     show_line_discount_percentage = models.BooleanField(default=False)
@@ -1114,6 +1173,7 @@ class ActionUsage(models.Model):
     def __str__(self):
         return f"{self.action} by {self.user or 'System'} on {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
 
+
 class TenantUsageReport(models.Model):
     tenant = models.ForeignKey(
         Tenant,
@@ -1174,3 +1234,12 @@ class TenantUsageLog(models.Model):
 
     def __str__(self):
         return f"{self.tenant_id} ({self.billing_period}) – {self.status}"
+
+
+class EmailNotification(models.Model):
+    recipient = models.EmailField()
+    subject = models.CharField(max_length=255)
+    template_name = models.CharField(max_length=100)
+    context = models.JSONField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+

@@ -1,5 +1,7 @@
-from cpq.models import BusinessRule
+from cpq.models import BusinessRule, CustomObject
+from django.db import transaction
 import logging
+import json
 
 def update_rule_record(update_request):
     try:

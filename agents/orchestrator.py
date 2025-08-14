@@ -7,14 +7,20 @@ from agents.product_agent import product_agent
 from agents.bundles_agent import bundles_agent
 from agents.admin_agent import admin_agent
 from agents.approvals_agent import approval_agent
+from agents.custom_object_agent import custom_object_agent
 from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
 from django.contrib.auth.models import User
 from uuid import uuid4
 logger = logging.getLogger(__name__)
 
+from cpq.models import CustomObject
+
 # TDOO STOP Call to GPT 
 # Pything to understand request, and catch before hitting LLM
+
+# Context Session Helpers
+from .utils.orchestrator.context_handle_helpers import get_existing_context, build_context_prompt_json
 
 
 load_dotenv()
@@ -94,6 +100,27 @@ def orchestrate_request(user, user_message, session_data):
         content=user_message
     )
 
+    # 🧠🧠 Check if any context exist for this user and this session id
+    conversation_context = get_existing_context(user, session_data)
+    if conversation_context:
+        context_data = conversation_context.data
+        intention = conversation_context.intent
+
+        if context_data and is_continuation_prompt(context_data, user_message, intention):
+            user_message = build_context_prompt_json(context_data, intention, user_message)
+            conversation_context.delete()
+
+    print(f"\n\nThis is the new user message: {user_message}\n\n")
+
+    #return {"message": user_message}
+
+    custom_objects = CustomObject.objects.all()
+    custom_objects_list = []
+
+    for co in custom_objects:
+        custom_objects_list.append(co.label)
+
+
     action_prompt = f"""
     You are an AI assistant that classifies user requests into predefined actions.
     **User Request:** "{user_message}"
@@ -109,7 +136,7 @@ def orchestrate_request(user, user_message, session_data):
     - "ShowQuoteNotes"
     - "DeleteQuoteLine"
     - "DeleteQuote" (Use this ONLY for messages that not includes SKU or product's names)
-    - "CreateProductRecord"
+    - "CreateProductRecord" (Use this when the user wants to create a new product record, not add a product to quote)
     - "UpdateProductRecord"
     - "SubmitForApproval" 
     - "CheckApprovalStatus"
@@ -126,6 +153,15 @@ def orchestrate_request(user, user_message, session_data):
     - "UpdateBundleOption" (Use this when the user wants to update any bundle option)
     - "DeleteBundleOption" (Use this when the user wants to delete any bundle option)
     - "DeleteBundleComponentFromQuote" (Use this when the user wants to delete any bundle option from quote)
+    - "CreateCustomObject" (Use this when the user wants to create a new custom object)
+    - "UpdateCustomObject" (Use this when the user wants to update any custom object, an example of user message is: update custom object)
+    - "DeleteCustomObject" (Use this when the user wants to delete any custom object)
+    - "CreateCustomField" (Use this when the user wants to create a new custom field)
+    - "UpdateCustomField" (Use this when the user wants to update any custom field)
+    - "DeleteCustomField" (Use this when the user wants to delete any custom field)
+    - "CreateCustomRecord" (Use this when the user wants to create a record for an existing custom object like {custom_objects_list})
+    - "UpdateCustomRecord" (Use this when the user wants to update any record for an existing custom object like {custom_objects_list})
+    - "DeleteCustomRecord" (Use this when the user wants to delete any record for an existing custom object like {custom_objects_list})
     """
     try:
         response = client.chat.completions.create(
@@ -373,7 +409,18 @@ def get_action_map():
         "CreateValidationRule": admin_agent,
         "ShowRules": admin_agent,
         "UpdateRule": admin_agent,
-        "DeleteRule": admin_agent
+        "DeleteRule": admin_agent,
+
+        # Custom Objects
+        "CreateCustomObject": custom_object_agent,
+        "UpdateCustomObject": custom_object_agent,
+        "DeleteCustomObject": custom_object_agent,
+        "CreateCustomField": custom_object_agent,
+        "UpdateCustomField": custom_object_agent,
+        "DeleteCustomField": custom_object_agent,
+        "CreateCustomRecord": custom_object_agent,
+        "UpdateCustomRecord": custom_object_agent,
+        "DeleteCustomRecord": custom_object_agent
     }
 
 
@@ -384,3 +431,39 @@ def get_trigger_phrases():
         "generate pdf",
         "create quote pdf",
     ]
+
+# Check if new message is continuation
+
+def is_continuation_prompt(previous_data, new_user_message, intention):
+    conversation_history = ""
+
+    conversation_history += f"""
+        Intention: "{intention}"
+        Data extracted: "{previous_data}"
+        """
+
+    prompt = f"""
+    You are determining whether a user's new message is a continuation of the previous conversation or a new, unrelated request.
+
+    Take into account the following rules:
+    - If the new message contains words like "update", "update quote line", "create", "add", or any other indication that it refers to creating or modifying data (like a new quote line), then it should be treated as a NEW request, even if the intent is similar to the previous one.
+    - Otherwise, if the message logically continues the last request or depends on previous information, then it is a continuation.
+
+    Conversation history:
+    {conversation_history}
+    New message: "{new_user_message}"
+
+    Return YES if it is a continuation. Return NO if it's a new, unrelated request.
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Determine continuation status"},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return "YES" in response.choices[0].message.content.upper()
+    except:
+        return False

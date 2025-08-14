@@ -6,6 +6,7 @@ from hubspot.views import get_hubspot_schema
 from django.conf import settings
 from django.conf.urls.static import static
 from django.views.generic import RedirectView
+from . import views
 
 app_name = "cpq"  # ✅ Namespacing the app
 
@@ -19,9 +20,14 @@ urlpatterns = [
     path("save-field-mappings/", save_field_mappings, name="save_field_mappings"),  # ✅ Add this line
     path("hubspot/schema/", get_hubspot_schema, name="get_hubspot_schema"),
     path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote'),
-    path('records/create/<str:object_name>/', create_custom_record, name='create_custom_record'),
+    path('records/create/<str:object_name>/<str:user_id>', create_custom_record, name='create_custom_record'),
     path('records/success/', lambda r: HttpResponse("Record created."), name='custom_record_success'),
     path("search/accounts/", search_accounts, name="search_accounts"),
+
+    #EDIT CUSTOM RECORD
+    path('records/<int:record_id>/form/', views.get_custom_record_form, name='get_custom_record_form'),
+    path('records/<int:record_id>/edit/', views.edit_custom_record, name='edit_custom_record'),
+    path('records/<int:record_id>/delete/', views.delete_custom_record, name='delete_custom_record'),
 
     # ADMIN URLS
     path("admin/custom-fields/", custom_fields_view, name="custom_fields"),
@@ -42,4 +48,3 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-

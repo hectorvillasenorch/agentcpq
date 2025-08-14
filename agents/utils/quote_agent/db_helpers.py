@@ -4,6 +4,8 @@ from cpq.models import Product, Opportunity, Account, QuoteLine, ActionUsage, Qu
 from django.db.models import Q, Sum
 from django.db import transaction
 
+from ..orchestrator.context_handle_helpers import save_or_update_conversation_context
+
 
 def find_product_and_normalize_variables(sku, name):
     try:
@@ -13,13 +15,12 @@ def find_product_and_normalize_variables(sku, name):
 
     return product, product.sku, product.name
 
-def get_or_create_account_and_opportunity(user,extracted_details, session_data):
-    """
-    Retrieves or creates an Account and Opportunity based on extracted details and session.
-    Returns either:
-      - A dict with a 'message' key if user input is incomplete or a pending action is required
-      - A tuple (account, opportunity) if both are resolved correctly
-    """
+
+def get_or_create_account_and_opportunity(user, extracted_details, session_data, session_context):
+
+    session_context["item_index"] = 1
+    session_context["extracted"] = extracted_details
+
     if not extracted_details:
         logging.error("❌ extracted_details is None")
         return None, None
@@ -28,6 +29,8 @@ def get_or_create_account_and_opportunity(user,extracted_details, session_data):
     opportunity_name = (extracted_details.get("opportunity") or session_data.get("opportunity") or "").strip()
 
     if not account_name:
+        agent_response = "Error: Could not determine the accounte. Please specify an account name."
+        save_or_update_conversation_context(session_context, agent_response)
         return {
             "message": "🚫 Error: Could not determine the account. Please specify an account name."
         }
@@ -47,13 +50,35 @@ def get_or_create_account_and_opportunity(user,extracted_details, session_data):
         }
 
     if not opportunity_name:
+        agent_response = "Please provide an opportunity name before creating the quote. Saving extracted data."
+        save_or_update_conversation_context(session_context, agent_response)
         return {
             "message": "📝 Please provide an opportunity name before creating the quote."
         }
 
     # Create or get Account and Opportunity
-    account, _ = Account.objects.get_or_create(name=account_name, owner=user)
-    opportunity, _ = Opportunity.objects.get_or_create(name=opportunity_name, account=account, owner=user)
+    account, created = Account.objects.get_or_create(
+        name=account_name,
+        defaults={
+            'created_by': user
+        }
+    )
+
+    if created is False and not account.created_by:
+        account.created_by = user
+        account.save()
+
+    opportunity, created = Opportunity.objects.get_or_create(
+        name=opportunity_name,
+        account=account,
+        defaults={
+            'created_by': user
+        }
+    )
+
+    if created is False and not opportunity.created_by:
+        opportunity.created_by = user
+        opportunity.save()
 
     return account, opportunity
 
@@ -91,6 +116,9 @@ def get_or_create_quote_ui_render():
 
     quote_document_settings = QuoteDocumentSettings.objects.first()
 
+    if quote_document_settings is None:
+        return None, None
+
     quote_render_settings = QuoteUIRender.objects.first()
 
     if quote_render_settings is None:
@@ -112,4 +140,4 @@ def get_or_create_quote_ui_render():
         quote_render_settings.omitted_fields = omitted_fields
         quote_render_settings.save()
     
-    return quote_render_settings
+    return quote_render_settings, quote_document_settings

@@ -1,0 +1,7 @@
+Hello {{ user.first_name }},
+
+Your quote {{ quote.name }} has been approved on {{ approval_date|date:"F j, Y" }}.
+
+You can now proceed with the next steps.
+
+Thank you!

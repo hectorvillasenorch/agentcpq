@@ -16,6 +16,14 @@ def extract_validation_rules(user_message):
     """Uses GPT to extract description, rule type, target type, priority, error_message and conditions for Validations Rules."""
 
     prompt = f"""
+    **IMPORTANT FOR CONVERSATION CONTEXT:**
+    If the user message is accompanied by previously extracted data entries , you must:
+    - Use that data to preserve the context of each item, assuming the user is continuing an incomplete task.
+    - Only update the items the user refers, and retain the others as incomplete.
+    - Return a list of all items (updated and pending) with the following structure.
+    However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
+    **--FINAL CONVERSATION CONTEXT--**
+
     You are an expert assistant for a CPQ (Configure, Price, Quote) system. Your task is to extract structured business rule definitions from a natural language request written by a user.
 
     The output must be a single JSON array, where each object represents one rule. Each rule object must include the following keys:
@@ -185,6 +193,14 @@ def extract_rules_details_to_render(user_message):
     """Extracts name, rule_type, target_type, priority, and active fields from rules using GPT to display them to the user."""
 
     prompt = f"""
+    **IMPORTANT FOR CONVERSATION CONTEXT:**
+    If the user message is accompanied by previously extracted data entries , you must:
+    - Use that data to preserve the context of each item, assuming the user is continuing an incomplete task.
+    - Only update the items the user refers, and retain the others as incomplete.
+    - Return a list of all items (updated and pending) with the following structure.
+    However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
+    **--FINAL CONVERSATION CONTEXT--**
+
     You are an expert assistant for a CPQ (Configure, Price, Quote) system. Your task is to extract structured business rule definitions from a natural language request written by a user.
 
     The output must be a single JSON array, where each object represents one rule. Each rule object must include the following keys:
@@ -536,6 +552,14 @@ def extract_rule_deletes(user_message):
     """Uses GPT to extract rule name for rules delete."""
 
     prompt = f"""
+    **IMPORTANT FOR CONVERSATION CONTEXT:**
+    If the user message is accompanied by previously extracted data entries , you must:
+    - Use that data to preserve the context of each item, assuming the user is continuing an incomplete task.
+    - Only update the items the user refers, and retain the others as incomplete.
+    - Return a list of all items (updated and pending) with the following structure.
+    However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
+    **--FINAL CONVERSATION CONTEXT--**
+    
     Extract structured name of rules from the following request.
     Return a JSON array of objects, where each object must include:
 
@@ -594,7 +618,7 @@ def extract_rule_deletes(user_message):
     except Exception as e:
         logging.error(f"❌ Error extracting discount details: {str(e)}")
         return None
-    
+        
 # FUNCTION TO EXTRACT CUSTOM OBJECT UPDATES (UPDATE_CUSTOM_OBJECT)    
 def extract_custom_object_updates(user_message):
     """Uses GPT to extract custom object name, label, and new values for custom object updates."""

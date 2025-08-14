@@ -2,6 +2,7 @@ from django import forms
 from .models import CustomField, BusinessRule, RuleCondition, CustomObject, QuoteLine, CustomFieldValue, ContentType
 from django.forms import modelformset_factory
 from django.apps import apps
+from django.contrib.auth import get_user_model
 
 
 DATA_TYPE_CHOICES = [
@@ -86,11 +87,11 @@ class CustomFieldForm(forms.ModelForm):
         data_type = cleaned_data.get("data_type")
         lookup_model = cleaned_data.get("lookup_model")
 
-        if not object_type and not custom_object:
-            raise forms.ValidationError("You must select either an Object Type or a Custom Object.")
+        if custom_object:
+            cleaned_data["object_type"] = custom_object.name
 
-        if object_type and custom_object:
-            raise forms.ValidationError("Select only one: Object Type or Custom Object.")
+        if not object_type and not custom_object:
+            raise forms.ValidationError("You must select an Object Type and a Custom Object if required.")
 
         if data_type == "lookup" and not lookup_model:
             raise forms.ValidationError("Lookup fields require a lookup model (e.g., cpq.Account).")
@@ -140,7 +141,6 @@ def get_rule_condition_formset(target_type, data=None):
     )(queryset=RuleCondition.objects.none(), form_kwargs={'target_type': target_type}, data=data)
 
 
-
 def generate_dynamic_form(custom_object):
     class DynamicCustomForm(forms.Form):
         def __init__(self, *args, **kwargs):
@@ -160,6 +160,21 @@ def generate_dynamic_form(custom_object):
                 elif field.data_type == 'text':
                     field_type = forms.CharField
                     # widget = forms.Textarea()
+                elif field.data_type == 'dropdown':
+                    field_type = forms.ChoiceField
+                    options = field.options or []
+
+                    # Si es string, conviértelo en lista
+                    if isinstance(options, str):
+                        options = [opt.strip() for opt in options.split(",")]
+
+                    choices = [(opt, opt) for opt in options]
+                    self.fields[field.name] = field_type(
+                        label=field.label or field.name,
+                        choices=choices,
+                        required=field.required
+                    )
+                    continue
 
                 self.fields[field.name] = field_type(
                     label=field.label or field.name,
@@ -176,8 +191,17 @@ def get_dynamic_form(model_class, crm, object_type):
             model = model_class
             fields = '__all__'
 
-        def __init__(self, *args, **kwargs):
+        def __init__(self, *args, user=None, **kwargs):
+            self.user = user
             super().__init__(*args, **kwargs)
+            User = get_user_model()
+            for system_field in ['updated_by']:
+                if hasattr(self._meta.model, system_field) and system_field not in self.fields:
+                    self.fields[system_field] = forms.ModelChoiceField(
+                        queryset=User.objects.all(),
+                        required=False,
+                        widget=forms.HiddenInput()
+                    )
             instance = kwargs.get("instance")
             self._custom_fields = CustomField.objects.filter(crm=crm, object_type=object_type)
 
@@ -205,10 +229,13 @@ def get_dynamic_form(model_class, crm, object_type):
                 return ""
 
         def save(self, commit=True):
-            instance = super().save(commit)
+            instance = super().save(commit=False)
 
-            # If this is a new object (add form), save again to get the ID
-            if not instance.id:
+            # Set updated_by if applicable
+            if hasattr(instance, "updated_by") and self.user:
+                instance.updated_by = self.user
+
+            if commit:
                 instance.save()
 
             content_type = ContentType.objects.get_for_model(instance)
@@ -216,12 +243,14 @@ def get_dynamic_form(model_class, crm, object_type):
             for field in self._custom_fields:
                 value = self.cleaned_data.get(field.name)
                 if value is not None:
-                    CustomFieldValue.objects.update_or_create(
+                    cfv, created = CustomFieldValue.objects.get_or_create(
                         content_type=content_type,
                         object_id=instance.id,
                         field=field,
-                        defaults={"value": value}
                     )
+                    cfv.value = value
+                    cfv.updated_by_user = self.user  # ← esto es clave
+                    cfv.save()
 
             return instance
 

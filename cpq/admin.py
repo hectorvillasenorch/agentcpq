@@ -6,6 +6,8 @@ from django.contrib.contenttypes.models import ContentType
 from django.utils.html import format_html, format_html_join
 from django.urls import reverse
 from django.http import HttpResponseRedirect
+from django.utils.timezone import localtime
+from django.utils.text import slugify
 # admin.site.register(Subscription)
 # admin.site.register(Asset)
 
@@ -166,10 +168,112 @@ class OptionInline(admin.TabularInline):
         return formfield
   
 class ProductAdmin(DynamicCustomFieldAdmin):
-    form = get_dynamic_form(Product, crm="AgentCPQ", object_type="Product")
+    change_list_template = "admin/product/change_list.html"
+
+    readonly_fields = ('created_by', 'updated_by')
 
     def get_fieldsets(self, request, obj=None):
-        return [(None, {'fields': list(self.form().fields.keys())})]
+        form = self.get_form(request, obj)()
+        return [(None, {'fields': list(form.fields.keys())})]
+    
+    def save_model(self, request, obj, form, change):
+        if hasattr(obj, 'created_by'):
+            if not change:
+                obj.created_by = request.user
+            else:
+                original = self.model.objects.get(pk=obj.pk)
+                obj.created_by = original.created_by
+
+        super().save_model(request, obj, form, change)
+
+        # Keep custom fields (CustomFieldValue)
+        for field in CustomField.objects.filter(crm="AgentCPQ", object_type="Product"):
+            field_name = field.name
+            if field_name in form.cleaned_data:
+                value = form.cleaned_data[field_name]
+                cf_value, _ = CustomFieldValue.objects.get_or_create(
+                    content_type=ContentType.objects.get_for_model(obj),
+                    object_id=obj.id,
+                    field=field,
+                )
+                cf_value.value = value
+                cf_value.updated_by_user = request.user
+                cf_value.save()
+    
+    def format_datetime(self, dt):
+        if not dt:
+            return ""
+        local_dt = localtime(dt)
+        return local_dt.strftime("%m/%d/%Y, %I:%M %p")
+
+    def display_created_by(self, obj):
+        if hasattr(obj, "created_by") and hasattr(obj, "created_at"):
+            return format_html(
+                '{} - <span class="utc-datetime" data-datetime="{}">...</span>',
+                obj.created_by,
+                obj.created_at.isoformat(),
+            )
+        return ""
+
+    def display_updated_by(self, obj):
+        if hasattr(obj, "updated_by") and hasattr(obj, "updated_at"):
+            return format_html(
+                '{} - <span class="utc-datetime" data-datetime="{}">...</span>',
+                obj.updated_by,
+                obj.updated_at.isoformat(),
+            )
+        return ""
+    
+    def display_name_sku(self, obj):
+        return f"{obj.name} ({obj.sku})"
+
+    display_created_by.short_description = "Created by"
+    display_updated_by.short_description = "Updated by"
+    display_name_sku.short_description = "Product"
+
+    def get_list_display(self, request):
+        initial_fields = ['display_name_sku', 'price', 'family']
+        trailing_fields = ['display_updated_by', 'display_created_by']
+        
+        custom_fields = CustomField.objects.filter(crm="AgentCPQ", object_type="Product")
+        dynamic_fields = []
+
+        for field in custom_fields:
+            method_name = f"custom_field_{field.id}"
+            dynamic_fields.append(method_name)
+
+            if hasattr(self, method_name):
+                delattr(self, method_name)
+
+            setattr(self, method_name, self.build_custom_field_method(field))
+
+        return initial_fields + dynamic_fields + trailing_fields
+    
+    def build_custom_field_method(self, field):
+        def method(obj):
+            content_type = ContentType.objects.get_for_model(obj)
+            try:
+                value_obj = CustomFieldValue.objects.get(
+                    content_type=content_type,
+                    object_id=obj.id,
+                    field=field
+                )
+                return value_obj.value or "---"
+            except CustomFieldValue.DoesNotExist:
+                return "---"
+        method.short_description = field.label or field.name
+        method.admin_order_field = None
+        return method
+    
+    def get_form(self, request, obj=None, **kwargs):
+        form_class = get_dynamic_form(Product, crm="AgentCPQ", object_type="Product")
+
+        class FormWithUser(form_class):
+            def __init__(self2, *args, **kw):
+                kw['user'] = request.user
+                super().__init__(*args, **kw)
+
+        return FormWithUser
 
 admin.site.register(Product, ProductAdmin)
 

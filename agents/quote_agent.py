@@ -39,6 +39,11 @@ from .utils.quote_agent.db_helpers import get_or_create_account_and_opportunity,
 from .utils.quote_agent.general_helpers import get_active_quote, set_active_quote_to_session_data, get_quote_details, get_backup_value_from_quote_line, format_currency, wrap_text
 from .utils.quote_agent.general_helpers import get_document_pdf, get_backup_value_from_quote
 
+from .utils.orchestrator.context_handle_helpers import save_or_update_conversation_context, make_session_context
+
+# Notification Email Functions
+from cpq.notifications.quote_notifications import notify_opportunity_created
+
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -50,17 +55,17 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 def quote_agent(user, action, user_message, session_data):
 
     action_map = {
-        "CreateQuote": create_quote, #HELPERS READY
-        "AddProduct": add_product_to_quote, #HELPERS READY
-        "UpdateQuoteLine": update_quote_line, #HELPERS READY
-        "UpdateQuote": update_quote,          #HELPERS READY
-        "DeleteQuoteLine": delete_quote_line,
-        "DeleteQuote": delete_quote,
-        "ShowQuoteDetails": show_quote_details,
-        "ShowQuoteNotes": show_quote_notes,
-        "GenerateQuoteDocument": generate_quote_pdf,
-        "UpdateQuoteLineFromUI": update_quote_line_from_ui,
-        "UpdateQuoteFromUI": update_quote_from_ui
+        "CreateQuote": create_quote, #CONTEXT READY
+        "AddProduct": add_product_to_quote, #CONTEXT READY
+        "UpdateQuoteLine": update_quote_line, #CONTEXT READY
+        "UpdateQuote": update_quote, #CONTEXT READY
+        "DeleteQuoteLine": delete_quote_line, #CONTEXT READY
+        "DeleteQuote": delete_quote, #CONTEXT READY
+        "ShowQuoteDetails": show_quote_details, #CONTEXT READY
+        "ShowQuoteNotes": show_quote_notes, #CONTEXT READY
+        "GenerateQuoteDocument": generate_quote_pdf, #CONTEXT READY
+        "UpdateQuoteLineFromUI": update_quote_line_from_ui, # NO NEED CONTEXT
+        "UpdateQuoteFromUI": update_quote_from_ui # NO NEED CONTEXT
         # "ProvideDates": provide_dates,
     }
 
@@ -74,12 +79,14 @@ def quote_agent(user, action, user_message, session_data):
 
 def create_quote(user,user_message, session_data):
     """Handles quote creation while preserving context."""
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "CreateQuote", "quote_agent", session_data, user_message)
 
     # ✅ Extract the quote details with LLM
     extracted_details = extract_quote_details(user_message)
 
     # ✅ Get or create account and opportunity
-    result_account_and_opportunity = get_or_create_account_and_opportunity(user,extracted_details, session_data)
+    result_account_and_opportunity = get_or_create_account_and_opportunity(user, extracted_details, session_data, session_context)
 
     # - If message in result (error or pending_action) return
     if isinstance(result_account_and_opportunity, dict) and "message" in result_account_and_opportunity:
@@ -118,18 +125,22 @@ def create_quote(user,user_message, session_data):
         }
     
     # In case the quote is created with any products
-    logging.info("🟡 Products provided in initial quote creation.")
+    logging.info("🟢 Products provided in initial quote creation.")
 
     response_message = f"✅ Quote {quote.name} created for {account.name} under deal {opportunity.name}.<br><br>"
 
     # ✅ Save quote products
-    quote, response_message, added_products = save_quote_products(extracted_products, quote, response_message)
+    quote, response_message, added_products = save_quote_products(extracted_products, quote, response_message, session_context)
 
     # ✅ Update quote (subtotal, discounts fields and net amount)
     quote.save()
 
     # ✅ Update amount in Opportunity
     update_opportunity_net_amount(quote.opportunity)
+
+    # Send email notification with opportunity
+    if quote.opportunity:
+        notify_opportunity_created(quote.opportunity)
 
     # ✅ Reset pending action and update session
     session_data["pending_action"] = None
@@ -151,9 +162,9 @@ def create_quote(user,user_message, session_data):
     
     # Append approval message or default notice
     if "message" in approval_suggestion:
-        response_message += f"\n\n{approval_suggestion['message']}"
+        response_message += f"{approval_suggestion['message']}"
     else:
-        response_message += "\n\n⚠️ No approval suggestion."
+        response_message += "⚠️ No approval suggestion."
 
     return {
         "message": response_message
@@ -166,27 +177,37 @@ def add_product_to_quote(user, user_message, session_data):
     """Handles adding multiple products to an existing quote."""
     logging.info("🔄 Adding product(s) to existing quote...")
 
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "AddProduct", "quote_agent", session_data, user_message)
+
+    # ✅ Extract multiple product details
+    extracted_products = extract_product_details(user_message)
+
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)
 
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
+        session_context["item_index"] = 1
+        session_context["extracted"] = extracted_products
+        agent_response = "Error: No active quote was found, just save data and retry."
+        save_or_update_conversation_context(session_context, agent_response)
         return quote
-    
-
-    # ✅ Extract multiple product details
-    extracted_products = extract_product_details(user_message)
 
     if not extracted_products or not isinstance(extracted_products, list):
+        session_context["item_index"] = 1
+        session_context["extracted"] = extracted_products
+        agent_response = "Error: Could not extract product details. Please specify SKU, quantity, or discount for each product."
+        save_or_update_conversation_context(session_context, agent_response)
         return {
-            "message": "⚠️ Error: Could not extract product details. Please specify SKU, quantity, and discount for each product."
+            "message": "⚠️ Error: Could not extract product details. Please specify SKU, quantity, or discount for each product."
         }
 
     added_products = []
     response_message = ""
 
     # ✅ Save quote products
-    quote, response_message, added_products = save_quote_products(extracted_products, quote, response_message, allow_updates=True)
+    quote, response_message, added_products = save_quote_products(extracted_products, quote, response_message, session_context, allow_updates=True)
     log_action_usage("AddProduct", user, "Quote", quote.name)
     # ✅ Update quote (subtotal, discounts fields and net amount)
     quote.save()
@@ -209,9 +230,9 @@ def add_product_to_quote(user, user_message, session_data):
     
     # If an approval suggestion exists, append it to the message
     if "message" in approval_suggestion:
-        response_message += f"\n\n{approval_suggestion['message']}"
+        response_message += f"{approval_suggestion['message']}"
     else:
-        response_message += "\n\n⚠️ No approval suggestion."
+        response_message += "⚠️ No approval suggestion."
     
         
     return {
@@ -223,31 +244,42 @@ def add_product_to_quote(user, user_message, session_data):
 #< ----------------- UPDATE QUOTE LINE -------------------- >
 
 def update_quote_line(user, user_message, session_data):
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "UpdateQuoteLine", "quote_agent", session_data, user_message)
+
     """Updates only the modified fields in quote lines."""
 
     logging.info("🔧 Updating quote line...\n\n")
+        
+    # ✅ Extract quote line updates with LLM
+    extracted_updates = extract_quote_line_updates(user_message)
+
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)
 
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
+        session_context["item_index"] = 1
+        session_context["extracted"] = extracted_updates
+        agent_response = "Error: No active quote was found, just save data and retry."
+        save_or_update_conversation_context(session_context, agent_response)
         return quote
-        
-    # ✅ Extract quote line updates with LLM
-    extracted_updates = extract_quote_line_updates(user_message)
 
     if not extracted_updates:
-        # ✅ Save quote in session data
-        set_active_quote_to_session_data(session_data, quote)
-        
+
+        session_context["item_index"] = 1
+        session_context["extracted"] = extracted_updates
+        agent_response = "Error: An error occurred while extracting your updates. Please try again."
+        save_or_update_conversation_context(session_context, agent_response)
+
         return {
         "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
         }
-    
+
     response_message = ""
 
     # ✅ Handle quote line update request
-    quote, response_message, updated_products = handle_quote_line_update_request(extracted_updates, quote, response_message)
+    quote, response_message, updated_products = handle_quote_line_update_request(extracted_updates, quote, response_message, session_context)
     log_action_usage("UpdateQuoteLine", user, "Quote", quote.name)
     # ✅ Update quote (subtotal, discounts fields and net amount)
     quote.save()
@@ -274,19 +306,33 @@ def update_quote(user, user_message, session_data):
     """Updates only the modified fields in quote lines."""
 
     logging.info("🔧 Updating quote...\n\n")
+    
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "UpdateQuote", "quote_agent", session_data, user_message)
+        
+    # ✅ Extract quote line updates with LLM
+    extracted_updates = extract_quote_updates(user_message)
+
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)
 
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
+        session_context["item_index"] = 1
+        session_context["extracted"] = None
+        agent_response = f"Error: No active quote was found, just save data and retry."
+        save_or_update_conversation_context(session_context, agent_response)
         return quote
-        
-    # ✅ Extract quote line updates with LLM
-    extracted_updates = extract_quote_updates(user_message)
 
     if not extracted_updates:
         # ✅ Save quote in session data
         set_active_quote_to_session_data(session_data, quote)
+
+        session_context["item_index"] = 1
+        session_context["extracted"] = extracted_updates
+        agent_response = "Error: An error occurred while extracting your updates. Please try again."
+        save_or_update_conversation_context(session_context, agent_response)
+
         return {
         "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
         }
@@ -294,7 +340,7 @@ def update_quote(user, user_message, session_data):
     response_message = ""
 
     # ✅ Handle quote line update request
-    quote, response_message, updated_quote = handle_quote_update_request(extracted_updates, quote, response_message)
+    quote, response_message, updated_quote = handle_quote_update_request(extracted_updates, quote, response_message, session_context)
     log_action_usage("UpdateQuote", user, "Quote", quote.name)
 
     # ✅ Safe active quote to session data
@@ -314,23 +360,37 @@ def update_quote(user, user_message, session_data):
     
 def delete_quote_line(user, user_message, session_data):
     """Deleting quote line item from quote"""
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "DeleteQuoteLine", "quote_agent", session_data, user_message)
+
     response_message = ""
+
     try:
+        extracted_sku = extract_quote_line_items_to_delete(user_message)
+
         # Looking for active quote
         quote = get_active_quote(user_message, session_data)
 
         # ⚠️ Verify if function return an error
         if isinstance(quote, dict) and "message" in quote:
+            session_context["item_index"] = 1
+            session_context["extracted"] = extracted_sku
+            agent_response = f"Missing fields: quantity, discount or term"
+            save_or_update_conversation_context(session_context, agent_response)
+
             return quote
         
         logging.info(f"🔄 Deleting quote line item from quote {quote}...")
-
-        extracted_sku = extract_quote_line_items_to_delete(user_message)
 
         if not extracted_sku:
             # ✅ Save quote in session data
             set_active_quote_to_session_data(session_data, quote)
 
+            session_context["item_index"] = 1
+            session_context["extracted"] = extracted_sku
+            agent_response = f"Failed to extract SKUs or product names for removing the quote line item. Please try again or check your input."
+            save_or_update_conversation_context(session_context, agent_response)
+            
             return {
                 "message": "⚠️ Failed to extract SKUs or product names for removing the quote line item. Please try again or check your input."
             }
@@ -340,17 +400,21 @@ def delete_quote_line(user, user_message, session_data):
             sku = item["sku"]
             name = item["name"]
 
+            # Add full item for session context
+            session_context["item_index"] = index
+            session_context["extracted"] = item
+
             # Check if the product exists
             try:
                 product = Product.objects.get(Q(sku=sku) | Q(sku=name) | Q(name=sku) | Q(name=name))
             except Product.DoesNotExist:
                 response_message += f"⚠️ Product '{sku}/{name}' is not registered.<br>"
+                agent_response = f"Error: Product '{sku}/{name}' is not registered."
+                save_or_update_conversation_context(session_context, agent_response)
                 continue
 
             sku = product.sku
             name = product.name
-
-            #print(f"\n\nQuote details: {sku} | {name}\n\n")
             
             # Check is quote line exists in active quote
             try:
@@ -366,9 +430,20 @@ def delete_quote_line(user, user_message, session_data):
             except QuoteLine.DoesNotExist:
                 quote_line = None
                 response_message += f"⚠️ The quote line with product SKU '{product.sku}' does not exist in quote {quote.name}.<br>"
+                agent_response = f"Error: The quote line with product SKU '{product.sku}' does not exist in quote {quote.name}."
+                save_or_update_conversation_context(session_context, agent_response)
+                continue
+
+            except Exception as e:
+                quote_line = None
+                response_message += f"⚠️ Something went wrong when trying to update the quote line Error: {e}.<br>"
+                agent_response = f"Error: Something went wrong when trying to update the quote line Error: {e}."
+                save_or_update_conversation_context(session_context, agent_response)
                 continue
 
     except Quote.DoesNotExist:
+        agent_response = f"Error: Quote not found. Please check the quote name."
+        save_or_update_conversation_context(session_context, agent_response)
         return {
             "message": "⚠️ Error: Quote not found. Please check the quote name."
         }
@@ -390,13 +465,19 @@ def delete_quote_line(user, user_message, session_data):
 
 def delete_quote(user, user_message, session_data):
     """Deleting Quote"""
-    response_message = ""
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "DeleteQuote", "quote_agent", session_data, user_message)
+
     try:
         #Looking for active quote
         quote = get_active_quote(user_message, session_data)
 
         # ⚠️ Verify if function return an error
         if isinstance(quote, dict) and "message" in quote:
+            session_context["item_index"] = 1
+            session_context["extracted"] = "No extracted data, user just wants to delete quote."
+            agent_response = f"No active quote was found, just save data and retry."
+            save_or_update_conversation_context(session_context, agent_response)
             return quote
         
         logging.info(f"Deleting quote with name: {quote.name}...")
@@ -428,6 +509,11 @@ def delete_quote(user, user_message, session_data):
         }
     
     except Exception as e:
+        session_context["item_index"] = 1
+        session_context["extracted"] = "No extracted data, user just wants to delete quote."
+        agent_response = f"An unexpected error occurred: {str(e)}"
+        save_or_update_conversation_context(session_context, agent_response)
+
         logging.exception("An unexpected error occurred while deleting the quote.")
         return {
             "message": f"❌ An unexpected error occurred: {str(e)}"
@@ -437,6 +523,8 @@ def delete_quote(user, user_message, session_data):
 
 def show_quote_details(user, user_message, session_data):
     """Fetches and formats quote details, including quote lines, based on user input or session data."""
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "ShowQuoteDetails", "quote_agent", session_data, user_message)
     try:
         logging.info("🔄 Showing quote details...")
 
@@ -445,23 +533,40 @@ def show_quote_details(user, user_message, session_data):
 
         # ⚠️ Verify if function return an error
         if isinstance(quote, dict) and "message" in quote:
+            session_context["item_index"] = 1
+            session_context["extracted"] = "No extracted data, user just wants to show quote details."
+            agent_response = f"No active quote was found, just save data and retry."
+            save_or_update_conversation_context(session_context, agent_response)
             return quote
 
         # ✅ Format the response
         quote_details = get_quote_details(quote)
+
+        # If quote document settings has not been created
+        if isinstance(quote_details, dict) and "message" in quote_details and "error" in quote_details:
+            if quote_details["message"] and quote_details["error"]:
+                return {
+                    "message": quote_details["message"]
+                }
 
 
         set_active_quote_to_session_data(session_data, quote)
 
         return {"message": "Here are the quote details:", "quote_details": quote_details, "hiddenMessage": "True"}
     
-    except Quote.DoesNotExist:
-        return {"message": "⚠️ Error: Quote not found. Please check the quote name."}
+    except Exception as e:
+        session_context["item_index"] = 1
+        session_context["extracted"] = "No extracted data, user just wants to show quote details."
+        agent_response = f"Error: Something went wrong when trying to show quote details: {str(e)}."
+        save_or_update_conversation_context(session_context, agent_response)
+        return {"message": f"⚠️ Error: Something went wrong when trying to show quote details: {str(e)}."}
 
 #< ----------------- SHOW QUOTE DETAILS -------------------- >
 
-def show_quote_notes(user_message, session_data):
+def show_quote_notes(user, user_message, session_data):
     """Showing Quote Notes"""
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "ShowQuoteNotes", "quote_agent", session_data, user_message)
     response_message = ""
     try:
         #Looking for active quote
@@ -469,6 +574,10 @@ def show_quote_notes(user_message, session_data):
 
         # ⚠️ Verify if function return an error
         if isinstance(quote, dict) and "message" in quote:
+            session_context["item_index"] = 1
+            session_context["extracted"] = "No extracted data, user just wants to show quote notes."
+            agent_response = f"No active quote was found, just save data and retry."
+            save_or_update_conversation_context(session_context, agent_response)
             return quote
         
         logging.info(f"Showing notes for quote: {quote.name}...")
@@ -486,14 +595,13 @@ def show_quote_notes(user_message, session_data):
         return {
             "message": msg
         }
-
-    except Quote.DoesNotExist:
-        return {
-            "message": "⚠️ Quote doesn't exist."
-        }
     
     except Exception as e:
         logging.exception("An unexpected error occurred while showing the quote.")
+        session_context["item_index"] = 1
+        session_context["extracted"] = "No extracted data, user just wants to show quote notes."
+        agent_response = f"An unexpected error occurred while trying to show quote notes: {str(e)}"
+        save_or_update_conversation_context(session_context, agent_response)
         return {
             "message": f"❌ An unexpected error occurred: {str(e)}"
         }
@@ -501,6 +609,9 @@ def show_quote_notes(user_message, session_data):
 #< ----------------- GENERATE QUOTE DOCUMENT -------------------- >
 
 def generate_quote_pdf(user,user_message, session_data):
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "GenerateQuoteDocument", "quote_agent", session_data, user_message)
+
     # Looking for active quote
     quote = get_active_quote(user_message, session_data)
     logger.info("📦 Starting PDF generation...")
@@ -508,6 +619,10 @@ def generate_quote_pdf(user,user_message, session_data):
 
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
+        session_context["item_index"] = 1
+        session_context["extracted"] = "No extracted data, user just wants to generate quote document/pdf."
+        agent_response = f"No active quote was found, just save data and retry."
+        save_or_update_conversation_context(session_context, agent_response)
         return quote
     
     try:
@@ -531,7 +646,6 @@ def generate_quote_pdf(user,user_message, session_data):
                 "hiddenMessage": True,
             }
         else:
-            # Error al generar PDF (pero manejado dentro de get_document_pdf)
             return {
                 "message": result.get("message", "⚠️ Unknown error generating PDF."),
                 "success": False

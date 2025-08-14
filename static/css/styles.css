@@ -421,3 +421,58 @@ tr:hover {
  
 
 }
+
+/* ----------------------------------------------------
+   Show Me Functionality Windows
+-----------------------------------------------------*/
+
+.floating-tab {
+    position: fixed;
+    top: 80px;
+    right: 0;
+    z-index: 999;
+}
+
+.tab-handle {
+    background: #333;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 10px 0 0 10px;
+    cursor: pointer;
+}
+
+.tab-menu {
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 10px 0 0 10px;
+    display: none;
+    flex-direction: column;
+}
+
+.tab-menu div {
+    padding: 10px 15px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+}
+
+.tab-menu div:hover {
+    background-color: #f0f0f0;
+}
+
+.tab-content {
+    position: fixed;
+    top: 130px;
+    right: 0;
+    background: white;
+    width: 400px;
+    height: 500px;
+    overflow: auto;
+    border-left: 1px solid #ccc;
+    padding: 16px;
+    box-shadow: -2px 0 5px rgba(0, 0, 0, 0.1);
+    z-index: 998;
+}
+
+.hidden {
+    display: none;
+}

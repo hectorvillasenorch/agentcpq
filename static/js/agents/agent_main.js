@@ -14,22 +14,19 @@ function getCurrentSessionId() {
 }
 
 function setupSessionSwitching() {
-    document.querySelectorAll(".chat-history-item").forEach(item => {
-      item.addEventListener("click", function (e) {
-        e.preventDefault();
-  
-        const sessionId = this.dataset.sessionId;
-        if (!sessionId) return;
-  
-        const url = new URL(window.location.href);
-        url.searchParams.set("view", "agents");
-        url.searchParams.set("session_id", sessionId);
-  
-        // Redirect to the same page with updated session_id
-        window.location.href = url.toString();
-      });
+  document.querySelectorAll(".chat-history-item").forEach(item => {
+    item.addEventListener("click", function (e) {
+      e.preventDefault();
+
+      const sessionId = this.dataset.sessionId;
+      if (!sessionId) return;
+
+      // Construir URL limpia sin parámetros previos
+      const baseUrl = `${window.location.origin}/dashboard/`;
+      window.location.href = `${baseUrl}?view=agents&session_id=${sessionId}`;
     });
-  }
+  });
+}
 
 function setupChatListeners() {
   console.log("Setting up chat listeners...");
@@ -689,7 +686,7 @@ function renderQuoteDetails(quote) {
       }
 
       html += `<tr${item.is_bundle_child ? ' class="bundle-child"' : ''}>`;
-      console.log("Item: ", item);
+      //console.log("Item: ", item);
 
       if (item.is_bundle_child == true && item.is_bundle_component_selected == false) {
         quote.rendered_fields.forEach((field, index) => {
@@ -838,8 +835,32 @@ function renderQuoteDetails(quote) {
             style: 'currency',
             currency: 'USD'
         })}
+      </p>`;
+
+  if(quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)){
+    html += `
+      <p class="subtotal-amount">
+        Tax: 
+        ${
+          quote.show_quote_tax_percentage && quote.show_quote_tax_amount
+            ? `(${parseFloat(quote.tax_percentage)}%) `
+            : quote.show_quote_tax_percentage
+            ? `${parseFloat(quote.tax_percentage)}% `
+            : ''
+        }
+        ${
+          quote.show_quote_tax_amount
+            ? parseFloat(quote.tax_amount).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })
+            : ''
+        }
       </p>
-      <p class="total-amount">
+    `;
+  }
+
+  html += `    <p class="total-amount">
         Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
             style: 'currency',
             currency: 'USD'
@@ -891,6 +912,30 @@ function renderQuoteDetailsMobile(quote) {
       <p style="margin-top:12px"><b>Subtotal:</b> ${parseFloat(
         quote.subtotal.replace("$", "")
       ).toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
+
+      ${
+        quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)
+          ? `<p>
+              <b>Tax:</b> 
+              ${
+                quote.show_quote_tax_percentage && quote.show_quote_tax_amount
+                  ? `(${parseFloat(quote.tax_percentage)}%) `
+                  : quote.show_quote_tax_percentage
+                  ? `${parseFloat(quote.tax_percentage)}% `
+                  : ''
+              }
+              ${
+                quote.show_quote_tax_amount
+                  ? parseFloat(quote.tax_amount).toLocaleString("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                    })
+                  : ''
+              }
+            </p>`
+          : ''
+      }
+
       <p>💰 <b>Net Amount:</b> ${parseFloat(
         quote.net_amount.replace("$", "")
       ).toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
@@ -1280,8 +1325,32 @@ function renderReadOnlyQuoteDetails(quote) {
             style: 'currency',
             currency: 'USD'
         })}
+      </p>`;
+
+  if(quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)){
+    html += `
+      <p class="subtotal-amount">
+        Tax: 
+        ${
+          quote.show_quote_tax_percentage && quote.show_quote_tax_amount
+            ? `(${parseFloat(quote.tax_percentage)}%) `
+            : quote.show_quote_tax_percentage
+            ? `${parseFloat(quote.tax_percentage)}% `
+            : ''
+        }
+        ${
+          quote.show_quote_tax_amount
+            ? parseFloat(quote.tax_amount).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })
+            : ''
+        }
       </p>
-      <p class="total-amount">
+    `;
+  }
+
+  html += `    <p class="total-amount">
         Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
             style: 'currency',
             currency: 'USD'
@@ -2004,8 +2073,32 @@ function showTemporaryQuoteDetails(quote) {
             style: 'currency',
             currency: 'USD'
         })}
+      </p>`;
+
+  if(quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)){
+    html += `
+      <p class="subtotal-amount">
+        Tax: 
+        ${
+          quote.show_quote_tax_percentage && quote.show_quote_tax_amount
+            ? `(${parseFloat(quote.tax_percentage)}%) `
+            : quote.show_quote_tax_percentage
+            ? `${parseFloat(quote.tax_percentage)}% `
+            : ''
+        }
+        ${
+          quote.show_quote_tax_amount
+            ? parseFloat(quote.tax_amount).toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              })
+            : ''
+        }
       </p>
-      <p class="total-amount">
+    `;
+  }
+
+  html += `    <p class="total-amount">
         Net Amount: ${parseFloat(quote.net_amount.replace('$', '')).toLocaleString('en-US', {
             style: 'currency',
             currency: 'USD'
@@ -2283,4 +2376,43 @@ function extractJson(raw) {
 
   // Si no se cerró el JSON, devolver null
   return null;
+}
+
+/* For Show Me Functionality */
+function openTabMenu() {
+    const menu = document.getElementById("tab-menu");
+    menu.style.display = "flex";
+}
+
+function loadTabContent(type) {
+    const contentArea = document.getElementById("tab-content");
+    contentArea.classList.remove("hidden");
+
+    if (type === "products") {
+        contentArea.innerHTML = `
+            <h5>Search Products</h5>
+            <input type="text" id="product-search" placeholder="Type to search..." class="browser-default">
+            <ul id="product-list"></ul>
+        `;
+
+        // Fake product list for demo, replace with AJAX call later
+        const products = ["Table", "Chair", "Laptop", "Mouse", "Desk"];
+        const input = document.getElementById("product-search");
+        const list = document.getElementById("product-list");
+
+        input.addEventListener("input", () => {
+            const query = input.value.toLowerCase();
+            list.innerHTML = "";
+            products
+                .filter(p => p.toLowerCase().includes(query))
+                .forEach(p => {
+                    const li = document.createElement("li");
+                    li.textContent = p;
+                    li.style.padding = "6px 0";
+                    list.appendChild(li);
+                });
+        });
+    }
+
+    // Puedes hacer lo mismo para 'bundles' y 'accounts'
 }

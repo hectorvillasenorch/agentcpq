@@ -32,6 +32,7 @@ from datetime import datetime, timezone as dt_timezone
 from django.contrib.auth.views import PasswordResetView
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
+import re
 
 @login_required
 def dashboard(request):
@@ -48,6 +49,18 @@ def dashboard(request):
         custom_object = get_object_or_404(CustomObject, name=object_name)
         DynamicForm = generate_dynamic_form(custom_object)
         form = DynamicForm()
+
+    next_identifier = None
+    if custom_object:
+        last_record = custom_object.records.order_by('-created_at').first()
+        if last_record and last_record.custom_identifier:
+            next_identifier = get_next_custom_identifier(last_record.custom_identifier)
+        else:
+            # Puedes definir un valor por defecto para nuevos objetos sin registros
+            label = custom_object.label if hasattr(custom_object, 'label') else custom_object.name
+            prefix = label[:3].upper() if len(label) >= 3 else label[:1].upper()
+            next_identifier = f"{prefix}-00001"
+
 
     if view == "setup" and not user.is_staff:
         return HttpResponseForbidden("You do not have access to the setup view.")
@@ -95,6 +108,7 @@ def dashboard(request):
     records_custom_object, field_values_by_record = get_values_by_record(custom_object)
     lookup_options = get_lookup_data_for_form(custom_object)
 
+
     return render(request, "dashboard.html", {
         "products": products,
         "options": options,
@@ -108,13 +122,13 @@ def dashboard(request):
         "selected_session_id": session_id,
         "custom_object": custom_object,
         "custom_objects": custom_objects,
+        "next_identifier": next_identifier,
         "form": form,
         "accounts": accounts,
         "records_custom_object": records_custom_object,
         'field_values_by_record': field_values_by_record,
         'lookup_options': lookup_options,
 })
-        
 
 def get_user_accounts(user):
     if user.is_superuser:
@@ -322,8 +336,23 @@ class CustomPasswordResetView(PasswordResetView):
             html_email = render_to_string(html_email_template_name, context)
             html_email = html_email.replace('\xa0', ' ')
             email_message.attach_alternative(html_email, 'text/html')
-
-        # Force UTF-8 encoding
         email_message.encoding = 'utf-8'
-
         email_message.send()
+
+
+def get_next_custom_identifier(last_identifier):
+    if not last_identifier:
+        return None
+    # Extraer prefijo y número
+    match = re.match(r"^([A-Z]+)-(\d{5})$", last_identifier)
+    if not match:
+        return None  # O manejar el error de formato
+    
+    prefix = match.group(1)
+    number = int(match.group(2))
+    
+    next_number = number + 1
+    next_number_str = str(next_number).zfill(5)
+    
+    return f"{prefix}-{next_number_str}"
+

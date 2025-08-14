@@ -1,5 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage, Option, TenantUsageReport
+from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage, Option, TenantUsageReport, Account
 from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt 
 from django.apps import apps
@@ -17,11 +17,15 @@ from django.utils.timezone import now
 from django.db.models.functions import TruncMonth
 from datetime import datetime
 from django.utils.timezone import make_aware
-from .forms import CustomFieldForm, BusinessRuleForm, get_rule_condition_formset
+from .forms import BusinessRuleForm, get_rule_condition_formset
 from .forms import QUOTE_FIELDS, QUOTE_LINE_FIELDS, PRODUCT_FIELDS
 from django.utils.safestring import mark_safe
 import uuid, os
 from django.views.decorators.http import require_POST
+from decimal import Decimal, InvalidOperation
+from collections import defaultdict
+from django.contrib.auth.models import User
+from django.utils import timezone
 
 # Agents General Helpers
 from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
@@ -220,6 +224,7 @@ def custom_fields_view(request):
         if form.is_valid():
             custom_object = form.save(commit=False)
             custom_object.created_by = request.user
+            custom_object.updated_by = request.user
             custom_object.save()
             request.session['custom_object_success'] = True
             return redirect('cpq:custom_fields')
@@ -252,7 +257,7 @@ def custom_fields_view(request):
         else:
             try:
                 custom_obj = CustomObject.objects.get(name=obj_type)
-                custom_fields = CustomField.objects.filter(custom_object=custom_obj)
+                custom_fields = CustomField.objects.filter(object_type=custom_obj.name)
             except CustomObject.DoesNotExist:
                 custom_fields = []
 
@@ -307,9 +312,21 @@ def edit_custom_object(request, object_name):
     else:
         form = CustomObjectForm(instance=custom_object)
 
+        # Get related values
+        related_customfields = custom_object.custom_fields.all()
+
+        related_data = defaultdict(list)
+
+        for custom_field in related_customfields:
+            related_values = custom_field.values.all()
+            related_data[custom_field.label].extend(related_values)
+        
+        related_data = dict(related_data)
+
     return render(request, 'edit_custom_object.html', {
         'form': form,
-        'object_name': object_name
+        'object_name': object_name,
+        'related_data': related_data
     })
 
 @require_POST
@@ -323,12 +340,15 @@ def delete_custom_object(request, object_name):
     return redirect('cpq:custom_fields')
 
 def create_custom_field(request, object_name):
-    print("Entra al segundo")
     if request.method == 'POST':
         form = CustomFieldForm(request.POST)
+
         if form.is_valid():
+            # Buscamos si el object_type es un objeto custom
+
             field = form.save(commit=False)
             field.created_by = request.user
+            field.updated_by = request.user
             field.save()
 
             # 🔧 Lógica personalizada aquí
@@ -343,8 +363,16 @@ def create_custom_field(request, object_name):
                     quote_document_settings.save()
             
             return redirect('cpq:custom_fields')  # or wherever you want to go after save
+        else:
+            print("Form errors:", form.errors)
     else:
-        form = CustomFieldForm(initial={'crm': 'AgentCPQ', 'object_type': object_name})
+        # Buscar si object_type es un objeto custom
+        try:
+            custom_obj = CustomObject.objects.get(name=object_name)
+            form = CustomFieldForm(initial={'crm': 'AgentCPQ', 'object_type': object_name, 'custom_object': custom_obj})
+        except ObjectDoesNotExist:
+            form = CustomFieldForm(initial={'crm': 'AgentCPQ', 'object_type': object_name})
+
     return render(request, 'create_custom_field.html', {'form': form, 'object_name': object_name})
 
 
@@ -362,7 +390,8 @@ def edit_custom_field(request, field_id):
         form = CustomFieldForm(instance=custom_field)
         # Get related values
         related_values = custom_field.values.all()
-        print(f"Valores relacionados: {related_values}")
+
+        print(f"\n\nRelated Values: {related_values}\n\n")
 
     return render(request, 'edit_custom_field.html', {
         'form': form,
@@ -441,6 +470,57 @@ def create_custom_object(request):
     
     return render(request, 'create_custom_object.html', {'form': form})
 
+@login_required
+def get_custom_record_form(request, record_id):
+    record = get_object_or_404(CustomRecord, id=record_id)
+    DynamicForm = generate_dynamic_form(record.object_type)
+
+    initial_data = {v.field.name: v.value for v in record.custom_field_values.all()}
+    form = DynamicForm(initial=initial_data)
+
+    # Solo retornamos el HTML parcial
+    return render(request, 'custom_objects/partial_edit_form_fields.html', {'form': form})
+
+@login_required
+def edit_custom_record(request, record_id):
+    record = get_object_or_404(CustomRecord, id=record_id)
+    DynamicForm = generate_dynamic_form(record.object_type)
+
+    if request.method == "POST":
+        form = DynamicForm(request.POST)
+        if form.is_valid():
+            content_type = ContentType.objects.get_for_model(record)
+            for field_name, value in form.cleaned_data.items():
+                custom_field = CustomField.objects.get(name=field_name, custom_object=record.object_type)
+                cfv, created = CustomFieldValue.objects.get_or_create(
+                    record=record,
+                    field=custom_field,
+                    defaults={'content_type': content_type, 'object_id': record.id}
+                )
+                if not created:
+                    cfv.value = value
+                    cfv.save()
+            messages.success(request, f"{record.object_type.label} record updated successfully.")
+
+            # Actualizar usuario y fecha
+            record.updated_by = request.user
+            record.updated_at = timezone.now()
+            record.save()
+
+            # Redirigir o retornar JSON
+            return redirect(request.META.get('HTTP_REFERER', '/dashboard/'))
+        else:
+            messages.error(request, "Form contains errors. Please fix them.")
+    return redirect(request.META.get('HTTP_REFERER', '/dashboard/'))
+
+@csrf_exempt
+def delete_custom_record(request, record_id):
+    if request.method == "POST":
+        record = get_object_or_404(CustomRecord, id=record_id)
+        record.delete()
+        return JsonResponse({'status': 'success'})
+    return JsonResponse({'status': 'error'}, status=400)
+
 def get_document_template(request):
 
     try:
@@ -480,7 +560,7 @@ def get_document_template(request):
             'show_account_name', 'show_account_website', 'show_account_phone',
             'show_quote_opportunity', 'show_quote_status', 'show_quote_created_at',
             'show_quote_expires_at', 'show_quote_notes',
-            'show_line_discount', 'show_subscription_term', 'show_sign'
+            'show_line_discount', 'show_subscription_term', 'show_sign', 'show_quote_tax_percentage', 'show_quote_tax_amount'
         ]
         
         for field in boolean_fields:
@@ -494,11 +574,24 @@ def get_document_template(request):
             settings.omitted_fields = json.loads(omitted_fields_raw)
         except json.JSONDecodeError:
             print("Error decodificando los JSON\n\n")
+
+        # Tax Switch
+        tax_switch = True if request.POST.get('tax-information-switch') == 'on' else False
+        settings.show_quote_tax_information = tax_switch
+
+
+        # Tax Rate
+        settings.quote_tax = request.POST.get("tax_rate", "")
         
         # Terms and conditions
         settings.terms_and_conditions = request.POST.get("terms_conditions", "")
 
         settings.save()
+
+        #Update every quote tax amount
+        for quote in Quote.objects.all():
+            quote.update_tax()
+            quote.save()
         return redirect('cpq:get_document_template')
     
     if document_settings is None:
@@ -579,7 +672,7 @@ def create_business_rule(request):
     })
 
 
-def create_custom_record(request, object_name):
+def create_custom_record(request, object_name, user_id):
 
     custom_object = get_object_or_404(CustomObject, name=object_name)
     DynamicForm = generate_dynamic_form(custom_object)
@@ -587,7 +680,12 @@ def create_custom_record(request, object_name):
     if request.method == 'POST':
         form = DynamicForm(request.POST)
         if form.is_valid():
-            record = CustomRecord.objects.create(object_type=custom_object)
+            user = User.objects.get(id=user_id)
+            record = CustomRecord.objects.create(
+                    object_type=custom_object,
+                    created_by = user,
+                    updated_by = user
+                )
 
             content_type = ContentType.objects.get_for_model(record)
 

@@ -13,7 +13,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
 </head>
-<body class="white lighten-4">  
+<body class="white lighten-4">
     <div class="chat-container">
         <!-- <div id="chat-box" class="chat-box"></div> -->
         <div id="chat-box" class="chat-box">
@@ -109,5 +109,7 @@
     sendUserMessage("Update Quote: " + JSON.stringify(updatePayload));
   }
 </script>
+
+{% include "floating_drawer.html" %}
 </body>
 </html>
