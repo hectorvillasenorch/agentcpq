@@ -3,7 +3,8 @@ from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opport
 from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession
 from django.contrib.contenttypes.models import ContentType
-
+from django.utils.html import format_html
+from django.urls import reverse
 # admin.site.register(Subscription)
 # admin.site.register(Asset)
 
@@ -25,18 +26,31 @@ class DynamicCustomFieldAdmin(admin.ModelAdmin):
         form = self.get_form(request, obj=obj)
         return [(None, {'fields': list(form.base_fields.keys())})]
 
-class ReadOnlyActivityInline(admin.TabularInline):
-    model = Activity
-    can_delete = False
-    extra = 0
-    readonly_fields = ('activity_type', 'status', 'due_date')
-    show_change_link = True
 
-    def has_add_permission(self, request, obj=None):
-        return False
 
 class LeadAdmin(DynamicCustomFieldAdmin):
-    inlines = [ReadOnlyActivityInline]
+    readonly_fields = ['related_activities']
+
+    def related_activities(self, obj):
+        activities = obj.activity_set.all()  # or use related_name
+        add_url = reverse('admin:cpq_activity_add') + f'?account={obj.id}'
+        rows = "".join(
+            f"<tr><td>{a.subject}</td><td>{a.status}</td><td>{a.due_date}</td></tr>"
+            for a in activities
+        )
+        return format_html(
+            f'''
+            <a href="{add_url}" class="button" style="margin-bottom: 10px; display:inline-block; background:#2b8dbf; color:white; padding:5px 10px; border-radius:3px;">+ Add Activity</a>
+            <table style="width:100%; border-collapse: collapse;">
+                <tr style="background:#333; color:white;">
+                    <th>Subject</th><th>Status</th><th>Due Date</th>
+                </tr>
+                {rows}
+            </table>
+            '''
+        )
+
+    related_activities.short_description = "Activities"
     form = get_dynamic_form(Lead, crm="AgentCPQ", object_type="Lead")
     def get_fieldsets(self, request, obj=None):
         return [(None, {'fields': list(self.form().fields.keys())})]
@@ -45,6 +59,11 @@ class LeadAdmin(DynamicCustomFieldAdmin):
     
     list_display = ('first_name','last_name', 'phone', 'email', 'status', 'assigned_to', 'created_at', 'updated_at')
 admin.site.register(Lead, LeadAdmin)
+
+
+
+
+
 
 # class ActivityInline(admin.TabularInline):  # or admin.StackedInline
 #     model = Activity
