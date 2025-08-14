@@ -47,20 +47,24 @@ class LeadAdmin(DynamicCustomFieldAdmin):
             '<td><a href="{}">{}</a></td>'
             '<td>{}</td>'
             '<td>{}</td>'
+            '<td style="max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{}</td>'
+            '<td><a class="button" href="{}" style="display:inline-block;padding:4px 8px;border-radius:3px;background:#6b7280;color:white;text-decoration:none;">Edit</a></td>'
             '</tr>',
             (
                 (
-                    reverse('admin:cpq_activity_change', args=[a.pk]),
+                    reverse('admin:cpq_activity_change', args=[a.pk]),  # subject link target
                     a.subject,
                     a.get_status_display() if hasattr(a, 'get_status_display') else a.status,
-                    a.due_date or ''
+                    a.due_date or '',
+                    a.notes or '',
+                    reverse('admin:cpq_activity_change', args=[a.pk])   # explicit Edit button target
                 )
                 for a in activities_qs
             )
         )
 
         if not rows:
-            rows = format_html('<tr><td colspan="3" style="padding:6px 8px;color:#777;">No activities yet.</td></tr>')
+            rows = format_html('<tr><td colspan="5" style="padding:6px 8px;color:#777;">No activities yet.</td></tr>')
 
         return format_html(
             '''
@@ -71,6 +75,8 @@ class LeadAdmin(DynamicCustomFieldAdmin):
                         <th style="text-align:left;padding:6px 8px;">Subject</th>
                         <th style="text-align:left;padding:6px 8px;">Status</th>
                         <th style="text-align:left;padding:6px 8px;">Due Date</th>
+                        <th style="text-align:left;padding:6px 8px;">Notes</th>
+                        <th style="text-align:left;padding:6px 8px;width:80px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>{}</tbody>
