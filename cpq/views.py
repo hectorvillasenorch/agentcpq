@@ -351,15 +351,15 @@ def create_custom_field(request, object_name):
             field.save()
 
             # 🔧 Lógica personalizada aquí
-            quote_document_settings = QuoteDocumentSettings.objects.first()
-            if quote_document_settings:
-                full_label = f"{field.object_type}.{field.label}"
-                omitted = quote_document_settings.omitted_fields or []
+            #quote_document_settings = QuoteDocumentSettings.objects.first()
+            #if quote_document_settings:
+            #    full_label = f"{field.object_type}.{field.label}"
+            #    omitted = quote_document_settings.omitted_fields or []
 
-                if full_label not in omitted:
-                    omitted.append(full_label)
-                    quote_document_settings.omitted_fields = omitted
-                    quote_document_settings.save()
+            #    if full_label not in omitted:
+            #        omitted.append(full_label)
+            #        quote_document_settings.omitted_fields = omitted
+            #        quote_document_settings.save()
             
             return redirect('cpq:custom_fields')  # or wherever you want to go after save
         else:
@@ -593,7 +593,7 @@ def get_document_template(request):
         )
     
     # Hardcore for now
-    set_custom_fields_into_quote_document_settings("Product")
+    set_custom_fields_into_quote_document_settings(["Product", "Quote"])
     document_settings.refresh_from_db()
 
     return render(request, 'document_template.html', {
@@ -684,6 +684,9 @@ def create_custom_record(request, object_name, user_id):
             for field_name, value in form.cleaned_data.items():
                 try:
                     custom_field = CustomField.objects.get(name=field_name, custom_object=custom_object)
+                    if not value:
+                        value = "---"
+
                     CustomFieldValue.objects.create(
                         record=record,
                         field=custom_field,
