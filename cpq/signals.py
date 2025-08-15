@@ -36,6 +36,7 @@ def send_account_created_email(sender, instance, created, **kwargs):
     if created:
         notify_account_created(instance)
 
+#The email notification is not sent through this method because it is triggered directly when creating the opportunity in the quote.
 #@receiver(post_save, sender=Opportunity)
 #def send_opportunity_created_email(sender, instance, created, **kwargs):
 #    if created:

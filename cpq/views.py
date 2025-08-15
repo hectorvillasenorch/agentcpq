@@ -622,6 +622,33 @@ def business_rules_view(request):
         "rules_by_type": rules_by_type
     })
 
+def manage_notifications_view(request):
+    users = User.objects.values('id', 'username', 'first_name', 'last_name')
+
+    return render(request, 'manage_notifications.html', {
+        'users': users
+    })
+
+@require_POST
+def create_notification(request):
+    notification_type = request.POST.get('notification_type')  # 'account', 'lead', etc.
+    when = request.POST.get('account_when')  # coincide con el name del select
+    recipient = request.POST.get('account_recipient')  # coincide con el name del select
+
+    print(f"Informacion: {notification_type}")
+    print(f"When: {when}")
+    print(f"Recipient: {recipient}")
+
+    # Guardar en el modelo
+    #Notification.objects.create(
+    #    notification_type=notification_type,
+    #    when=when,
+    #    recipient=recipient,
+    #    options={}  # opciones extra si las necesitas
+    #)
+
+    return JsonResponse({'status': 'ok'})
+
 def create_business_rule(request):
     rule_type = request.GET.get("type", "validation")
     target_type = request.GET.get("target_type", "quote_line")

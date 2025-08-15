@@ -1140,10 +1140,4 @@ class ActionUsage(models.Model):
     def __str__(self):
         return f"{self.action} by {self.user or 'System'} on {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
 
-
-class EmailNotification(models.Model):
-    recipient = models.EmailField()
-    subject = models.CharField(max_length=255)
-    template_name = models.CharField(max_length=100)
-    context = models.JSONField()
-    sent_at = models.DateTimeField(auto_now_add=True)
+#class NotificationSettings(models.Model):
