@@ -811,9 +811,15 @@ def handle_custom_object_records(user, extracted_custom_objects_records, respons
         if created_field_values:
             for item in created_field_values:
                 response_message += f"🏷️ {item.field.label}: {item.value}<br>"
-            
             response_message += "<br>"
-        
+
+        # Safety: ensure modified_by is stamped on the parent record
+        try:
+            record.modified_by = user
+            record.save(update_fields=["modified_by", "updated_at"])
+        except Exception:
+            pass
+
         records_created.append(record)
         response_message += (
             f"✅ Successfully created a new record for <strong>{custom_object.label or custom_object.name}</strong>.<br><br>"
