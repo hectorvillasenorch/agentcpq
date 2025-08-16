@@ -269,28 +269,34 @@ def copy_custom_fields_values_from_product_to_quote_line(quote_line):
             else:
                 print(f"⚠️ Skipped: Custom field '{cf.field.name}' already up-to-date for quote line {quote_line}.")
 
-
-def set_custom_fields_into_quote_document_settings(object_type):
-    # 1. Obtener los CustomField válidos para ese object_type
-    custom_fields = CustomField.objects.filter(object_type=object_type)
-    valid_custom_field_labels = {f"{object_type}.{cf.label}" for cf in custom_fields}
+def set_custom_fields_into_quote_document_settings(object_types: list):
+    """
+    Sincroniza QuoteDocumentSettings solo con los CustomFields de los object_types indicados.
+    Los campos de otros tipos se eliminan de las listas, los nuevos se agregan a omitted_fields
+    si no estaban en rendered_fields.
+    """
+    # 1. Obtener todos los CustomFields válidos para los object_types
+    valid_custom_field_labels = set()
+    for obj_type in object_types:
+        custom_fields = CustomField.objects.filter(object_type=obj_type)
+        valid_custom_field_labels.update(f"{obj_type}.{cf.label}" for cf in custom_fields)
 
     # 2. Obtener la configuración actual
     quote_document_settings = QuoteDocumentSettings.objects.first()
     if not quote_document_settings:
-        return 
+        return
 
     rendered_fields = quote_document_settings.rendered_fields or []
     omitted_fields = quote_document_settings.omitted_fields or []
 
-    # 3. Limpiar los campos obsoletos (que ya no están en CustomField)
+    # 3. Limpiar solo los campos de tipos que NO están en object_types
     rendered_fields = [
         field for field in rendered_fields
-        if not field.startswith(f"{object_type}.") or field in valid_custom_field_labels
+        if not any(field.startswith(f"{ot}.") for ot in object_types) or field in valid_custom_field_labels
     ]
     omitted_fields = [
         field for field in omitted_fields
-        if not field.startswith(f"{object_type}.") or field in valid_custom_field_labels
+        if not any(field.startswith(f"{ot}.") for ot in object_types) or field in valid_custom_field_labels
     ]
 
     # 4. Agregar nuevos custom fields que no estén en ninguno de los dos
@@ -302,6 +308,8 @@ def set_custom_fields_into_quote_document_settings(object_type):
     quote_document_settings.rendered_fields = rendered_fields
     quote_document_settings.omitted_fields = omitted_fields
     quote_document_settings.save()
+
+
 
 def get_document_pdf(quote):
     try:

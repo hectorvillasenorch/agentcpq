@@ -228,10 +228,17 @@ def delete_custom_field(request):
         data = json.loads(request)
 
         name = data["name"]
+        custom_object_name = data["custom_object_name"]
+        default_object_name = data["default_object_name"]
 
         with transaction.atomic():
 
-            custom_field = CustomField.objects.get(name=name)
+            if custom_object_name:
+                custom_object = CustomObject.objects.get(name=custom_object_name)
+
+                custom_field = CustomField.objects.get(name=name, custom_object=custom_object)
+            elif default_object_name:
+                custom_field = CustomField.objects.get(name=name, object_type=default_object_name)
 
             custom_field.delete()
                 

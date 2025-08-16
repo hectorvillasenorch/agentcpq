@@ -684,7 +684,10 @@ def handle_custom_field_deletes(user, extracted_custom_fields_deletes, response_
                     "Please make sure you're referencing a valid custom field to delete.<br><br>"
                 )
                 continue
-        elif default_object_label and custom_object_label is None:
+        elif default_object_label:
+            if custom_object_label:
+                custom_object_label = None
+
             allowed_default_objects = [
                 "Activity",
                 "Lead",
@@ -712,6 +715,7 @@ def handle_custom_field_deletes(user, extracted_custom_fields_deletes, response_
 
             try:
                 custom_field = CustomField.objects.get(name=field_name, object_type=default_object_label)
+                custom_object = None
             except CustomField.DoesNotExist:
                 agent_response = f"A custom field with the label '{field_label}' does not exist."
                 save_or_update_conversation_context(session_context, agent_response)
@@ -727,7 +731,9 @@ def handle_custom_field_deletes(user, extracted_custom_fields_deletes, response_
         response_message += f"<b>🧩 <u>{custom_field.label}</u> 🧩</b><br>"
 
         field_payload = {
-            "name": custom_field.name
+            "name": custom_field.name,
+            "custom_object_name": custom_object.name if custom_object else None,
+            "default_object_name": default_object_label if default_object_label else None
         }
 
         # Call the delete function
