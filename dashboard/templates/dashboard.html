@@ -24,9 +24,9 @@
             <img width="70%" src="/media/img/logo-small.png" alt="AgentCPQ Logo">
         </div>
         <a href="{% url 'dashboard' %}?view=agents" class="new-chat-button">
-  <i class="material-icons">smart_toy</i>
-  New Chat<span style="margin: 0 4px;">+</span> 
-</a>
+            <i class="material-icons">smart_toy</i>
+            New Chat<span style="margin: 0 4px;">+</span> 
+        </a>
         <a href="{% url 'dashboard' %}?view=products">
             <i class="material-icons">inventory_2</i> Products
         </a>
@@ -89,8 +89,7 @@
                 {% include "objs_listviews.html" %}
             {% elif not form and not custom_object %}
                 <p class="grey-text text-darken-2 center-align">Select an option from the sidebar.</p>
-            {% endif %}
-            {% if form and custom_object and request.GET.object_name %}
+            {% elif form and custom_object and request.GET.object_name %}
                 <div class="section">
                     <h2><i class="material-icons" style="vertical-align: middle; margin-right: 8px;">description</i>{{ custom_object.label }}</h2>
                     {% include "custom_objects/record_form.html" with form=form custom_object=custom_object next_identifier=next_identifier%}

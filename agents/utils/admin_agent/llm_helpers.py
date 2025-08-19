@@ -763,3 +763,150 @@ def extract_custom_object_updates(user_message):
     except Exception as e:
         logging.error(f"❌ Error extracting discount details: {str(e)}")
         return None
+    
+# FUNCTION TO EXTRACT MAIL ALERT DETAILS (CREATE_EMAIL_ALERT)
+def extract_email_alert_details(user, user_message, custom_objects, users):
+    """Use GPT to extract the details of email alerts from the user’s message"""
+
+    prompt = f"""
+    Extract the structured data needed to configure one or multiple email alerts with the following structure:
+    Return a JSON array of objects, where each object must include:
+
+    - "description" (string): A short description of the email alert. If the user does not specify a description, infer one.
+    - "trigger" (string): The trigger that fires the alert. It can be any of the following: lead_created, account_created, opportunity_created, opportunity_closed_won, opportunity_closed_lost, quote_sent_for_approval, quote_approved, quote_rejected, quote_expiring, subscription_renewal.
+    - "native_object" (string): If the email alert is directed to a native object from the following list: Lead, Account, Opportunity, Quote, Subscription.
+    - "custom_object": If the email alert is directed to a custom object. The list of custom objects is: {custom_objects}.
+    - "recipients_users" (list): List of user recipients for the email alert. The list of users is: {users}. If the user explicitly specifies that the alert should be sent to themselves (for example by saying "send me", "notify me", "alert me"), then automatically include the username of the requesting user: {user.username}. In this field, only usernames are allowed—no emails, no roles.
+    - "recipients_roles" (list): List of role recipients for the email alert. The possible roles are: all_superusers, all_admins, all_staff, creator.
+        The field "recipients_roles" expects one or more of the following values:
+        - all_superusers
+        - all_admins
+        - all_staff
+        - creator
+
+        When the user mentions:
+        - "superusers", it should be interpreted as "all_superusers"
+        - "admins", it should be interpreted as "all_admins"
+        - "staff", it should be interpreted as "all_staff"
+
+        Always convert these user terms to the corresponding role keys before saving to the database.
+
+    - "recipients_external" (list): List of external email recipients. The user must specify these in the message.
+    - "offset_days" (int): Integer that indicates the days before or after the trigger when the alert should be sent. If the number is positive, it indicates days before; if the number is negative, it indicates days after.
+    - "scheduled_cron" (string): Cron format for sending the alert.
+
+    **Example Input & Output:**
+
+    User: "Create an email alert when a quote is sent for approval. The recipients should be superusers and admins."
+    Response:
+    [
+        {{
+            "description": "Quote sent for approval",
+            "trigger": "quote_sent_for_approval",
+            "native_object": "Quote",
+            "custom_object": null,
+            "recipients_users": [],
+            "recipients_roles": ["all_superusers", "all_admins"],
+            "recipients_external": [],
+            "offset_days": null,
+            "scheduled_cron": null
+        }}
+    ]
+
+    User: "Send me an alert when a lead is closed as won or lost, and also notify all superusers."
+    Response:
+    [
+        {{
+            "description": "Lead closed as won",
+            "trigger": "lead_closed_won",
+            "native_object": "Lead",
+            "custom_object": null,
+            "recipients_users": ["{user.username}"],
+            "recipients_roles": ["all_superusers"],
+            "recipients_external": [],
+            "offset_days": null,
+            "scheduled_cron": null
+        }},
+        {{
+            "description": "Lead closed as lost",
+            "trigger": "lead_closed_lost",
+            "native_object": "Lead",
+            "custom_object": null,
+            "recipients_users": ["{user.username}"],
+            "recipients_roles": ["all_superusers"],
+            "recipients_external": [],
+            "offset_days": null,
+            "scheduled_cron": null
+        }}
+    ]
+
+    **Requirements:**
+    - If "description" is not specified by the user, infer a short description.
+    - If "trigger" is not specified, set it as null.
+    - If "native_object" is not specified, set it as null.
+    - If "custom_object" is not specified, set it as null.
+    - If "recipients_users", "recipients_roles", or "recipients_external" are not specified, set them as empty lists [].
+    - If the user does not specify the usernames exactly as in the users list, then leave recipients_users empty.
+    - "native_object" and "custom_object" cannot both exist at the same time.
+    - "offset_days" and "scheduled_cron" cannot both exist at the same time.
+    - If "scheduled_cron" is provided, it must follow a valid cron format.
+    - Ensure the JSON array contains valid objects with all fields normalized as described.
+
+    **IMPORTANT:** **Return a valid JSON array only of product objects. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
+
+    User Request: "{user_message}"
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Extract structured email alert details from user message."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        # ✅ Extract raw response
+        raw_response = response.choices[0].message.content.strip()
+        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+
+        # ✅ Ensure valid JSON response
+        try:
+            extracted_alerts = json.loads(raw_response)
+            normalized_alerts = []
+
+            for alert in extracted_alerts:
+                normalized_alert = {
+                    "description": alert.get("description") or "No description provided",
+                    "trigger": alert.get("trigger") or None,
+                    "native_object": alert.get("native_object") or None,
+                    "custom_object": alert.get("custom_object") or None,
+                    "recipients_users": alert.get("recipients_users") or [],
+                    "recipients_roles": alert.get("recipients_roles") or [],
+                    "recipients_external": alert.get("recipients_external") or [],
+                    "offset_days": alert.get("offset_days") if alert.get("offset_days") is not None else None,
+                    "scheduled_cron": alert.get("scheduled_cron") or None
+                }
+
+                # ✅ Validate native vs custom object
+                if normalized_alert["native_object"] and normalized_alert["custom_object"]:
+                    # Si ambos están definidos, descartamos native_object
+                    normalized_alert["native_object"] = None
+
+                # ✅ Validate offset_days vs scheduled_cron
+                if normalized_alert["offset_days"] is not None and normalized_alert["scheduled_cron"] is not None:
+                    normalized_alert["scheduled_cron"] = None  # Priorizar offset_days
+
+                # Se puede agregar validación de cron aquí si quieres (regex)
+
+                normalized_alerts.append(normalized_alert)
+
+            return normalized_alerts
+
+        except json.JSONDecodeError:
+            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
+            return None
+
+    except Exception as e:
+        logging.error(f"❌ Error extracting email alert details: {str(e)}")
+        return None

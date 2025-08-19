@@ -131,12 +131,12 @@ def orchestrate_request(user, user_message, session_data):
     - "GenerateQuoteDocument"
     - "ProvideDates"
     - "ShowQuoteDetails"
-    - "UpdateQuoteLine" (Use this when the user wants to update a quote line item. The fields that can be updated at the quote line level are: quantity, discount_amount, discount_percentage, and term.)
-    - "UpdateQuote" (Use this when the user wants to update any quote. The fields that can be updated at the quote level are: status, discount_percentage, discount_amount, expiration_date, notes)
+    - "UpdateQuoteLine"                                                             (Use this when the user wants to update a quote line item. The fields that can be updated at the quote line level are: quantity, discount_amount, discount_percentage, and term.)
+    - "UpdateQuote"                                                                 (Use this when the user wants to update any quote. The fields that can be updated at the quote level are: status, discount_percentage, discount_amount, expiration_date, notes)
     - "ShowQuoteNotes"
     - "DeleteQuoteLine"
-    - "DeleteQuote" (Use this ONLY for messages that not includes SKU or product's names)
-    - "CreateProductRecord" (Use this when the user wants to create a new product record, not add a product to quote)
+    - "DeleteQuote"                                                                 (Use this ONLY for messages that not includes SKU or product's names)
+    - "CreateProductRecord"                                                         (Use this when the user wants to create a new product record, not add a product to quote)
     - "UpdateProductRecord"
     - "SubmitForApproval" 
     - "CheckApprovalStatus"
@@ -147,21 +147,22 @@ def orchestrate_request(user, user_message, session_data):
     - "GeneralQuery"
     - "CreateValidationRule"
     - "ShowRules"
-    - "UpdateRule" (Use this when the user wants to update a rule)
-    - "DeleteRule" (Use this when the user wants to delete a rule)
-    - "AddProductToBundle" (Use this when the user wants to add any product to bundle)
-    - "UpdateBundleOption" (Use this when the user wants to update any bundle option)
-    - "DeleteBundleOption" (Use this when the user wants to delete any bundle option)
-    - "DeleteBundleComponentFromQuote" (Use this when the user wants to delete any bundle option from quote)
-    - "CreateCustomObject" (Use this when the user wants to create a new custom object)
-    - "UpdateCustomObject" (Use this when the user wants to update any custom object, an example of user message is: update custom object)
-    - "DeleteCustomObject" (Use this when the user wants to delete any custom object)
-    - "CreateCustomField" (Use this when the user wants to create a new custom field)
-    - "UpdateCustomField" (Use this when the user wants to update any custom field)
-    - "DeleteCustomField" (Use this when the user wants to delete any custom field)
-    - "CreateCustomRecord" (Use this when the user wants to create a record for an existing custom object like {custom_objects_list})
-    - "UpdateCustomRecord" (Use this when the user wants to update any record for an existing custom object like {custom_objects_list})
-    - "DeleteCustomRecord" (Use this when the user wants to delete any record for an existing custom object like {custom_objects_list})
+    - "UpdateRule"                                                                  (Use this when the user wants to update a rule)
+    - "DeleteRule"                                                                  (Use this when the user wants to delete a rule)
+    - "AddProductToBundle"                                                          (Use this when the user wants to add any product to bundle)
+    - "UpdateBundleOption"                                                          (Use this when the user wants to update any bundle option)
+    - "DeleteBundleOption"                                                          (Use this when the user wants to delete any bundle option)
+    - "DeleteBundleComponentFromQuote"                                              (Use this when the user wants to delete any bundle option from quote)
+    - "CreateCustomObject"                                                          (Use this when the user wants to create a new custom object)
+    - "UpdateCustomObject"                                                          (Use this when the user wants to update any custom object, an example of user message is: update custom object)
+    - "DeleteCustomObject"                                                          (Use this when the user wants to delete any custom object)
+    - "CreateCustomField"                                                           (Use this when the user wants to create a new custom field)
+    - "UpdateCustomField"                                                           (Use this when the user wants to update any custom field)
+    - "DeleteCustomField"                                                           (Use this when the user wants to delete any custom field)
+    - "CreateCustomRecord"                                                          (Use this when the user wants to create a record for an existing custom object like {custom_objects_list})
+    - "UpdateCustomRecord"                                                          (Use this when the user wants to update any record for an existing custom object like {custom_objects_list})
+    - "DeleteCustomRecord"                                                          (Use this when the user wants to delete any record for an existing custom object like {custom_objects_list})
+    - "CreateEmailAlert"
     """
     try:
         response = client.chat.completions.create(
@@ -420,7 +421,10 @@ def get_action_map():
         "DeleteCustomField": custom_object_agent,
         "CreateCustomRecord": custom_object_agent,
         "UpdateCustomRecord": custom_object_agent,
-        "DeleteCustomRecord": custom_object_agent
+        "DeleteCustomRecord": custom_object_agent,
+
+        # EmailAlerts
+        "CreateEmailAlert": admin_agent
     }
 
 

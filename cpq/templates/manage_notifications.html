@@ -107,6 +107,76 @@ input[type="checkbox"] + span {
   <div class="card-panel white z-depth-1">
 
       <div class="card-panel">
+        <i class="material-icons left" style="vertical-align: middle;">person_add</i>
+        <b><h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Lead Notifications</h6></b>
+        
+        <!-- Contenedor principal -->
+        <div class="p-6">
+
+          <!-- Botón para abrir modal de Account Notification -->
+          <button id="openAccountModal" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+            + New Lead Notification
+          </button>
+
+          <!-- Modal / Panel a mitad de pantalla -->
+          <div id="accountModal" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 hidden">
+            <div class="bg-white rounded-lg w-1/2 p-6 relative">
+
+              <!-- Botón cerrar -->
+              <button id="closeAccountModal" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700">&times;</button>
+
+              <!-- Título -->
+              <h2 class="text-xl font-semibold mb-4">New Account Notification</h2>
+
+              <!-- Formulario -->
+              <form class="space-y-4 notification-form" method="POST" action="{% url 'cpq:create_notification' %}">
+                {% csrf_token %}
+
+                <!-- Hidden: tipo de notificación -->
+                <input type="hidden" name="notification_type" value="account">
+
+                <!-- Select When -->
+                <div>
+                  <label for="account_when" class="block font-medium mb-1">When:</label>
+                  <select id="account_when" name="account_when" class="w-full border-gray-300 rounded px-2 py-1">
+                    <option value="created">Created</option>
+                  </select>
+                </div>
+
+                <!-- Select Recipient -->
+                <div>
+                  <label for="account_recipient" class="block font-medium mb-1">Recipient:</label>
+                  <select id="account_recipient" name="account_recipient" class="w-full border-gray-300 rounded px-2 py-1">
+                    <option value="superusers">Superusers</option>
+                    <option value="admin">Admin</option>
+                    <option value="staff">Staff</option>
+                    <option value="created-by">Account Creator</option>
+                    {% if users %}
+                      {% for user in users %}
+                        <option value="{{ user.id }}">{{ user.first_name }} {{ user.last_name }} ({{ user.username }})</option>
+                      {% endfor %}
+                    {% endif %}
+                  </select>
+                </div>
+
+                <!-- Botón guardar -->
+                <div class="text-right">
+                  <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                    Save
+                  </button>
+                </div>
+
+              </form>
+
+              
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <div class="card-panel">
         <b><h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Account Notifications</h6></b>
         
         <!-- Contenedor principal -->
@@ -146,7 +216,7 @@ input[type="checkbox"] + span {
                 <div>
                   <label for="account_recipient" class="block font-medium mb-1">Recipient:</label>
                   <select id="account_recipient" name="account_recipient" class="w-full border-gray-300 rounded px-2 py-1">
-                    <option value="superadmins">Superadmin</option>
+                    <option value="superusers">Superusers</option>
                     <option value="admin">Admin</option>
                     <option value="staff">Staff</option>
                     <option value="created-by">Account Creator</option>
@@ -166,6 +236,8 @@ input[type="checkbox"] + span {
                 </div>
 
               </form>
+
+
             </div>
           </div>
 
