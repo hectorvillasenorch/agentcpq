@@ -6,8 +6,7 @@ from decouple import config
 import dj_database_url
 import sys
 
-NGROK_FULL_URL = "https://0d0e3e34c51c.ngrok-free.app"
-NGROK_URI = "0d0e3e34c51c.ngrok-free.app"
+ENVIRONMENT = config("ENVIRONMENT", default="production")
 
 load_dotenv()
 

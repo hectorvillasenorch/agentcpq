@@ -11,14 +11,43 @@ from django.contrib.contenttypes.models import ContentType
 from cpq.models import CustomFieldValue, CustomField, QuoteDocumentSettings, Tenant, Quote, QuoteLine, QuoteDocument
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+# ReportLab imports
 from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Paragraph
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+from reportlab.lib import colors
+import bleach
 # DB Helpers
 from .db_helpers import get_or_create_quote_ui_render, log_action_usage
 from datetime import datetime, timezone
 import boto3
 from botocore.config import Config
 
+
 logger = logging.getLogger(__name__)
+
+# --- Inline HTML sanitizer and paragraph style for rich Description rendering ---
+ALLOWED_TAGS = [
+    "b", "strong", "i", "em", "u", "br", "para", "font", "ul", "ol", "li"
+]
+ALLOWED_ATTRS = {"font": ["size", "color", "name"]}
+
+def clean_inline_html(html: str) -> str:
+    """Allow a safe subset of inline HTML compatible with ReportLab Paragraph."""
+    return bleach.clean(html or "", tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRS, strip=True)
+
+# Base paragraph style for table Description cells
+DESC_PARAGRAPH_STYLE = ParagraphStyle(
+    name="DescCell",
+    fontName="Helvetica",
+    fontSize=9,
+    leading=11,       # line height
+    textColor=colors.black,
+    alignment=TA_LEFT,
+    spaceBefore=0,
+    spaceAfter=0,
+)
 
 def normalize_term_for_product(product, term):
     if product.is_subscription:
@@ -733,6 +762,61 @@ def get_document_pdf(quote):
                             pdf.setFont("Helvetica", product_font_size)
                             pdf.setFillColor(HexColor("#666666"))  
                             pdf.drawString(name_aligned_x, y_position - 10, product)
+
+                    # === Description column: render inline HTML with ReportLab Paragraph ===
+                    if field_title == "Description":
+                        # Clean incoming HTML/text from DB
+                        raw_html = getattr(line, "description", "") or ""
+                        html = clean_inline_html(raw_html)
+
+                        # Build paragraph and measure it for current column width
+                        max_width = column_spacing - 5
+                        para = Paragraph(html, DESC_PARAGRAPH_STYLE)
+                        pw, ph = para.wrap(max_width, 10000)  # wrap to compute actual height
+
+                        # If not enough space on this page for the cell, start a new page and re-render header
+                        if y_position - ph < 70:
+                            right_margin = 562
+                            y_position += 15
+                            pdf.setStrokeColor(HexColor(SCOLOR))
+                            pdf.setLineWidth(2)
+                            pdf.line(50, y_position, right_margin, y_position)
+                            pdf.showPage()
+                            y_position = letter[1] - 50
+
+                            # Re-render table header (same logic as above)
+                            pdf.setFont("Helvetica-Bold", 10)
+                            pdf.setFillColor(HexColor(CBLACK))
+                            column_spacing = 512 / len(template.rendered_fields)
+                            for hdr_index, hdr_field in enumerate(template.rendered_fields):
+                                display_field = hdr_field.split(".")[1] if "." in hdr_field else hdr_field
+                                column_x_position = x_position + hdr_index * column_spacing
+                                text_width = pdf.stringWidth(display_field, "Helvetica-Bold", 10)
+                                last_hdr_index = len(template.rendered_fields) - 1
+                                if hdr_index == 0:
+                                    hdr_aligned_x = column_x_position
+                                elif hdr_index == last_hdr_index:
+                                    hdr_aligned_x = column_x_position + column_spacing - text_width
+                                else:
+                                    hdr_aligned_x = column_x_position + (column_spacing - text_width) / 2
+                                pdf.drawString(hdr_aligned_x, y_position, display_field)
+
+                            y_position -= 15
+                            pdf.setStrokeColor(HexColor(SCOLOR))
+                            pdf.setLineWidth(2)
+                            pdf.line(50, y_position, 562, y_position)
+                            y_position -= 27
+
+                        # Draw the paragraph (ReportLab expects bottom-left y)
+                        aligned_x = column_x  # keep left-aligned for readability
+                        para.drawOn(pdf, aligned_x, y_position - ph)
+
+                        # Update row height tracker and continue
+                        text_height = ph + 5
+                        if text_height > max_text_height:
+                            max_text_height = text_height
+                        continue
+
                     else:
                         # Se imprime para el resto de campos
                         # 🔍 Obtener el contenido dinámicamente desde el FIELD_MAP
