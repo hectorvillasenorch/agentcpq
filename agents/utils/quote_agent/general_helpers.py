@@ -1,6 +1,7 @@
 import logging
 import json
 import os
+import re
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from datetime import datetime
@@ -36,6 +37,59 @@ ALLOWED_ATTRS = {"font": ["size", "color", "name"]}
 def clean_inline_html(html: str) -> str:
     """Allow a safe subset of inline HTML compatible with ReportLab Paragraph."""
     return bleach.clean(html or "", tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRS, strip=True)
+
+# --- HTML normalization to make ReportLab Paragraph respect breaks and basic structure ---
+_BR_TAG_RE = re.compile(r"<br\s*>", re.IGNORECASE)
+_P_OPEN_RE = re.compile(r"<p[^>]*>", re.IGNORECASE)
+_P_CLOSE_RE = re.compile(r"</p>", re.IGNORECASE)
+_SPAN_OPEN_RE = re.compile(r"<span[^>]*>", re.IGNORECASE)
+_SPAN_CLOSE_RE = re.compile(r"</span>", re.IGNORECASE)
+_H_OPEN_RE = re.compile(r"<(h[1-6])[^>]*>", re.IGNORECASE)
+_H_CLOSE_RE = re.compile(r"</h[1-6]>", re.IGNORECASE)
+_LI_RE = re.compile(r"<li[^>]*>(.*?)</li>", re.IGNORECASE | re.DOTALL)
+_UL_OL_OPEN_RE = re.compile(r"<(ul|ol)[^>]*>", re.IGNORECASE)
+_UL_OL_CLOSE_RE = re.compile(r"</(ul|ol)>", re.IGNORECASE)
+
+def normalize_linebreaks(html: str) -> str:
+    """
+    Normalize common HTML/plain-text to a subset ReportLab Paragraph understands:
+    - Convert <br> to <br/>
+    - Convert raw newlines to <br/>
+    - Treat </p> as paragraph breaks (<br/><br/>) and strip <p>
+    - Convert <h1>-<h6> blocks to bold lines with an extra break
+    - Convert list items to bullet lines and drop <ul>/<ol> wrappers
+    - Drop <span> wrappers (keep content)
+    """
+    if not html:
+        return ""
+
+    # Standardize Windows/Mac newlines
+    html = html.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Normalize BR variants and raw newlines
+    html = _BR_TAG_RE.sub("<br/>", html)
+    html = html.replace("\n", "<br/>")
+
+    # Paragraphs -> double break; remove opening <p>
+    html = _P_OPEN_RE.sub("", html)
+    html = _P_CLOSE_RE.sub("<br/><br/>", html)
+
+    # Headings -> bold + double break
+    def _h_open_sub(m):
+        return "<b>"
+    html = _H_OPEN_RE.sub(_h_open_sub, html)
+    html = _H_CLOSE_RE.sub("</b><br/><br/>", html)
+
+    # Lists -> bullet lines; remove container tags
+    html = _LI_RE.sub(lambda m: f"• {m.group(1).strip()}<br/>", html)
+    html = _UL_OL_OPEN_RE.sub("", html)
+    html = _UL_OL_CLOSE_RE.sub("", html)
+
+    # Strip span wrappers
+    html = _SPAN_OPEN_RE.sub("", html)
+    html = _SPAN_CLOSE_RE.sub("", html)
+
+    return html
 
 # Base paragraph style for table Description cells
 DESC_PARAGRAPH_STYLE = ParagraphStyle(
@@ -767,6 +821,7 @@ def get_document_pdf(quote):
                     if field_title == "Description":
                         # Clean incoming HTML/text from DB
                         raw_html = getattr(line, "description", "") or ""
+                        raw_html = normalize_linebreaks(raw_html)
                         html = clean_inline_html(raw_html)
 
                         # Build paragraph and measure it for current column width
