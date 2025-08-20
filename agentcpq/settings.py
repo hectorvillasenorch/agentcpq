@@ -8,6 +8,9 @@ import sys
 
 ENVIRONMENT = config("ENVIRONMENT", default="production")
 
+NGROK_FULL_URL = "https://0d0e3e34c51c.ngrok-free.app"
+NGROK_URI = "0d0e3e34c51c.ngrok-free.app"
+
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
