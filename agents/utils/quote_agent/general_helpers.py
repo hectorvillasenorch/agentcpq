@@ -35,8 +35,11 @@ ALLOWED_TAGS = [
 ALLOWED_ATTRS = {"font": ["size", "color", "name"]}
 
 def clean_inline_html(html: str) -> str:
-    """Allow a safe subset of inline HTML compatible with ReportLab Paragraph."""
-    return bleach.clean(html or "", tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRS, strip=True)
+    """Allow a safe subset of inline HTML compatible with ReportLab Paragraph and force self-closing <br/> tags."""
+    cleaned = bleach.clean(html or "", tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRS, strip=True)
+    # Force <br/> form (ReportLab Paragraph requires self-closing br)
+    cleaned = re.sub(r"<br(?!/)(\s*)>", "<br/>", cleaned, flags=re.IGNORECASE)
+    return cleaned
 
 # --- HTML normalization to make ReportLab Paragraph respect breaks and basic structure ---
 _BR_TAG_RE = re.compile(r"<br\s*>", re.IGNORECASE)
@@ -821,8 +824,8 @@ def get_document_pdf(quote):
                     if field_title == "Description":
                         # Clean incoming HTML/text from DB
                         raw_html = getattr(line, "description", "") or ""
-                        raw_html = normalize_linebreaks(raw_html)
-                        html = clean_inline_html(raw_html)
+                        cleaned = clean_inline_html(raw_html)
+                        html = normalize_linebreaks(cleaned)
 
                         # Build paragraph and measure it for current column width
                         max_width = column_spacing - 5
