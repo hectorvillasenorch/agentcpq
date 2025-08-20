@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # --- Inline HTML sanitizer and paragraph style for rich Description rendering ---
 ALLOWED_TAGS = [
-    "b", "strong", "i", "em", "u", "br", "para", "font", "ul", "ol", "li"
+    "b", "strong", "i", "em", "u", "br", "para", "font", "ul", "ol", "li","h1", "h2", "h3", "h4", "h5", "h6","p","span"
 ]
 ALLOWED_ATTRS = {"font": ["size", "color", "name"]}
 
