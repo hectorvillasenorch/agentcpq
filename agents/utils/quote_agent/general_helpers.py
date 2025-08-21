@@ -460,7 +460,7 @@ def get_document_pdf(quote):
 
         # ------------------------------------
         pdf.setStrokeColor(HexColor(SCOLOR))
-        pdf.setLineWidth(3)
+        pdf.setLineWidth(2)
         pdf.line(32, 700, 580, 700) 
 
         # ✅ Set Y and X position for Company Information
@@ -685,7 +685,7 @@ def get_document_pdf(quote):
             y_position -= 15
             # ------------------------------------ Imprimimos la linea divisora
             pdf.setStrokeColor(HexColor(SCOLOR))
-            pdf.setLineWidth(2)
+            pdf.setLineWidth(1)
             pdf.line(50, y_position, 562, y_position)
             # Restamos 27 puntos para comenzar a imprimir los elementos de la tabla
             y_position -= 27
@@ -712,7 +712,7 @@ def get_document_pdf(quote):
                     right_margin = 562
                     y_position += 15
                     pdf.setStrokeColor(HexColor(SCOLOR))
-                    pdf.setLineWidth(2)
+                    pdf.setLineWidth(1)
                     pdf.line(50, y_position, right_margin, y_position) 
                     pdf.showPage()
                     y_position = letter[1] - 50  # Reinicia desde arriba con margen
@@ -747,7 +747,7 @@ def get_document_pdf(quote):
                     y_position -= 15
                     # ------------------------------------
                     pdf.setStrokeColor(HexColor(SCOLOR))
-                    pdf.setLineWidth(2)
+                    pdf.setLineWidth(1)
                     pdf.line(50, y_position, 562, y_position) 
                     y_position -= 27
             
@@ -828,7 +828,7 @@ def get_document_pdf(quote):
                         html = normalize_linebreaks(cleaned)
 
                         # Build paragraph and measure it for current column width
-                        max_width = column_spacing - 5
+                        max_width = column_spacing - 2
                         para = Paragraph(html, DESC_PARAGRAPH_STYLE)
                         pw, ph = para.wrap(max_width, 10000)  # wrap to compute actual height
 
@@ -837,7 +837,7 @@ def get_document_pdf(quote):
                             right_margin = 562
                             y_position += 15
                             pdf.setStrokeColor(HexColor(SCOLOR))
-                            pdf.setLineWidth(2)
+                            pdf.setLineWidth(1)
                             pdf.line(50, y_position, right_margin, y_position)
                             pdf.showPage()
                             y_position = letter[1] - 50
@@ -861,7 +861,7 @@ def get_document_pdf(quote):
 
                             y_position -= 15
                             pdf.setStrokeColor(HexColor(SCOLOR))
-                            pdf.setLineWidth(2)
+                            pdf.setLineWidth(1)
                             pdf.line(50, y_position, 562, y_position)
                             y_position -= 27
 
@@ -1037,7 +1037,7 @@ def get_document_pdf(quote):
             right_margin = 562
             y_position += 15
             pdf.setStrokeColor(HexColor(SCOLOR))
-            pdf.setLineWidth(2)
+            pdf.setLineWidth(1)
             pdf.line(50, y_position, right_margin, y_position)
 
             y_position -= 27
