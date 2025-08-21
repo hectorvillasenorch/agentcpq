@@ -58,6 +58,11 @@
                     <i class="material-icons">settings</i> CPQ Admin
                 </a>
             {% endif %}
+             {% if request.user.is_superuser or perms.auth.view_user %}
+                <a href="{% url 'dashboard' %}?view=setup">
+                    <i class="material-icons">integration_instructions</i> Integrations
+                </a>
+            {% endif %}
             
             <p class="session-list-title">Rules</p>
             <a href="{% url 'cpq:business_rules' %}">

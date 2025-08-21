@@ -771,9 +771,9 @@ def get_document_pdf(quote):
                         sku = line.sku or ""
                         product = line.product_name or ""
 
-                        max_width = column_spacing - 5 # Definimos el tamaño maximo que puede ocupar el texto
-                        sku_font_size = 10 # Tamaño de fuente del texto SKU
-                        product_font_size = 9 # Tamaño de fuente del texto Product Name
+                        max_width = column_spacing - 6 # Definimos el tamaño maximo que puede ocupar el texto
+                        sku_font_size = 9 # Tamaño de fuente del texto SKU
+                        product_font_size = 11 # Tamaño de fuente del texto Product Name
 
                         # Comparamos que el valor del texto SKU no sea mas grande que el tamaño maximo de la columna
                         sku_text_width = pdf.stringWidth(sku, "Helvetica-Bold", sku_font_size)

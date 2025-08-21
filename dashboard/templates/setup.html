@@ -66,63 +66,13 @@
   <div class="container">
     <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
       <i class="material-icons left" style="vertical-align: middle;">business</i>
-      Setup
+      Integrations
   </h4>
    <!-- 👥 User Management -->
 <div class="admin-section">
     <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-      <!-- Title and subtitle -->
-      <div>
-        <div class="admin-header" style="margin-bottom: 4px;">User Management</div>
-        <p style="margin-top: 0; font-size: 14px; color: #666;">
-          Manage who can access and administer the AgentCPQ system.
-        </p>
-      </div>
   
-      <a href="/admin/auth/user/" class="btn btn-standard" style="margin-left: 20px;">
-        <i class="material-icons left" style="font-size: 18px;">group</i>
-        Users
-      </a>
-    </div>
-  </div>
-  
-    <!-- 🤖 Agent Management -->
-    <div class="admin-section">
-      <div class="admin-header"> Agent Control Center</div>
-      <p>Enable or disable AI agents within the AgentCPQ platform.</p>
-      <ul class="collection">
-        <li class="collection-item">
-          Quoting Agent — <span class="green-text">Active</span>
-          <a href="/admin/agents/quoting/toggle" class="secondary-content btn-flat">Toggle</a>
-        </li>
-        <li class="collection-item">
-          Pricing Agent — <span class="red-text">Inactive</span>
-          <a href="/admin/agents/pricing/toggle" class="secondary-content btn-flat">Toggle</a>
-        </li>
-        <li class="collection-item">
-          Analytics Agent — <span class="green-text">Active</span>
-          <a href="/admin/agents/analytics/toggle" class="secondary-content btn-flat">Toggle</a>
-        </li>
-      </ul>
-    </div>
-  
-    <div class="admin-section">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <!-- Left: Title + Subtitle -->
-          <div>
-            <div class="admin-header" style="margin-bottom: 4px;">System Usage</div>
-            <p style="margin-top: 0; font-size: 14px; color: #666;">
-              Monitor API usage, agent interactions, and performance history.
-            </p>
-          </div>
-      
-          <a href="/admin/usage" class="btn btn-standard" style="margin-left: 20px;">
-            <i class="material-icons left" style="font-size: 18px;">bar_chart</i>
-            Usage          </a>
-        </div>
-      </div>
-  
-    <!-- 🛠️ Future Config (optional) -->
+
    
        <!-- 🔗 Integrations -->
        <div class="admin-section">
@@ -193,9 +143,37 @@
       {% endif %}
     </div>
   </div>
+<!-- DocuSign -->
+<div class="admin-status" style="display: flex; justify-content: space-between; align-items: center;">
+  <div style="display: flex; align-items: center; gap: 14px;">
+    <img src="https://cdn.worldvectorlogo.com/logos/docusign-2021.svg"
+         alt="DocuSign Logo"
+         style="height: 30px; filter: {% if docusign_connected %}none{% else %}grayscale(100%) opacity(50%){% endif %}; transition: filter 0.3s;">
+
+    <div>
+      {% if docusign_connected %}
+        <p class="status-success">Connected</p>
+      {% else %}
+        <p class="status-fail">❌ Not Connected to DocuSign</p>
+      {% endif %}
+    </div>
   </div>
-  <div class="admin-section">
-    <div class="admin-header">Configuration (Coming Soon)</div>
-    <p>API keys, license management, multi-tenant settings, and more.</p>
-    <li><a href="{% url 'cpq:custom_fields' %}">⚙️ Custom Fields</a></li>
+
+  <div style="display: flex; gap: 12px;">
+    {% if docusign_connected %}
+    <a href="/cpq/docusign/templates" 
+       class="btn grey lighten-3 black-text btn-standard">
+      <i class="material-icons left">description</i>
+      Manage Templates
+    </a>
+    {% else %}
+    <a href="{% url 'start_docusign_auth' %}" 
+       class="btn blue darken-3 white-text btn-standard">
+      <i class="material-icons left">vpn_key</i>
+      Connect
+    </a>
+    {% endif %}
+  </div>
+</div>
+
   </div>
