@@ -835,7 +835,7 @@ def get_document_pdf(quote):
                         # If not enough space on this page for the cell, start a new page and re-render header
                         if y_position - ph < 70:
                             right_margin = 562
-                            y_position += 15
+                            y_position += 10
                             pdf.setStrokeColor(HexColor(SCOLOR))
                             pdf.setLineWidth(1)
                             pdf.line(50, y_position, right_margin, y_position)
@@ -859,11 +859,11 @@ def get_document_pdf(quote):
                                     hdr_aligned_x = column_x_position + (column_spacing - text_width) / 2
                                 pdf.drawString(hdr_aligned_x, y_position, display_field)
 
-                            y_position -= 15
+                            y_position -= 10
                             pdf.setStrokeColor(HexColor(SCOLOR))
                             pdf.setLineWidth(1)
                             pdf.line(50, y_position, 562, y_position)
-                            y_position -= 27
+                            y_position -= 22
 
                         # Draw the paragraph (ReportLab expects bottom-left y)
                         aligned_x = column_x  # keep left-aligned for readability
