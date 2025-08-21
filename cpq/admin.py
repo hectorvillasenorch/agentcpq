@@ -135,13 +135,13 @@ admin.site.register(Quote, QuoteAdmin)
 # Admin for QuoteDocument
 @admin.register(QuoteDocument)
 class QuoteDocumentAdmin(admin.ModelAdmin):
-    list_display = ("id", "quote", "version", "created_at", "updated_at")
+    list_display = ("id", "quote_id", "version", "generated_at", "generated_by", "name", "file")
     search_fields = ("quote__name", "quote__id", "id")
-    list_filter = ("version", "created_at", "updated_at")
+    list_filter = ("version", "generated_at")
     autocomplete_fields = ("quote",)
-    date_hierarchy = "created_at"
-    ordering = ("-created_at",)
-    
+    date_hierarchy = "generated_at"
+    ordering = ("-generated_at",)
+
 # admin.site.register(Account)
 
 # class ActivityInline(admin.TabularInline):  # or admin.StackedInline
