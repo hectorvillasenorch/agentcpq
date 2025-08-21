@@ -867,7 +867,7 @@ def get_document_pdf(quote):
 
                         # Draw the paragraph (ReportLab expects bottom-left y)
                         aligned_x = column_x  # keep left-aligned for readability
-                        para.drawOn(pdf, aligned_x, y_position - ph)
+                        para.drawOn(pdf, aligned_x, y_position - ph + 2)
 
                         # Update row height tracker and continue
                         text_height = ph + 5
