@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact,Tenant
+from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact,Tenant, QuoteDocument
 from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession
 from django.contrib.contenttypes.models import ContentType
@@ -131,6 +131,17 @@ class QuoteAdmin(DynamicCustomFieldAdmin):
     list_display = ('name','account', 'opportunity', 'net_amount', 'status', 'expiration_date', 'created_at', 'updated_at')
 
 admin.site.register(Quote, QuoteAdmin)
+
+# Admin for QuoteDocument
+@admin.register(QuoteDocument)
+class QuoteDocumentAdmin(admin.ModelAdmin):
+    list_display = ("id", "quote", "version", "created_at", "updated_at")
+    search_fields = ("quote__name", "quote__id", "id")
+    list_filter = ("version", "created_at", "updated_at")
+    autocomplete_fields = ("quote",)
+    date_hierarchy = "created_at"
+    ordering = ("-created_at",)
+    
 # admin.site.register(Account)
 
 # class ActivityInline(admin.TabularInline):  # or admin.StackedInline
