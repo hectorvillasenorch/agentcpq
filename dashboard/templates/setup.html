@@ -148,7 +148,7 @@
   <div style="display: flex; align-items: center; gap: 14px;">
     <img src="https://cdn.worldvectorlogo.com/logos/docusign-2021.svg"
          alt="DocuSign Logo"
-         style="height: 30px; filter: {% if docusign_connected %}none{% else %}grayscale(100%) opacity(50%){% endif %}; transition: filter 0.3s;">
+         style="height: 30px; grayscale(100%) opacity(50%);">
 
     <div>
       {% if docusign_connected %}
@@ -161,13 +161,13 @@
 
   <div style="display: flex; gap: 12px;">
     {% if docusign_connected %}
-    <a href="/cpq/docusign/templates" 
+    <a href="#" 
        class="btn grey lighten-3 black-text btn-standard">
       <i class="material-icons left">description</i>
       Manage Templates
     </a>
     {% else %}
-    <a href="{% url 'start_docusign_auth' %}" 
+    <a href="#" 
        class="btn blue darken-3 white-text btn-standard">
       <i class="material-icons left">vpn_key</i>
       Connect
