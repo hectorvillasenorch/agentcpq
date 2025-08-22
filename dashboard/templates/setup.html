@@ -70,10 +70,10 @@
   </h4>
    
 <div class="admin-section">
-    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;">
     
     <!-- Salesforce -->
-    <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; background: #fafafa;">
         <div style="display: flex; align-items: center; gap: 14px;">
         <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/Salesforce.com_logo.svg/320px-Salesforce.com_logo.svg.png"
             alt="Salesforce Logo"
@@ -105,8 +105,9 @@
           </div>
     </div>
     
+    
   <!-- HubSpot -->
-  <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center;">
+  <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; background: #fafafa;">
     <div style="display: flex; align-items: center; gap: 14px;">
       <img src="https://cdn.worldvectorlogo.com/logos/hubspot-1.svg"
            alt="HubSpot Logo"
@@ -138,11 +139,11 @@
     </div>
   </div>
 <!-- DocuSign -->
-<div class="admin-status" style="display: flex; justify-content: space-between; align-items: center;">
+<div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; background: #fafafa;">
   <div style="display: flex; align-items: center; gap: 14px;">
     <img src="{% static 'img/docusign_logo.png' %}"
          alt="DocuSign Logo"
-         style="height: 30px; grayscale(100%) opacity(50%);">
+         style="height: 40px; grayscale(100%) opacity(50%);">
 
     <div>
       {% if docusign_connected %}
@@ -168,4 +169,6 @@
     </a>
     {% endif %}
   </div>
+</div>
+</div>
 </div>
