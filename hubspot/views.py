@@ -13,6 +13,9 @@ from django.utils import timezone
 from decimal import Decimal
 import re
 import datetime
+from django.views.decorators.http import require_POST
+from django.contrib import messages
+from django.shortcuts import redirect
 
 load_dotenv()
 HUBSPOT_CLIENT_ID = os.getenv("HS_CID")
@@ -466,3 +469,16 @@ def create_hubspot_property(object_type, name, label, data_type, user_id="defaul
 
     response = requests.post(url, headers=headers, json=body)
     return response.status_code == 201, response.json()
+
+@require_POST
+def sync_hubspot_products_view(request):
+    try:
+        user_id = request.POST.get("user_id", "default")
+        sync_hubspot_products(user_id=user_id)
+        messages.success(request, "✅ HubSpot product sync complete.")
+    except Exception as e:
+        messages.error(request, f"❌ HubSpot product sync failed: {e}")
+
+    # Redirect back to where the button was (dashboard products view)
+    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or reverse("dashboard")
+    return redirect(next_url)

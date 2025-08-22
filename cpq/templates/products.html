@@ -129,6 +129,14 @@
 </style>
 
 <div class="container-fluid">
+  <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+    <form action="{% url 'sync_hubspot_products' %}" method="post" style="margin:0;">
+      {% csrf_token %}
+      <input type="hidden" name="user_id" value="default">
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <button type="submit" class="btn">Sync HubSpot Products</button>
+    </form>
+  </div>
   <h2><i class="material-icons"></i>Product Catalog</h2>
   <table class="product-table">
   <thead>
