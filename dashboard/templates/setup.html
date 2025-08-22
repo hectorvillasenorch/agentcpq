@@ -1,7 +1,6 @@
 {% load static %}
 <style>
-    .admin-section {
-      border: 1px solid #e0e0e0;
+    .admin-section { 
       border-radius: 16px;
       margin-bottom: 32px;
       padding: 24px;
@@ -71,41 +70,7 @@
    
 <div class="admin-section">
   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;">
-    
-    <!-- Salesforce -->
-    <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; background: #fafafa;">
-        <div style="display: flex; align-items: center; gap: 14px;">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/Salesforce.com_logo.svg/320px-Salesforce.com_logo.svg.png"
-            alt="Salesforce Logo"
-            style="height: 30px; filter: {% if salesforce_connected %}none{% else %}grayscale(100%) opacity(50%){% endif %}; transition: filter 0.3s;">
-        
-        <div>
-            {% if salesforce_connected %}
-            <p class="status-success">✅ Salesforce Connected</p>
-            {% else %}
-            <p class="status-fail">❌ Not Connected</p>
-            {% endif %}
-        </div>
-        </div>
-    
-        <div style="display: flex; gap: 12px;">
-            {% if salesforce_connected %}
-              <a href="/cpq/field-mapping/?crm=Salesforce&object_type=Opportunity" 
-                 class="btn grey lighten-3 black-text btn-standard">
-                <i class="material-icons left" style="font-size: 18px;">tune</i>
-                Map Fields
-              </a>
-            {% else %}
-              <a href="{% url 'salesforce_login' %}" 
-                 class="btn blue darken-2 white-text btn-standard">
-                <i class="material-icons left" style="font-size: 18px;">vpn_key</i>
-                Connect
-              </a>
-            {% endif %}
-          </div>
-    </div>
-    
-    
+     
   <!-- HubSpot -->
   <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; background: #fafafa;">
     <div style="display: flex; align-items: center; gap: 14px;">
@@ -138,6 +103,40 @@
       {% endif %}
     </div>
   </div>
+
+   Salesforce
+    <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; background: #fafafa;">
+        <div style="display: flex; align-items: center; gap: 14px;">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/Salesforce.com_logo.svg/320px-Salesforce.com_logo.svg.png"
+            alt="Salesforce Logo"
+            style="height: 30px; filter: {% if salesforce_connected %}none{% else %}grayscale(100%) opacity(50%){% endif %}; transition: filter 0.3s;">
+        
+        <div>
+            {% if salesforce_connected %}
+            <p class="status-success">✅ Salesforce Connected</p>
+            {% else %}
+            <p class="status-fail">❌ Not Connected</p>
+            {% endif %}
+        </div>
+        </div>
+    
+        <div style="display: flex; gap: 12px;">
+            {% if salesforce_connected %}
+              <a href="/cpq/field-mapping/?crm=Salesforce&object_type=Opportunity" 
+                 class="btn grey lighten-3 black-text btn-standard">
+                <i class="material-icons left" style="font-size: 18px;">tune</i>
+                Map Fields
+              </a>
+            {% else %}
+              <a href="{% url 'salesforce_login' %}" 
+                 class="btn blue darken-2 white-text btn-standard">
+                <i class="material-icons left" style="font-size: 18px;">vpn_key</i>
+                Connect
+              </a>
+            {% endif %}
+          </div>
+    </div>
+
 <!-- DocuSign -->
 <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; background: #fafafa;">
   <div style="display: flex; align-items: center; gap: 14px;">
