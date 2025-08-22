@@ -212,11 +212,28 @@
 
     function syncHiddenRoles() {
       const chips = roleInstances[0].chipsData;
-      
+
+      // Aplicamos clase morada a todos los chips actuales
+      const chipElems = document.querySelectorAll('#role-chips .chip');
+      chipElems.forEach(chip => {
+        chip.classList.add('deep-purple', 'white-text');
+      });
+
+      // Validamos que cada chip sea un rol válido
+      chips.forEach((chip, index) => {
+        // Buscamos la key correspondiente
+        const roleKey = Object.keys(roleMap).find(k => roleMap[k] === chip.tag);
+        if (!roleKey) {
+          roleInstances[0].deleteChip(index);
+          M.toast({html: 'Invalid role!'});
+        } else {
+          // Guardamos el value correcto
+          chip.value = roleKey;
+        }
+      });
+
       // Siempre enviamos un array de keys (value) como JSON
-      const selectedKeys = chips.map(c => c.value || Object.keys(roleMap).find(k => roleMap[k] === c.tag)).filter(Boolean);
-      
-      // Actualizamos el input oculto
+      const selectedKeys = chips.map(c => c.value).filter(Boolean);
       document.getElementById("recipients_roles").value = JSON.stringify(selectedKeys);
     }
 

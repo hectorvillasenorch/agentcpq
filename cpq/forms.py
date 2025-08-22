@@ -403,6 +403,7 @@ class EmailAlertForm(forms.ModelForm):
     class Meta:
         model = EmailAlert
         fields = '__all__'
+        exclude = ('created_by', 'updated_by')
         widgets = {
             "description": forms.Textarea(attrs={"class": "materialize-textarea"}),
         }

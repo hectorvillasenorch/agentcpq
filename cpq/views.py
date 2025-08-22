@@ -707,6 +707,9 @@ def edit_notification(request, alert_name):
             if not form.cleaned_data.get("custom_object"):
                 notification.custom_object = None
 
+
+            notification.updated_by = request.user
+
             notification.save()
             form.save_m2m()  # guarda recipients_users
 
