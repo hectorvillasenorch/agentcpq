@@ -1,5 +1,4 @@
-import json
-import os
+import json, os, re
 import openai
 import logging
 from dotenv import load_dotenv
@@ -870,9 +869,13 @@ def extract_email_alert_details(user, user_message, custom_objects, users):
         raw_response = response.choices[0].message.content.strip()
         logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
 
+        # ✅ Clean response (quita ```json ... ```)
+        cleaned_response = clean_llm_response(raw_response)
+        logging.info(f"\n\n🧹 Cleaned GPT Response: {cleaned_response}\n\n")
+
         # ✅ Ensure valid JSON response
         try:
-            extracted_alerts = json.loads(raw_response)
+            extracted_alerts = json.loads(cleaned_response)
             normalized_alerts = []
 
             for alert in extracted_alerts:
@@ -890,23 +893,244 @@ def extract_email_alert_details(user, user_message, custom_objects, users):
 
                 # ✅ Validate native vs custom object
                 if normalized_alert["native_object"] and normalized_alert["custom_object"]:
-                    # Si ambos están definidos, descartamos native_object
-                    normalized_alert["native_object"] = None
+                    normalized_alert["native_object"] = None  # prefer custom_object
 
                 # ✅ Validate offset_days vs scheduled_cron
                 if normalized_alert["offset_days"] is not None and normalized_alert["scheduled_cron"] is not None:
-                    normalized_alert["scheduled_cron"] = None  # Priorizar offset_days
-
-                # Se puede agregar validación de cron aquí si quieres (regex)
+                    normalized_alert["scheduled_cron"] = None  # Prioritize offset_days
 
                 normalized_alerts.append(normalized_alert)
 
             return normalized_alerts
 
         except json.JSONDecodeError:
-            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
+            logging.error(f"❌ GPT returned invalid JSON: {cleaned_response}")
             return None
 
     except Exception as e:
         logging.error(f"❌ Error extracting email alert details: {str(e)}")
         return None
+    
+
+
+# FUNCTION TO EXTRACT EMAIL ALERT UPDATES (UPDATE_EMAIL_ALERT)
+def extract_email_alert_updates(user, user_message, custom_objects, users):
+    """Use GPT to extract the details of email alerts updates from the user’s message"""
+
+    prompt = f"""
+    Extract structured data from the user’s message to update one or multiple email alerts.
+    Return a JSON array of objects, where each object must include:
+
+    If the user wants to update the description, native_object, custom_object, offset_days, scheduled_cron or active then use the following JSON structure to extract the data:
+    - "alert_name" (string): The name of the email alert to be updated
+    - "description" (string): A short description of the email alert. If the user does not specify a description, infer one.
+    - "trigger" (string): The trigger that fires the alert. It can be any of the following: lead_created, account_created, opportunity_created, opportunity_closed_won, opportunity_closed_lost, quote_sent_for_approval, quote_approved, quote_rejected, quote_expiring, subscription_renewal.
+    - "native_object" (string): If the email alert is directed to a native object from the following list: Lead, Account, Opportunity, Quote, Subscription.
+    - "custom_object": If the email alert is directed to a custom object. The list of custom objects is: {custom_objects}.
+    - "offset_days" (int): Integer that indicates the days before or after the trigger when the alert should be sent. If the number is positive, it indicates days before; if the number is negative, it indicates days after.
+    - "scheduled_cron" (string): Cron format for sending the alert.
+
+    If the user wants to add, remove, or replace any recipient in their request, then extend the base JSON structure with the following:
+
+    - "recipients":
+        Inside recipients we will have a list of actions
+        - "action" (string): The action to perform on the recipients, it can be add, remove or replace.
+        - "remove" (List): 
+            - "users" (List): List of user recipients for the email alert. The list of users is: {users}. If the user explicitly specifies that the alert should be sent to themselves (for example by saying "send me", "notify me", "alert me", "me"), then automatically include the username of the requesting user: {user.username}. In this field, only usernames are allowed—no emails, no roles.
+            - "roles" (List): List of role recipients for the email alert. The possible roles are: all_superusers, all_admins, all_staff, creator.
+                The field "recipients_roles" expects one or more of the following values:
+                - all_superusers
+                - all_admins
+                - all_staff
+                - creator
+
+                When the user mentions:
+                - "superusers", it should be interpreted as "all_superusers"
+                - "admins", it should be interpreted as "all_admins"
+                - "staff", it should be interpreted as "all_staff"
+
+                Always convert these user terms to the corresponding role keys before saving to the database.
+
+            - "externals" (List): List of external email recipients. The user must specify these in the message.
+        - "add" (List):
+            - "users" (List): List of user recipients for the email alert. The list of users is: {users}. If the user explicitly specifies that the alert should be sent to themselves (for example by saying "send me", "notify me", "alert me", "me"), then automatically include the username of the requesting user: {user.username}. In this field, only usernames are allowed—no emails, no roles.
+            - "roles" (List): List of role recipients for the email alert. The possible roles are: all_superusers, all_admins, all_staff, creator.
+                The field "recipients_roles" expects one or more of the following values:
+                - all_superusers
+                - all_admins
+                - all_staff
+                - creator
+
+                When the user mentions:
+                - "superusers", it should be interpreted as "all_superusers"
+                - "admins", it should be interpreted as "all_admins"
+                - "staff", it should be interpreted as "all_staff"
+
+                Always convert these user terms to the corresponding role keys before saving to the database.
+
+            - "externals" (List): List of external email recipients. The user must specify these in the message.
+
+
+    **Example Input & Output:**
+
+    User: "I would like to update the email alert account_created__045. I want to replace the recipient users user_alpha, user_beta, user_gamma with user_delta, user_epsilon."
+    Response:
+    [
+        {{
+            "alert_name": "account_created__045",
+            "description": null,
+            "trigger": null,
+            "native_object": null,
+            "custom_object": null,
+            "offset_days": null,
+            "scheduled_cron": null,
+            "active": null
+            "recipients": {{
+                "action": "replace",
+                "remove": {{
+                    "users": ["user_alpha", "user_beta", "user_gamma"],
+                    "roles": [],
+                    "externals": []
+                }},
+                "add": {{
+                    "users": ["user_delta", "user_epsilon"],
+                    "roles": [],
+                    "externals": []
+                }}
+            }}
+        }}
+    ]
+
+    User: "I want to update the alert account_created__023. Set the description to “Account creation alert”, set the trigger to account_created, set the native object to Accoun, make it inactive. Replace recipients: remove users (user1, user2, user3) and roles (admins); add users (user4, user5), roles (staff), and externals (partner@domain.com)."
+    Response:
+    [
+        {{
+            "alert_name": "account_created__023",
+            "description": "Account creation alert",
+            "trigger": "account_created",
+            "native_object": "Account",
+            "custom_object": null,
+            "offset_days": null,
+            "scheduled_cron": null,
+            "active": false,
+            "recipients": {{
+                "action": "replace",
+                "remove": {{
+                    "users": ["user1", "user2", "user3"],
+                    "roles": ["admins"],
+                    "externals": []
+                }},
+                "add": {{
+                    "users": ["user4", "user5"],
+                    "roles": ["staff"],
+                    "externals": ["partner@domain.com"]
+                }}
+            }}
+        }}
+    ]
+
+
+    **Requirements:**
+    - If "alert_name" is not specified, set it as null.
+    - If "description" is not specified, set it as null.
+    - If "trigger" is not specified, set it as null.
+    - If "native_object" is not specified, set it as null.
+    - If "custom_object" is not specified, set it as null.
+    - If "action" is not specified, set it as null.
+    - If "recipients" is not specified, set it as null.
+    - If "users", "roles", or "externals" are not specified, set them as empty lists [].
+    - If the user does not specify the usernames exactly as in the users list, then leave users empty.
+    - If the user specifies words like 'superadmins', 'superusers', 'admins', 'staff', or 'creator', then those should go into roles, whether for remove or for add.
+    - If the user specifies an external email that is not a user or a role, then it must go inside the externals list, whether the user wants to remove it or add it.
+    - "native_object" and "custom_object" cannot both exist at the same time.
+    - "offset_days" and "scheduled_cron" cannot both exist at the same time.
+    - If "scheduled_cron" is provided, it must follow a valid cron format.
+    - Ensure the JSON array contains valid objects with all fields normalized as described.
+
+    **IMPORTANT:** **Return a valid JSON array only of objects. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
+
+    User Request: "{user_message}"
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Extract structured email alert details from user message."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        # ✅ Extract raw response
+        raw_response = response.choices[0].message.content.strip()
+        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+
+        # ✅ Clean response (quita ```json ... ```)
+        cleaned_response = clean_llm_response(raw_response)
+        logging.info(f"\n\n🧹 Cleaned GPT Response: {cleaned_response}\n\n")
+
+        # ✅ Ensure valid JSON response
+        try:
+            extracted_alerts = json.loads(cleaned_response)
+            normalized_alerts = []
+
+            for alert in extracted_alerts:
+                normalized_alert = {
+                    "alert_name": alert.get("alert_name") or None,
+                    "description": alert.get("description") or None,
+                    "trigger": alert.get("trigger") or None,
+                    "native_object": alert.get("native_object") or None,
+                    "custom_object": alert.get("custom_object") or None,
+                    "offset_days": alert.get("offset_days") if alert.get("offset_days") is not None else None,
+                    "scheduled_cron": alert.get("scheduled_cron") or None,
+                    "active": alert.get("active") if alert.get("active") is not None else None,
+                    "recipients": {
+                        "action": None,
+                        "remove": {"users": [], "roles": [], "externals": []},
+                        "add": {"users": [], "roles": [], "externals": []}
+                    }
+                }
+
+
+                recipients = alert.get("recipients")
+                if recipients:
+                    normalized_alert["recipients"]["action"] = recipients.get("action") or None
+
+                    remove_block = recipients.get("remove", {})
+                    normalized_alert["recipients"]["remove"]["users"] = remove_block.get("users", [])
+                    normalized_alert["recipients"]["remove"]["roles"] = remove_block.get("roles", [])
+                    normalized_alert["recipients"]["remove"]["externals"] = remove_block.get("externals", [])
+
+                    add_block = recipients.get("add", {})
+                    normalized_alert["recipients"]["add"]["users"] = add_block.get("users", [])
+                    normalized_alert["recipients"]["add"]["roles"] = add_block.get("roles", [])
+                    normalized_alert["recipients"]["add"]["externals"] = add_block.get("externals", [])
+
+                if normalized_alert["native_object"] and normalized_alert["custom_object"]:
+                    normalized_alert["native_object"] = None  # Prefer custom_object
+
+                if normalized_alert["offset_days"] is not None and normalized_alert["scheduled_cron"] is not None:
+                    normalized_alert["scheduled_cron"] = None  # Priorizar offset_days
+
+                normalized_alerts.append(normalized_alert)
+
+            return normalized_alerts
+
+
+        except json.JSONDecodeError:
+            logging.error(f"❌ GPT returned invalid JSON: {cleaned_response}")
+            return None
+
+    except Exception as e:
+        logging.error(f"❌ Error extracting email alert updates: {str(e)}")
+        return None
+
+
+def clean_llm_response(raw_response: str) -> str:
+    # Clean triple backticks and text json if are present
+    pattern = r"```(?:json)?\s*(.*?)\s*```"
+    match = re.search(pattern, raw_response, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    else:
+        return raw_response.strip()

@@ -1196,7 +1196,6 @@ class EmailAlert(models.Model):
     recipients_users = models.ManyToManyField(User, blank=True, through="EmailAlertRecipient", related_name="email_alerts")
     recipients_roles = models.CharField(
         max_length=50,
-        choices=ROLE_CHOICES,
         blank=True,
         null=True,
         help_text="Select the role of the recipients"

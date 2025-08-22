@@ -3,7 +3,7 @@ import openai
 import logging
 import json
 from dotenv import load_dotenv
-from cpq.models import Quote, BusinessRule, CustomObject
+from cpq.models import Quote, BusinessRule, CustomObject, EmailAlert
 from decimal import Decimal
 from django.db.models import Q
 from django.forms.models import model_to_dict
@@ -38,6 +38,8 @@ def admin_agent(user, action, user_message, session_data):
         "UpdateRule": update_rule,
         "DeleteRule": delete_rule,
         "CreateEmailAlert": create_email_alert,
+        "UpdateEmailAlert": update_email_alert,
+        #"DeleteEmailAlert": delete_email_alert
     }
 
     # ✅ Dynamically call the function if action exists in map
@@ -412,8 +414,8 @@ def delete_rule(user, user_message, session_data):
         "temporaryMessage": True
         }
 
-from agents.utils.admin_agent.llm_helpers import extract_email_alert_details
-from agents.utils.admin_agent.handle_helpers import handle_email_alerts_creation
+from agents.utils.admin_agent.llm_helpers import extract_email_alert_details, extract_email_alert_updates
+from agents.utils.admin_agent.handle_helpers import handle_email_alerts_creation, handle_email_alerts_updates
 
 def create_email_alert(user, user_message, session_data):
     """Create email alert"""
@@ -423,7 +425,7 @@ def create_email_alert(user, user_message, session_data):
 
     logging.info("🔧 Creating email alert...\n\n")
 
-    # ✅ Get all the custom objects
+    # ✅ Get all the custom objects and users
     custom_objects = CustomObject.objects.values_list("name", flat=True)
 
     users = User.objects.values_list("username", flat=True)
@@ -445,13 +447,56 @@ def create_email_alert(user, user_message, session_data):
 
     response_message = ""
 
-    # ✅ Handle rules deletes
+    # ✅ Handle email alerts
     response_message, email_alerts_created = handle_email_alerts_creation(user, extracted_email_alerts, response_message, session_context)
 
     # ✅ Return
     if not email_alerts_created:
         return {
             "message": f"No email alerts were created. <br><br>{response_message}",
+            "temporaryMessage": True
+        } 
+    
+    return {
+        "message": response_message,
+        "temporaryMessage": True
+        }
+
+def update_email_alert(user, user_message, session_data):
+    """Edit email alert"""
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "UpdateEmailAlert", "admin_agent", session_data, user_message)
+
+    logging.info("🔧 Editing email alert...\n\n")
+
+    # ✅ Get all the custom objects and users
+    custom_objects = CustomObject.objects.values_list("name", flat=True)
+
+    users = User.objects.values_list("username", flat=True)
+
+    email_alerts = EmailAlert.objects.filter().all()
+    
+    extracted_email_alerts_updates = extract_email_alert_updates(user, user_message, custom_objects, users)
+
+    if not extracted_email_alerts_updates:
+        session_context["item_index"] = 1
+        session_context["extracted"] = "Something went wrong when LLM trying to extract email alert update data."
+        agent_response = f"An error occurred while extracting your email alert update data. Please try again."
+        save_or_update_conversation_context(session_context, agent_response)
+        return {
+            "message": "⚠️ AgentCPQ: An error occurred while extracting your email alert update data. Please try again."
+        }
+
+
+    response_message = ""
+
+    # ✅ Handle email alerts updates
+    response_message, email_alerts_updated = handle_email_alerts_updates(user, extracted_email_alerts_updates, response_message, session_context)
+
+    # ✅ Return
+    if not email_alerts_updated:
+        return {
+            "message": f"No email alerts were updated. <br><br>{response_message}",
             "temporaryMessage": True
         } 
     

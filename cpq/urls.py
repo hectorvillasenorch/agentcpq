@@ -1,7 +1,7 @@
 from django.http import HttpResponse
 from django.urls import path
 from .views import quotes_view, settings_view, product_list, product_detail,field_mapping_view,save_field_mappings,set_primary_quote, custom_fields_view,create_custom_field, get_company_information, create_custom_object, get_document_template, business_rules_view
-from .views import create_notification, create_custom_record, search_accounts,create_custom_field, usage_dashboard, edit_custom_object, edit_custom_field, delete_custom_field, delete_custom_object, manage_notifications_view
+from .views import create_notification, create_custom_record, search_accounts,create_custom_field, usage_dashboard, edit_custom_object, edit_custom_field, delete_custom_field, delete_custom_object, manage_notifications_view, edit_notification
 from hubspot.views import get_hubspot_schema
 from django.conf import settings
 from django.conf.urls.static import static
@@ -41,6 +41,7 @@ urlpatterns = [
     path('admin/manage-document', get_document_template, name='get_document_template'),
     path('admin/manage-rules', business_rules_view, name='business_rules'),
     path('admin/manage-notifications', manage_notifications_view, name='manage_notifications'),
+    path('admin/manage-notifications/edit/<str:alert_name>/', edit_notification, name='edit_notification'),
     path('admin/create-notification', create_notification, name='create_notification'),
     #path("admin/manage-rules/create/", create_business_rule, name="create_business_rule"),
     path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote'),

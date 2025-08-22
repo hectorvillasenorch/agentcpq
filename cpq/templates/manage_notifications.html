@@ -91,6 +91,17 @@ input[type="checkbox"] + span {
   height: auto !important;
 }
 
+.custom-table {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.custom-table th {
+  background-color: #f5f5f5; /* (Opcional) darle color al header */
+}
+
+
 
 </style>
 
@@ -104,203 +115,122 @@ input[type="checkbox"] + span {
 
   <br>
 
-  <div class="card-panel white z-depth-1">
-
-      <div class="card-panel">
-        <i class="material-icons left" style="vertical-align: middle;">person_add</i>
-        <b><h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Lead Notifications</h6></b>
-        
-        <!-- Contenedor principal -->
-        <div class="p-6">
-
-          <!-- Botón para abrir modal de Account Notification -->
-          <button id="openAccountModal" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-            + New Lead Notification
-          </button>
-
-          <!-- Modal / Panel a mitad de pantalla -->
-          <div id="accountModal" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 hidden">
-            <div class="bg-white rounded-lg w-1/2 p-6 relative">
-
-              <!-- Botón cerrar -->
-              <button id="closeAccountModal" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700">&times;</button>
-
-              <!-- Título -->
-              <h2 class="text-xl font-semibold mb-4">New Account Notification</h2>
-
-              <!-- Formulario -->
-              <form class="space-y-4 notification-form" method="POST" action="{% url 'cpq:create_notification' %}">
-                {% csrf_token %}
-
-                <!-- Hidden: tipo de notificación -->
-                <input type="hidden" name="notification_type" value="account">
-
-                <!-- Select When -->
-                <div>
-                  <label for="account_when" class="block font-medium mb-1">When:</label>
-                  <select id="account_when" name="account_when" class="w-full border-gray-300 rounded px-2 py-1">
-                    <option value="created">Created</option>
-                  </select>
-                </div>
-
-                <!-- Select Recipient -->
-                <div>
-                  <label for="account_recipient" class="block font-medium mb-1">Recipient:</label>
-                  <select id="account_recipient" name="account_recipient" class="w-full border-gray-300 rounded px-2 py-1">
-                    <option value="superusers">Superusers</option>
-                    <option value="admin">Admin</option>
-                    <option value="staff">Staff</option>
-                    <option value="created-by">Account Creator</option>
-                    {% if users %}
-                      {% for user in users %}
-                        <option value="{{ user.id }}">{{ user.first_name }} {{ user.last_name }} ({{ user.username }})</option>
-                      {% endfor %}
-                    {% endif %}
-                  </select>
-                </div>
-
-                <!-- Botón guardar -->
-                <div class="text-right">
-                  <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
-                    Save
-                  </button>
-                </div>
-
-              </form>
-
-              
-            </div>
-          </div>
-
-        </div>
-
-      </div>
-
-      <div class="card-panel">
-        <b><h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Account Notifications</h6></b>
-        
-        <!-- Contenedor principal -->
-        <div class="p-6">
-
-          <!-- Botón para abrir modal de Account Notification -->
-          <button id="openAccountModal" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-            + New Account Notification
-          </button>
-
-          <!-- Modal / Panel a mitad de pantalla -->
-          <div id="accountModal" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 hidden">
-            <div class="bg-white rounded-lg w-1/2 p-6 relative">
-
-              <!-- Botón cerrar -->
-              <button id="closeAccountModal" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700">&times;</button>
-
-              <!-- Título -->
-              <h2 class="text-xl font-semibold mb-4">New Account Notification</h2>
-
-              <!-- Formulario -->
-              <form class="space-y-4 notification-form" method="POST" action="{% url 'cpq:create_notification' %}">
-                {% csrf_token %}
-
-                <!-- Hidden: tipo de notificación -->
-                <input type="hidden" name="notification_type" value="account">
-
-                <!-- Select When -->
-                <div>
-                  <label for="account_when" class="block font-medium mb-1">When:</label>
-                  <select id="account_when" name="account_when" class="w-full border-gray-300 rounded px-2 py-1">
-                    <option value="created">Created</option>
-                  </select>
-                </div>
-
-                <!-- Select Recipient -->
-                <div>
-                  <label for="account_recipient" class="block font-medium mb-1">Recipient:</label>
-                  <select id="account_recipient" name="account_recipient" class="w-full border-gray-300 rounded px-2 py-1">
-                    <option value="superusers">Superusers</option>
-                    <option value="admin">Admin</option>
-                    <option value="staff">Staff</option>
-                    <option value="created-by">Account Creator</option>
-                    {% if users %}
-                      {% for user in users %}
-                        <option value="{{ user.id }}">{{ user.first_name }} {{ user.last_name }} ({{ user.username }})</option>
-                      {% endfor %}
-                    {% endif %}
-                  </select>
-                </div>
-
-                <!-- Botón guardar -->
-                <div class="text-right">
-                  <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
-                    Save
-                  </button>
-                </div>
-
-              </form>
-
-
-            </div>
-          </div>
-
-        </div>
-
-      </div>
-
-
-      <!-- JS para abrir/cerrar modal -->
-      <script>
-        const openAccountModal = document.getElementById('openAccountModal');
-        const closeAccountModal = document.getElementById('closeAccountModal');
-        const accountModal = document.getElementById('accountModal');
-
-        // Abrir modal
-        openAccountModal.addEventListener('click', () => {
-          accountModal.classList.remove('hidden');
-
-          // Inicializar selects de Materialize dentro del modal
-          var elems = accountModal.querySelectorAll('select');
-          M.FormSelect.init(elems);
-        });
-
-        // AJAX para guardar la notificación sin recargar
-        document.querySelectorAll('form.notification-form').forEach(form => {
-        form.addEventListener('submit', function(e) {
-          e.preventDefault();
-
-          const formData = new FormData(this);
-          const modal = this.closest('.modal');
-
-          fetch("{% url 'cpq:create_notification' %}", {
-            method: 'POST',
-            headers: {'X-CSRFToken': formData.get('csrfmiddlewaretoken')},
-            body: formData
-          }).then(resp => {
-            if(resp.ok){
-              M.toast({html: 'Notification saved!'});
-              modal.classList.add('hidden');
-              this.reset();
-            } else {
-              M.toast({html: 'Error saving notification', classes: 'red'});
-            }
-          });
-        });
-      });
-
-
-        // Cerrar modal
-        closeAccountModal.addEventListener('click', () => {
-          accountModal.classList.add('hidden');
-        });
-
-        // Cerrar modal haciendo click fuera del panel
-        accountModal.addEventListener('click', (e) => {
-          if(e.target === accountModal) accountModal.classList.add('hidden');
-        });
-      </script>
+  <!-- Notifications -->
+  {% for group in alert_groups  %}
+    <div class="card-panel white z-depth-1">
+      <i class="material-icons left" style="vertical-align: middle;">{{ group.icon }}</i>
+      <b><h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">{{ group.title }}</h6></b>
       
+      <!-- Contenedor principal -->
+      <div class="p-6">
+
+        {% if group.alerts %}
+          <table class="striped highlight responsive-table custom-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Trigger</th>
+                <th>Recipients</th>
+                <th>Status</th>
+                <th>Last Modified By</th>
+                <th>Created By</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for alert in group.alerts %}
+                <tr>
+                  <td>{{ alert.name }}</td>
+                  <td>{{ alert.trigger }}</td>
+                  <td>
+                    {% for user in alert.recipients_users.all %}
+                      <span class="chip blue white-text">{{ user.username }}</span>
+                    {% endfor %}
+
+                    {% for role in alert.roles_list %}
+                      <span class="chip deep-purple white-text">{{ role }}</span>
+                    {% endfor %}
+
+                    {% for email in alert.external_list %}
+                      <span class="chip green white-text">{{ email }}</span>
+                    {% endfor %}
+
+                    {% if not alert.recipients_users.all and not alert.roles_list and not alert.external_list %}
+                      <span class="grey-text">None</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if alert.active %}
+                      <span class="new badge green" data-badge-caption="Active"></span>
+                    {% else %}
+                      <span class="new badge red" data-badge-caption="Inactive"></span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <small class="updated-at">{{ alert.updated_by }} - {{ alert.updated_at|date:"Y-m-d H:i:s" }}</small>
+                  </td>
+                  <td>
+                    <small class="created-at">{{ alert.created_by }} - {{ alert.created_at|date:"Y-m-d H:i:s" }}</small>
+                  </td>
+                  <td>
+                    <a href="{% url 'cpq:edit_notification' alert.name %}" class="btn-flat">
+                      <i class="material-icons">edit</i>
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="grey-text">No alerts configured.</p>
+        {% endif %}
+
+      </div>
 
 
-    
-  </div>
+    </div>
+  {% endfor %}
+
 
 </div>
+
+
+<script>
+  // Función para convertir fecha UTC a local con formato MM/DD/YYYY HH:MM AM/PM
+  function convertUTCToLocal(element) {
+      const text = element.innerText;
+      // Suponiendo que el formato es "username - YYYY-MM-DD HH:mm:ss"
+      const parts = text.split(' - ');
+      if(parts.length < 2) return;
+
+      const username = parts[0];
+      const utcString = parts[1];
+
+      // Crear objeto Date en UTC
+      const utcDate = new Date(utcString + 'Z'); // Z indica UTC
+
+      // Opciones de formato
+      const options = { 
+          year: 'numeric', 
+          month: '2-digit', 
+          day: '2-digit',
+          hour: '2-digit', 
+          minute: '2-digit',
+          hour12: true 
+      };
+
+      // Convertir a local
+      const localString = utcDate.toLocaleString('en-US', options);
+
+      // Reemplazar el contenido del elemento
+      element.innerText = `${username} - ${localString}`;
+  }
+
+  // Aplicar a todos los elementos
+  document.querySelectorAll('.updated-at, .created-at').forEach(el => {
+      convertUTCToLocal(el);
+  });
+
+
+</script>
 {% endblock %}

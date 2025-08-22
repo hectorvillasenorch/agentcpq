@@ -5,85 +5,172 @@ from django.contrib.auth.models import User
 
 User = get_user_model()
 
+def notify_users(alerts, instance, template_name, subject, context_builder):
+    """
+    Envia notificaciones de email a usuarios internos y externos.
+
+    alerts: queryset de EmailAlert
+    instance: el objeto que disparó la alerta (Lead, Account, Opportunity, etc.)
+    template_name: nombre de la plantilla de email
+    subject: asunto del correo
+    context_builder: función que recibe (instance, user) y devuelve un dict de contexto
+    """
+    for alert in alerts:
+        recipients = get_users_for_alert(instance, alert)
+
+        for user in recipients["users"]:
+            if not user or not user.email:
+                print(f"The user {getattr(user, 'username', 'Unknown')} has no email registered.")
+                continue
+
+            print(f"Sending email to {user.username}")
+            context = context_builder(instance, user)
+            send_notification_email(
+                recipient=user.email,
+                subject=subject,
+                template_name=template_name,
+                context=context
+            )
+
+        for email in recipients["external_emails"]:
+            print(f"Sending email to external recipient {email}")
+            context = context_builder(instance, None)
+            send_notification_email(
+                recipient=email,
+                subject=subject,
+                template_name=template_name,
+                context=context
+            )
+
 
 def notify_lead_created(lead):
     email_alerts = EmailAlert.objects.filter(trigger="lead_created")
 
-    for alert in email_alerts:
-        all_users = get_users_for_alert(lead, alert)
-
-        for user in all_users:
-            if not user or not user.email:
-                print(f"The user {user.username if user else 'None'} does not have an email registered, so their notification could not be sent.")
-                continue
-
-            print(f"Enviando email a {user.username}")
-            context = {
-                'lead': lead,
-                'user': user
-            }
-            send_notification_email(
-                recipient=user.email,
-                subject=f'📋 New Lead Created: {lead.first_name} {lead.last_name} 📋',
-                template_name='lead_created',
-                context=context
-            )
+    notify_users(
+        alerts=email_alerts,
+        instance=lead,
+        template_name="lead_created",
+        subject=f'📋 New Lead Created: {lead.first_name} {lead.last_name}',
+        context_builder=lambda instance, user: {
+            "lead": instance,
+            "user": user,
+        },
+    )
 
 
 def notify_account_created(account):
     email_alerts = EmailAlert.objects.filter(trigger="account_created")
 
-    for alert in email_alerts:
-        all_users = get_users_for_alert(account, alert)
+    notify_users(
+        alerts=email_alerts,
+        instance=account,
+        template_name="account_created",
+        subject=f'👤 New Account Created: {account.name}',
+        context_builder=lambda instance, user: {
+            "account": instance,
+            "user": user
+        }
+    )
 
-        for user in all_users:
-            if not user or not user.email:
-                print(f"The user {user.username if user else 'None'} does not have an email registered, so their notification could not be sent.")
-                continue
-
-            print(f"Enviando email a {user.username}")
-            context = {
-                'account': account,
-                'user': user
-            }
-            send_notification_email(
-                recipient=user.email,
-                subject=f'👤 New Account Created: {account.name} 👤',
-                template_name='account_created',
-                context=context
-            )
         
 
 def notify_opportunity_created(opportunity):
-    email_alerts = EmailAlert.objects.filter(trigger="account_created")
+    email_alerts = EmailAlert.objects.filter(trigger="opportunity_created")
 
-    for alert in email_alerts:
-        all_users = get_users_for_alert(opportunity, alert)
+    notify_users(
+        alerts=email_alerts,
+        instance=opportunity,
+        template_name="opportunity_created",
+        subject=f'📊 New Opportunity Created: {opportunity.name}',
+        context_builder=lambda instance, user: {
+            "opportunity": instance,
+            "user": user,
+        },
+    )
 
-        for user in all_users:
-            if not user or not user.email:
-                print(f"The user {user.username if user else 'None'} does not have an email registered, so their notification could not be sent.")
-                continue
 
-            print(f"Enviando email a {user.username}")
-            context = {
-                'opportunity': opportunity,
-                'user': user,
-            }
-            send_notification_email(
-                recipient=user.email,
-                subject=f'💼 New Opportunity Created: {opportunity.name} 💼',
-                template_name='opportunity_created',
-                context=context
-            )
+def notify_opportunity_closed_won(opportunity):
+    email_alerts = EmailAlert.objects.filter(trigger="opportunity_closed_won")
+
+    notify_users(
+        alerts=email_alerts,
+        instance=opportunity,
+        template_name="opportunity_closed_won",
+        subject=f'✅ Opportunity Closed Won: {opportunity.name}',
+        context_builder=lambda instance, user: {
+            "opportunity": instance,
+            "user": user,
+        },
+    )
+
+
+def notify_opportunity_closed_lost(opportunity):
+    email_alerts = EmailAlert.objects.filter(trigger="opportunity_closed_lost")
+
+    notify_users(
+        alerts=email_alerts,
+        instance=opportunity,
+        template_name="opportunity_closed_lost",
+        subject=f'❌ Opportunity Closed Lost: {opportunity.name}',
+        context_builder=lambda instance, user: {
+            "opportunity": instance,
+            "user": user,
+        },
+    )
+
+
+def notify_quote_sent_for_approval(quote):
+    email_alerts = EmailAlert.objects.filter(trigger="quote_sent_for_approval")
+
+    notify_users(
+        alerts=email_alerts,
+        instance=quote,
+        template_name="quote_sent_for_approval",
+        subject=f'📑 Quote Sent for Approval: {quote.name}',
+        context_builder=lambda instance, user: {
+            "quote": instance,
+            "user": user,
+        },
+    )
+
+
+def notify_quote_approved(quote):
+    email_alerts = EmailAlert.objects.filter(trigger="quote_approved")
+
+    notify_users(
+        alerts=email_alerts,
+        instance=quote,
+        template_name="quote_approved",
+        subject=f'✅ Quote Approved: {quote.name}',
+        context_builder=lambda instance, user: {
+            "quote": instance,
+            "user": user,
+        },
+    )
+
+
+def notify_quote_rejected(quote):
+    email_alerts = EmailAlert.objects.filter(trigger="quote_rejected")
+
+    notify_users(
+        alerts=email_alerts,
+        instance=quote,
+        template_name="quote_rejected",
+        subject=f'❌ Quote Rejected: {quote.name}',
+        context_builder=lambda instance, user: {
+            "quote": instance,
+            "user": user,
+        },
+    )
+
 
     
 
 
 def get_users_for_alert(instance, alert):
     """
-    Returns a list of users for the given alert and instance (Lead, Account, etc.).
-    Handles both recipients_users and recipients_roles without duplicates.
+    Returns a list of users (User objects) and external emails for the given alert.
+    Handles recipients_users, recipients_roles, and recipients_external.
     """
     # Start with users directly selected
     users_qs = alert.recipients_users.all()
@@ -107,4 +194,12 @@ def get_users_for_alert(instance, alert):
 
             users_set.update(role_users)
 
-    return list(users_set)
+    # Handle external recipients (list of emails)
+    external_emails = []
+    if alert.recipients_external:
+        external_emails = [email.strip() for email in alert.recipients_external.split(",") if email.strip()]
+
+    return {
+        "users": list(users_set),
+        "external_emails": external_emails,
+    }

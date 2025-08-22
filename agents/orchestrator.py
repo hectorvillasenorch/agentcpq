@@ -163,6 +163,7 @@ def orchestrate_request(user, user_message, session_data):
     - "UpdateCustomRecord"                                                          (Use this when the user wants to update any record for an existing custom object like {custom_objects_list})
     - "DeleteCustomRecord"                                                          (Use this when the user wants to delete any record for an existing custom object like {custom_objects_list})
     - "CreateEmailAlert"
+    - "UpdateEmailAlert"
     """
     try:
         response = client.chat.completions.create(
@@ -424,7 +425,8 @@ def get_action_map():
         "DeleteCustomRecord": custom_object_agent,
 
         # EmailAlerts
-        "CreateEmailAlert": admin_agent
+        "CreateEmailAlert": admin_agent,
+        "UpdateEmailAlert": admin_agent
     }
 
 

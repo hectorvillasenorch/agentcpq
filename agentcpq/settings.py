@@ -74,7 +74,7 @@ INSTALLED_APPS = [
     "dashboard",
     "salesforce",
     "hubspot",
-    'django.contrib.humanize',
+    'django.contrib.humanize'
 ]
 
 MIDDLEWARE = [
