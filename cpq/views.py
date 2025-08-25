@@ -27,6 +27,9 @@ from collections import defaultdict
 from django.contrib.auth.models import User
 from django.utils import timezone
 
+# HubSpot sync
+from hubspot.views import sync_opportunity_to_hubspot
+
 # Agents General Helpers
 from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
 
@@ -159,6 +162,18 @@ def set_primary_quote(request, quote_id):
             # Set this quote as primary
             quote.hs_primary = True
             quote.save()
+
+            # Trigger HubSpot sync when a primary quote is set
+            try:
+                if getattr(quote.opportunity, "hs_deal_id", None):
+                    sync_opportunity_to_hubspot(quote.opportunity_id, user_id="default")
+                else:
+                    logging.getLogger(__name__).info(
+                        "[HS SYNC] Skipping sync after set-primary: Opportunity %s has no hs_deal_id",
+                        quote.opportunity_id
+                    )
+            except Exception as e:
+                logging.getLogger(__name__).exception("[HS SYNC] Failed after set-primary: %s", e)
 
             return JsonResponse({"success": True})
         except Quote.DoesNotExist:
