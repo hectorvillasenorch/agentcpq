@@ -130,25 +130,25 @@ class Contact(models.Model):
 
 class Opportunity(models.Model):
     """Represents a sales opportunity linked to an Account."""
-    STAGE_CHOICES = [
-        ('Prospecting', 'Prospecting'),
-        ('Qualification', 'Qualification'),
-        ('Proposal', 'Proposal Sent'),
-        ('Negotiation', 'Negotiation'),
-        ('Closed Won', 'Closed Won'),
-        ('Closed Lost', 'Closed Lost'),
-    ]
-
-    ### UNCOMENT FOR HUBSPOT INTEGRATION ###
     # STAGE_CHOICES = [
-    #     ("appointmentscheduled", "Appointment Scheduled"),
-    #     ("qualifiedtobuy", "Qualified to Buy"),
-    #     ("presentationscheduled", "Presentation Scheduled"),
-    #     ("decisionmakerboughtin", "Decision Maker Bought-In"),
-    #     ("contractsent", "Contract Sent"),
-    #     ("closedwon", "Closed Won"),
-    #     ("closedlost", "Closed Lost"),
+    #     ('Prospecting', 'Prospecting'),
+    #     ('Qualification', 'Qualification'),
+    #     ('Proposal', 'Proposal Sent'),
+    #     ('Negotiation', 'Negotiation'),
+    #     ('Closed Won', 'Closed Won'),
+    #     ('Closed Lost', 'Closed Lost'),
     # ]
+
+    ## UNCOMENT FOR HUBSPOT INTEGRATION ###
+    STAGE_CHOICES = [
+        ("appointmentscheduled", "Appointment Scheduled"),
+        ("qualifiedtobuy", "Qualified to Buy"),
+        ("presentationscheduled", "Presentation Scheduled"),
+        ("decisionmakerboughtin", "Decision Maker Bought-In"),
+        ("contractsent", "Contract Sent"),
+        ("closedwon", "Closed Won"),
+        ("closedlost", "Closed Lost"),
+    ]
 
     name = models.CharField(max_length=255)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="opportunities")
