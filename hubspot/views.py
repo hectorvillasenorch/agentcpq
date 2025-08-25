@@ -296,13 +296,6 @@ def sync_hubspot_products(user_id="default"):
     print("✅ HubSpot product sync complete.")
 
 
-
-def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
-   from decimal import Decimal
-from django.utils import timezone
-import datetime
-import requests
-
 def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
     """
     Syncs an AgentCPQ Opportunity to HubSpot: updates or creates a deal,
