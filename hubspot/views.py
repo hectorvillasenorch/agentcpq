@@ -49,6 +49,21 @@ def derive_terms_from_months(term_months, freq):
     except Exception:
         return None
 
+# --- Helpers: consistently get term/frequency from QuoteLine, falling back to Product ---
+def get_term_months_from_line_or_product(line):
+    """Return term in months from QuoteLine, falling back to its Product if blank."""
+    val = getattr(line, "term", None)
+    if val in (None, "", 0, "0") and getattr(line, "product", None) is not None:
+        val = getattr(line.product, "term", None)
+    return val
+
+def get_billing_frequency_from_line_or_product(line):
+    """Return billing_frequency from QuoteLine, falling back to its Product if blank."""
+    val = getattr(line, "billing_frequency", None)
+    if (val is None or str(val).strip() == "") and getattr(line, "product", None) is not None:
+        val = getattr(line.product, "billing_frequency", None)
+    return val
+
 load_dotenv()
 HUBSPOT_CLIENT_ID = os.getenv("HS_CID")
 HUBSPOT_CLIENT_SECRET = os.getenv("HS_SECRET")
@@ -311,6 +326,18 @@ def sync_hubspot_products(user_id="default"):
             product_data[local_field] = value
             mapped_fields.add(local_field)
 
+        # Ensure subscription fields from HubSpot even if not explicitly mapped
+        hs_freq = hs_props.get("recurringbillingfrequency")
+        if hs_freq and not product_data.get("billing_frequency"):
+            product_data["billing_frequency"] = normalize_frequency(hs_freq)
+
+        hs_period = hs_props.get("hs_recurring_billing_period")
+        if hs_period and not product_data.get("term"):
+            if isinstance(hs_period, str) and hs_period.startswith("P"):
+                match = re.search(r'P(\d+)M', hs_period)
+                if match:
+                    product_data["term"] = int(match.group(1))
+
         # Ensure price is present
         if "price" not in mapped_fields:
             print(f"⚠️ Missing price for product {item['id']}. Defaulting to 0.00")
@@ -318,6 +345,13 @@ def sync_hubspot_products(user_id="default"):
 
         # Set is_subscription based on term
         product_data["is_subscription"] = bool(product_data.get("term"))
+
+        # Default consistency: if subscription but missing frequency/term specifics, assume monthly 12
+        if product_data.get("is_subscription"):
+            if not product_data.get("billing_frequency"):
+                product_data["billing_frequency"] = "monthly"
+            if not product_data.get("term"):
+                product_data["term"] = 12
 
         if product_data:
             Product.objects.update_or_create(
@@ -432,12 +466,13 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
                     print(f"⚠️ Error resolving field '{local_field}': {e}")
 
             # --- Normalize billing frequency & derive terms ---
-            freq_raw = properties.get("recurringbillingfrequency") or getattr(line, "billing_frequency", None)
+            freq_raw = properties.get("recurringbillingfrequency") or get_billing_frequency_from_line_or_product(line)
             freq = normalize_frequency(freq_raw) if freq_raw else None
 
+            term_months_source = get_term_months_from_line_or_product(line)
             is_one_time = (
                 (freq and str(freq).lower() in ONE_TIME_SENTINELS) or
-                (getattr(line, "term", None) in (0, "0", None) and not freq)
+                (term_months_source in (0, "0", None) and not freq)
             )
 
             if is_one_time:
@@ -446,19 +481,18 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
                 properties.pop("hs_recurring_billing_terms", None)
                 properties.pop("hs_recurring_billing_period", None)
             else:
-                if not freq and getattr(line, "term", None):
+                if not freq and term_months_source:
                     # Default frequency if term is given but no explicit frequency
                     freq = "monthly"
                 if freq in ALLOWED_FREQ:
                     properties["recurringbillingfrequency"] = freq
                     if "hs_recurring_billing_terms" not in properties:
-                        term_months = getattr(line, "term", None)
-                        derived_terms = derive_terms_from_months(term_months, freq)
+                        derived_terms = derive_terms_from_months(term_months_source, freq)
                         if derived_terms is not None:
                             properties["hs_recurring_billing_terms"] = derived_terms
                     # Also set ISO-8601 period (e.g., P12M) expected by HubSpot for the Term property
                     try:
-                        term_months_val = getattr(line, "term", None)
+                        term_months_val = term_months_source
                         if term_months_val not in (None, "", 0, "0"):
                             term_int = int(term_months_val)
                             if term_int > 0:
@@ -466,7 +500,7 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
                     except Exception as e:
                         logger.warning(
                             "[HS SYNC] Could not set hs_recurring_billing_period from term=%r: %s",
-                            getattr(line, "term", None), e
+                            term_months_source, e
                         )
                 else:
                     # Invalid or unknown frequency: drop recurring props to avoid HS validation errors
@@ -476,8 +510,9 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
             # Log what we’re about to send for troubleshooting
             try:
                 logger.info(
-                    "[HS SYNC] Line %s local(freq=%r, term_months=%r) -> final(freq=%r, terms=%r, period=%r)",
+                    "[HS SYNC] Line %s local(freq=%r, term_months=%r | prod.freq=%r, prod.term=%r) -> final(freq=%r, terms=%r, period=%r)",
                     getattr(line, "id", None), getattr(line, "billing_frequency", None), getattr(line, "term", None),
+                    getattr(getattr(line, "product", None), "billing_frequency", None), getattr(getattr(line, "product", None), "term", None),
                     properties.get("recurringbillingfrequency"), properties.get("hs_recurring_billing_terms"), properties.get("hs_recurring_billing_period")
                 )
             except Exception:
