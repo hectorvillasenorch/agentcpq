@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django import forms
 from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact,Tenant, QuoteDocument
 from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession
@@ -149,11 +150,32 @@ class QuoteDocumentAdmin(admin.ModelAdmin):
 #     extra = 1  # show 1 empty form by default
 #     fields = ['notes','activity_type','status','due_date']  # fields you want editable inline
 
+BaseOpportunityForm = get_dynamic_form(Opportunity, crm="AgentCPQ", object_type="Opportunity")
+
+class OpportunityEditableForm(BaseOpportunityForm):
+    hs_deal_id = forms.CharField(required=False, label="HubSpot Deal ID")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Prefill with instance value when editing
+        if getattr(self, 'instance', None) is not None:
+            self.fields['hs_deal_id'].initial = getattr(self.instance, 'hs_deal_id', None)
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        obj.hs_deal_id = self.cleaned_data.get('hs_deal_id')
+        if commit:
+            obj.save()
+        return obj
+
 class OpportunityAdmin(DynamicCustomFieldAdmin):
-    form = get_dynamic_form(Opportunity, crm="AgentCPQ", object_type="Opportunity")
+    form = OpportunityEditableForm
     list_display = ('name','amount', 'account', 'stage', 'expected_close_date', 'primary_quote', 'created_at')
     def get_fieldsets(self, request, obj=None):
-        return [(None, {'fields': list(self.form().fields.keys())})]
+        fields = list(self.form().fields.keys())
+        if 'hs_deal_id' not in fields:
+            fields.append('hs_deal_id')
+        return [(None, {'fields': fields})]
 
 admin.site.register(Opportunity, OpportunityAdmin)
 
