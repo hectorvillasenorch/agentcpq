@@ -418,7 +418,7 @@ class QuoteLine(models.Model):
     billing_frequency = models.CharField(
         max_length=20,
         choices=[("monthly", "monthly"), ("quarterly", "quarterly"), ("annual", "annual"), ("one_time", "one_time")],
-        default="One-Time"
+        default="one_time"
     )
     term = models.PositiveIntegerField(null=True, blank=True)  # In months
     billing_start_date = models.DateField(null=True, blank=True)
@@ -490,8 +490,17 @@ class QuoteLine(models.Model):
             self.total_price = base_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     def check_term_is_not_null_for_subscriptions(self):
-        if self.product.is_subscription and self.term is None:
-            self.term = 1
+        if self.product and self.product.is_subscription:
+            # Ensure the line reflects a subscription
+            if not self.is_subscription:
+                self.is_subscription = True
+            # Default term from product or 12 months if missing
+            if self.term in (None, 0):
+                self.term = self.product.term or 12
+        else:
+            # Not a subscription: clear term
+            if self.term not in (None, 0):
+                self.term = None
 
     def update_unit_price_bundle_post_created(self):
         total = sum(
@@ -509,7 +518,7 @@ class QuoteLine(models.Model):
         is_new = self.pk is None
 
         if is_new:
-        # Auto-calculate price for bundles
+            # Auto-calculate price for bundles
             if self.product.is_bundle:
                 self.unit_price = sum(
                     Decimal(option.product_option.price) * Decimal(option.quantity)
@@ -525,6 +534,21 @@ class QuoteLine(models.Model):
                 print(f"Unit Price before update: {self.unit_price}")
             else:
                 self.unit_price = self.product.price
+
+        # Initialize subscription flags and billing frequency based on Product when creating the line
+        if is_new and self.product:
+            if self.product.is_subscription:
+                self.is_subscription = True
+                # If the line came in as one_time or empty, force monthly for subscriptions
+                if self.billing_frequency in (None, "", "one_time"):
+                    self.billing_frequency = "monthly"
+                # Default term from product or 12 months
+                if self.term in (None, 0):
+                    self.term = self.product.term or 12
+            else:
+                self.is_subscription = False
+                self.billing_frequency = "one_time"
+                self.term = None
 
         # Auto-fill product name and SKU
         if self.product and not self.product_name:
