@@ -1,4 +1,5 @@
 import os
+import logging
 from django.conf import settings
 from django.shortcuts import render
 from django.http import JsonResponse, HttpResponseRedirect
@@ -16,6 +17,8 @@ import datetime
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.shortcuts import redirect
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 HUBSPOT_CLIENT_ID = os.getenv("HS_CID")
@@ -301,10 +304,14 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
     Syncs an AgentCPQ Opportunity to HubSpot: updates or creates a deal,
     then creates associated line items and links them to the deal.
     """
+    logger.info("[HS SYNC] Entered sync_opportunity_to_hubspot for opportunity_id=%s user_id=%s", opportunity_id, user_id)
     opportunity = Opportunity.objects.get(id=opportunity_id)
+    logger.info("[HS SYNC] Loaded Opportunity id=%s name=%s hs_deal_id=%s", opportunity.id, getattr(opportunity, 'name', None), getattr(opportunity, 'hs_deal_id', None))
     quote = Quote.objects.filter(opportunity=opportunity, hs_primary=True).first()
+    logger.info("[HS SYNC] Primary Quote exists? %s", bool(quote))
     print(f"✅ ==========================> Quote {quote} IS THE QUOTE TO SYNC")
     access_token = get_valid_hubspot_token(user_id)
+    logger.info("[HS SYNC] Retrieved access token for user_id=%s", user_id)
 
     # ✅ Field mappings for Opportunity → Deal
     opportunity_field_mappings = {
@@ -441,6 +448,96 @@ def delete_existing_line_items(deal_id, headers):
                 print(f"⚠️ Failed to delete line item {line_item_id}: {delete_resp.status_code} — {delete_resp.text}")
     else:
         print(f"⚠️ Failed to fetch line item associations: {response.status_code} — {response.text}")
+
+
+# --- Diagnostic/validation helpers ---
+def validate_opportunity_sync_prereqs(opportunity_id, user_id="default"):
+    """Validate minimal prerequisites before attempting a HubSpot sync.
+    Returns (ok: bool, report: dict)
+    """
+    report = {"opportunity_id": opportunity_id, "checks": {}, "errors": []}
+    ok = True
+    # Opportunity exists
+    try:
+        opp = Opportunity.objects.get(id=opportunity_id)
+        report["checks"]["opportunity.exists"] = True
+    except Opportunity.DoesNotExist:
+        ok = False
+        report["checks"]["opportunity.exists"] = False
+        report["errors"].append("Opportunity not found")
+        return ok, report
+
+    # Primary quote exists
+    quote = Quote.objects.filter(opportunity=opp, hs_primary=True).first()
+    report["checks"]["quote.primary_exists"] = bool(quote)
+    if not quote:
+        ok = False
+        report["errors"].append("Primary (hs_primary=True) Quote not found")
+    else:
+        report["checks"]["quote.lines_count"] = quote.quote_lines.count()
+        if quote.quote_lines.count() == 0:
+            ok = False
+            report["errors"].append("Primary Quote has no quote lines")
+
+    # HubSpot token present/valid
+    try:
+        token = get_valid_hubspot_token(user_id)
+        report["checks"]["hubspot.token_available"] = bool(token)
+    except Exception as e:
+        ok = False
+        report["checks"]["hubspot.token_available"] = False
+        report["errors"].append(f"HubSpot token issue: {e}")
+
+    # Mappings present
+    opp_map_ct = SystemFieldMapping.objects.filter(crm="HubSpot", field_type="Opportunity").count()
+    ql_map_ct = SystemFieldMapping.objects.filter(crm="HubSpot", field_type="QuoteLine").count()
+    prod_map_ct = SystemFieldMapping.objects.filter(crm="HubSpot", field_type="Product").count()
+    report["checks"]["mappings.opportunity_count"] = opp_map_ct
+    report["checks"]["mappings.quoteline_count"] = ql_map_ct
+    report["checks"]["mappings.product_count"] = prod_map_ct
+    if opp_map_ct == 0:
+        ok = False
+        report["errors"].append("No Opportunity field mappings configured for HubSpot")
+    if ql_map_ct == 0:
+        ok = False
+        report["errors"].append("No QuoteLine field mappings configured for HubSpot")
+
+    # Optional: amount or name present on opportunity
+    has_name = bool(getattr(opp, 'name', None))
+    report["checks"]["opportunity.has_name"] = has_name
+    if not has_name:
+        ok = False
+        report["errors"].append("Opportunity 'name' is required by most HubSpot deals")
+
+    return ok, report
+
+
+@csrf_exempt
+def debug_validate_sync_view(request):
+    """Diagnostic endpoint to validate (and optionally run) a HubSpot sync for an opportunity.
+    Usage: POST with form data: opportunity_id=ID, user_id=default, run=1 to execute
+    """
+    if request.method != 'POST':
+        return JsonResponse({"error": "POST only"}, status=405)
+    opportunity_id = request.POST.get('opportunity_id')
+    user_id = request.POST.get('user_id', 'default')
+    run_flag = request.POST.get('run') == '1'
+    if not opportunity_id:
+        return JsonResponse({"error": "Missing opportunity_id"}, status=400)
+
+    ok, report = validate_opportunity_sync_prereqs(opportunity_id, user_id=user_id)
+    report["ok"] = ok
+
+    if ok and run_flag:
+        try:
+            sync_opportunity_to_hubspot(opportunity_id, user_id=user_id)
+            report["executed"] = True
+        except Exception as e:
+            logger.exception("[HS SYNC] Execution failed")
+            report["executed"] = False
+            report["errors"].append(str(e))
+            ok = False
+    return JsonResponse(report, status=200 if ok else 400)
 
 
 
