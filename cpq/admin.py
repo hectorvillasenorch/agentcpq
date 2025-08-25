@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django import forms
-from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact,Tenant, QuoteDocument
+from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact,Tenant, QuoteDocument, SystemFieldMapping
 from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession
 from django.contrib.contenttypes.models import ContentType
@@ -9,6 +9,7 @@ from django.urls import reverse
 from django.http import HttpResponseRedirect
 from django.utils.timezone import localtime
 from django.utils.text import slugify
+
 # admin.site.register(Subscription)
 # admin.site.register(Asset)
 
@@ -445,3 +446,10 @@ class ChatSessionAdmin(admin.ModelAdmin):
     list_display = ('session_id', 'user', 'title', 'created_at')
     readonly_fields = ('created_at',)
     inlines = [ChatMessageInline]
+
+
+@admin.register(SystemFieldMapping)
+class SystemFieldMappingAdmin(admin.ModelAdmin):
+    list_display = ('crm', 'field_type', 'local_field', 'crm_field')
+    list_filter   = ('crm', 'field_type')
+    search_fields = ('local_field', 'crm_field')
