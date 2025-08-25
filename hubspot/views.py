@@ -444,6 +444,7 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
                 # One-time charges must NOT include recurring fields
                 properties.pop("recurringbillingfrequency", None)
                 properties.pop("hs_recurring_billing_terms", None)
+                properties.pop("hs_recurring_billing_period", None)
             else:
                 if not freq and getattr(line, "term", None):
                     # Default frequency if term is given but no explicit frequency
@@ -455,6 +456,18 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
                         derived_terms = derive_terms_from_months(term_months, freq)
                         if derived_terms is not None:
                             properties["hs_recurring_billing_terms"] = derived_terms
+                    # Also set ISO-8601 period (e.g., P12M) expected by HubSpot for the Term property
+                    try:
+                        term_months_val = getattr(line, "term", None)
+                        if term_months_val not in (None, "", 0, "0"):
+                            term_int = int(term_months_val)
+                            if term_int > 0:
+                                properties["hs_recurring_billing_period"] = f"P{term_int}M"
+                    except Exception as e:
+                        logger.warning(
+                            "[HS SYNC] Could not set hs_recurring_billing_period from term=%r: %s",
+                            getattr(line, "term", None), e
+                        )
                 else:
                     # Invalid or unknown frequency: drop recurring props to avoid HS validation errors
                     properties.pop("recurringbillingfrequency", None)
@@ -463,12 +476,18 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
             # Log what we’re about to send for troubleshooting
             try:
                 logger.info(
-                    "[HS SYNC] Line %s local(freq=%r, term_months=%r) -> final(freq=%r, terms=%r)",
+                    "[HS SYNC] Line %s local(freq=%r, term_months=%r) -> final(freq=%r, terms=%r, period=%r)",
                     getattr(line, "id", None), getattr(line, "billing_frequency", None), getattr(line, "term", None),
-                    properties.get("recurringbillingfrequency"), properties.get("hs_recurring_billing_terms")
+                    properties.get("recurringbillingfrequency"), properties.get("hs_recurring_billing_terms"), properties.get("hs_recurring_billing_period")
                 )
             except Exception:
                 logger.exception("[HS SYNC] Failed logging line item term mapping")
+
+            logger.debug(
+                "[HS SYNC] Line %s payload subset: %s",
+                getattr(line, "id", None),
+                {k: properties.get(k) for k in ("name", "price", "quantity", "recurringbillingfrequency", "hs_recurring_billing_terms", "hs_recurring_billing_period")}
+            )
 
             line_item_data = {"properties": properties}
             print(f"✅ line_item_data %%%%%%%%%%%%%%%%%%%%%% {line_item_data}")
