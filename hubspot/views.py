@@ -14,11 +14,40 @@ from django.utils import timezone
 from decimal import Decimal
 import re
 import datetime
+from math import ceil
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.shortcuts import redirect
 
+
 logger = logging.getLogger(__name__)
+
+# --- Recurring term mapping helpers ---
+FREQ_MAP = {
+    "month": "monthly", "monthly": "monthly", "m": "monthly",
+    "quarter": "quarterly", "quarterly": "quarterly", "q": "quarterly",
+    "year": "annually", "annual": "annually", "annually": "annually", "y": "annually",
+    "week": "weekly", "weekly": "weekly", "w": "weekly",
+    "day": "daily", "daily": "daily", "d": "daily",
+}
+ALLOWED_FREQ = {"monthly", "quarterly", "annually", "weekly", "daily"}
+ONE_TIME_SENTINELS = {"one-time", "one time", "onetime", "single", "once", "none", "no", "n/a", "na"}
+MONTHS_PER_PERIOD = {"monthly": 1, "quarterly": 3, "annually": 12, "weekly": None, "daily": None}
+
+def normalize_frequency(val):
+    if not val:
+        return None
+    s = str(val).strip().lower()
+    return FREQ_MAP.get(s, s)
+
+def derive_terms_from_months(term_months, freq):
+    mpp = MONTHS_PER_PERIOD.get(freq)
+    if not mpp or term_months is None:
+        return None
+    try:
+        return max(1, ceil(int(term_months) / mpp))
+    except Exception:
+        return None
 
 load_dotenv()
 HUBSPOT_CLIENT_ID = os.getenv("HS_CID")
@@ -388,9 +417,7 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
                     for attr in local_field.split("."):
                         value = getattr(value, attr)
 
-                    if local_field == "term" and value:
-                        value = f"P{int(value)}M"
-
+                    # Do NOT convert term to ISO duration here; we will map to hs_recurring_billing_terms below
                     if isinstance(value, Decimal):
                         value = str(value)
                     elif isinstance(value, datetime.datetime):
@@ -403,6 +430,45 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
 
                 except Exception as e:
                     print(f"⚠️ Error resolving field '{local_field}': {e}")
+
+            # --- Normalize billing frequency & derive terms ---
+            freq_raw = properties.get("recurringbillingfrequency") or getattr(line, "billing_frequency", None)
+            freq = normalize_frequency(freq_raw) if freq_raw else None
+
+            is_one_time = (
+                (freq and str(freq).lower() in ONE_TIME_SENTINELS) or
+                (getattr(line, "term", None) in (0, "0", None) and not freq)
+            )
+
+            if is_one_time:
+                # One-time charges must NOT include recurring fields
+                properties.pop("recurringbillingfrequency", None)
+                properties.pop("hs_recurring_billing_terms", None)
+            else:
+                if not freq and getattr(line, "term", None):
+                    # Default frequency if term is given but no explicit frequency
+                    freq = "monthly"
+                if freq in ALLOWED_FREQ:
+                    properties["recurringbillingfrequency"] = freq
+                    if "hs_recurring_billing_terms" not in properties:
+                        term_months = getattr(line, "term", None)
+                        derived_terms = derive_terms_from_months(term_months, freq)
+                        if derived_terms is not None:
+                            properties["hs_recurring_billing_terms"] = derived_terms
+                else:
+                    # Invalid or unknown frequency: drop recurring props to avoid HS validation errors
+                    properties.pop("recurringbillingfrequency", None)
+                    properties.pop("hs_recurring_billing_terms", None)
+
+            # Log what we’re about to send for troubleshooting
+            try:
+                logger.info(
+                    "[HS SYNC] Line %s local(freq=%r, term_months=%r) -> final(freq=%r, terms=%r)",
+                    getattr(line, "id", None), getattr(line, "billing_frequency", None), getattr(line, "term", None),
+                    properties.get("recurringbillingfrequency"), properties.get("hs_recurring_billing_terms")
+                )
+            except Exception:
+                logger.exception("[HS SYNC] Failed logging line item term mapping")
 
             line_item_data = {"properties": properties}
             print(f"✅ line_item_data %%%%%%%%%%%%%%%%%%%%%% {line_item_data}")
