@@ -48,7 +48,7 @@
     
         <div class="divider"></div>
         <div class="session-list">
-            <p class="session-list-title">Chat History</p>
+            <p class="session-list-title">Recent Activity</p>
             {% for chat in chat_sessions %}
                 <a href="{% url 'dashboard' %}?view=agents&session_id={{ chat.session_id }}" class="chat-history-item" data-session-id="{{ chat.session_id }}">
                     <i class="material-icons">chat</i>
