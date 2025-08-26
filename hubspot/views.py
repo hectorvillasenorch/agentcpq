@@ -549,6 +549,22 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
 
     print(f"✅ Successfully {action} HubSpot deal {hs_deal_id} for opportunity {opportunity.id}")
 
+    # 💵 Update HubSpot deal amount from Quote.net_amount only
+    try:
+        deal_amount = getattr(quote, 'net_amount', None)
+        if deal_amount is not None:
+            amount_payload = {"properties": {"amount": str(deal_amount)}}
+            amount_url = f"https://api.hubapi.com/crm/v3/objects/deals/{hs_deal_id}"
+            amount_resp = requests.patch(amount_url, headers=headers, json=amount_payload)
+            if amount_resp.status_code in (200, 201):
+                logger.info("[HS SYNC] Updated deal %s amount to %s", hs_deal_id, deal_amount)
+            else:
+                logger.error("[HS SYNC] Failed to update deal amount: %s — %s", amount_resp.status_code, amount_resp.text)
+        else:
+            logger.warning("[HS SYNC] Quote.net_amount is None; skipping deal amount update")
+    except Exception as e:
+        logger.exception("[HS SYNC] Exception while updating deal amount: %s", e)
+
 
 def delete_existing_line_items(deal_id, headers):
     # 🔍 Get associated line items
