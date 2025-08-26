@@ -56,7 +56,7 @@ INSTALLED_APPS = [
     "cpq",
     "agentcpq",
     "agents",
-    "dashboard",
+    "dashboard.apps.DashboardConfig",
     "salesforce",
     "hubspot",
     'django.contrib.humanize',
