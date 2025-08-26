@@ -6,4 +6,5 @@ class DashboardConfig(AppConfig):
     name = "dashboard"
 
     def ready(self):
-        from . import signals
+        import importlib
+        importlib.import_module('dashboard.signals')
