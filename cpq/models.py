@@ -306,6 +306,7 @@ class Quote(models.Model):
     last_synced_at = models.DateTimeField(null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_quotes')
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quotes')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_quotes')
 
 
     def get_total_discount_percentage(self):
@@ -357,16 +358,18 @@ class Quote(models.Model):
         if self.tax_percentage != Decimal("0.00"):
             self.tax_amount = (self.net_amount * self.tax_percentage / Decimal("100.00")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             self.net_amount = (self.net_amount + self.tax_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        elif self.tax_percentage == Decimal("0.00"):
+            self.tax_amount = Decimal("0.00")
 
     def update_tax(self):
         try:
             settings = QuoteDocumentSettings.objects.first()
             if settings and settings.quote_tax:
-                self.tax_percentage = settings.quote_tax
+                self.tax_percentage = Decimal(str(settings.quote_tax))
             else:
-                self.tax_amount = Decimal("0.00")
+                self.tax_percentage = Decimal("0.00")
         except QuoteDocumentSettings.DoesNotExist:
-            self.tax_amount = Decimal("0.00")
+            self.tax_percentage = Decimal("0.00")
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -1231,3 +1234,16 @@ class EmailAlertRecipient(models.Model):
 
     class Meta:
         unique_together = ("email_alert", "user")
+
+class EmailAlertLog(models.Model):
+    email_alert = models.ForeignKey("EmailAlert", on_delete=models.CASCADE)
+    instance_type = models.CharField(max_length=50)  # 'Quote' o 'Subscription'
+    instance_id = models.BigIntegerField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("email_alert", "instance_type", "instance_id")
+        ordering = ["-sent_at"]
+
+    def __str__(self):
+        return f"{self.email_alert} sent to {self.instance_type} {self.instance_id} at {self.sent_at}"

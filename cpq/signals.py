@@ -1,12 +1,14 @@
 from django.db.models.signals import pre_save, post_save, pre_delete, post_delete
 from django.dispatch import receiver
-from cpq.models import Lead,Quote,Tenant,QuoteDocumentSettings, Account, Opportunity, CustomObject, CustomField, CustomRecord
+from cpq.models import Lead,Quote,Tenant, Quote, Account, Opportunity, CustomObject, CustomField, CustomRecord
 from hubspot.views import sync_quote_to_hubspot
 from .custom_objects.custom_objects import set_custom_indentifier
 from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
+import logging, threading
 
 # EMAIL ALERT FUNCTIONS
-from .notifications.notifications import notify_lead_created, notify_account_created, notify_opportunity_created
+from .notifications.notifications import notify_lead_created, notify_account_created, notify_opportunity_created, notify_opportunity_closed_won, notify_opportunity_closed_lost, notify_quote_sent_for_approval
+from .notifications.notifications import notify_quote_approved, notify_quote_rejected
 
 
 @receiver(post_save, sender=Quote)
@@ -37,23 +39,25 @@ def set_or_create_custom_identifier_for_record(sender, instance, created, **kwar
 
 # 📧🔔 EMAIL NOTIFICATIONS SIGNALS
 
+from .utils import run_async
+
 # LEAD HAS BEEN CREATED
 @receiver(post_save, sender=Lead)
 def send_lead_created_email(sender, instance, created, **kwargs):
     if created:
-        notify_lead_created(instance)
+        run_async(notify_lead_created, instance)
 
 # ACCOUNT HAS BEEN CREATE
 @receiver(post_save, sender=Account)
 def send_account_created_email(sender, instance, created, **kwargs):
     if created:
-        notify_account_created(instance)
+        run_async(notify_account_created, instance)
 
 # OPPORTUNITY HAS BEEN CREATED
 @receiver(post_save, sender=Opportunity)
 def send_opportunity_created_email(sender, instance, created, **kwargs):
     if created:
-        notify_opportunity_created(instance)
+        run_async(notify_opportunity_created, instance)
 
 
 # OPPORTUNITY HAS CHANGE STAGE TO CLOSED WON OR CLOSED LOST
@@ -73,8 +77,67 @@ def check_opportunity_stage_change(sender, instance, **kwargs):
         if instance.stage == "Closed Won":
             print(f"Opportunity {instance.id} moved to Closed Won ✅")
             # Aquí llamas a tu función
-            # notify_opportunity_closed_won(instance)
+            run_async(notify_opportunity_closed_won, instance)
 
         elif instance.stage == "Closed Lost":
             print(f"Opportunity {instance.id} moved to Closed Lost ❌")
-            # notify_opportunity_closed_lost(instance)
+            run_async(notify_opportunity_closed_lost, instance)
+
+
+# QUOTE IS SENT FOR APPROVAL
+@receiver(pre_save, sender=Quote)
+def check_quote_status_change(sender, instance, **kwargs):
+    if not instance.pk:
+        # Es nuevo, no hay cambio
+        return
+
+    try:
+        old_instance = Quote.objects.get(pk=instance.pk)
+    except Quote.DoesNotExist:
+        return
+
+    # Compara el status anterior con el nuevo
+    if old_instance.status != instance.status:
+        if instance.status == "Pending Approval":
+            logging.info(f"Quote {instance.id} status changed to Pending Approval 🟢")
+            # Aquí llamas a la función que quieras, por ejemplo:
+            run_async(notify_quote_sent_for_approval, instance)
+
+# QUOTE HAS BEEN APPROVED
+@receiver(pre_save, sender=Quote)
+def quote_approved_signal(sender, instance, **kwargs):
+    if not instance.pk:
+        # This is a new quote, no previous status to compare
+        return
+
+    try:
+        old_instance = Quote.objects.get(pk=instance.pk)
+    except Quote.DoesNotExist:
+        return
+
+    # Compare previous status with the new status
+    if old_instance.status != instance.status:
+        if instance.status == "Approved":
+            logging.info(f"Quote {instance.id} changed to Approved ✅")
+            # Call your notification or post-approval logic here
+            run_async(notify_quote_approved, instance)
+
+
+# QUOTE HAS BEEN REJECTED
+@receiver(pre_save, sender=Quote)
+def quote_rejected_signal(sender, instance, **kwargs):
+    if not instance.pk:
+        # This is a new quote, no previous status to compare
+        return
+
+    try:
+        old_instance = Quote.objects.get(pk=instance.pk)
+    except Quote.DoesNotExist:
+        return
+
+    # Compare previous status with the new status
+    if old_instance.status != instance.status:
+        if instance.status == "Rejected":
+            logging.info(f"Quote {instance.id} changed to Rejected ❌")
+            # Call your notification or post-rejection logic here
+            run_async(notify_quote_rejected, instance)

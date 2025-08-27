@@ -1,0 +1,21 @@
+{% load humanize %}
+Hello{% if user %} {{ user.first_name|default:user.username }}{% endif %},
+
+The quote {{ quote.name }} has been rejected.
+
+Quote Details:
+{% if quote.net_amount %}
+- Amount: ${{ quote.net_amount|floatformat:2|intcomma }}
+{% else %}
+- Amount: $0.00
+{% endif %}
+- Status: {{ quote.status }}
+
+Rejected on: {{ quote.updated_at|date:"F j, Y, g:i a" }}
+{% if quote.updated_by %}
+Rejected by: {{ quote.updated_by.get_full_name|default:quote.updated_by.username }}
+{% endif %}
+
+Please review the quote and make the necessary changes if applicable.
+
+This email was automatically sent by the AgentCPQ system — please do not reply.

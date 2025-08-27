@@ -1126,6 +1126,91 @@ def extract_email_alert_updates(user, user_message, custom_objects, users):
         return None
 
 
+# FUNCTION TO EXTRACT EMAIL ALERT DELETES (DELETE_EMAIL_ALERT)
+def extract_email_alerts_deletes(user_message):
+    """Use GPT to extract the details for email alerts to delete from the user message"""
+
+    prompt = f"""
+    Extract structured data from the user’s message to delete one or multiple email alerts.
+    Return a JSON array of objects, where each object must include:
+
+    - "alert_name" (string): The name of the email alert to be deleted.
+
+    **Example Input & Output:**
+
+    User: "I’d like to delete the alert with the name account_created__054"
+    Response:
+    [
+        {{
+            "alert_name": "account_created__054"
+        }}
+    ]
+
+    User: "Delete the notification lead_created__009"
+    Response:
+    [
+        {{
+            "alert_name": "lead_created__009"
+        }}
+    ]
+
+    User: "Delete opportunity_created__065 and account_created__065"
+    Response:
+    [
+        {{
+            "alert_name": "opportunity_created__065"
+        }},
+        {{
+            "alert_name": "account_created__065"
+        }}
+    ]
+
+
+    **Requirements:**
+    - If "alert_name" is not specified, set it as null.
+
+    **IMPORTANT:** **Return a valid JSON array only of objects. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json).**
+
+    User Request: "{user_message}"
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Extract structured email alert deletions from user message."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        raw_response = response.choices[0].message.content.strip()
+        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+
+        # Quita ```json ... ```
+        cleaned_response = clean_llm_response(raw_response)
+        logging.info(f"\n\n🧹 Cleaned GPT Response: {cleaned_response}\n\n")
+
+        try:
+            extracted_alerts = json.loads(cleaned_response)
+
+            # 🔑 Solo devolvemos lista de {alert_name}
+            normalized_alerts = []
+            for alert in extracted_alerts:
+                normalized_alerts.append({
+                    "alert_name": alert.get("alert_name") or None
+                })
+
+            return normalized_alerts
+
+        except json.JSONDecodeError:
+            logging.error(f"❌ GPT returned invalid JSON: {cleaned_response}")
+            return None
+
+    except Exception as e:
+        logging.error(f"❌ Error extracting email alert deletions: {str(e)}")
+        return None
+
+
 def clean_llm_response(raw_response: str) -> str:
     # Clean triple backticks and text json if are present
     pattern = r"```(?:json)?\s*(.*?)\s*```"

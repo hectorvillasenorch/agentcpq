@@ -1,0 +1,21 @@
+{% if user %}Hello {{ user.first_name|default:user.username }},{% else %}Hello,{% endif %}
+
+A new lead "{{ lead.name }}" has been created{% if lead.created_by %} by {{ lead.created_by.first_name|default:lead.created_by.username }}.{% endif %}
+
+{% if lead.phone or lead.email or lead.source or lead.contact or lead.status or lead.notes or lead.assigned_to %}
+Lead Details:
+{% if lead.phone %}- Phone: {{ lead.phone }}{% endif %}
+{% if lead.email %}- Email: {{ lead.email }}{% endif %}
+{% if lead.source %}- Source: {{ lead.source }}{% endif %}
+{% if lead.contact %}- Contact: {{ lead.contact }}{% endif %}
+{% if lead.status %}- Status: {{ lead.status }}{% endif %}
+{% if lead.notes %}- Notes: {{ lead.notes }}{% endif %}
+{% if lead.assigned_to %}- Assigned To: {{ lead.assigned_to }}{% endif %}
+{% endif %}
+
+Created on: {{ lead.created_at|date:"F j, Y, g:i a" }}
+
+Thank you!
+
+---
+This email was automatically sent by the AgentCPQ system — please do not reply.
