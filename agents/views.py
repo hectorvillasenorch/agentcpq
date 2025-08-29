@@ -67,6 +67,7 @@ def _handle_pending_action(pending_action, user_message, session_data):
 @csrf_exempt
 def chat_with_gpt(request):
     """API endpoint to process user messages and route them based on AI-determined intent."""
+    
     # --- 1. Validate request method ---
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request method. Use POST."}, status=405)

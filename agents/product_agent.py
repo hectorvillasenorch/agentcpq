@@ -1,21 +1,30 @@
 from cpq.models import Product 
 import openai
 from dotenv import load_dotenv
-import json
+import json, inspect
 import os
 import re
-import logging
+import logging,threading
 from .utils.quote_agent.db_helpers import log_action_usage
 from decimal import Decimal
+
+from .utils.orchestrator.context_handle_helpers import estimate_cost
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 #OPENAI_MODEL = "gpt-3.5-turbo"
 OPENAI_MODEL = "gpt-4o-mini"
+logger = logging.getLogger(__name__)
 
 # Import context handle function
 from .utils.orchestrator.context_handle_helpers import save_or_update_conversation_context
 
+from .utils.product_agent.llm_helpers import extract_product_data_with_llm, generate_final_product_message
+
+from .utils.session_context_helpers.session_context_helpers import get_session_context
+
+
+from .utils.product_agent.handle_helpers import handle_create_product
 
 def product_agent(user, action, user_message, session_data):
     """Handles all quote-related actions dynamically."""
@@ -34,8 +43,62 @@ def product_agent(user, action, user_message, session_data):
     return {"message": "🤖 Sorry, I couldn’t understand your request. From Product Agent"}
 
 
-
 def create_product(user, user_message, session_data):
+    """
+    Handles product creation requests for multiple products.
+    Tracks products in session state, saves completed products, 
+    and generates dynamic messages using LLM including DB errors.
+    """
+    current_state, previous_summary = get_session_context("create_product", session_data)
+
+    # --- 1️⃣ Llamada inicial al LLM para extraer productos ---
+    llm_result, tokens_used, cost_est = extract_product_data_with_llm(
+        user_message=user_message,
+        current_state=current_state,
+        previous_summary=previous_summary
+    )
+
+    # --- 3️⃣ Separar productos completados vs incompletos ---
+    completed_products = []
+    remaining_products = []
+
+    for product in llm_result["create_product"]:
+        if product.get("completed"):
+            completed_products.append(product["data"])
+        else:
+            remaining_products.append(product)
+
+    # Guardar solo los incompletos en session state
+    session_data["state"]["create_product"] = remaining_products
+
+    # Return if not any completed products
+    if not completed_products:
+        return {
+            "message": llm_result["agent_message"],
+            "session_summary": llm_result["summary"]
+        }
+
+    # --- 4️⃣ Persistir productos completados y capturar errores ---
+    result = handle_create_product(user, completed_products)
+
+    # --- 5️⃣ Generar mensaje final dinámico usando función separada ---
+    dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_product_message(
+        completed_products=completed_products,
+        db_results=result,
+        remaining_products=remaining_products,
+        previous_summary=llm_result["summary"]
+    )
+
+    return {
+        "message": dynamic_message,
+        "tokens": tokens_used + tokens_used_final,
+        "cost": cost_est + cost_final,
+        "session_summary": updated_summary
+    }
+
+
+
+def create_product2(user, user_message, session_data):
     """Extracts product details, validates fields, and creates the product record."""
     try:
         product_details = extract_product_details(user_message, session_data)
@@ -313,32 +376,6 @@ def extract_product_details(user_request, session_data):
         logging.warning(f"⚠️ Something went wrong when LLM trying to extract product details: {raw_response}")
         return {"error": f"⚠️ Error extracting product details: {str(e)}"}
   
-def create_product_record(user,product_details):
-    """Create a new product record in the database and return a success message."""
-    try:
-        # ✅ Create the product
-        product = Product.objects.create(
-            sku=product_details["sku"],
-            name=product_details["name"],
-            price=product_details["price"],
-            is_subscription = product_details.get("is_subscription") or False,
-            term=product_details.get("term", 12),  # Default term is 12
-            is_bundle = product_details.get("is_bundle") or False,
-            description=product_details["description"] if product_details["description"] else '',
-            created_by=user,
-            updated_by=user
-        )
-
-        print("✅ DEBUG: Created Product:", product)  # Debugging step
-
-        # ✅ Instead of returning JsonResponse, return a success message string
-        log_action_usage("CreateProductRecord", user, "Product", product.sku)
-
-        return f"✅ Product `{product.sku}` successfully created.<br>"
-       
-
-    except Exception as e:
-        return f"⚠️ Error creating product: {str(e)}"
 
 def update_product_record(user,updated_product_details):
     """Update the product in the database and return a success message."""

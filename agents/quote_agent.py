@@ -54,7 +54,7 @@ def quote_agent(user, action, user_message, session_data):
 
     action_map = {
         "CreateQuote": create_quote, #CONTEXT READY
-        "AddProduct": add_product_to_quote, #CONTEXT READY
+        "AddProductToQuote": add_product_to_quote, #CONTEXT READY
         "UpdateQuoteLine": update_quote_line, #CONTEXT READY
         "UpdateQuote": update_quote, #CONTEXT READY
         "DeleteQuoteLine": delete_quote_line, #CONTEXT READY
