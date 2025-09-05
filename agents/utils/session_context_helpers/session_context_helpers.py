@@ -27,6 +27,45 @@ def get_session_context(action, session_data):
                 "summary": None
             }
 
+        if action == "update_quote_line":
+            context_data = {
+                "update_quote_line": [
+                    {
+                        "data": {
+                            "sku": None,
+                            "name": None,
+                            "fields": {
+                                "quantity": None,
+                                "discount_type": None,
+                                "discount_percentage": None,
+                                "discount_amount": None,
+                                "term": None
+                            }
+                        },
+                        "completed": False
+                    },
+                ],
+                "summary": None
+            }
+
+        if action == "add_product_to_quote":
+            context_data = {
+                "add_product_to_quote": [
+                    {
+                        "data": {
+                            "sku": None,
+                            "name": None,
+                            "quantity": None,
+                            "discount_type": None,
+                            "discount_value": None,
+                            "term": None
+                        },
+                        "completed": False
+                    },
+                ],
+                "summary": None
+            }
+
         session_data["state"] = context_data
 
     current_state = session_data["state"][action]

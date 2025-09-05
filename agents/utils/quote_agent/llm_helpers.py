@@ -8,10 +8,12 @@ from datetime import date
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-3.5-turbo"
+OPENAI_MODEL = "gpt-4o-mini"
 # OPENAI_MODEL = "gpt-4"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+from ..orchestrator.context_handle_helpers import estimate_cost
 
 # FUNCTION TO EXTRACT QUOTE DETAILS (CREATE_QUOTE)
 def extract_quote_details(user_message):
@@ -70,78 +72,6 @@ def extract_quote_details(user_message):
     except json.JSONDecodeError:
         return None
 
-
-# FUNCTION TO EXTRACT PRODUCT DETAILS (ADD_PRODUCT_TO_QUOTE)  
-def extract_product_details(user_message):
-    """Extract multiple product SKUs, quantities, and discounts from user input using GPT."""
-    prompt = f"""
-    **IMPORTANT FOR CONVERSATION CONTEXT:**
-    If the user message is accompanied by previously extracted data entries , you must:
-    - Use that data to preserve the context of each item, assuming the user is continuing an incomplete task.
-    - Only update the items the user refers, and retain the others as incomplete.
-    - Return a list of all items (updated and pending) with the following structure.
-    However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
-    **--FINAL CONVERSATION CONTEXT--**
-
-    Extract all product details from the user's request. The user may specify multiple products in a single message.
-
-    **Expected fields per product:**
-    - sku (string, unique identifier)
-    - name (string, product name)
-    - quantity (integer, default 1 if not specified)
-    - discount_type ("percentage" or "amount", based on how the user specifies the discount)
-    - discount_value (integer, default 0 if not specified)
-    - term (integer, default 0 if not specified)(term is for subscription)
-
-    **Instructions for discounts:**
-    - Use `"percentage"` for `discount_type` if the user specifies a percentage (e.g., "15%", "15 percent").
-    - Use `"amount"` for `discount_type` if the user specifies a fixed amount (e.g., "$15", "15 dollars", "15 USD").
-    - Extract the numeric part and set it as `discount_value` (e.g., "15%" → 15, "$15" → 15).
-    - If no discount is mentioned, set `"discount_type": "None"` and `"discount_value": "0"`.
-
-    **Example Input:** 
-    "Add AI-CPQ-001 x 5 with 10% discount, Agency PQ Solo x 2 with $20 discount, and AI-CPQ-004 x 10."
-
-    **Example Output:**
-    [
-        {{"sku": "AI-CPQ-001", "name": "Null", "quantity": 5, "discount_type": "percentage", "discount_value": 10, "term": null}},
-        {{"sku": "Null", "name": "Agency PQ Solo", "quantity": 2, "discount_type": "amount", "discount_value": 20, "term": null}},
-        {{"sku": "AI-CPQ-004", "name": "Null", "quantity": 1, "discount_type": "None", "discount_value": 0, "term": null}}
-    ]
-
-    **User Request:** "{user_message}"
-
-    **Return a valid JSON array only of product objects. Do not include explanations, and do not format the response as Markdown (no triple backticks or ```json) — just return the JSON.**
-    """
-
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Extract structured product details for quote addition."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        # ✅ Extract raw response
-        raw_response = response.choices[0].message.content.strip()
-        logging.info(f"🔍 Raw GPT Response: {raw_response}")
-
-        # ✅ Ensure valid JSON response
-        try:
-            extracted_products = json.loads(raw_response)
-            if isinstance(extracted_products, list) and all("sku" in p and "name" in p and "quantity" in p and "discount_type" in p and "discount_value" in p and "term" in p for p in extracted_products):
-                return extracted_products
-            else:
-                logging.warning("⚠️ GPT response is not in expected format.")
-                return None
-        except json.JSONDecodeError:
-            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
-            return None
-
-    except Exception as e:
-        logging.error(f"❌ Error extracting product details: {str(e)}")
-        return None
     
 
 # FUNCTION TO EXTRACT QUOTE LINE UPDATES (UPDATE_QUOTE_LINE)    
@@ -516,3 +446,409 @@ def extract_quote_level_discount(user_message):
     except Exception as e:
         logging.error(f"❌ Error extracting discount quote details: {str(e)}")
         return None
+    
+
+# NUEVOS LLM HELPERS, EVENTUALMENTE BORRAR LOS DE ARRIBA
+
+def extract_quote_line_updates_with_llm(user_message, current_state, previous_summary=None, line_items_on_user_message=None):
+    """
+    Uses LLM to extract structured quote line updates from user input.
+    Returns JSON, tokens used, and estimated cost.
+    """
+    
+    system_prompt = """
+    You are a helpful AI assistant that updates quote line items from user messages.
+    Always return JSON with structure:
+    {
+    "update_quote_line": [
+        {
+        "data": {
+            "sku": null,
+            "name": null,
+            "fields": {
+                "quantity": null,
+                "discount_type": null,
+                "discount_percentage": null,
+                "discount_amount": null,
+                "term": null,
+                "unit_price": null
+            }
+        },
+        "completed": false
+        }
+    ],
+    "agent_message": "string",
+    "summary": "string"
+    }
+
+    Rules:
+    1. I will provide you with a list of dictionaries containing the line items mentioned by the user in their message under "Current line items mentioned." Your task is to modify only the fields the user specifies with the values they provide.
+
+    2. If the user attempts to modify a line item that is not found in "Current line items mentioned," indicate in the agent_message that the product is not in the quote.
+
+    3. Only modify the fields that the user mentions, do not change the rest.
+
+    4. If the user attempts to do anything other than update a line item, do not modify any data and indicate in the agent_message that this agent can only update a line item/quote_lines.
+
+    5. If the user's intention is to delete the value of a field, set that value to 0.
+
+    6. If the user wants to remove the discount from a line item, set discount_percentage to 0, discount_amount to 0, and discount_type to "percentage."
+
+    7. If the user adds a discount to the line item as a percentage, calculate the discount_amount based on the provided unit_price for that line item. Conversely, if the user wants to apply a discount amount, then calculate the discount_percentage based on the unit_price.
+
+    8. If the user updates any discount in percentage, set discount_type to "percentage." If they update any discount in amount, set discount_type to "amount."
+
+    9. Fields quantity, discount_percentage, and discount_amount must not return as null.
+
+    10. Mark "completed" as true if a line item receives an update, provided it is within the following parameters:
+    - quantity: integer >= 0  
+    - term: integer between 1 and 12  
+    - discount_percentage: between 0 and 100  
+    - discount_amount: >= 0 and <= unit_price (if unit_price is provided)  
+    - If unit_price is provided:  
+    - discount_percentage → discount_amount = (discount_percentage / 100) * unit_price  
+    - discount_amount → discount_percentage = (discount_amount / unit_price) * 100  
+    - If unit_price is NOT provided, just set the discount as given by the user.
+
+    11. Support flexible update actions: add, remove, delete, multiply, duplicate, divide, among others.
+
+    12. The only fields can be updated are: quantity, discount_type, discount_amount, discount_percentage and term.
+    - Do not mention or claim updates on any other fields.
+
+    - Only update the fields explicitly mentioned by the user. 
+    - Do not assume or fill in fields that the user did not specify.
+    - Do not include unchanged information in the agent_message.
+    - Only include line items in "update_quote_line" if at least one field is actually modified. Do not include line items where no changes were applied.
+    - If a line item has no changes, do not include it in update_quote_line
+    
+
+    Agent message:
+    - If no products or quote lines are mentioned in "Current line items mentioned", respond naturally asking the user which products they want to update. Use language that a regular user would understand, without emphasizing technical or internal terms. It's okay to mention 'quote lines' if it helps clarity, but keep the message user-friendly.
+    - Generate a natural response for the user explaining what happened: updates, errors, missing information, questions for the user, requests for data, etc.
+    - Short, professional, natural.
+    - Don't be technical.
+    - Continue naturally (do NOT start with 'Hello' or 'Hi')
+    - Use <br> for line breaks
+    - Include information if the user tried to update a product that does not exist.
+    - Do not explain if there are no failed or incomplete quote lines.
+    - If the user requests to modify a field but the value would be the same as the existing one, explain naturally that no changes were applied because the value is already the same.
+    
+    Summary:
+    - Create a short summary combining previous summary + this iteration.
+    """
+
+
+    user_prompt = f"""
+    User message: "{user_message}"
+
+    Current line items mentioned:
+    {json.dumps(line_items_on_user_message, indent=2)}
+
+    Previous summary:
+    {previous_summary if previous_summary else "None"}
+
+    Return JSON as described above.
+    """
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+
+    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    logging.info(f"\n\n💰 LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
+
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=messages,
+        temperature=0.8
+    )
+
+    raw_response = response.choices[0].message.content.strip()
+    logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+
+    try:
+        result_json = json.loads(raw_response)
+    except json.JSONDecodeError as e:
+        logging.error(f"❌ JSON decode error: {str(e)}")
+        return None, tokens_used, cost_est
+
+    # Normalize structure
+    normalized_updates = []
+    for item in result_json.get("update_quote_line", []):
+        normalized_updates.append({
+            "data": {
+                "sku": item.get("data", {}).get("sku") or item.get("sku"),
+                "name": item.get("data", {}).get("name") or item.get("name"),
+                "fields": {
+                    "quantity": item.get("data", {}).get("fields", {}).get("quantity"),
+                    "discount_percentage": item.get("data", {}).get("fields", {}).get("discount_percentage"),
+                    "discount_amount": item.get("data", {}).get("fields", {}).get("discount_amount"),
+                    "term": item.get("data", {}).get("fields", {}).get("term"),
+                    "unit_price": item.get("data", {}).get("fields", {}).get("unit_price"),
+                }
+            },
+            "completed": item.get("completed", False)
+        })
+    result_json["update_quote_line"] = normalized_updates
+
+    return result_json, tokens_used, cost_est
+
+
+def generate_final_update_line_items_message(completed_updates, db_results, remaining_updates, previous_summary):
+    """
+    Generates in ONE LLM call:
+    1) A concise, professional, emoji-rich message for the user.
+    2) An updated short summary that extends the previous summary with changes from this iteration.
+    Returns (message_text, updated_summary, tokens_used, cost_est).
+    """
+
+    successful = [r['product'] for r in db_results if r['status'] == 'success']
+    failed = [(r['product'], r['error']) for r in db_results if r['status'] == 'fail']
+
+    final_prompt = f"""
+    This is an ongoing conversation about quote line update. 
+    The assistant should return a JSON with two fields only: "message" and "summary".
+
+    Context:
+    - User initially wanted to update or create these products: {completed_updates}.
+    - Quote lines successfully saved: {successful}.
+    - Quote lines failed to save (with errors): {failed}.
+    - Quote lines still incomplete: {remaining_updates}.
+    - Previous summary: {previous_summary}.
+
+    Instructions for "message":
+    - Be short, friendly, professional, natural, ask follow-ups, concise but specific and friendly.
+    - Mention only which quote lines were successfully updated and which are still pending or incomplete.
+    - Do NOT include the detailed changes made to each line item; those details are already captured in the "summary".
+    - For failed quote lines updates, mention the quote line and its error, but only if there are any.
+    - For incomplete quote lines updates, briefly mention them ONLY if there are any. 
+    If none exist, omit this section entirely (do not mention that there are no incomplete lines).
+    - Omit entire sections if there are no quote lines in that category.
+    - End by asking a short, natural follow-up question about next steps.
+    - The message is user-facing and can use <br> for line breaks.
+    - If an update fails, explain it as a short, natural comment for the user, not as a system error. Keep it user-friendly and conversational, not technical or formal.
+
+    Instructions for "summary":
+    - Write a short but detailed summary that continues the previous summary with the new changes.
+    - Summarize successes, failures, and incompletes in 2–4 sentences max.
+    - The summary is NOT for the user directly, it's for keeping track of progress across iterations.
+
+    ⚠️ IMPORTANT: Return ONLY valid JSON in this format:
+    {{
+        "message": "...",
+        "summary": "..."
+    }}
+    """
+
+    messages_for_llm = [
+        {"role": "system", "content": "You are a concise and friendly AI assistant for CPQ quote lines updates."},
+        {"role": "user", "content": final_prompt}
+    ]
+
+    tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
+    logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
+
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=messages_for_llm,
+        temperature=0.7,
+        response_format={"type": "json_object"}  # fuerza JSON válido (si usas GPT-4.1 / GPT-4o / GPT-5)
+    )
+
+    raw_output = response.choices[0].message.content.strip()
+    logging.info(f"\n\n🔍 Raw GPT JSON Response: {raw_output}\n\n")
+
+    try:
+        parsed = json.loads(raw_output)
+        message = parsed.get("message", "").strip()
+        updated_summary = parsed.get("summary", "").strip()
+    except Exception as e:
+        logging.error(f"❌ Error parsing LLM JSON output: {e}")
+        message = raw_output
+        updated_summary = previous_summary
+
+    return message, updated_summary, tokens_used, cost_est
+
+
+# FUNCTION TO EXTRACT PRODUCT DETAILS (ADD_PRODUCT_TO_QUOTE)  
+def extract_products_to_add_with_llm(user_message, current_state, previous_summary=None):
+    """Extract multiple product SKUs, quantities, and discounts from user input using GPT."""
+    
+    # 👉 Si es lista, imprimir con índices
+    if isinstance(current_state, list):
+        print("\n📦 Current State (indexed):")
+        for idx, item in enumerate(current_state, start=1):
+            print(f"\n[{idx}] {json.dumps(item, indent=2)}")
+    else:
+        # 👉 Si es dict, imprimir directo formateado
+        print("\n📦 Current State (dict):")
+        print(json.dumps(current_state, indent=2))
+
+    system_prompt = """
+    You are a helpful AI assistant that extracts product data from user messages.
+    Always return JSON with structure:
+    {
+        "add_product_to_quote": [
+            {
+                "data": {
+                    "sku": null,
+                    "name": null,
+                    "quantity": null,
+                    "discount_type": null,
+                    "discount_value": null,
+                    "term": null
+                },
+                "completed": False
+            },
+        ],
+        "agent_message": "string",
+        "summary": "string"
+    }
+
+    Rules:
+    - Treat the JSON as ATTEMPTS to add products, NOT confirmations.
+    - Required fields: (SKU and quantity) OR (Name and quantity).
+    - completed=true if one of these combinations is present:
+    1. SKU + quantity
+    2. Name + quantity
+    - Do NOT ask for both SKU and Name if one of them is already present.
+    - Optional: discount_value and term.
+    - completed=true only if required fields are present.
+    - If completed=false, agent_message must politely ask for missing information instead of confirming the addition.
+    - NEVER say "product has been added" or similar; only acknowledge the user's request or attempt.
+    - agent_message should be short, friendly, professionalz, and can ask follow-up questions.
+    - This message is a continuation of an ongoing conversation. Do NOT start with greetings like 'Hello' or 'Hi'. Just continue naturally.
+    - The message is sensitive to HTML tags, so if you want to make line breaks use the <br> tag.
+    - Create a short, detailed summary that extends the previous summary with changes from this iteration.
+    - The summary must always explain the current state + why completed is false (if false) OR confirm completeness (if true).
+    - If quantity is missing, assume 1 by default, but still mark completed=false unless the user confirmed it explicitly.
+    """
+
+    user_prompt = f"""
+    User message: "{user_message}"
+
+    Current state:
+    {json.dumps(current_state, indent=2)}
+
+    Previous summary:
+    {previous_summary if previous_summary else "None"}
+
+    Return JSON as described above.
+    """
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+
+    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    logging.info(f"\n\n💰 FIRST LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
+
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=messages,
+        temperature=1
+    )
+
+    raw_response = response.choices[0].message.content.strip()
+    logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+
+    try:
+        result_json = json.loads(raw_response)
+    except json.JSONDecodeError as e:
+        logging.error(f"❌ JSON decode error: {str(e)}")
+        return None, tokens_used, cost_est
+
+    # Normalize structure
+    normalized_products = []
+    for prod in result_json.get("add_product_to_quote", []):
+        normalized_products.append({
+            "data": {
+                "sku": prod.get("data", {}).get("sku") or prod.get("sku"),
+                "name": prod.get("data", {}).get("name") or prod.get("name"),
+                "quantity": prod.get("data", {}).get("quantity") or prod.get("quantity"),
+                "discount_type": prod.get("data", {}).get("discount_type"),
+                "discount_value": prod.get("data", {}).get("discount_value"),
+                "term": prod.get("data", {}).get("term")
+            },
+            "completed": prod.get("data", {}).get("completed", prod.get("completed", False))
+        })
+    result_json["create_product"] = normalized_products
+
+    return result_json, tokens_used, cost_est
+
+def generate_final_add_product_to_quote_message2(completed_products, db_results, remaining_products, previous_summary):
+    """
+    Generates in ONE LLM call:
+    1) A concise, professional, emoji-rich message for the user.
+    2) An updated short summary that extends the previous summary with changes from this iteration.
+    Returns (message_text, updated_summary, tokens_used, cost_est).
+    """
+
+    successful = [r['product'] for r in db_results if r['status'] == 'success']
+    failed = [(r['product'], r['error']) for r in db_results if r['status'] == 'fail']
+
+    final_prompt = f"""
+    This is an ongoing conversation about add products to quote. 
+    The assistant should return a JSON with two fields only: "message" and "summary".
+
+    Context:
+    - User initially wanted to add to quote these products: {completed_products}.
+    - Products successfully added: {successful}.
+    - Products failed to add (with errors): {failed}.
+    - Products still incomplete: {remaining_products}.
+    - Previous summary: {previous_summary}.
+
+    Instructions for "message":
+    - Be short, friendly, professional, natural, ask follow-ups, concise but specific and friendly.
+    - Mention only which products were successfully added and which are still pending or incomplete.
+    - Do NOT include the detailed changes made to each product; those details are already captured in the "summary".
+    - For failed products added, mention the quote line and its error, but only if there are any.
+    - For incomplete products, briefly mention them ONLY if there are any. 
+    If none exist, omit this section entirely (do not mention that there are no incomplete products).
+    - Omit entire sections if there are no products in that category.
+    - End by asking a short, natural follow-up question about next steps.
+    - The message is user-facing and can use <br> for line breaks.
+    - If an add fails, explain it as a short, natural comment for the user, not as a system error. Keep it user-friendly and conversational, not technical or formal.
+
+    Instructions for "summary":
+    - Write a short but detailed summary that continues the previous summary with the new changes.
+    - Summarize successes, failures, and incompletes in 2–4 sentences max.
+    - The summary is NOT for the user directly, it's for keeping track of progress across iterations.
+
+    ⚠️ IMPORTANT: Return ONLY valid JSON in this format:
+    {{
+        "message": "...",
+        "summary": "..."
+    }}
+    """
+
+    messages_for_llm = [
+        {"role": "system", "content": "You are a concise and friendly AI assistant for CPQ products to add."},
+        {"role": "user", "content": final_prompt}
+    ]
+
+    tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
+    logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
+
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=messages_for_llm,
+        temperature=0.7,
+        response_format={"type": "json_object"}  # fuerza JSON válido (si usas GPT-4.1 / GPT-4o / GPT-5)
+    )
+
+    raw_output = response.choices[0].message.content.strip()
+    logging.info(f"\n\n🔍 Raw GPT JSON Response: {raw_output}\n\n")
+
+    try:
+        parsed = json.loads(raw_output)
+        message = parsed.get("message", "").strip()
+        updated_summary = parsed.get("summary", "").strip()
+    except Exception as e:
+        logging.error(f"❌ Error parsing LLM JSON output: {e}")
+        message = raw_output
+        updated_summary = previous_summary
+
+    return message, updated_summary, tokens_used, cost_est

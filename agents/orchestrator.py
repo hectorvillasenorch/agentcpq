@@ -103,48 +103,50 @@ def orchestrate_request(user, user_message, session_data):
         content=user_message
     )
 
-    # Solo para debug
     session_data.setdefault("state", {})
-    print(f"\n\nCurrent session state: {session_data["state"]}\n\n")
+    print(f"\n\nCurrent session state: {session_data['state']}\n\n")
 
-    # Get or create message history on session_data
     session_data.setdefault("message_history", [])
-
-    # 🔹 Construir historial de mensajes
     message_history = session_data.get("message_history", [])
 
-    # Recortar los últimos MAX_HISTORY mensajes
     recent_history = get_recent_messages(session_data.get("message_history", []), max_messages=6)
 
-
-    # Construir historial en formato roles
-    messages = [
-        {
-            "role": "system",
-            "content": """
-            You are an AI assistant that classifies user requests into predefined actions.
-            Only answer with ONE label from the list provided, no explanations.
-            """
-        }
-    ]
-
-    # Agregar el historial recortado
-    for msg in recent_history:
-        role = "assistant" if msg["sender"] == "agent" else "user"
-        messages.append({"role": role, "content": msg["message"]})
-        # 👇 debug: imprimir msg con índice y saltos de línea
-        print(f"\n\nIndex {recent_history.index(msg)} -> msg:\n{msg}\n\n")
-
-    # Nuevo mensaje del usuario
-    messages.append({"role": "user", "content": user_message})
-
-    # Lista de labels
+    # Labels dinámicos de Custom Objects
     custom_objects = CustomObject.objects.all()
     custom_objects_list = [co.label for co in custom_objects]
 
-    messages.append({
-        "role": "system",
-        "content": f"""
+    # 🔹 Nueva instrucción en formato JSON
+    system_prompt = f"""
+        You are an AI assistant that classifies user requests into one or more predefined actions.
+
+        STRICT RULES:
+        - Classify ONLY the content inside <LAST_USER_MESSAGE>…</LAST_USER_MESSAGE>.
+        - Conversation history is for CONTEXT ONLY. DO NOT classify anything from it.
+        - Always return a JSON array of objects.
+        - Each object must have:
+        - "action": one label from the list below
+        - "message": the exact fragment of the LAST user message related to that action
+        - If the LAST user message implies multiple actions, split it into multiple objects.
+        - Do not explain, do not add extra text, do not add emojis. Only return the JSON array.
+        - If the LAST user message implies multiple requests of the SAME action type, do not split them into multiple objects.
+        - Always return a single object per action type.
+        - In that object, include all relevant parts of the user message inside "message".
+        - Do not send multiple separate objects for the same action.
+
+        Example:
+        User: "remove discount from PRODUCT-001 and add PRODUCT-002 to quote"
+        Response:
+        [
+        {{
+            "action": "UpdateQuoteLine",
+            "message": "remove discount from PRODUCT-001"
+        }},
+        {{
+            "action": "AddProductToQuote",
+            "message": "add PRODUCT-002 to quote"
+        }}
+        ]
+
         Possible labels:
         - "CreateQuote"
         - "AddProductToQuote"
@@ -158,7 +160,7 @@ def orchestrate_request(user, user_message, session_data):
         - "DeleteQuote"
         - "CreateProductRecord"
         - "UpdateProductRecord"
-        - "SubmitForApproval" 
+        - "SubmitForApproval"
         - "CheckApprovalStatus"
         - "ApproveQuote"
         - "RejectQuote"
@@ -186,7 +188,26 @@ def orchestrate_request(user, user_message, session_data):
         - "UpdateEmailAlert"
         - "DeleteEmailAlert"
         """
-    })
+    
+    # Construye un texto de historial SOLO para contexto (puedes formatearlo como bullets)
+    history_lines = []
+    for msg in recent_history:
+        who = "assistant" if msg["sender"] == "agent" else "user"
+        history_lines.append(f"{who}: {msg['message']}")
+        print(f"\n\nMensaje: {msg["message"]}\n\n")
+    history_text = "\n".join(history_lines) if history_lines else "No prior messages."
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "system",
+            "content": f"CONTEXT ONLY (DO NOT CLASSIFY THIS):\n{history_text}"
+        },
+        {
+            "role": "user",
+            "content": f"<LAST_USER_MESSAGE>\n{user_message}\n</LAST_USER_MESSAGE>"
+        },
+    ]
 
     tokens, est_cost = estimate_cost(messages, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 ORCHESTRATOR - Estimated tokens: {tokens}, approx cost: ${est_cost:.6f}\n\n")
@@ -198,40 +219,45 @@ def orchestrate_request(user, user_message, session_data):
             temperature=0
         )
 
-        decision = response.choices[0].message.content.strip().replace('"', '')
-        logging.info(f"\n🟢 AI Decision Received: {decision} \n")
+        raw_decision = response.choices[0].message.content.strip()
+        logging.info(f"\n🟢 AI Decision Raw: {raw_decision}\n")
+
+        try:
+            decisions = json.loads(raw_decision)  # 👈 Ahora es un array
+        except json.JSONDecodeError as e:
+            logging.error(f"❌ JSON parse error: {e}")
+            return {"message": "⚠️ Sorry, AI response was not valid JSON."}
 
     except Exception as e:
         logging.error(f"❌ Error in OpenAI call: {e}")
         return {"message": "⚠️ Sorry, an error occurred while processing your request."}
 
     action_map = get_action_map()
+    final_results = []
 
-    if decision in action_map:
-        result = run_agent_async(action_map[decision], user, decision, user_message, session_data)
+    for item in decisions:
+        action = item.get("action")
+        fragment = item.get("message", "")
 
-        if result is None:
-            logging.error(f"❌ Agent function for '{decision}' returned None.")
-            return {"message": f"⚠️ Error: Agent function for '{decision}' returned nothing."}
+        if action not in action_map:
+            logging.warning(f"⚠️ Unknown action: {action}")
+            continue
+
+        result = run_agent_async(action_map[action], user, action, fragment, session_data)
+
+        if not result:
+            logging.error(f"❌ Agent for '{action}' returned None.")
+            continue
 
         agent_message = result.get("message", "")
         hiddenMessage = result.get("hiddenMessage", False)
 
-        if session_data and user_message and agent_message:
-            update_message_history(session_data, user_message, agent_message)
+        if session_data and fragment and agent_message:
+            update_message_history(session_data, fragment, agent_message)
 
         session_summary = result.get("session_summary", None)
-
         if session_data and session_summary:
             update_summary(session_data, session_summary)
-
-
-        for key, value in result.items():
-            if key not in (
-                "message", "session_id", "hiddenMessage", "temporaryMessage",
-                "update_details", "iterations", "success", "quote_id", "notes", "tokens", "cost", "session_summary"
-            ):
-                agent_message += f"\n\n{key}:\n{json.dumps(value, indent=2)}"
 
         ChatMessage.objects.create(
             session=chat_session,
@@ -240,13 +266,18 @@ def orchestrate_request(user, user_message, session_data):
             hiddenMessage=hiddenMessage
         )
 
-        result["message"] = agent_message
-        result["session_id"] = session_data["session_id"]
+        final_results.append(result)
 
-        return result
+    if not final_results:
+        return {"message": "⚠️ No valid actions executed."}
 
-    logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
-    return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
+    # 🔹 Combinar mensajes si hay varios
+    combined_message = "\n\n".join([res.get("message", "") for res in final_results])
+    return {
+        "message": combined_message,
+        "session_id": session_data["session_id"],
+        "results": final_results
+    }
 
 
 

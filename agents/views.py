@@ -74,8 +74,8 @@ def chat_with_gpt(request):
 
     # --- 2. Log basic info ---
     opportunity_id = request.GET.get("opportunity_id", "No Opportunity ID provided")
-    logger.info(f"🔹 DEBUG: Incoming request URL - {request.build_absolute_uri()}")
-    logger.info(f"🔹 DEBUG: Extracted Opportunity ID - {opportunity_id}")
+    #logger.info(f"🔹 DEBUG: Incoming request URL - {request.build_absolute_uri()}")
+    #logger.info(f"🔹 DEBUG: Extracted Opportunity ID - {opportunity_id}")
     logger.info(f"USER LOGGED IN - {request.user.username}")
 
     # --- 3. Parse JSON body ---
@@ -91,14 +91,14 @@ def chat_with_gpt(request):
 
     # --- 4. Load session data ---
     session_data = request.session.get("session_data", {})
-    logger.info(f"🔹 DEBUG: Session Data: {session_data}")
+    #logger.info(f"🔹 DEBUG: Session Data: {session_data}")
 
     # --- 4.1 Load custom session data if exist---
     if custom_session_id:
         session_data["session_id"] = custom_session_id
 
     #Debbug the session id if is custom or not
-    logger.info(f"🔹 REQUEST: Session Data: {request.session.get("session_data", {})}")
+    #logger.info(f"🔹 REQUEST: Session Data: {request.session.get("session_data", {})}")
 
     # --- 5. Handle pending actions (if any) ---
     pending_action = session_data.get("pending_action")

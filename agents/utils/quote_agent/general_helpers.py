@@ -159,6 +159,11 @@ def get_active_quote(user_message, session_data):
         try:
             quote = Quote.objects.get(name=quote_name)
             logging.info(f"🟢 Found and set active quote: {quote.name}")
+
+            # 🔑 Save active_quote on session_data
+            set_active_quote_to_session_data(session_data, quote)
+
+
             for quote_line in QuoteLine.objects.filter(quote=quote):
                 # If Product has custom fields, then create custom fields to QuoteLine
                 copy_custom_fields_values_from_product_to_quote_line(quote_line)
@@ -1107,3 +1112,49 @@ def get_document_pdf(quote):
             "message": "⚠️ Error generating PDF: {str(e)}",
             "success": False
             }
+    
+
+def extract_line_items_from_user_message(user_message: str, quote=None):
+    """
+    Extracts the line items mentioned in the user's message.
+
+    Args:
+        user_message (str): The user's message.
+        quote (Quote, optional): Active Quote object. If provided, only its line items will be searched.
+
+    Returns:
+        list[dict]: List of line items found with editable fields.
+    """
+    if quote is None:
+        print("No active quote provided.")
+        return []
+
+    # Get only the line items associated with the quote
+    quote_lines = quote.quote_lines.all()
+    if not quote_lines.exists():
+        print("No line items found in the active quote.")
+        return []
+
+    user_message_lower = user_message.lower()
+    matched_items = []
+
+    for line in quote_lines:
+        # Normalize SKU and name to compare in a case-insensitive way
+        sku = (line.sku or "").lower()
+        name = (line.product_name or "").lower()
+
+        # Check if SKU or name appears in the user's message
+        if (sku and sku in user_message_lower) or (name and name in user_message_lower):
+            matched_items.append({
+                "sku": line.sku,
+                "name": line.product_name,
+                "fields": {
+                    "quantity": line.quantity,
+                    "discount_percentage": float(line.discount_percentage or 0),
+                    "discount_amount": float(line.discount_amount or 0),
+                    "term": line.term,
+                    "unit_price": float(line.unit_price or 0)
+                }
+            })
+
+    return matched_items

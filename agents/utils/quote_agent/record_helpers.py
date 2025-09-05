@@ -21,7 +21,6 @@ from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules_q
 # Session Context Helpers
 from ..orchestrator.context_handle_helpers import save_or_update_conversation_context
 
-
 def save_quote_products(products, quote, response_message, session_context, allow_updates=False):
     """
     Creates QuoteLine records for a given quote using a list of already structured product dictionaries.
@@ -314,129 +313,54 @@ def save_quote_products(products, quote, response_message, session_context, allo
     
     return quote, response_message, added_products
 
-def handle_quote_line_update_request(extracted_updates, quote, response_message, session_context):
 
-    logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🛠️ Creating record for update products 🛠️")
 
-    # ✅ Add products to the quote if provided
-    updated_products = []
+# SAVE QUOTE LINE ITEM ON DATABASE (UPDATE_QUOTE_LINE)
 
-    for index, item in enumerate(extracted_updates, start=1):
-            
-        sku = item.get("sku", None)
-        name = item.get("name", None)
-        field = item.get("field", None)
-        value = item.get("value", None)
-
-        # Add full item for session context
-        session_context["item_index"] = index
-        session_context["extracted"] = item
-
-        field_labels = {
-            "quantity": "Quantity",
-            "discount_percentage": "Discount Percentage",
-            "discount_amount": "Discount Amount",
-            "term": "Term"
-        }
-
-        response_message += f"<b>🔄 <u>Line Item Update #{index} in quote {quote.name}</u> 🔄</b><br>"
-
-        # General validations
-        if sku is None and name is None:
-            response_message += f"⚠️ Error: No SKU/Name was detected in your request. Please specify the product code(s) to update.<br><br>"
-            continue
-
-        if field is None:
-            agent_response = "Missing fields: quantity, discount or term"
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"⚠️ Error: No field to update was detected in your request. Please specify which attribute (e.g., quantity, discount or term) you want to modify.<br><br>"
-            continue
-
-        if field not in field_labels:
-            agent_response = f"Invalid field: `{field}` is not a recognized field. Valid fields are: {', '.join(field_labels.keys())}."
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"⚠️ Error: No valid field to update was detected in your request. Please specify which attribute (e.g., quantity, discount or term) you want to modify.<br><br>"
-            continue
-
-        if value is None:
-            agent_response = "No value was detected in your request"
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"⚠️ Error: No value was detected in your request. Please specify the new value for the update.<br><br>"
-            continue
+def update_quote_line_record(user, update_payload, line_item, quote):
+    try:
         
-        try:
-            numeric_value = Decimal(value)
-        except (InvalidOperation, ValueError, TypeError):
-            agent_response = f"Error: The value {value} is not a valid number. Please replace value with a valid numeric value."
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"⚠️ Error: The value \"{value}\" is not a valid number. Please enter a valid numeric value.<br><br>"
-            continue
+        quantity = update_payload.get("quantity", None)
+        discount_type = update_payload.get("discount_type", None)
+        discount_percentage = update_payload.get("discount_percentage", None)
+        discount_amount = update_payload.get("discount_amount", None)
+        term = update_payload.get("term", None)
 
-        if field.startswith("discount") and Decimal(value) < 0:
-            agent_response = f"Error: The value for discounts cannot be less than 0. Provide a valida number"
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"⚠️ Error: The value for discounts cannot be less than 0. Please provide a valid number.<br><br>"
-            continue
+        # If product has custom fields, then create that custom fields to quote line
+        copy_custom_fields_values_from_product_to_quote_line(line_item)
 
-        if field == "term" and int(value) < 0:
-            agent_response = "Error: The value for terms cannot be less than 0. Please provide a valida number."
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"⚠️ Error: The value for terms cannot be less than 0. Please provide a valid number.<br><br>"
-            continue
+        # Update values
+        if quantity is not None:
+            line_item.quantity = quantity
+        if discount_type is not None:
+            line_item.discount_type = discount_type
+        if discount_percentage is not None:
+            line_item.discount_percentage = discount_percentage
+        if discount_amount is not None:
+            line_item.discount_amount = discount_amount
+        if term is not None:
+            line_item.term = term
 
-        # After general validations
-        # ✅ Check if the product exists and normalize sku and name variables 
-        #    in case the LLM identified the sku as the name and vice versa
-        product, sku, name = find_product_and_normalize_variables(sku, name)
+        line_item.save()
 
-        if not product:
-            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Product `{sku if sku else name}` not found in the database. Request omitted.")
-            response_message += f"⚠️ Product `{sku if sku else name}` not found. Request omitted.<br>"
-            continue  # Skip this product and move to the next
+        print("✅ DEBUG: Line item updated:", line_item)  # Debugging step
 
-        # ✅ Format response message
-        response_message += f"🔢 SKU: {sku}<br>"
-        response_message += f"🏷️ Field: {field_labels.get(field, field.capitalize())}<br>"
-        response_message += f"✏️ Value: {value}<br><br>"
+        # ✅ Instead of returning JsonResponse, return a success message string
+        #log_action_usage("CreateProductRecord", user, "Product", product.sku)
 
-
-        #Validate if product exist in actual quote line item
-        quote_line = QuoteLine.objects.filter(quote=quote, product=product).first()
-        if not quote_line:
-            agent_response = f"Error: The product {sku}/{name} is not in the current quote. Do not modify anything, just reply data."
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"⚠️ Error: The product `{sku}/{name}` is not in the current quote.<br><br>"
-            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Error: The product `{sku}/{name}` is not in the current quote.")
-            continue
-
-        update_payload = {
-            "sku": sku,
-            "field": field,
-            "value": value,
-            "quote_line_id": str(quote_line.id)
+        return {
+            "success": True
         }
+       
 
-        logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Trying to update: {update_payload}")
-
-        #Convert list to valid JSON
-        item_json = json.dumps(update_payload)
-
-        # Try to update quote line
-        #logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Entra a la function save_quote_line_update.")
-        response = save_quote_line_update(item_json, quote)
-
-        if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
-            updated_products.append(update_payload)
-            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
-        else:
-            error_msg = response.get("message", "Unknown error.")
-            response_message += f"{error_msg}<br>"
-            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
-
-    return quote, response_message, updated_products
-
-
+    except Exception as e:
+        print(f"Error trying yo save update quote line: {str(e)}")
+        return {
+            "message": f"⚠️ Error updating line item: {str(e)}",
+            "success": False
+        }
+    
+# SAVE QUOTE LINE ITEM ON DATABASE (UI)
 def save_quote_line_update(request, quote):
     try:
         update = json.loads(request)  # Extract JSON array

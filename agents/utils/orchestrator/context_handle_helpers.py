@@ -80,9 +80,18 @@ def get_recent_messages(message_history, max_messages=4):
 def update_message_history(session_data, user_message, agent_message):
     """
     Guarda los mensajes del usuario y del agente en session_data.
+    Si user_message o agent_message no son strings, agrega un mensaje por defecto.
     """
     session_data.setdefault("message_history", [])
-    
+
+    # Verificar user_message
+    if not isinstance(user_message, str):
+        user_message = "[Could not extract user message: not a valid string]"
+
+    # Verificar agent_message
+    if not isinstance(agent_message, str):
+        agent_message = "[Could not extract agent message: not a valid string]"
+
     session_data["message_history"].append({
         "sender": "user",
         "message": user_message
