@@ -7,6 +7,30 @@ def get_session_context(action, session_data):
 
     # Initialize default state if not exists
     if action not in session_data.get("state", {}):
+        if action == "create_quote":
+            context_data = {
+                "create_quote": {
+                    "data": {
+                        "account": None,
+                        "opportunity": None,
+                        "products": [
+                            {
+                                "sku": None,
+                                "name": None,
+                                "quantity": None,
+                                "discount_type": None,
+                                "discount_value": None,
+                                "term": None
+                            }
+                        ],
+                        "start_date": "",
+                        "end_date": ""
+                    },
+                    "completed": False
+                },
+                "summary": None
+            }
+            
         if action == "create_product":
             context_data = {
                 "create_product": [
@@ -59,6 +83,35 @@ def get_session_context(action, session_data):
                             "discount_type": None,
                             "discount_value": None,
                             "term": None
+                        },
+                        "completed": False
+                    },
+                ],
+                "summary": None
+            }
+
+        if action == "delete_quote_line":
+            context_data = {
+                "delete_quote_line": [
+                    {
+                        "data": {
+                            "sku": None,
+                            "name": None
+                        },
+                        "completed": False
+                    },
+                ],
+                "summary": None
+            }
+
+        if action == "update_quote":
+            context_data = {
+                "update_quote": [
+                    {
+                        "data": {
+                            "quote_name": None,
+                            "field": None,
+                            "value": None
                         },
                         "completed": False
                     },

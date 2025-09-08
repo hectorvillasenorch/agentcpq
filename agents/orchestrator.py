@@ -103,8 +103,179 @@ def orchestrate_request(user, user_message, session_data):
         content=user_message
     )
 
+    # Solo para debug
     session_data.setdefault("state", {})
-    print(f"\n\nCurrent session state: {session_data['state']}\n\n")
+    print(f"\n\nCurrent session state: {session_data["state"]}\n\n")
+
+    # Get or create message history on session_data
+    session_data.setdefault("message_history", [])
+
+    # 🔹 Construir historial de mensajes
+    message_history = session_data.get("message_history", [])
+
+    # Recortar los últimos MAX_HISTORY mensajes
+    recent_history = get_recent_messages(message_history, max_messages=6)
+
+
+    # Construir historial en formato roles
+    messages = [
+        {
+            "role": "system",
+            "content": """
+            You are an AI assistant that classifies user requests into predefined actions.
+            Only answer with ONE label from the list provided, no explanations, no emojis.
+            """
+        }
+    ]
+
+    # Agregar el historial recortado
+    for msg in recent_history:
+        role = "assistant" if msg["sender"] == "agent" else "user"
+        messages.append({"role": role, "content": msg["message"]})
+        # 👇 debug: imprimir msg con índice y saltos de línea
+        print(f"\n\nIndex {recent_history.index(msg)} -> msg:\n{msg}\n\n")
+
+    # Nuevo mensaje del usuario
+    messages.append({"role": "user", "content": user_message})
+
+    # Lista de labels
+    custom_objects = CustomObject.objects.all()
+    custom_objects_list = [co.label for co in custom_objects]
+
+    messages.append({
+        "role": "system",
+        "content": f"""
+        Possible labels:
+        - "CreateQuote"
+        - "AddProductToQuote"
+        - "GenerateQuoteDocument"
+        - "ProvideDates"
+        - "ShowQuoteDetails"
+        - "UpdateQuoteLine"
+        - "UpdateQuote"
+        - "ShowQuoteNotes"
+        - "DeleteQuoteLine"
+        - "DeleteQuote"
+        - "CreateProductRecord"
+        - "UpdateProductRecord"
+        - "SubmitForApproval"
+        - "CheckApprovalStatus"
+        - "ApproveQuote"
+        - "RejectQuote"
+        - "RecallQuote"
+        - "ShowAccountDetails"
+        - "GeneralQuery"
+        - "CreateValidationRule"
+        - "ShowRules"
+        - "UpdateRule"
+        - "DeleteRule"
+        - "AddProductToBundle"
+        - "UpdateBundleOption"
+        - "DeleteBundleOption"
+        - "DeleteBundleComponentFromQuote"
+        - "CreateCustomObject"
+        - "UpdateCustomObject"
+        - "DeleteCustomObject"
+        - "CreateCustomField"
+        - "UpdateCustomField"
+        - "DeleteCustomField"
+        - "CreateCustomRecord" (for {custom_objects_list})
+        - "UpdateCustomRecord" (for {custom_objects_list})
+        - "DeleteCustomRecord" (for {custom_objects_list})
+        - "CreateEmailAlert"
+        - "UpdateEmailAlert"
+        - "DeleteEmailAlert"
+        """
+    })
+
+    tokens, est_cost = estimate_cost(messages, model=OPENAI_MODEL)
+    logging.info(f"\n\n💰 ORCHESTRATOR - Estimated tokens: {tokens}, approx cost: ${est_cost:.6f}\n\n")
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages,
+            temperature=0
+        )
+
+        decision = response.choices[0].message.content.strip().replace('"', '')
+        logging.info(f"\n🟢 AI Decision Received: {decision} \n")
+
+    except Exception as e:
+        logging.error(f"❌ Error in OpenAI call: {e}")
+        return {"message": "⚠️ Sorry, an error occurred while processing your request."}
+
+    action_map = get_action_map()
+
+    if decision in action_map:
+        result = run_agent_async(action_map[decision], user, decision, user_message, session_data)
+
+        if result is None:
+            logging.error(f"❌ Agent function for '{decision}' returned None.")
+            return {"message": f"⚠️ Error: Agent function for '{decision}' returned nothing."}
+
+        agent_message = result.get("message", "")
+        hiddenMessage = result.get("hiddenMessage", False)
+
+        if session_data and user_message and agent_message:
+            update_message_history(session_data, user_message, agent_message)
+
+        session_summary = result.get("session_summary", None)
+
+        if session_data and session_summary:
+            update_summary(session_data, session_summary)
+
+
+        for key, value in result.items():
+            if key not in (
+                "message", "session_id", "hiddenMessage", "temporaryMessage",
+                "update_details", "iterations", "success", "quote_id", "notes", "tokens", "cost", "session_summary"
+            ):
+                agent_message += f"\n\n{key}:\n{json.dumps(value, indent=2)}"
+
+        ChatMessage.objects.create(
+            session=chat_session,
+            sender="agent",
+            content=agent_message,
+            hiddenMessage=hiddenMessage
+        )
+
+        result["message"] = agent_message
+        result["session_id"] = session_data["session_id"]
+
+        return result
+
+    logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
+    return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
+
+def orchestrate_request2(user, user_message, session_data):
+    session_context = {
+        k: str(v) for k, v in session_data.items()
+        if isinstance(v, (str, int, float, list, dict))
+    }
+
+    session_id = session_data.get("session_id")
+
+    user = User.objects.get(username=user)
+
+    if not session_id:
+        chat_session = ChatSession.objects.create(
+            user=user,
+            session_id=str(uuid4()),
+            title=user_message[:30]
+        )
+        session_data["session_id"] = chat_session.session_id
+    else:
+        chat_session = ChatSession.objects.get(session_id=session_id)
+
+    # Save user message
+    ChatMessage.objects.create(
+        session=chat_session,
+        sender="user",
+        content=user_message
+    )
+
+    session_data.setdefault("state", {})
 
     session_data.setdefault("message_history", [])
     message_history = session_data.get("message_history", [])
@@ -272,7 +443,7 @@ def orchestrate_request(user, user_message, session_data):
         return {"message": "⚠️ No valid actions executed."}
 
     # 🔹 Combinar mensajes si hay varios
-    combined_message = "\n\n".join([res.get("message", "") for res in final_results])
+    combined_message = "<br><br>".join([res.get("message", "") for res in final_results])
     return {
         "message": combined_message,
         "session_id": session_data["session_id"],

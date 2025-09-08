@@ -15,17 +15,13 @@ def find_product_and_normalize_variables(sku, name):
 
     return product, product.sku, product.name
 
-def get_or_create_account_and_opportunity(user, extracted_details, session_data, session_context):
+def get_or_create_account_and_opportunity(user, extracted_details, session_data):
     """
     Retrieves or creates an Account and Opportunity based on extracted details and session.
     Returns either:
       - A dict with a 'message' key if user input is incomplete or a pending action is required
       - A tuple (account, opportunity) if both are resolved correctly
     """
-
-    # Add context info
-    session_context["item_index"] = 1
-    session_context["extracted"] = extracted_details
 
     if not extracted_details:
         logging.error("❌ extracted_details is None")
@@ -35,8 +31,6 @@ def get_or_create_account_and_opportunity(user, extracted_details, session_data,
     opportunity_name = (extracted_details.get("opportunity") or session_data.get("opportunity") or "").strip()
 
     if not account_name:
-        agent_response = "Error: Could not determine the accounte. Please specify an account name."
-        save_or_update_conversation_context(session_context, agent_response)
         return {
             "message": "🚫 Error: Could not determine the account. Please specify an account name."
         }
@@ -56,8 +50,6 @@ def get_or_create_account_and_opportunity(user, extracted_details, session_data,
         }
 
     if not opportunity_name:
-        agent_response = "Please provide an opportunity name before creating the quote. Saving extracted data."
-        save_or_update_conversation_context(session_context, agent_response)
         return {
             "message": "📝 Please provide an opportunity name before creating the quote."
         }
