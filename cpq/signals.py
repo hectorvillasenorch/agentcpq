@@ -1,10 +1,10 @@
 from django.db.models.signals import pre_save, post_save, pre_delete, post_delete
 from django.dispatch import receiver
-<<<<<<< Updated upstream
+
 from cpq.models import Lead,Quote,Tenant,QuoteDocumentSettings, Account, Opportunity, CustomObject, CustomField, CustomRecord
-=======
 from cpq.models import Lead,Quote,Tenant, Quote, Account, Opportunity, CustomObject, CustomField, CustomRecord
->>>>>>> Stashed changes
+from cpq.models import Lead,Quote,Tenant, Quote, Account, Opportunity, CustomObject, CustomField, CustomRecord
+
 from hubspot.views import sync_quote_to_hubspot
 from .custom_objects.custom_objects import set_custom_indentifier
 from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
@@ -16,7 +16,8 @@ from .notifications.notifications import notify_quote_approved, notify_quote_rej
 
 
 # EMAIL ALERT FUNCTIONS
-from .notifications.notifications import notify_lead_created, notify_account_created, notify_opportunity_created
+from .notifications.notifications import notify_lead_created, notify_account_created, notify_opportunity_created, notify_opportunity_closed_won, notify_opportunity_closed_lost, notify_quote_sent_for_approval
+from .notifications.notifications import notify_quote_approved, notify_quote_rejected
 
 
 @receiver(post_save, sender=Quote)

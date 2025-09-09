@@ -73,7 +73,7 @@ function enhanceStructuredAgentMessages() {
 
       try {
         const data = JSON.parse(unescapeUnicode(jsonStr));
-        // Procesa data
+        // Process data
       } catch (e) {
         console.error("JSON parse failed:", e, jsonStr);
         div.innerHTML = `<div class="error-message">❌ JSON parsing error</div>`;
@@ -83,7 +83,7 @@ function enhanceStructuredAgentMessages() {
 
 /*
 * ✅ enhanceStructuredAgentMessages in history chat, NOT in real time
-*/
+
 function extractJson(text) {
   const startObj = text.indexOf('{');
   const startArr = text.indexOf('[');
@@ -97,6 +97,7 @@ function extractJson(text) {
 
   return text.slice(start).trim();
 }
+ */
 
 function unescapeUnicode(str) {
   return str.replace(/\\u[\dA-F]{4}/gi, function (match) {
@@ -108,7 +109,7 @@ function enhanceStructuredAgentMessagesHistoryChat() {
   document.querySelectorAll(".agent-json").forEach(div => {
     const raw = div.dataset.raw;
 
-    const keys = ['quote_details:', 'validation_rules_details:', 'rules:'];
+    const keys = ['quote_details:', 'validation_rules_details:', 'rules:', 'email_alerts_details:'];
 
     let jsonPart = null;
     for (const key of keys) {
@@ -138,12 +139,22 @@ function enhanceStructuredAgentMessagesHistoryChat() {
       }
 
       if (data.rules || (Array.isArray(data) && data[0]?.rules_request_description)) {
-        //const html = renderValidationRuleDetails(data.rules || data);
-        //console.log("Render Rules | Show rules")
         const html = renderRules(data);
         div.innerHTML = html;
         return;
       }
+
+      if (Array.isArray(data)) {
+        // Caso 1: llega como array directo
+        if (data[0]?.trigger) {
+          console.log("Email alerts history (array)");
+          
+          const html = renderEmailAlerstDetails(data);
+          console.log("Rendered HTML:", html);
+          div.innerHTML = html;
+          return;
+        }
+      } 
 
       const html = renderReadOnlyQuoteDetails(data);
       div.innerHTML = html;
@@ -155,27 +166,27 @@ function enhanceStructuredAgentMessagesHistoryChat() {
   });
 
   document.querySelectorAll(".agent-pdf").forEach(div => {
-  const raw = unescapeUnicode(div.dataset.raw);
+    const raw = unescapeUnicode(div.dataset.raw);
 
-  if (!raw.includes("download_url")) return;
+    if (!raw.includes("download_url")) return;
 
-  // Get download_url
-  const urlMatch = raw.match(/download_url:\s*["']?(.*?)["']?\s*(\n|$)/);
-  const versionMatch = raw.match(/document_version:\s*([0-9]+)/);
+    // Get download_url
+    const urlMatch = raw.match(/download_url:\s*["']?(.*?)["']?\s*(\n|$)/);
+    const versionMatch = raw.match(/document_version:\s*([0-9]+)/);
 
-  const downloadUrl = urlMatch ? urlMatch[1].trim() : null;
-  const version = versionMatch ? versionMatch[1].trim() : null;
-  //console.log("📄 Extracted PDF Info:", { version, downloadUrl });
+    const downloadUrl = urlMatch ? urlMatch[1].trim() : null;
+    const version = versionMatch ? versionMatch[1].trim() : null;
+    //console.log("📄 Extracted PDF Info:", { version, downloadUrl });
 
-  if (downloadUrl && version) {
-    div.innerHTML = `
-      📄 Quote PDF (v${version}) generated successfully! 
-      <a href="${downloadUrl}" target="_blank">Download Here</a>
-    `;
-  } else {
-    div.innerHTML = `<div class="error-message">⚠️ Could not extract PDF fields</div>`;
-  }
-});
+    if (downloadUrl && version) {
+      div.innerHTML = `
+        📄 Quote PDF (v${version}) generated successfully! 
+        <a href="${downloadUrl}" target="_blank">Download Here</a>
+      `;
+    } else {
+      div.innerHTML = `<div class="error-message">⚠️ Could not extract PDF fields</div>`;
+    }
+  });
 
   // Auto-scroll chat
   const chatBox = document.getElementById("chat-box");
@@ -278,6 +289,13 @@ async function sendMessage() {
           //console.log(data.response.validation_rules_details)
           responseMessage += renderRules(data.response.rules);
         }
+        // ✅ Email Alerts
+        else if (data.response && data.response.email_alerts_details) {
+          console.log("Email Alerts");
+          //console.log(data.response);
+          //console.log(data.response.validation_rules_details)
+          responseMessage += renderEmailAlerstDetails(data.response.email_alerts_details);
+        }
         // ✅ Default Response (Handle General Messages)
         else if (data.response && data.response.message) {
             responseMessage += `<div class="general-message">${data.response.message}</div>`;
@@ -342,6 +360,7 @@ function appendMessage(className, message) {
 
     // ✅ Detect stored notes as string
     if (className === "agent" && message.includes("validation_rules_details: {")) {
+      console.log("Si entra a esteeee pedoooo")
       try {
         // Extract JSON from string
         const match = message.match(/validation_rules_details:\s({.+})/);
@@ -351,6 +370,20 @@ function appendMessage(className, message) {
         }
       } catch (e) {
         console.warn("Failed to parse validation_rules_details JSON:", e);
+      }
+    }
+
+    // ✅ Detect stored notes as string
+    if (className === "agent" && message.includes("email_alerts_details:")) {
+      try {
+          // Extract JSON from string (object or array)
+          const match = message.match(/email_alerts_details:\s(\[.+\]|\{.+\})/s);
+          if (match && match[1]) {
+              const alerts = JSON.parse(match[1]);
+              message = renderEmailAlerstDetails(alerts);  // Use your nice formatter
+          }
+      } catch (e) {
+          console.warn("Failed to parse email_alerts_details JSON:", e);
       }
     }
   
@@ -2414,5 +2447,95 @@ function loadTabContent(type) {
         });
     }
 
-    // Puedes hacer lo mismo para 'bundles' y 'accounts'
+}
+
+function renderEmailAlerstDetails(alerts) {
+  let html = "";
+
+  alerts.forEach((alert) => {
+    if (alert.success){
+      var head_text = `✅ New email alert created successfully ✅`;
+
+      // Función interna para renderizar chips
+      function renderChips(items, colorClass) {
+        if(!items || items.length === 0) return `<span class="grey-text">None</span>`;
+        return items.map(item => `<span class="chip ${colorClass} white-text">${item}</span>`).join(" ");
+      }
+
+      html += 
+        `<div class="email-alert-container">
+          <div class="email-alert-header">
+              <h5>${head_text}</h3>
+              <span style="margin-left: 10px; font-weight: bold; color: ${alert.active ? 'green' : 'red'};">
+                ${alert.active ? '🟢 Active' : '🔴 Inactive'}
+              </span>
+          </div>
+          <div class="email-alert-details">
+          
+              <div class="email-alert-name">
+                <label><strong>Name:</strong></label>
+                <input type="text" value="${alert.name}" readonly/>
+              </div>
+
+              <div class="email-alert-description">
+                <label><strong>Description:</strong></label>
+                <input type="text" value="${alert.description}" readonly/>
+              </div>
+
+              <div class="trigger">
+                <label><strong>Trigger:</strong></label>
+                <input type="text" value="${alert.trigger}" readonly/>
+              </div>
+
+              <div class="native_object">
+                <label><strong>Native Object:</strong></label>
+                <input type="text" value="${alert.native_object}" readonly/>
+              </div>
+
+              <div class="custom_object">
+                <label><strong>Custom Object:</strong></label>
+                <input type="text" value="${alert.custom_object ? alert.custom_object : '---'}" readonly/>
+              </div>
+
+              <div class="offset_days">
+                <label><strong>Offset Days:</strong></label>
+                <input type="text" value="${alert.offset_days ? alert.offset_days : '---'}" readonly/>
+              </div>
+
+              <div class="schedule_cron">
+                <label><strong>Schedule Cron:</strong></label>
+                <input type="text" value="${alert.schedule_cron ? alert.schedule_cron : '---'}" readonly/>
+              </div>
+
+              <div class="created_by">
+                <label><strong>Created By:</strong></label>
+                <input style="font-size: 1rem;" type="text" value="${alert.created_at} - ${alert.created_by}" readonly/>
+              </div>
+
+              <div class="recipients_users">
+                <label><strong>Recipients Users:</strong></label>
+                <div class="chips-container">
+                  ${renderChips(alert.recipients_users, "blue")}
+                </div>
+              </div>
+
+              <div class="recipients_roles">
+                <label><strong>Recipients Roles:</strong></label>
+                <div class="chips-container">
+                  ${renderChips(alert.recipients_roles, "deep-purple")}
+                </div>
+              </div>
+
+              <div class="recipients_externals">
+                <label><strong>Recipients Externals:</strong></label>
+                <div class="chips-container">
+                  ${renderChips(alert.recipients_external, "green")}
+                </div>
+              </div>
+          </div>
+        </div>`;
+    }
+  });
+
+  return html;
 }

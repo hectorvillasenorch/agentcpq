@@ -26,11 +26,11 @@ from datetime import datetime
 import logging
 logger = logging.getLogger(__name__)
 # LLM Utils
-from .utils.quote_agent.llm_helpers import extract_quote_details, extract_product_details, extract_quote_line_updates, extract_quote_line_items_to_delete, extract_quote_level_discount
-from .utils.quote_agent.llm_helpers import extract_quote_updates
+from .utils.quote_agent.llm_helpers import extract_quote_details, extract_quote_details_with_llm, generate_final_create_quote_message, extract_quote_line_items_to_delete, generate_final_delete_quote_lines_message, generate_final_quote_updates_message, extract_quote_line_to_delete_with_llm, extract_quote_level_discount
+from .utils.quote_agent.llm_helpers import extract_quote_updates, extract_quote_updates_with_llm
 
 # Record Helpers (add products)
-from .utils.quote_agent.record_helpers import save_quote_products, handle_quote_line_update_request, save_quote_line_update, handle_quote_update_request, save_quote_update
+from .utils.quote_agent.record_helpers import save_quote_products, save_quote_line_update, handle_quote_update_request, save_quote_update
 
 # DB Helpers (products exists)
 from .utils.quote_agent.db_helpers import get_or_create_account_and_opportunity, update_opportunity_net_amount, log_action_usage
@@ -41,8 +41,18 @@ from .utils.quote_agent.general_helpers import get_document_pdf, get_backup_valu
 
 from .utils.orchestrator.context_handle_helpers import save_or_update_conversation_context, make_session_context
 
+# Session Context Helpers
+from .utils.session_context_helpers.session_context_helpers import get_session_context
+
 # Notification Email Functions
 from cpq.notifications.notifications import notify_opportunity_created
+
+from .utils.quote_agent.general_helpers import extract_line_items_from_user_message
+
+# New LLm Helpers
+from .utils.quote_agent.llm_helpers import extract_products_to_add_with_llm, generate_final_add_product_to_quote_message2, extract_quote_line_updates_with_llm, generate_final_update_line_items_message
+
+from .utils.quote_agent.handle_helpers import handle_products_to_add, handle_line_items_updates
 
 # ✅ Load environment variables
 load_dotenv()
@@ -56,11 +66,11 @@ def quote_agent(user, action, user_message, session_data):
 
     action_map = {
         "CreateQuote": create_quote, #CONTEXT READY
-        "AddProduct": add_product_to_quote, #CONTEXT READY
+        "AddProductToQuote": add_product_to_quote, #CONTEXT READY
         "UpdateQuoteLine": update_quote_line, #CONTEXT READY
         "UpdateQuote": update_quote, #CONTEXT READY
         "DeleteQuoteLine": delete_quote_line, #CONTEXT READY
-        "DeleteQuote": delete_quote, #CONTEXT READY
+        "DeleteQuote": delete_quote,
         "ShowQuoteDetails": show_quote_details, #CONTEXT READY
         "ShowQuoteNotes": show_quote_notes, #CONTEXT READY
         "GenerateQuoteDocument": generate_quote_pdf, #CONTEXT READY
@@ -80,17 +90,37 @@ def quote_agent(user, action, user_message, session_data):
 def create_quote(user,user_message, session_data):
     """Handles quote creation while preserving context."""
     # 🧠 Make the session context
-    session_context = make_session_context(user, "CreateQuote", "quote_agent", session_data, user_message)
+    #session_context = make_session_context(user, "CreateQuote", "quote_agent", session_data, user_message)
+
+    current_state, previous_summary = get_session_context("create_product", session_data)
 
     # ✅ Extract the quote details with LLM
-    extracted_details = extract_quote_details(user_message)
+    #extracted_details = extract_quote_details(user_message)
+
+    # --- 1️⃣ Llamada inicial al LLM para extraer quote details ---
+    llm_result, tokens_used, cost_est = extract_quote_details_with_llm(
+        user_message=user_message,
+        current_state=current_state,
+        previous_summary=previous_summary
+    )
+
+    if llm_result["create_quote"]["completed"] == False:
+        return {
+            "message": llm_result["agent_message"],
+            "session_summary": llm_result["summary"]
+        }
+
+    if llm_result:
+        extracted_details = llm_result["create_quote"]["data"]
 
     # ✅ Get or create account and opportunity
-    result_account_and_opportunity = get_or_create_account_and_opportunity(user, extracted_details, session_data, session_context)
+    result_account_and_opportunity = get_or_create_account_and_opportunity(user, extracted_details, session_data)
 
     # - If message in result (error or pending_action) return
     if isinstance(result_account_and_opportunity, dict) and "message" in result_account_and_opportunity:
         return result_account_and_opportunity
+    
+    result = []
 
     # - If not, get account and opportunity
     account, opportunity = result_account_and_opportunity
@@ -109,19 +139,30 @@ def create_quote(user,user_message, session_data):
     quote.save()
     log_action_usage("CreateQuote", user, "Quote", quote.name)
 
+    logging.info(f"✅ Quote {quote.name} created for {account.name} under opportunity {opportunity.name}. Would you like to add more products now?")
+
     # ✅ Extract products
     extracted_products = extracted_details.get("products", [])
     
     # In case the quote is created without any products
     if not extracted_products:
-        logging.info("🟡 No products provided in initial quote creation.")
+
+        result.append(f"✅ Quote {quote.name} created for {account.name} under opportunity {opportunity.name}. Would you like to add more products now?")
+        result.append("🟡 No products provided in initial quote creation.")
 
         session_data["pending_action"] = "add_product"
         # ✅ Update quote session
         set_active_quote_to_session_data(session_data, quote)
 
+        dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_create_quote_message(
+            quote=extracted_details,
+            db_results=result,
+            previous_summary=llm_result["summary"]
+        )
+
         return {
-            "message": f"✅ Quote {quote.name} created for {account.name} under opportunity {opportunity.name}. Would you like to add more products now?"
+            "message": dynamic_message,
+            "session_summary": updated_summary
         }
     
     # In case the quote is created with any products
@@ -129,8 +170,11 @@ def create_quote(user,user_message, session_data):
 
     response_message = f"✅ Quote {quote.name} created for {account.name} under deal {opportunity.name}.<br><br>"
 
+    result.append(f"✅ Quote {quote.name} created for {account.name} under deal {opportunity.name}.<br><br>")
+    result.append("🟢 Products provided in initial quote creation.")
+
     # ✅ Save quote products
-    quote, response_message, added_products = save_quote_products(extracted_products, quote, response_message, session_context)
+    quote, response_message, added_products = save_quote_products(extracted_products, quote, response_message)
 
     # ✅ Update quote (subtotal, discounts fields and net amount)
     quote.save()
@@ -166,8 +210,17 @@ def create_quote(user,user_message, session_data):
     else:
         response_message += "⚠️ No approval suggestion."
 
+    result.append(response_message)
+
+    dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_create_quote_message(
+        quote=extracted_details,
+        db_results=result,
+        previous_summary=llm_result["summary"]
+    )
+
     return {
-        "message": response_message
+        "message": dynamic_message,
+        "session_summary": updated_summary
     }
 
 
@@ -175,130 +228,134 @@ def create_quote(user,user_message, session_data):
 
 def add_product_to_quote(user, user_message, session_data):
     """Handles adding multiple products to an existing quote."""
+
     logging.info("🔄 Adding product(s) to existing quote...")
-
-    # 🧠 Make the session context
-    session_context = make_session_context(user, "AddProduct", "quote_agent", session_data, user_message)
-
-    # ✅ Extract multiple product details
-    extracted_products = extract_product_details(user_message)
 
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)
 
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
-        session_context["item_index"] = 1
-        session_context["extracted"] = extracted_products
-        agent_response = "Error: No active quote was found, just save data and retry."
-        save_or_update_conversation_context(session_context, agent_response)
         return quote
+    
 
-    if not extracted_products or not isinstance(extracted_products, list):
-        session_context["item_index"] = 1
-        session_context["extracted"] = extracted_products
-        agent_response = "Error: Could not extract product details. Please specify SKU, quantity, or discount for each product."
-        save_or_update_conversation_context(session_context, agent_response)
+    current_state, previous_summary = get_session_context("add_product_to_quote", session_data)
+
+
+    # --- 1️⃣ Llamada inicial al LLM para extraer los productos que se agregaran al quote ---
+    llm_result, tokens_used, cost_est = extract_products_to_add_with_llm(
+        user_message=user_message,
+        current_state=current_state,
+        previous_summary=previous_summary
+    )
+
+    # --- 3️⃣ Separar productos completados vs incompletos ---
+    completed_products = []
+    remaining_products = []
+
+    for line_item in llm_result["add_product_to_quote"]:
+        if line_item.get("completed"):
+            completed_products.append(line_item["data"])
+        else:
+            remaining_products.append(line_item)
+
+
+    # Guardar solo los incompletos en session state
+    session_data["state"]["add_product_to_quote"] = remaining_products
+
+    # Return if not any completed products
+    if not completed_products:
         return {
-            "message": "⚠️ Error: Could not extract product details. Please specify SKU, quantity, or discount for each product."
+            "message": llm_result["agent_message"],
+            "session_summary": llm_result["summary"]
         }
 
-    added_products = []
-    response_message = ""
+    # --- 4️⃣ Persistir productos completados y capturar errores ---
+    result = handle_products_to_add(user, completed_products, quote, allow_updates=True)
 
-    # ✅ Save quote products
-    quote, response_message, added_products = save_quote_products(extracted_products, quote, response_message, session_context, allow_updates=True)
-    log_action_usage("AddProduct", user, "Quote", quote.name)
-    # ✅ Update quote (subtotal, discounts fields and net amount)
-    quote.save()
+    print(f"Esto es result: {result}")
 
-    # ✅ Reset pending action
-    session_data["pending_action"] = None
+    # --- 5️⃣ Generar mensaje final dinámico usando función separada ---
+    dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_add_product_to_quote_message2(
+        completed_products=completed_products,
+        db_results=result,
+        remaining_products=remaining_products,
+        previous_summary=llm_result["summary"]
+    )
 
-    # ✅ Update quote session
-    set_active_quote_to_session_data(session_data, quote)
-
-     # ✅ Check if the quote requires approval after adding the product
-    approval_suggestion = get_approval_status("", "", quote.id, "")
-
-    if added_products:
-        response_message += f"<br>💰 Net amount updated to ${quote.net_amount:,.2f}. Would you like to add more products?"
-    else:
-        return {
-            "message": "⚠️ Error: Something went wrong — no product was added to the quote. Please try again or verify your input."
-        }
-    
-    # If an approval suggestion exists, append it to the message
-    if "message" in approval_suggestion:
-        response_message += f"{approval_suggestion['message']}"
-    else:
-        response_message += "⚠️ No approval suggestion."
-    
-        
     return {
-        "message": response_message,
-        "update_details": get_quote_details(quote),
-        "temporaryMessage": True
+        "message": dynamic_message,
+        "session_summary": updated_summary
     }
     
 #< ----------------- UPDATE QUOTE LINE -------------------- >
 
 def update_quote_line(user, user_message, session_data):
-    # 🧠 Make the session context
-    session_context = make_session_context(user, "UpdateQuoteLine", "quote_agent", session_data, user_message)
-
-    """Updates only the modified fields in quote lines."""
-
+    """
+    Handles product creation requests for multiple products.
+    Tracks products in session state, saves completed products, 
+    and generates dynamic messages using LLM including DB errors.
+    """
     logging.info("🔧 Updating quote line...\n\n")
-        
-    # ✅ Extract quote line updates with LLM
-    extracted_updates = extract_quote_line_updates(user_message)
 
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)
 
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
-        session_context["item_index"] = 1
-        session_context["extracted"] = extracted_updates
-        agent_response = "Error: No active quote was found, just save data and retry."
-        save_or_update_conversation_context(session_context, agent_response)
         return quote
-
-    if not extracted_updates:
-
-        session_context["item_index"] = 1
-        session_context["extracted"] = extracted_updates
-        agent_response = "Error: An error occurred while extracting your updates. Please try again."
-        save_or_update_conversation_context(session_context, agent_response)
-
-        return {
-        "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
-        }
-
-    response_message = ""
-
-    # ✅ Handle quote line update request
-    quote, response_message, updated_products = handle_quote_line_update_request(extracted_updates, quote, response_message, session_context)
-    log_action_usage("UpdateQuoteLine", user, "Quote", quote.name)
-    # ✅ Update quote (subtotal, discounts fields and net amount)
-    quote.save()
-
-    # ✅ Safe active quote to session data
-    set_active_quote_to_session_data(session_data, quote)
-
-    # ✅ Return
-    if not updated_products:
-        return {
-            "message": f"No products were updated. <br><br>{response_message}",
-            "temporaryMessage": True
-        } 
     
-    return {
-        "message": response_message,
-        "temporaryMessage": True
-        
+
+    current_state, previous_summary = get_session_context("update_quote_line", session_data)
+
+    line_items_on_user_message = extract_line_items_from_user_message(user_message, quote)
+
+    print(f"\n\nLine items mencionados: {line_items_on_user_message}\n\n")
+
+    # --- 1️⃣ Llamada inicial al LLM para extraer actualizaciones de quote line ---
+    llm_result, tokens_used, cost_est = extract_quote_line_updates_with_llm(
+        user_message=user_message,
+        current_state=current_state,
+        previous_summary=previous_summary,
+        line_items_on_user_message=line_items_on_user_message #Send line items to LLM can updates
+    )
+
+    # --- 3️⃣ Separar productos completados vs incompletos ---
+    completed_updates = []
+    remaining_updates = []
+
+    for line_item in llm_result["update_quote_line"]:
+        if line_item.get("completed"):
+            completed_updates.append(line_item["data"])
+        else:
+            remaining_updates.append(line_item)
+
+
+    # Guardar solo los incompletos en session state
+    session_data["state"]["line_items_updates"] = remaining_updates
+
+    # Return if not any completed products
+    if not completed_updates:
+        return {
+            "message": llm_result["agent_message"],
+            "session_summary": llm_result["summary"]
         }
+
+    # --- 4️⃣ Persistir productos completados y capturar errores ---
+    result = handle_line_items_updates(user, completed_updates, quote)
+
+    # --- 5️⃣ Generar mensaje final dinámico usando función separada ---
+    dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_update_line_items_message(
+        completed_updates=completed_updates,
+        db_results=result,
+        remaining_updates=remaining_updates,
+        previous_summary=llm_result["summary"]
+    )
+
+    return {
+        "message": dynamic_message,
+        "session_summary": updated_summary
+    }
 
 #< ----------------- UPDATE QUOTE -------------------- >
 
@@ -308,75 +365,141 @@ def update_quote(user, user_message, session_data):
     logging.info("🔧 Updating quote...\n\n")
     
     # 🧠 Make the session context
-    session_context = make_session_context(user, "UpdateQuote", "quote_agent", session_data, user_message)
+    #session_context = make_session_context(user, "UpdateQuote", "quote_agent", session_data, user_message)
+
+    current_state, previous_summary = get_session_context("update_quote", session_data)
         
     # ✅ Extract quote line updates with LLM
-    extracted_updates = extract_quote_updates(user_message)
+    #extracted_updates = extract_quote_updates(user_message)
 
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)
 
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
-        session_context["item_index"] = 1
-        session_context["extracted"] = None
-        agent_response = f"Error: No active quote was found, just save data and retry."
-        save_or_update_conversation_context(session_context, agent_response)
         return quote
+
+    # --- 1️⃣ Llamada inicial al LLM para extraer productos ---
+    llm_result, tokens_used, cost_est = extract_quote_updates_with_llm(
+        user_message=user_message,
+        current_state=current_state,
+        previous_summary=previous_summary,
+        quote_name=quote.name
+    )
+
+    # --- 3️⃣ Separar productos completados vs incompletos ---
+    completed_quote_updates = []
+    remaining_quote_updates = []
+
+    for product in llm_result["update_quote"]:
+        if product.get("completed"):
+            completed_quote_updates.append(product["data"])
+        else:
+            remaining_quote_updates.append(product)
+
+    # Guardar solo los incompletos en session state
+    session_data["state"]["update_quote"] = remaining_quote_updates
+
+    # Return if not any completed products
+    if not completed_quote_updates:
+        return {
+            "message": llm_result["agent_message"],
+            "session_summary": llm_result["summary"]
+        }
+    
+    extracted_updates = []
+
+    for quote_update in llm_result["update_quote"]:
+            extracted_updates.append(quote_update["data"])
 
     if not extracted_updates:
         # ✅ Save quote in session data
         set_active_quote_to_session_data(session_data, quote)
 
-        session_context["item_index"] = 1
-        session_context["extracted"] = extracted_updates
-        agent_response = "Error: An error occurred while extracting your updates. Please try again."
-        save_or_update_conversation_context(session_context, agent_response)
-
         return {
-        "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
+            "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
         }
     
     response_message = ""
 
     # ✅ Handle quote line update request
-    quote, response_message, updated_quote = handle_quote_update_request(extracted_updates, quote, response_message, session_context)
+    quote, response_message, updated_quote = handle_quote_update_request(extracted_updates, quote, response_message)
     log_action_usage("UpdateQuote", user, "Quote", quote.name)
 
     # ✅ Safe active quote to session data
     set_active_quote_to_session_data(session_data, quote)
 
+    dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_quote_updates_message(
+        completed_quote_updates=completed_quote_updates,
+        db_results=response_message,
+        remaining_quote_updates=remaining_quote_updates,
+        previous_summary=llm_result["summary"]
+    )
+
     # ✅ Return
     if not updated_quote:
         return {
-            "message": f"No quotes were updated. <br><br>{response_message}",
+            "message": f"No quotes were updated. <br><br>{dynamic_message}",
             "temporaryMessage": True
         } 
     
     return {
-        "message": response_message,
+        "message": dynamic_message,
         "temporaryMessage": True
         }
     
 def delete_quote_line(user, user_message, session_data):
     """Deleting quote line item from quote"""
     # 🧠 Make the session context
-    session_context = make_session_context(user, "DeleteQuoteLine", "quote_agent", session_data, user_message)
+    #session_context = make_session_context(user, "DeleteQuoteLine", "quote_agent", session_data, user_message)
+
+    current_state, previous_summary = get_session_context("delete_quote_line", session_data)
 
     response_message = ""
 
     try:
-        extracted_sku = extract_quote_line_items_to_delete(user_message)
+        llm_result, tokens_used, cost_est = extract_quote_line_to_delete_with_llm(
+            user_message=user_message,
+            current_state=current_state,
+            previous_summary=previous_summary
+        )
+
+        #print(f"\n\nEsto retorna el LLM: {llm_result}\n\n")
+
+        # --- 3️⃣ Separar productos completados vs incompletos ---
+        completed_quote_lines = []
+        remaining_quote_lines = []
+
+        for product in llm_result["delete_quote_line"]:
+            if product.get("completed"):
+                completed_quote_lines.append(product["data"])
+            else:
+                remaining_quote_lines.append(product)
+
+        # Guardar solo los incompletos en session state
+        session_data["state"]["delete_quote_line"] = remaining_quote_lines
+
+        # Return if not any completed products
+        if not completed_quote_lines:
+            return {
+                "message": llm_result["agent_message"],
+                "session_summary": llm_result["summary"]
+            }
+        
+        #extracted_sku = extract_quote_line_items_to_delete(user_message)
+
+        extracted_sku = []
+
+        for quote_line in llm_result["delete_quote_line"]:
+            extracted_sku.append(quote_line["data"])
+
 
         # Looking for active quote
         quote = get_active_quote(user_message, session_data)
 
         # ⚠️ Verify if function return an error
         if isinstance(quote, dict) and "message" in quote:
-            session_context["item_index"] = 1
-            session_context["extracted"] = extracted_sku
             agent_response = f"Missing fields: quantity, discount or term"
-            save_or_update_conversation_context(session_context, agent_response)
 
             return quote
         
@@ -385,11 +508,6 @@ def delete_quote_line(user, user_message, session_data):
         if not extracted_sku:
             # ✅ Save quote in session data
             set_active_quote_to_session_data(session_data, quote)
-
-            session_context["item_index"] = 1
-            session_context["extracted"] = extracted_sku
-            agent_response = f"Failed to extract SKUs or product names for removing the quote line item. Please try again or check your input."
-            save_or_update_conversation_context(session_context, agent_response)
             
             return {
                 "message": "⚠️ Failed to extract SKUs or product names for removing the quote line item. Please try again or check your input."
@@ -400,17 +518,12 @@ def delete_quote_line(user, user_message, session_data):
             sku = item["sku"]
             name = item["name"]
 
-            # Add full item for session context
-            session_context["item_index"] = index
-            session_context["extracted"] = item
 
             # Check if the product exists
             try:
                 product = Product.objects.get(Q(sku=sku) | Q(sku=name) | Q(name=sku) | Q(name=name))
             except Product.DoesNotExist:
                 response_message += f"⚠️ Product '{sku}/{name}' is not registered.<br>"
-                agent_response = f"Error: Product '{sku}/{name}' is not registered."
-                save_or_update_conversation_context(session_context, agent_response)
                 continue
 
             sku = product.sku
@@ -430,20 +543,14 @@ def delete_quote_line(user, user_message, session_data):
             except QuoteLine.DoesNotExist:
                 quote_line = None
                 response_message += f"⚠️ The quote line with product SKU '{product.sku}' does not exist in quote {quote.name}.<br>"
-                agent_response = f"Error: The quote line with product SKU '{product.sku}' does not exist in quote {quote.name}."
-                save_or_update_conversation_context(session_context, agent_response)
                 continue
 
             except Exception as e:
                 quote_line = None
                 response_message += f"⚠️ Something went wrong when trying to update the quote line Error: {e}.<br>"
-                agent_response = f"Error: Something went wrong when trying to update the quote line Error: {e}."
-                save_or_update_conversation_context(session_context, agent_response)
                 continue
 
     except Quote.DoesNotExist:
-        agent_response = f"Error: Quote not found. Please check the quote name."
-        save_or_update_conversation_context(session_context, agent_response)
         return {
             "message": "⚠️ Error: Quote not found. Please check the quote name."
         }
@@ -454,8 +561,16 @@ def delete_quote_line(user, user_message, session_data):
     # ✅ Update quote (subtotal, discounts fields and net amount)
     quote.save()
 
+    dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_delete_quote_lines_message(
+        completed_quote_lines=completed_quote_lines,
+        db_results=response_message,
+        remaining_quote_lines=remaining_quote_lines,
+        previous_summary=llm_result["summary"]
+    )
+
     return {
-        "message": response_message,
+        "message": dynamic_message,
+        "session_summary": updated_summary,
         "update_details": get_quote_details(quote),
         "temporaryMessage": True,
         "iterations": index
@@ -474,10 +589,6 @@ def delete_quote(user, user_message, session_data):
 
         # ⚠️ Verify if function return an error
         if isinstance(quote, dict) and "message" in quote:
-            session_context["item_index"] = 1
-            session_context["extracted"] = "No extracted data, user just wants to delete quote."
-            agent_response = f"No active quote was found, just save data and retry."
-            save_or_update_conversation_context(session_context, agent_response)
             return quote
         
         logging.info(f"Deleting quote with name: {quote.name}...")
@@ -509,10 +620,6 @@ def delete_quote(user, user_message, session_data):
         }
     
     except Exception as e:
-        session_context["item_index"] = 1
-        session_context["extracted"] = "No extracted data, user just wants to delete quote."
-        agent_response = f"An unexpected error occurred: {str(e)}"
-        save_or_update_conversation_context(session_context, agent_response)
 
         logging.exception("An unexpected error occurred while deleting the quote.")
         return {

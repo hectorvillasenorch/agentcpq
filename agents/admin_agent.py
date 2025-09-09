@@ -10,7 +10,7 @@ from django.forms.models import model_to_dict
 from django.contrib.auth.models import User
 
 #LLM helpers
-from .utils.admin_agent.llm_helpers import extract_validation_rules, extract_rules_details_to_render, extract_rule_updates, extract_rule_deletes, extract_custom_object_updates
+from .utils.admin_agent.llm_helpers import extract_validation_rules, extract_rules_details_to_render, extract_rule_updates, extract_rule_deletes, extract_custom_object_updates, extract_email_alerts_deletes
 
 #Rules helpers
 from .utils.admin_agent.rules_helpers import handle_extracted_rules_details, handle_rules_updates, handle_rules_deletes
@@ -39,7 +39,7 @@ def admin_agent(user, action, user_message, session_data):
         "DeleteRule": delete_rule,
         "CreateEmailAlert": create_email_alert,
         "UpdateEmailAlert": update_email_alert,
-        #"DeleteEmailAlert": delete_email_alert
+        "DeleteEmailAlert": delete_email_alert
     }
 
     # ✅ Dynamically call the function if action exists in map
@@ -287,7 +287,6 @@ def create_validation_rule(user, user_message, session_data):
             response_message.append(content_message)
             continue
         
-        print(f"\n\nRule: {response_message}\n")
 
     return {
         "message": "Here are the rules details:",
@@ -415,7 +414,7 @@ def delete_rule(user, user_message, session_data):
         }
 
 from agents.utils.admin_agent.llm_helpers import extract_email_alert_details, extract_email_alert_updates
-from agents.utils.admin_agent.handle_helpers import handle_email_alerts_creation, handle_email_alerts_updates
+from agents.utils.admin_agent.handle_helpers import handle_email_alerts_creation, handle_email_alerts_updates, handle_email_alerts_deletes
 
 def create_email_alert(user, user_message, session_data):
     """Create email alert"""
@@ -455,11 +454,14 @@ def create_email_alert(user, user_message, session_data):
         return {
             "message": f"No email alerts were created. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
+        }
+    
+
     
     return {
         "message": response_message,
-        "temporaryMessage": True
+        "email_alerts_details": email_alerts_created,
+        "hiddenMessage": "True"
         }
 
 def update_email_alert(user, user_message, session_data):
@@ -497,6 +499,44 @@ def update_email_alert(user, user_message, session_data):
     if not email_alerts_updated:
         return {
             "message": f"No email alerts were updated. <br><br>{response_message}",
+            "temporaryMessage": True
+        } 
+    
+    return {
+        "message": response_message,
+        "temporaryMessage": True
+        }
+
+def delete_email_alert(user, user_message, session_data):
+    """Delete email alerts"""
+    # 🧠 Make the session context
+    session_context = make_session_context(user, "DeleteEmailAlert", "admin_agent", session_data, user_message)
+
+    logging.info("🔧 Deleting email alert...\n\n")
+    # ✅ Looking for active quote
+    
+        
+    # ✅ Extract quote line updates with LLM
+    extracted_email_alerts_deletes = extract_email_alerts_deletes(user_message)
+
+    if not extracted_email_alerts_deletes:
+        session_context["item_index"] = 1
+        session_context["extracted"] = "No data, user just wants to delete any email alert."
+        agent_response = f"An error occurred while extracting your updates. Please try again."
+        save_or_update_conversation_context(session_context, agent_response)
+        return {
+        "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
+        }
+    
+    response_message = ""
+
+    # ✅ Handle rules deletes
+    response_message, deleted_email_alerts = handle_email_alerts_deletes(extracted_email_alerts_deletes, response_message, session_context)
+
+    # ✅ Return
+    if not deleted_email_alerts:
+        return {
+            "message": f"No email alerts were deleted. <br><br>{response_message}",
             "temporaryMessage": True
         } 
     
