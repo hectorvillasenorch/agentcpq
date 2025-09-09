@@ -61,7 +61,7 @@ INSTALLED_APPS = [
     "hubspot",
     'django.contrib.humanize',
     'storages',
-    'api',
+    'api'
 ]
 
 MIDDLEWARE = [

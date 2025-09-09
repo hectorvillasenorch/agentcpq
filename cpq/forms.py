@@ -4,6 +4,10 @@ from django.forms import modelformset_factory
 from django.apps import apps
 from django.contrib.auth import get_user_model
 
+from django.contrib.auth.models import User
+from .models import EmailAlert
+import json
+
 
 DATA_TYPE_CHOICES = [
     ('text', 'Text'),
@@ -55,6 +59,49 @@ def get_model_choices():
         choices.append((full_label, full_label))
     return sorted(choices)
 
+class CustomFieldForm(forms.ModelForm):
+    lookup_model = forms.ChoiceField(
+        required=False,
+        choices=get_model_choices(),  # dynamically populated
+        widget=forms.Select(attrs={'class': 'browser-default'})
+    )
+    data_type = forms.ChoiceField(
+        choices=DATA_TYPE_CHOICES, 
+        widget=forms.Select(attrs={'class': 'browser-default'})
+    )
+    crm = forms.ChoiceField(choices=CRM_CHOICES)
+
+    class Meta:
+        model = CustomField
+        fields = [
+            'label', 'name', 'crm', 'object_type', 
+            'custom_object', 'data_type', 'required', 'lookup_model'
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['custom_object'].required = False
+        self.fields['object_type'].required = False
+        self.fields['lookup_model'].required = False
+
+    def clean(self):
+        cleaned_data = super().clean()
+        object_type = cleaned_data.get("object_type")
+        custom_object = cleaned_data.get("custom_object")
+        data_type = cleaned_data.get("data_type")
+        lookup_model = cleaned_data.get("lookup_model")
+
+        if custom_object:
+            cleaned_data["object_type"] = custom_object.name
+
+        if not object_type and not custom_object:
+            raise forms.ValidationError("You must select an Object Type and a Custom Object if required.")
+
+        if data_type == "lookup" and not lookup_model:
+            raise forms.ValidationError("Lookup fields require a lookup model (e.g., cpq.Account).")
+
+        return cleaned_data
+    
 class CustomFieldForm(forms.ModelForm):
     lookup_model = forms.ChoiceField(
         required=False,
@@ -330,3 +377,82 @@ class DynamicQuoteLineForm(forms.ModelForm):
                 cfv.save()
 
         return instance
+    
+class EmailAlertForm(forms.ModelForm):
+    recipients_users = forms.ModelMultipleChoiceField(
+        queryset=User.objects.all(),
+        required=False,
+        widget=forms.MultipleHiddenInput()  # 👈 lo escondemos
+    )
+
+    # Cambiamos a CharField en lugar de MultipleChoiceField
+    recipients_roles = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput()  # recibimos JSON desde JS
+    )
+
+    recipients_external = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={
+            'placeholder': 'Separate emails with commas',
+            'rows': 2,
+            'class': 'materialize-textarea'
+        })
+    )
+
+    class Meta:
+        model = EmailAlert
+        fields = '__all__'
+        exclude = ('created_by', 'updated_by')
+        widgets = {
+            "description": forms.Textarea(attrs={"class": "materialize-textarea"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['custom_object'].required = False
+        self.fields['offset_days'].required = False
+        self.fields['scheduled_cron'].required = False
+        self.fields['name'].disabled = True
+
+    def clean_recipients_roles(self):
+        data = self.cleaned_data.get("recipients_roles", "")
+        try:
+            # Intentamos decodificar JSON enviado desde JS
+            roles_list = json.loads(data) if data else []
+        except json.JSONDecodeError:
+            roles_list = []
+
+        # Validamos que cada rol exista en ROLE_CHOICES
+        valid_roles = [key for key, _ in EmailAlert.ROLE_CHOICES]
+        invalid = [r for r in roles_list if r not in valid_roles]
+        if invalid:
+            raise forms.ValidationError(f"Invalid roles: {invalid}")
+
+        # Guardamos como string separado por comas
+        return ",".join(roles_list)
+
+    def clean(self):
+        cleaned_data = super().clean()
+
+        offset_days = cleaned_data.get('offset_days')
+        scheduled_cron = cleaned_data.get('scheduled_cron')
+
+        if offset_days and scheduled_cron:
+            raise forms.ValidationError(
+                "You cannot configure offset days and scheduled cron at the same time; choose one or the other."
+            )
+
+        native_object = cleaned_data.get("native_object")
+        custom_object = cleaned_data.get("custom_object")
+        recipients_users = cleaned_data.get("recipients_users")
+        recipients_roles = cleaned_data.get("recipients_roles")
+        recipients_external = cleaned_data.get("recipients_external")
+
+        if not native_object and not custom_object:
+            raise forms.ValidationError("You must select a native object or a custom object.")
+
+        if not recipients_users and not recipients_roles and not recipients_external:
+            raise forms.ValidationError("You must specify at least one recipient (user, role, or external email).")
+
+        return cleaned_data

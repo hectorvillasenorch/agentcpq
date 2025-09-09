@@ -7,7 +7,7 @@ from salesforce.models import SalesforceToken
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.exceptions import ObjectDoesNotExist
 import json
-from .forms import CustomFieldForm, CustomObjectForm, generate_dynamic_form
+from .forms import CustomFieldForm, CustomObjectForm, EmailAlertForm, generate_dynamic_form
 from django.contrib.auth.decorators import login_required
 from django.contrib.contenttypes.models import ContentType
 from django.contrib import messages
@@ -24,8 +24,9 @@ import uuid, os
 from django.views.decorators.http import require_POST
 from decimal import Decimal, InvalidOperation
 from collections import defaultdict
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 from django.utils import timezone
+from .models import EmailAlert
 
 # HubSpot sync
 from hubspot.views import sync_opportunity_to_hubspot
@@ -644,6 +645,143 @@ def business_rules_view(request):
         'company': company,
         "rules_by_type": rules_by_type
     })
+
+def manage_notifications_view(request):
+    email_alerts = EmailAlert.objects.all()
+
+    # Preparamos helper para "roles" y "external"
+    alerts_with_lists = []
+    for alert in email_alerts:
+        # Convierte roles a lista
+        roles_list = []
+        if alert.recipients_roles:
+            roles_list = [r.strip() for r in alert.recipients_roles.split(",") if r.strip()]
+
+        # Convierte CSV de external en lista
+        external_list = []
+        if alert.recipients_external:
+            external_list = [e.strip() for e in alert.recipients_external.split(",") if e.strip()]
+
+        # Inyectamos atributos extra al objeto
+        alert.roles_list = roles_list
+        alert.external_list = external_list
+
+        alerts_with_lists.append(alert)
+
+    # Filtrado por objeto
+
+    alert_groups = [
+        {
+            "title": "Lead Notifications",
+            "icon": "person_add",
+            "alerts": [a for a in alerts_with_lists if a.native_object == "Lead"]
+        },
+        {
+            "title": "Account Notifications",
+            "icon": "account_circle",
+            "alerts": [a for a in alerts_with_lists if a.native_object == "Account"]
+        },
+        {
+            "title": "Opportunity Notifications",
+            "icon": "trending_up",
+            "alerts": [a for a in alerts_with_lists if a.native_object == "Opportunity"]
+        },
+        {
+            "title": "Quote Notifications",
+            "icon": "request_quote",
+            "alerts": [a for a in alerts_with_lists if a.native_object == "Quote"]
+        },
+        {
+            "title": "Subscription Notifications",
+            "icon": "autorenew",
+            "alerts": [a for a in alerts_with_lists if a.native_object == "Subscription"]
+        }
+    ]
+
+    return render(request, 'manage_notifications.html', {
+        'alert_groups': alert_groups
+    })
+
+def edit_notification(request, alert_name):
+    notification = get_object_or_404(EmailAlert, name=alert_name)
+
+    if request.method == "POST":
+        post_data = request.POST.copy()
+
+        # Convertimos los hidden inputs de chips a listas
+        if 'recipients_users' in post_data and post_data['recipients_users']:
+            post_data.setlist('recipients_users', post_data['recipients_users'].split(','))
+
+        # recipients_roles lo dejamos como JSON enviado desde JS
+        form = EmailAlertForm(post_data, instance=notification)
+
+        if form.is_valid():
+            notification = form.save(commit=False)
+
+            # recipients_roles ya viene como string limpio desde clean_recipients_roles
+            # recipients_external convertimos a string limpio
+            notification.recipients_external = ",".join([
+                e.strip() for e in form.cleaned_data.get("recipients_external", "").split(",") if e.strip()
+            ])
+
+            notification.offset_days = form.cleaned_data.get("offset_days")
+            notification.scheduled_cron = form.cleaned_data.get("scheduled_cron")
+
+            if not form.cleaned_data.get("custom_object"):
+                notification.custom_object = None
+
+
+            notification.updated_by = request.user
+
+            notification.save()
+            form.save_m2m()  # guarda recipients_users
+
+            return redirect("cpq:manage_notifications")
+        else:
+            print("Form errors:", form.errors)
+
+    else:
+        form = EmailAlertForm(instance=notification)
+
+    # Preparar roles para chips JS
+    role_dict = dict(EmailAlert.ROLE_CHOICES)
+    initial_roles = []
+
+    if notification.recipients_roles:
+        role_keys = [r.strip() for r in notification.recipients_roles.split(",") if r.strip()]
+        initial_roles = [{"tag": role_dict.get(key, key), "value": key} for key in role_keys]
+
+    context = {
+        "notification": notification,
+        "form": form,
+        "roles_choices": EmailAlert.ROLE_CHOICES,
+        "initial_roles": initial_roles,
+        "users": User.objects.all(),
+        "emails_external": notification.recipients_external.split(",") if notification.recipients_external else [],
+    }
+
+    return render(request, "edit_email_alert.html", context)
+
+
+@require_POST
+def create_notification(request):
+    notification_type = request.POST.get('notification_type')  # 'account', 'lead', etc.
+    when = request.POST.get('account_when')  # coincide con el name del select
+    recipient = request.POST.get('account_recipient')  # coincide con el name del select
+
+    print(f"Informacion: {notification_type}")
+    print(f"When: {when}")
+    print(f"Recipient: {recipient}")
+
+    # Guardar en el modelo
+    #Notification.objects.create(
+    #    notification_type=notification_type,
+    #    when=when,
+    #    recipient=recipient,
+    #    options={}  # opciones extra si las necesitas
+    #)
+
+    return JsonResponse({'status': 'ok'})
 
 def create_business_rule(request):
     rule_type = request.GET.get("type", "validation")

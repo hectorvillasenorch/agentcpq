@@ -1197,6 +1197,20 @@ class ActionUsage(models.Model):
     def __str__(self):
         return f"{self.action} by {self.user or 'System'} on {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
 
+    
+class EmailAlert(models.Model):
+    TRIGGER_CHOICES = [
+        ("lead_created", "New Lead Created"),
+        ("account_created", "New Account Created"),
+        ("opportunity_created", "New Opportunity Created"),
+        ("opportunity_closed_won", "Opportunity Closed Won"),
+        ("opportunity_closed_lost", "Opportunity Closed Lost"),
+        ("quote_sent_for_approval", "Quote Sent for Approval"),
+        ("quote_approved", "Quote Approved"),
+        ("quote_rejected", "Quote Rejected"),
+        ("quote_expiring", "Quote Expiring Soon"),
+        ("subscription_renewal", "Subscription Renewal Reminder"),
+    ]
 
 class TenantUsageReport(models.Model):
     tenant = models.ForeignKey(
@@ -1267,3 +1281,79 @@ class EmailNotification(models.Model):
     context = models.JSONField()
     sent_at = models.DateTimeField(auto_now_add=True)
 
+    NATIVE_OBJECT_CHOICES = [
+        ("Lead", "Lead"),
+        ("Account", "Account"),
+        ("Opportunity", "Opportunity"),
+        ("Quote", "Quote"),
+        ("Subscription", "Subscription"),
+    ]
+
+    ROLE_CHOICES = [
+        ("all_superusers", "All Superusers"),
+        ("all_admins", "All Admins"),
+        ("all_staff", "All Staff"),
+        ("creator", "Creator"),
+    ]
+
+    name = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True, null=True)
+
+    # Trigger that fires the workflow
+    trigger = models.CharField(max_length=50, choices=TRIGGER_CHOICES)
+
+    # Object this alert applies to
+    native_object = models.CharField(
+        max_length=50,
+        choices=NATIVE_OBJECT_CHOICES,
+        blank=True,
+        null=True,
+        help_text="Select a native object"
+    )
+    custom_object = models.ForeignKey(
+        CustomObject,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        help_text="Select a custom object"
+    )
+
+    # Recipients
+    recipients_users = models.ManyToManyField(User, blank=True, through="EmailAlertRecipient", related_name="email_alerts")
+    recipients_roles = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="Select the role of the recipients"
+    )
+    recipients_external = models.TextField(
+        blank=True, null=True,
+        help_text="External emails separated by commas"
+    )
+
+    # Additional configuration
+    offset_days = models.IntegerField(
+        blank=True, null=True,
+        help_text="E.g., send 7 days before the expiration date (for subscriptions, quotes, etc.)"
+    )
+    scheduled_cron = models.CharField(
+        max_length=100, blank=True, null=True,
+        help_text="Cron format or text like 'every other Friday at noon'"
+    )
+
+    active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='email_alerts_created')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='email_alerts_updated')
+
+    def __str__(self):
+        return f"Email Alert: {self.description}, when: {self.trigger}, options: {self.offset_days if self.offset_days else self.scheduled_cron}"
+    
+class EmailAlertRecipient(models.Model):
+    email_alert = models.ForeignKey("EmailAlert", on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ("email_alert", "user")

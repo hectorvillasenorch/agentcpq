@@ -42,7 +42,7 @@ from .utils.quote_agent.general_helpers import get_document_pdf, get_backup_valu
 from .utils.orchestrator.context_handle_helpers import save_or_update_conversation_context, make_session_context
 
 # Notification Email Functions
-from cpq.notifications.quote_notifications import notify_opportunity_created
+from cpq.notifications.notifications import notify_opportunity_created
 
 # ✅ Load environment variables
 load_dotenv()
