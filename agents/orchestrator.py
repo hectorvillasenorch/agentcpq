@@ -83,15 +83,24 @@ def orchestrate_request(user, user_message, session_data):
     # ⚠️ Use a real user later; hardcode for now
     user = User.objects.get(username=user)
 
+    # Robust session handling: create if missing or absent
     if not session_id:
         chat_session = ChatSession.objects.create(
             user=user,
             session_id=str(uuid4()),
-            title=user_message[:30]  # Optionally use part of the first message
+            title=user_message[:30]
         )
         session_data["session_id"] = chat_session.session_id
     else:
-        chat_session = ChatSession.objects.get(session_id=session_id)
+        try:
+            chat_session = ChatSession.objects.get(session_id=session_id)
+        except ChatSession.DoesNotExist:
+            chat_session = ChatSession.objects.create(
+                user=user,
+                session_id=session_id,
+                title=user_message[:30]
+            )
+            session_data["session_id"] = chat_session.session_id
 
     
     ChatMessage.objects.create(
@@ -221,11 +230,19 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
         chat_session = ChatSession.objects.create(
             user=user,
             session_id=str(uuid4()),
-            title=user_message[:30]  # Optionally use part of the first message
+            title=user_message[:30]
         )
         session_data["session_id"] = chat_session.session_id
     else:
-        chat_session = ChatSession.objects.get(session_id=session_id)
+        try:
+            chat_session = ChatSession.objects.get(session_id=session_id)
+        except ChatSession.DoesNotExist:
+            chat_session = ChatSession.objects.create(
+                user=user,
+                session_id=session_id,
+                title=user_message[:30]
+            )
+            session_data["session_id"] = chat_session.session_id
 
     #Extract the JSON to give the hidden field (Only for update message)
     if user_message.startswith("Update Quote Line:"):
