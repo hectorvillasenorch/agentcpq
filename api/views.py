@@ -70,7 +70,12 @@ def orchestrate_v1(request):
     """POST /api/v1/orchestrator/
 
     Headers: X-API-KEY
-    Body: { "message": str, "session_id"?: str, "session_data"?: object }
+    Body: {
+        "username": str,
+        "message": str,
+        "session_id"?: str,
+        "session_data"?: object
+    }
     """
     if request.method != "POST":
         return JsonResponse({"error": "Only POST allowed"}, status=405)
@@ -85,9 +90,14 @@ def orchestrate_v1(request):
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
+    # ✅ Required fields
     message = (data.get("message") or "").strip()
+    username = (data.get("username") or "").strip()
+
     if not message:
         return JsonResponse({"error": "'message' is required"}, status=400)
+    if not username:
+        return JsonResponse({"error": "'username' is required in body"}, status=400)
 
     session_data = data.get("session_data") or {}
     if not isinstance(session_data, dict):
@@ -97,8 +107,7 @@ def orchestrate_v1(request):
         session_data["session_id"] = data["session_id"]
 
     try:
-        # Use tenant name or ID as session/user identifier
-        result = handle_user_request(tenant.name, message, session_data)
+        result = handle_user_request(username, message, session_data)
     except Exception as e:
         return JsonResponse({"error": f"Internal error: {str(e)}"}, status=500)
 
@@ -106,3 +115,4 @@ def orchestrate_v1(request):
         "response": result,
         "session_data": session_data,
     }, status=200)
+    
