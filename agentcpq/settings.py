@@ -18,21 +18,13 @@ SECRET_KEY = config('SECRET_KEY')
 DEBUG = False
 
 
-## ALLOW IFRAME
-CORS_ALLOWED_ORIGINS = [
-    "https://app.hubspot.com",
-]
-
-CSP_FRAME_ANCESTORS = ["https://app.hubspot.com"]
-#### IFRAME END
-
 ALLOWED_HOSTS = [
     '.herokuapp.com', 
     'sympletech.agentcpq.ai'
     ]
 
 # Allow Django to be embedded in an IFrame (required for Salesforce)
-# X_FRAME_OPTIONS = 'ALLOWALL'
+X_FRAME_OPTIONS = 'ALLOWALL'
 
 
 CSRF_COOKIE_SECURE = True 
@@ -74,6 +66,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "agentcpq.middleware.hubspot_headers.HubSpotIframeHeadersMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
