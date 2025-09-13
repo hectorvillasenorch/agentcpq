@@ -18,6 +18,14 @@ SECRET_KEY = config('SECRET_KEY')
 DEBUG = False
 
 
+## ALLOW IFRAME
+CORS_ALLOWED_ORIGINS = [
+    "https://app.hubspot.com",
+]
+
+CSP_FRAME_ANCESTORS = ["https://app.hubspot.com"]
+#### IFRAME END
+
 ALLOWED_HOSTS = [
     '.herokuapp.com', 
     'sympletech.agentcpq.ai'
