@@ -24,26 +24,32 @@ ALLOWED_HOSTS = [
     ]
 
 
-
-CSRF_COOKIE_SECURE = True 
-SESSION_COOKIE_SECURE = True
-SESSION_COOKIE_AGE = 86400  
-SESSION_EXPIRE_AT_BROWSER_CLOSE = False
-
-CORS_ALLOWED_ORIGINS = [
-    NGROK_FULL_URL,
-    "chrome-extension://cijelopfcdehkcadcjmbjehppoocjknh"
-]
-
-CSRF_COOKIE_DOMAIN = None
-CSRF_COOKIE_SAMESITE = None
+    # ✅ Ensure cookies are secure for HTTPS
 CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
 
+# ✅ Allow cookies in cross-site iframes (Chrome Extension)
+CSRF_COOKIE_SAMESITE = 'None'
+SESSION_COOKIE_SAMESITE = 'None'  # Optional but recommended for login sessions
+
+# ✅ Set cookie domain to default
+CSRF_COOKIE_DOMAIN = None  # Let Django determine based on request
+
+# ✅ Session control
+SESSION_COOKIE_AGE = 86400  # 1 day
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Keep session until timeout
+
+# ✅ Allow Chrome Extension and Ngrok/Heroku as trusted CSRF origins
 CSRF_TRUSTED_ORIGINS = [
-    NGROK_FULL_URL,
     "https://agentcpq-staging-60c9c1a8f187.herokuapp.com",
-    "chrome-extension://cijelopfcdehkcadcjmbjehppoocjknh" 
+    "chrome-extension://cijelopfcdehkcadcjmbjehppoocjknh",
+    NGROK_FULL_URL  # Replace with actual URL at runtime
+]
+
+# ✅ Allow CORS from frontend tools (if using JS-based chat or React apps)
+CORS_ALLOWED_ORIGINS = [
+    NGROK_FULL_URL,
+    "chrome-extension://cijelopfcdehkcadcjmbjehppoocjknh"
 ]
 
 # Application definition
