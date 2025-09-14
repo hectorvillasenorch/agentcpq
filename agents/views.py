@@ -17,6 +17,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-4"
 
 
+@xframe_options_exempt
+@login_required
 def agents_chat(request):
     """Render the chat page with CSRF token."""
     context = {}
