@@ -19,7 +19,12 @@ urlpatterns = [
     path('hubspot/', include('hubspot.urls')),
 
     # Auth
-    path('login/', auth_views.LoginView.as_view(template_name='auth/login.html'), name='login'),
+    # path('login/', auth_views.LoginView.as_view(template_name='auth/login.html'), name='login'),
+    path(
+    'login/',
+        xframe_options_exempt(auth_views.LoginView.as_view(template_name='auth/login.html')),
+        name='login'
+    ),
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
     ### API Endpoints
     path('api/usage/', get_tenant_usage, name='get_tenant_usage'),

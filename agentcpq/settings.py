@@ -23,9 +23,7 @@ ALLOWED_HOSTS = [
     'sympletech.agentcpq.ai'
     ]
 
-# Allow Django to be embedded in an IFrame (required for Salesforce)
-X_FRAME_OPTIONS = 'ALLOWALL'
-CSP_FRAME_ANCESTORS = ["https://app.hubspot.com"]
+
 
 CSRF_COOKIE_SECURE = True 
 SESSION_COOKIE_SECURE = True
@@ -34,16 +32,18 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 
 CORS_ALLOWED_ORIGINS = [
     NGROK_FULL_URL,
-    "https://app.hubspot.com"
+    "chrome-extension://cijelopfcdehkcadcjmbjehppoocjknh"
 ]
 
-# ✅ Allow all domains in development (Use only for testing)
 CSRF_COOKIE_DOMAIN = None
+CSRF_COOKIE_SAMESITE = None
 CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
 
 CSRF_TRUSTED_ORIGINS = [
-    NGROK_FULL_URL
+    NGROK_FULL_URL,
+    "https://agentcpq-staging-60c9c1a8f187.herokuapp.com",
+    "chrome-extension://cijelopfcdehkcadcjmbjehppoocjknh" 
 ]
 
 # Application definition
