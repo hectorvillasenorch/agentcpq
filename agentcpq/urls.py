@@ -8,6 +8,7 @@ from django.contrib.auth.decorators import login_required
 from cpq.views import root_redirect
 from dashboard.views import get_tenant_usage
 from dashboard.views import CustomPasswordResetView
+from django.views.decorators.clickjacking import xframe_options_exempt
 
 urlpatterns = [
     path('', root_redirect),
