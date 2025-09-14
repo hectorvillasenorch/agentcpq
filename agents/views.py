@@ -7,6 +7,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.template.context_processors import csrf
 from dotenv import load_dotenv
 from django.contrib.auth.models import User
+from django.views.decorators.clickjacking import xframe_options_exempt
+from django.contrib.auth.decorators import login_required
 
 from .orchestrator import handle_user_request  # or orchestrate_request if needed
 
