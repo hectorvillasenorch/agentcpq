@@ -121,8 +121,8 @@
 
     console.log("🟢 Appending deal message:", dealMessage);
 
-    // 🔁 Send to backend (optional)
-    sendUserMessage?.(dealMessage); // safe call in case undefined
+    // ❌ Don't send to backend
+    // sendUserMessage?.(dealMessage);
 
     // ✅ Append to the chat box
     const chatBox = document.getElementById("chat-box");
@@ -140,7 +140,6 @@
     }
   });
 });
-
 
 
 </script>

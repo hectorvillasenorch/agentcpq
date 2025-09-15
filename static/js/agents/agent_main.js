@@ -358,9 +358,11 @@ function appendMessage(className, message) {
     chatBox.appendChild(messageBubble);
 
     // ✅ Re-initializes select from Materialize
-    const selects = messageBubble.querySelectorAll('select');
-    if (selects.length > 0) {
+   const selects = messageBubble.querySelectorAll('select');
+    if (selects.length > 0 && typeof M !== 'undefined' && M.FormSelect) {
         M.FormSelect.init(selects);
+    } else {
+        console.warn("Materialize M.FormSelect not available or no selects found.");
     }
 
     if (message.includes("agent-json")) {
