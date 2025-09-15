@@ -110,15 +110,21 @@
   }
   // Listen for messages from parent iframe
   window.addEventListener("message", (event) => {
+    console.log("[AgentCPQ] Message received from parent:", event.data);
+
     if (!event.data || typeof event.data !== "object") return;
 
     const { deal_id, deal_name } = event.data;
 
     if (deal_id && deal_name) {
       const dealMessage = `Loaded deal context: ${deal_name} (ID: ${deal_id})`;
+      console.log("[AgentCPQ] Posting message to chat:", dealMessage);
       sendUserMessage(dealMessage);
     }
   });
+
+
+
 </script>
 
 
