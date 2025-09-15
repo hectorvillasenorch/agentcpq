@@ -108,7 +108,20 @@
     // Enviar al backend
     sendUserMessage("Update Quote: " + JSON.stringify(updatePayload));
   }
+  // Listen for messages from parent iframe
+  window.addEventListener("message", (event) => {
+    if (!event.data || typeof event.data !== "object") return;
+
+    const { deal_id, deal_name } = event.data;
+
+    if (deal_id && deal_name) {
+      const dealMessage = `Loaded deal context: ${deal_name} (ID: ${deal_id})`;
+      sendUserMessage(dealMessage);
+    }
+  });
 </script>
+
+
 
 </body>
 </html>
