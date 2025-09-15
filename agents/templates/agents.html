@@ -108,32 +108,37 @@
     // Enviar al backend
     sendUserMessage("Update Quote: " + JSON.stringify(updatePayload));
   }
-   // ✅ Add this part below ⬇️
+  document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("message", (event) => {
-  if (!event.data || typeof event.data !== "object") return;
+    if (!event.data || typeof event.data !== "object") return;
 
-  let { deal_id, deal_name } = event.data;
-  console.log("[iframe] Message received:", event.data);
+    let { deal_id, deal_name } = event.data;
+    console.log("[iframe] Message received:", event.data);
 
-  // Fallback in case values are undefined or null
-  deal_id = deal_id || "N/A";
-  deal_name = deal_name || "Unknown Deal";
+    if (!deal_id || !deal_name) return;
 
-  const dealMessage = `Loaded deal context: ${deal_name} (ID: ${deal_id})`;
+    const dealMessage = `Loaded deal context: ${deal_name} (ID: ${deal_id})`;
 
-  // 🔁 Send to backend via existing helper
-  sendUserMessage(dealMessage);
+    console.log("🟢 Appending deal message:", dealMessage);
 
-  // ✅ Optional: Also append to the chat box immediately
-  const chatBox = document.getElementById("chat-box");
-  const newMessage = document.createElement("div");
-  newMessage.classList.add("chat-text", "user");
-  newMessage.innerHTML = `
-    <div class="sender">You:</div>
-    <div class="message">${dealMessage}</div>
-  `;
-  chatBox.appendChild(newMessage);
-  chatBox.scrollTop = chatBox.scrollHeight;
+    // 🔁 Send to backend (optional)
+    sendUserMessage?.(dealMessage); // safe call in case undefined
+
+    // ✅ Append to the chat box
+    const chatBox = document.getElementById("chat-box");
+    if (chatBox) {
+      const newMessage = document.createElement("div");
+      newMessage.classList.add("chat-text", "user");
+      newMessage.innerHTML = `
+        <div class="sender">You:</div>
+        <div class="message">${dealMessage}</div>
+      `;
+      chatBox.appendChild(newMessage);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    } else {
+      console.warn("⚠️ chat-box not found in DOM.");
+    }
+  });
 });
 
 
