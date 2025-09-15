@@ -108,18 +108,28 @@
     // Enviar al backend
     sendUserMessage("Update Quote: " + JSON.stringify(updatePayload));
   }
-  // Listen for messages from parent iframe
+   // ✅ Add this part below ⬇️
   window.addEventListener("message", (event) => {
-    console.log("[AgentCPQ] Message received from parent:", event.data);
-
     if (!event.data || typeof event.data !== "object") return;
 
     const { deal_id, deal_name } = event.data;
 
     if (deal_id && deal_name) {
       const dealMessage = `Loaded deal context: ${deal_name} (ID: ${deal_id})`;
-      console.log("[AgentCPQ] Posting message to chat:", dealMessage);
+
+      // 🔁 Send to backend via existing helper
       sendUserMessage(dealMessage);
+
+      // ✅ Optional: Also append to the chat box immediately
+      const chatBox = document.getElementById("chat-box");
+      const newMessage = document.createElement("div");
+      newMessage.classList.add("chat-text", "user");
+      newMessage.innerHTML = `
+        <div class="sender">You:</div>
+        <div class="message">${dealMessage}</div>
+      `;
+      chatBox.appendChild(newMessage);
+      chatBox.scrollTop = chatBox.scrollHeight;
     }
   });
 
