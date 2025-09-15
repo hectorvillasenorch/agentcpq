@@ -110,29 +110,31 @@
   }
    // ✅ Add this part below ⬇️
   window.addEventListener("message", (event) => {
-    if (!event.data || typeof event.data !== "object") return;
+  if (!event.data || typeof event.data !== "object") return;
 
-    const { deal_id, deal_name } = event.data;
-    console.log("[iframe] Message received:", event.data);
+  let { deal_id, deal_name } = event.data;
+  console.log("[iframe] Message received:", event.data);
 
-    if (deal_id && deal_name) {
-      const dealMessage = `Loaded deal context: ${deal_name} (ID: ${deal_id})`;
+  // Fallback in case values are undefined or null
+  deal_id = deal_id || "N/A";
+  deal_name = deal_name || "Unknown Deal";
 
-      // 🔁 Send to backend via existing helper
-      sendUserMessage(dealMessage);
+  const dealMessage = `Loaded deal context: ${deal_name} (ID: ${deal_id})`;
 
-      // ✅ Optional: Also append to the chat box immediately
-      const chatBox = document.getElementById("chat-box");
-      const newMessage = document.createElement("div");
-      newMessage.classList.add("chat-text", "user");
-      newMessage.innerHTML = `
-        <div class="sender">You:</div>
-        <div class="message">${dealMessage}</div>
-      `;
-      chatBox.appendChild(newMessage);
-      chatBox.scrollTop = chatBox.scrollHeight;
-    }
-  });
+  // 🔁 Send to backend via existing helper
+  sendUserMessage(dealMessage);
+
+  // ✅ Optional: Also append to the chat box immediately
+  const chatBox = document.getElementById("chat-box");
+  const newMessage = document.createElement("div");
+  newMessage.classList.add("chat-text", "user");
+  newMessage.innerHTML = `
+    <div class="sender">You:</div>
+    <div class="message">${dealMessage}</div>
+  `;
+  chatBox.appendChild(newMessage);
+  chatBox.scrollTop = chatBox.scrollHeight;
+});
 
 
 
