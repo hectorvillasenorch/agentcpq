@@ -113,7 +113,7 @@
     if (!event.data || typeof event.data !== "object") return;
 
     const { deal_id, deal_name } = event.data;
-    console.log(deal_id + 'NAME =>' + deal_name );
+    console.log("[iframe] Message received:", event.data);
 
     if (deal_id && deal_name) {
       const dealMessage = `Loaded deal context: ${deal_name} (ID: ${deal_id})`;
