@@ -309,6 +309,7 @@ class Quote(models.Model):
     last_synced_at = models.DateTimeField(null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_quotes')
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quotes')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_quotes')
 
 
     def get_total_discount_percentage(self):
@@ -360,16 +361,18 @@ class Quote(models.Model):
         if self.tax_percentage != Decimal("0.00"):
             self.tax_amount = (self.net_amount * self.tax_percentage / Decimal("100.00")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             self.net_amount = (self.net_amount + self.tax_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        elif self.tax_percentage == Decimal("0.00"):
+            self.tax_amount = Decimal("0.00")
 
     def update_tax(self):
         try:
             settings = QuoteDocumentSettings.objects.first()
             if settings and settings.quote_tax:
-                self.tax_percentage = settings.quote_tax
+                self.tax_percentage = Decimal(str(settings.quote_tax))
             else:
-                self.tax_amount = Decimal("0.00")
+                self.tax_percentage = Decimal("0.00")
         except QuoteDocumentSettings.DoesNotExist:
-            self.tax_amount = Decimal("0.00")
+            self.tax_percentage = Decimal("0.00")
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -664,6 +667,7 @@ class BusinessRule(models.Model):
     error_message = models.TextField(blank=True, help_text="Message shown when the rule is triggered.")
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_business_rules')
     conditions = models.JSONField(default=list, blank=True, help_text="List of conditions for the rule.")
 
     def __str__(self):
@@ -1197,7 +1201,6 @@ class ActionUsage(models.Model):
     def __str__(self):
         return f"{self.action} by {self.user or 'System'} on {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
 
-    
 
 class TenantUsageReport(models.Model):
     tenant = models.ForeignKey(
@@ -1361,5 +1364,5 @@ class EmailAlertLog(models.Model):
         unique_together = ("email_alert", "instance_type", "instance_id")
         ordering = ["-sent_at"]
 
-    def _str_(self):
+    def __str__(self):
         return f"{self.email_alert} sent to {self.instance_type} {self.instance_id} at {self.sent_at}"

@@ -64,9 +64,23 @@
                 {% endif %}
 
                 {% if msg.sender == 'agent' and 'rules' and 'read_only' in msg.content %}
-                <div class="chat-text agent">
-                    <div class="senderagent">Agent: </div>
+                  <div class="chat-text agent">
+                    <img width="95px" src="/media/img/agentcpq-5.png" alt="AgentCPQ Logo">
                     <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
+                {% endif %}
+
+                {% if msg.sender == 'agent' and 'email_alerts_details' in msg.content %}
+                  <div class="chat-text agent">
+                      <img width="95px" src="/media/img/agentcpq-5.png" alt="AgentCPQ Logo">
+                      <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
+                {% endif %}
+
+                {% if msg.sender == 'agent' and 'retrieved_records' in msg.content %}
+                  <div class="chat-text agent">
+                      <img width="95px" src="{% static 'img/agentcpq-5.png' %}" alt="AgentCPQ Logo">
+                      <div class="agent-json hola-hola" data-raw="{{ msg.content|escapejs }}"></div>
                   </div>
                 {% endif %}
               </div>
@@ -82,7 +96,7 @@
         </div>
     </div>
 
-    <script>
+<script>
   // Inicializar flatpickr
   flatpickr("#expiration_date", {
     dateFormat: "m/d/Y", // MM/DD/YYYY
@@ -143,8 +157,6 @@
 
 
 </script>
-
-
 
 </body>
 </html>

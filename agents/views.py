@@ -1,6 +1,7 @@
 import json
 import os
 import logging
+import uuid
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
@@ -9,6 +10,9 @@ from dotenv import load_dotenv
 from django.contrib.auth.models import User
 from django.views.decorators.clickjacking import xframe_options_exempt
 from django.contrib.auth.decorators import login_required
+from django.utils import timezone
+from agents.models import ChatSession
+
 
 from .orchestrator import handle_user_request  # or orchestrate_request if needed
 
@@ -71,14 +75,15 @@ def _handle_pending_action(pending_action, user_message, session_data):
 @csrf_exempt
 def chat_with_gpt(request):
     """API endpoint to process user messages and route them based on AI-determined intent."""
+    
     # --- 1. Validate request method ---
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request method. Use POST."}, status=405)
 
     # --- 2. Log basic info ---
     opportunity_id = request.GET.get("opportunity_id", "No Opportunity ID provided")
-    logger.info(f"🔹 DEBUG: Incoming request URL - {request.build_absolute_uri()}")
-    logger.info(f"🔹 DEBUG: Extracted Opportunity ID - {opportunity_id}")
+    #logger.info(f"🔹 DEBUG: Incoming request URL - {request.build_absolute_uri()}")
+    #logger.info(f"🔹 DEBUG: Extracted Opportunity ID - {opportunity_id}")
     logger.info(f"USER LOGGED IN - {request.user.username}")
 
     # --- 3. Parse JSON body ---
@@ -94,7 +99,7 @@ def chat_with_gpt(request):
 
     # --- 4. Load session data ---
     session_data = request.session.get("session_data", {})
-    logger.info(f"🔹 DEBUG: Session Data: {session_data}")
+    #logger.info(f"🔹 DEBUG: Session Data: {session_data}")
 
     # --- 4.1 Load custom session data if exist---
     if custom_session_id:
@@ -117,6 +122,33 @@ def chat_with_gpt(request):
                 request.session["session_data"] = session_data
                 logger.info(f"[Pending Action Resolved] Response: {result['message']}")
                 return JsonResponse({"response": result})
+            
+    if "session_id" not in session_data:
+        user_obj = User.objects.get(username=request.user.username)
+        new_chat_session = ChatSession.objects.create(
+            session_id=str(uuid.uuid4()),  # 🔹 Esto asegura que sea único
+            user=user_obj,
+            title=user_message[:30]
+        )
+        session_data["session_id"] = str(new_chat_session.session_id)
+        request.session["session_data"] = session_data
+
+        try:
+            ai_response = handle_user_request(request.user.username, user_message, session_data)
+        except Exception as e:
+            logger.error(f"❌ Error in Orchestrator logic: {e}", exc_info=True)
+            return JsonResponse({"error": "Internal server error."}, status=500)
+
+        # --- 7. Save updated session data ---
+        request.session["session_data"] = session_data
+
+        return JsonResponse({
+            "response": {
+                "response": ai_response,
+                "session_created": True,
+                "redirect_url": f"/dashboard?view=agents&session_id={new_chat_session.session_id}"
+            }
+        })
 
     # --- 6. No pending action -> Orchestrate new user request ---
     try:
@@ -127,6 +159,6 @@ def chat_with_gpt(request):
 
     # --- 7. Save updated session data ---
     request.session["session_data"] = session_data
-    #logger.info(f"[Orchestrator] AI Response: {ai_response}")
+    logger.info(f"\n\n > > > [Orchestrator] AI Response: {ai_response}\n\n")
 
     return JsonResponse({"response": ai_response})

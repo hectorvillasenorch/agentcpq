@@ -85,13 +85,43 @@
       </label>
     </div>
 
-    <button type="submit" class="btn">Save</button>
+    <div class="flex justify-between items-center mt-8">
+      <!-- Botón de eliminar (izquierda) -->
+      <a class="btn red modal-trigger" href="#deleteModal">Delete Email Alert</a>
+
+      <!-- Botones de Cancelar y Guardar (derecha) -->
+      <div class="space-x-2">
+        <a href="javascript:history.back()" class="btn grey">Cancel</a>
+        <button type="submit" class="btn">Save</button>
+      </div>
+    </div>
+
   </form>
+
+  <!-- Modal de confirmación de borrado -->
+  <div id="deleteModal" class="modal">
+    <div class="modal-content">
+      <h4 class="red-text">Confirm Deletion</h4>
+      <p>Are you sure you want to delete this email alert?</p>
+    </div>
+    <div class="modal-footer">
+      <form method="post" action="{% url 'cpq:delete_email_alert' notification.name %}">
+        {% csrf_token %}
+        <a href="#!" class="modal-close btn grey">Cancel</a>
+        <button type="submit" class="btn red">Delete</button>
+      </form>
+    </div>
+  </div>
 
 </div>
 </div>
 
 <script>
+  // Inicializar modals de Materialize
+  const modals = document.querySelectorAll('.modal');
+  M.Modal.init(modals);
+
+
   document.addEventListener('DOMContentLoaded', function () {
     // Inicializar selects y labels
     const selects = document.querySelectorAll('select');

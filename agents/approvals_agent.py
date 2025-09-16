@@ -14,7 +14,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-def approval_agent(action, user_message, session_data):
+def approval_agent(user, action, user_message, session_data):
     """Handles approval-related actions dynamically using GPT message parsing."""
     
     # ✅ Extract structured intent and parameters from the user message

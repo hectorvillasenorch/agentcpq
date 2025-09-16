@@ -762,6 +762,21 @@ def edit_notification(request, alert_name):
 
     return render(request, "edit_email_alert.html", context)
 
+def delete_email_alert(request, alert_name):
+    """Eliminar un EmailAlert por id"""
+    alert = get_object_or_404(EmailAlert, name=alert_name)
+
+    if request.method == "POST":
+        try:
+            alert.delete()
+            messages.success(request, "Email alert deleted successfully.")
+            return redirect("cpq:manage_notifications")  # Ajusta a tu vista/listado principal
+        except Exception as e:
+            print(f"Error: {e}")
+
+    # Si alguien intenta acceder por GET directo, lo regresamos al listado
+    return redirect("cpq:manage_notifications")
+
 
 @require_POST
 def create_notification(request):

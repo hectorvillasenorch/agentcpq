@@ -232,13 +232,13 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
 
         label = label.title()
 
-        if not custom_object_name:
+        if not custom_object_name and not object_type:
             agent_response = "Since the user didn't specify the custom object, reprocess the previously extracted data as new, including the custom object mentioned in the latest message."
             save_or_update_conversation_context(session_context, agent_response)
             response_message += f"<b>🔄 Custom Field Request #{index} 🔄</b><br>"
             response_message += (
-                "⚠️ Oops! It looks like you didn’t specify which custom object this field belongs to. "
-                "Could you please let me know the name of the custom object so I can proceed?<br><br>"
+                "⚠️ Oops! It looks like you didn’t specify which custom or standard object this field belongs to. "
+                "Could you please let me know the name of the object so I can proceed?<br><br>"
             )
             continue
 

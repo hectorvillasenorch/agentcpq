@@ -1,4 +1,5 @@
 import openai
+import re
 import json
 import os
 import logging
@@ -8,6 +9,7 @@ from agents.bundles_agent import bundles_agent
 from agents.admin_agent import admin_agent
 from agents.approvals_agent import approval_agent
 from agents.custom_object_agent import custom_object_agent
+from agents.analytics_agent import analytics_agent
 from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
 from django.contrib.auth.models import User
@@ -20,7 +22,9 @@ from cpq.models import CustomObject
 # Pything to understand request, and catch before hitting LLM
 
 # Context Session Helpers
-from .utils.orchestrator.context_handle_helpers import get_existing_context, build_context_prompt_json
+from .utils.orchestrator.context_handle_helpers import estimate_cost, get_recent_messages
+from .utils.orchestrator.general_helpers import run_agent_async
+from .utils.orchestrator.context_handle_helpers import update_message_history, update_summary
 
 
 load_dotenv()
@@ -75,12 +79,13 @@ def handle_user_request(user,user_message, session_data):
     return response
 
 def orchestrate_request(user, user_message, session_data):
-    
-    session_context = {k: str(v) for k, v in session_data.items() if isinstance(v, (str, int, float, list, dict))}
-    
+    session_context = {
+        k: str(v) for k, v in session_data.items()
+        if isinstance(v, (str, int, float, list, dict))
+    }
+
     session_id = session_data.get("session_id")
 
-    # ⚠️ Use a real user later; hardcode for now
     user = User.objects.get(username=user)
 
     # Robust session handling: create if missing or absent
@@ -102,87 +107,110 @@ def orchestrate_request(user, user_message, session_data):
             )
             session_data["session_id"] = chat_session.session_id
 
-    
+    # Save user message
     ChatMessage.objects.create(
         session=chat_session,
         sender="user",
         content=user_message
     )
 
-    # 🧠🧠 Check if any context exist for this user and this session id
-    conversation_context = get_existing_context(user, session_data)
-    if conversation_context:
-        context_data = conversation_context.data
-        intention = conversation_context.intent
 
-        if context_data and is_continuation_prompt(context_data, user_message, intention):
-            user_message = build_context_prompt_json(context_data, intention, user_message)
-            conversation_context.delete()
+    session_data.setdefault("state", {})
+    # For debug
+    print(f"\n\nCurrent session state: {session_data["state"]}\n\n")
 
-    print(f"\n\nThis is the new user message: {user_message}\n\n")
+    # 🔹 Get or create message history on session_data
+    session_data.setdefault("message_history", [])
 
-    #return {"message": user_message}
+    # 🔹 Build message history
+    message_history = session_data.get("message_history", [])
 
+    # 🔹 Trim the last MAX_HISTORY messages
+    recent_history = get_recent_messages(message_history, max_messages=6)
+
+
+    # 🔹 Build history in roles format
+    messages = [
+        {
+            "role": "system",
+            "content": """
+            You are an AI assistant that classifies user requests into predefined actions.
+            Only answer with ONE label from the list provided, no explanations, no emojis.
+            """
+        }
+    ]
+
+    # 🔹 Add the trimmed history
+    for msg in recent_history:
+        role = "assistant" if msg["sender"] == "agent" else "user"
+        messages.append({"role": role, "content": msg["message"]})
+
+    # 🔹 New user message
+    messages.append({"role": "user", "content": user_message})
+
+    # 🔹 List of labels
     custom_objects = CustomObject.objects.all()
-    custom_objects_list = []
+    custom_objects_list = [co.label for co in custom_objects]
 
-    for co in custom_objects:
-        custom_objects_list.append(co.label)
+    messages.append({
+        "role": "system",
+        "content": f"""
+        Possible labels:
+        - "CreateQuote"
+        - "AddProductToQuote"
+        - "GenerateQuoteDocument"
+        - "ProvideDates"
+        - "ShowQuoteDetails" → Use when the user requests details of one specific quote (e.g. "show me the details of quote Q-123", "open the quote for ACPQ-TEAM").
+        - "UpdateQuoteLine"
+        - "UpdateQuote"
+        - "ShowQuoteNotes"
+        - "DeleteQuoteLine"
+        - "DeleteQuote"
+        - "CreateProductRecord"
+        - "UpdateProductRecord"
+        - "SubmitForApproval"
+        - "CheckApprovalStatus"
+        - "ApproveQuote"
+        - "RejectQuote"
+        - "RecallQuote"
+        - "ShowAccountDetails"
+        - "GeneralQuery"
+        - "CreateValidationRule"
+        - "ShowRules"
+        - "UpdateRule"
+        - "DeleteRule"
+        - "AddProductToBundle"
+        - "UpdateBundleOption"
+        - "DeleteBundleOption"
+        - "DeleteBundleComponentFromQuote"
+        - "CreateCustomObject"
+        - "UpdateCustomObject"
+        - "DeleteCustomObject"
+        - "CreateCustomField"
+        - "UpdateCustomField"
+        - "DeleteCustomField"
+        - "CreateCustomRecord" (for {custom_objects_list})
+        - "UpdateCustomRecord" (for {custom_objects_list})
+        - "DeleteCustomRecord" (for {custom_objects_list})
+        - "CreateEmailAlert"
+        - "UpdateEmailAlert"
+        - "DeleteEmailAlert"
+        - "ShowMetrics" → Use when the user requests listings, catalogs, or filtered searches across objects. (e.g. "show me my product catalog", "list my last 5 quotes", "show me all leads created this month").
+        """
+    })
 
+    tokens, est_cost = estimate_cost(messages, model=OPENAI_MODEL)
+    logging.info(f"\n\n💰 ORCHESTRATOR - Estimated tokens: {tokens}, approx cost: ${est_cost:.6f}\n\n")
 
-    action_prompt = f"""
-    You are an AI assistant that classifies user requests into predefined actions.
-    **User Request:** "{user_message}"
-    **Current Session Data:** {json.dumps(session_context, indent=2)}
-    **Return ONLY one of the following labels (no explanations):**
-    - "CreateQuote"
-    - "AddProduct"
-    - "GenerateQuoteDocument"
-    - "ProvideDates"
-    - "ShowQuoteDetails"
-    - "UpdateQuoteLine"                                                             (Use this when the user wants to update a quote line item. The fields that can be updated at the quote line level are: quantity, discount_amount, discount_percentage, and term.)
-    - "UpdateQuote"                                                                 (Use this when the user wants to update any quote. The fields that can be updated at the quote level are: status, discount_percentage, discount_amount, expiration_date, notes)
-    - "ShowQuoteNotes"
-    - "DeleteQuoteLine"
-    - "DeleteQuote"                                                                 (Use this ONLY for messages that not includes SKU or product's names)
-    - "CreateProductRecord"                                                         (Use this when the user wants to create a new product record, not add a product to quote)
-    - "UpdateProductRecord"
-    - "SubmitForApproval" 
-    - "CheckApprovalStatus"
-    - "ApproveQuote"
-    - "RejectQuote"
-    - "RecallQuote"
-    - "ShowAccountDetails"
-    - "GeneralQuery"
-    - "CreateValidationRule"
-    - "ShowRules"
-    - "UpdateRule"                                                                  (Use this when the user wants to update a rule)
-    - "DeleteRule"                                                                  (Use this when the user wants to delete a rule)
-    - "AddProductToBundle"                                                          (Use this when the user wants to add any product to bundle)
-    - "UpdateBundleOption"                                                          (Use this when the user wants to update any bundle option)
-    - "DeleteBundleOption"                                                          (Use this when the user wants to delete any bundle option)
-    - "DeleteBundleComponentFromQuote"                                              (Use this when the user wants to delete any bundle option from quote)
-    - "CreateCustomObject"                                                          (Use this when the user wants to create a new custom object)
-    - "UpdateCustomObject"                                                          (Use this when the user wants to update any custom object, an example of user message is: update custom object)
-    - "DeleteCustomObject"                                                          (Use this when the user wants to delete any custom object)
-    - "CreateCustomField"                                                           (Use this when the user wants to create a new custom field)
-    - "UpdateCustomField"                                                           (Use this when the user wants to update any custom field)
-    - "DeleteCustomField"                                                           (Use this when the user wants to delete any custom field)
-    - "CreateCustomRecord"                                                          (Use this when the user wants to create a record for an existing custom object like {custom_objects_list})
-    - "UpdateCustomRecord"                                                          (Use this when the user wants to update any record for an existing custom object like {custom_objects_list})
-    - "DeleteCustomRecord"                                                          (Use this when the user wants to delete any record for an existing custom object like {custom_objects_list})
-    - "CreateEmailAlert"
-    - "UpdateEmailAlert"
-    """
     try:
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Analyze the request and determine next action."},
-                {"role": "user", "content": action_prompt}
-            ]
+            messages=messages,
+            temperature=0
         )
+
         decision = response.choices[0].message.content.strip().replace('"', '')
+        #decision = re.sub(r'[^\w\s\-\_\.\,]', '', decision)
         logging.info(f"\n🟢 AI Decision Received: {decision} \n")
 
     except Exception as e:
@@ -192,18 +220,29 @@ def orchestrate_request(user, user_message, session_data):
     action_map = get_action_map()
 
     if decision in action_map:
-        result = action_map[decision](user,decision, user_message, session_data)
+        result = run_agent_async(action_map[decision], user, decision, user_message, session_data)
 
         if result is None:
             logging.error(f"❌ Agent function for '{decision}' returned None.")
             return {"message": f"⚠️ Error: Agent function for '{decision}' returned nothing."}
-        
-        agent_message = result.get("message", "")
 
+        agent_message = result.get("message", "")
         hiddenMessage = result.get("hiddenMessage", False)
 
+        if session_data and user_message and agent_message:
+            update_message_history(session_data, user_message, agent_message)
+
+        session_summary = result.get("session_summary", None)
+
+        if session_data and session_summary:
+            update_summary(session_data, session_summary)
+
+
         for key, value in result.items():
-            if key not in ("message", "session_id", "hiddenMessage", "temporaryMessage", "update_details", "iterations", "success", "quote_id", "notes"):
+            if key not in (
+                "message", "session_id", "hiddenMessage", "temporaryMessage",
+                "update_details", "iterations", "success", "quote_id", "notes", "tokens", "cost", "session_summary"
+            ):
                 agent_message += f"\n\n{key}:\n{json.dumps(value, indent=2)}"
 
         ChatMessage.objects.create(
@@ -217,7 +256,7 @@ def orchestrate_request(user, user_message, session_data):
         result["session_id"] = session_data["session_id"]
 
         return result
-    
+
     logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
     return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
 
@@ -390,7 +429,7 @@ def get_action_map():
     return {
         # Quote-related actions handled by quote_agent
         "CreateQuote": quote_agent,
-        "AddProduct": quote_agent,
+        "AddProductToQuote": quote_agent,
         "UpdateQuoteLine": quote_agent,
         "UpdateQuote": quote_agent,
         "DeleteQuoteLine": quote_agent,
@@ -443,7 +482,11 @@ def get_action_map():
 
         # EmailAlerts
         "CreateEmailAlert": admin_agent,
-        "UpdateEmailAlert": admin_agent
+        "UpdateEmailAlert": admin_agent,
+        "DeleteEmailAlert": admin_agent,
+
+        # Metrics Agent
+        "ShowMetrics": analytics_agent
     }
 
 
@@ -455,38 +498,3 @@ def get_trigger_phrases():
         "create quote pdf",
     ]
 
-# Check if new message is continuation
-
-def is_continuation_prompt(previous_data, new_user_message, intention):
-    conversation_history = ""
-
-    conversation_history += f"""
-        Intention: "{intention}"
-        Data extracted: "{previous_data}"
-        """
-
-    prompt = f"""
-    You are determining whether a user's new message is a continuation of the previous conversation or a new, unrelated request.
-
-    Take into account the following rules:
-    - If the new message contains words like "update", "update quote line", "create", "add", or any other indication that it refers to creating or modifying data (like a new quote line), then it should be treated as a NEW request, even if the intent is similar to the previous one.
-    - Otherwise, if the message logically continues the last request or depends on previous information, then it is a continuation.
-
-    Conversation history:
-    {conversation_history}
-    New message: "{new_user_message}"
-
-    Return YES if it is a continuation. Return NO if it's a new, unrelated request.
-    """
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Determine continuation status"},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        return "YES" in response.choices[0].message.content.upper()
-    except:
-        return False

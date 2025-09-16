@@ -8,7 +8,7 @@ from cpq.models import CustomObject, EmailAlert
 from agents.utils.orchestrator.context_handle_helpers import save_or_update_conversation_context, make_session_context
 
 # Record Helpers
-from agents.utils.admin_agent.record_helpers import save_email_alert, update_email_alert_record
+from agents.utils.admin_agent.record_helpers import save_email_alert, update_email_alert_record, delete_email_alert_record
 
 
 
@@ -64,7 +64,8 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
             session_context["extracted"] = alert
             agent_response = f"⚠️ No description specified for email alert #{index}. AgentCPQ could not infer a description."
             save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"{agent_response}<br>"
+            #response_message += f"{agent_response}<br>"
+            alerts_created.append(f"{agent_response}<br>")
             continue
 
         # ---- TRIGGER ----
@@ -76,7 +77,8 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
                 f"Please select one from the following list: {', '.join(TRIGGER_CHOICES)}."
             )
             save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"{agent_response}<br>"
+            #response_message += f"{agent_response}<br>"
+            alerts_created.append(f"{agent_response}<br>")
             continue
 
         # ---- OBJECT VALIDATION ----
@@ -89,7 +91,8 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
                 "or a custom object for this alert."
             )
             save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"{agent_response}<br>"
+            #response_message += f"{agent_response}<br>"
+            alerts_created.append(f"{agent_response}<br>")
             continue
 
         if native_object and custom_object_name:
@@ -104,7 +107,8 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
                 f"Valid options are: {', '.join(NATIVE_OBJECT_CHOICES)}."
             )
             save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"{agent_response}<br>"
+            #response_message += f"{agent_response}<br>"
+            alerts_created.append(f"{agent_response}<br>")
             continue
 
         # ---- CUSTOM OBJECT ----
@@ -120,7 +124,8 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
                     f"{', '.join(CustomObject.objects.values_list('name', flat=True))}."
                 )
                 save_or_update_conversation_context(session_context, agent_response)
-                response_message += f"{agent_response}<br>"
+                #response_message += f"{agent_response}<br>"
+                alerts_created.append(f"{agent_response}<br>")
                 continue
 
         # ---- RECIPIENTS USERS ----
@@ -139,7 +144,11 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
         recipients_users = valid_users
 
         if invalid_users:
-            response_message += (
+            #response_message += (
+            #    f"⚠️ The following users were not found in the system and will not be notified: "
+            #    f"{', '.join(invalid_users)}.<br>"
+            #)
+            alerts_created.append(
                 f"⚠️ The following users were not found in the system and will not be notified: "
                 f"{', '.join(invalid_users)}.<br>"
             )
@@ -154,7 +163,11 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
         recipients_roles = valid_roles
 
         if invalid_roles:
-            response_message += (
+            #response_message += (
+            #    f"⚠️ The following roles are invalid and will not be notified: "
+            #    f"{', '.join(invalid_roles)}.<br>"
+            #)
+            alerts_created.append(
                 f"⚠️ The following roles are invalid and will not be notified: "
                 f"{', '.join(invalid_roles)}.<br>"
             )
@@ -176,7 +189,12 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
         recipients_external = valid_external
 
         if invalid_external:
-            response_message += (
+            #response_message += (
+            #    f"⚠️ The following external emails do not have correct format and will not be included: "
+            #    f"{', '.join(invalid_external)}.<br>"
+            #)
+
+            alerts_created.append(
                 f"⚠️ The following external emails do not have correct format and will not be included: "
                 f"{', '.join(invalid_external)}.<br>"
             )
@@ -189,7 +207,8 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
                 f"⚠️ No recipients were specified for email alert '{description}', so it cannot be saved."
             )
             save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"{agent_response}<br>"
+            #response_message += f"{agent_response}<br>"
+            alerts_created.append(f"{agent_response}<br>")
             continue
 
         # ---- OFFSET DAYS ----
@@ -202,7 +221,8 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
                     f"Valid triggers for offset_days: quote_expiring, subscription_renewal."
                 )
                 save_or_update_conversation_context(session_context, agent_response)
-                response_message += f"{agent_response}<br>"
+                #response_message += f"{agent_response}<br>"
+                alerts_created.append(f"{agent_response}<br>")
                 continue
 
         # ---- SCHEDULED CRON ----
@@ -215,7 +235,8 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
                     f"Valid triggers for scheduled_cron: quote_expiring, subscription_renewal."
                 )
                 save_or_update_conversation_context(session_context, agent_response)
-                response_message += f"{agent_response}<br>"
+                #response_message += f"{agent_response}<br>"
+                alerts_created.append(f"{agent_response}<br>")
                 continue
 
             if not is_valid_cron(scheduled_cron):
@@ -226,7 +247,8 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
                     "Please provide a valid 5-field cron expression (minute hour day month weekday)."
                 )
                 save_or_update_conversation_context(session_context, agent_response)
-                response_message += f"{agent_response}<br>"
+                #response_message += f"{agent_response}<br>"
+                alerts_created.append(f"{agent_response}<br>")
                 continue
 
         # Get the latest EmailAlert based on the object
@@ -272,9 +294,13 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
         # Call the save function
         response = save_email_alert(json.dumps(alert_payload), user=user)
 
+
         if response.get("success"):
-            response_message += f"{response.get('message')}<br><br>"
-            alerts_created.append(alert_payload)
+            #response_message += f"{response.get("message")}<br><br>"
+            #response_message.append(response["email_details"])
+            
+            alerts_created.extend(get_email_details(response["email_details"]))
+
             agent_response = f"The email alert was created successfully."
             session_context["extracted"] = {"alert_name": name}
             save_or_update_conversation_context(session_context, agent_response)
@@ -283,7 +309,8 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
             error_msg = response.get("message", "Unknown error.")
             agent_response = f"Something were wrong when trying to create email alert. Error: {error_msg}"
             save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"{error_msg}<br>"
+            #response_message += f"{error_msg}<br>"
+            alerts_created.append(f"{error_msg}<br>")
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
 
     return response_message, alerts_created
@@ -560,6 +587,83 @@ def handle_email_alerts_updates(user, extracted_email_alerts_updates, response_m
 
     return response_message, alerts_updated
 
+def handle_email_alerts_deletes(extracted_email_alerts_deletes, response_message, session_context):
+
+    alerts_deleted = []
+
+
+    for index, alert in enumerate(extracted_email_alerts_deletes, start=1):
+        alert_name = alert.get("alert_name", None)
+        
+        # ---- ALERT NAME ----
+        if not alert_name:
+            session_context["item_index"] = index
+            session_context["extracted"] = alert
+            agent_response = f"⚠️ No alert_name specified for email alert #{index}. AgentCPQ could not determine which alert to update."
+            save_or_update_conversation_context(session_context, agent_response)
+            response_message += f"{agent_response}<br>"
+            continue
+
+        try:
+            email_alert_to_delete = EmailAlert.objects.get(name=alert_name)
+        except EmailAlert.DoesNotExist:
+            session_context["item_index"] = index
+            session_context["extracted"] = alert
+            agent_response = f"⚠️ The email alert with alert_name '{alert_name}' does not exist in the database. AgentCPQ cannot update it."
+            save_or_update_conversation_context(session_context, agent_response)
+            response_message += f"{agent_response}<br>"
+            continue
+
+
+        # ---- CREATE ALERT PAYLOAD ----
+        alert_payload = {
+            "alert_name": alert_name
+        }
+
+
+        # Call the save function
+        response = delete_email_alert_record(json.dumps(alert_payload))
+
+        if response.get("success"):
+            response_message += f"{response.get("message")}<br><br>"
+            alerts_deleted.append(alert_payload)
+            agent_response = f"The email alert was o were deleted successfully."
+            session_context["extracted"] = {"alert_name": alert_name}
+            save_or_update_conversation_context(session_context, agent_response)
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
+        else:
+            error_msg = response.get("message", "Unknown error.")
+            agent_response = f"Something were wrong when trying to delete any email alert. Error: {error_msg}"
+            save_or_update_conversation_context(session_context, agent_response)
+            response_message += f"{error_msg}<br>"
+            logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
+
+    return response_message, alerts_deleted
+
+
+def get_email_details(email):
+
+    email_details_dict = []
+
+
+    email_details_dict.append({
+        "name": email.name if email.name else None,
+        "description": email.description if email.description else None,
+        "trigger": email.trigger if email.trigger else None,
+        "native_object": email.native_object if email.native_object else None,
+        "custom_object": email.custom_object.label if getattr(email, "custom_object", None) else None,
+        "recipients_users": [user.username for user in email.recipients_users.all()] if hasattr(email, "recipients_users") else [],
+        "recipients_roles": email.recipients_roles.split(",") if email.recipients_roles else [],
+        "recipients_external": email.recipients_external.split(",") if email.recipients_external else [],
+        "offset_days": email.offset_days if email.offset_days is not None else 0,
+        "scheduled_cron": email.scheduled_cron if email.scheduled_cron else None,
+        "active": email.active if email.active is not None else False,
+        "created_at": email.created_at.strftime("%m/%d/%Y") if email.created_at else None,
+        "created_by": email.created_by.username if getattr(email, "created_by", None) else None,
+        "success": True
+    })
+
+    return email_details_dict
 
 
 def is_valid_cron(cron_str):

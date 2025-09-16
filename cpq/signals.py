@@ -12,7 +12,8 @@ from .notifications.notifications import notify_quote_approved, notify_quote_rej
 
 
 # EMAIL ALERT FUNCTIONS
-from .notifications.notifications import notify_lead_created, notify_account_created, notify_opportunity_created
+from .notifications.notifications import notify_lead_created, notify_account_created, notify_opportunity_created, notify_opportunity_closed_won, notify_opportunity_closed_lost, notify_quote_sent_for_approval
+from .notifications.notifications import notify_quote_approved, notify_quote_rejected
 
 
 @receiver(post_save, sender=Quote)
