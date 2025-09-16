@@ -101,7 +101,7 @@ def chat_with_gpt(request):
         session_data["session_id"] = custom_session_id
 
     #Debbug the session id if is custom or not
-    logger.info(f"🔹 REQUEST: Session Data: {request.session.get("session_data", {})}")
+    logger.info(f"🔹 REQUEST: Session Data: {request.session.get('session_data', {})}")
 
     # --- 5. Handle pending actions (if any) ---
     pending_action = session_data.get("pending_action")

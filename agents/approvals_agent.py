@@ -22,7 +22,7 @@ def approval_agent(action, user_message, session_data):
     action = parsed_data.get("action", "Unknown")
     parameters = parsed_data.get("parameters", {})
 
-    logging.info(f" 🟡 >>>>>>>>>>>>>>>>>> QUOTE ID: {parameters.get("quote_id")}")
+    logging.info(f" 🟡 >>>>>>>>>>>>>>>>>> QUOTE ID: {parameters.get('quote_id')}")
 
     # ✅ Handle unknown actions
     if action == "Unknown":

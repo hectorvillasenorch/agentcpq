@@ -53,7 +53,7 @@ def handle_custom_object_creation(user, extracted_custom_objects, response_messa
         response = save_custom_object(json.dumps(object_payload), user=user)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             objects_created.append(object_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
@@ -145,7 +145,7 @@ def handle_custom_object_updates(user, extracted_custom_objects_updates, respons
         response = update_custom_object(json.dumps(object_payload), user=user)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             objects_updated.append(object_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
@@ -202,7 +202,7 @@ def handle_custom_object_deletes(user, extracted_custom_objects_deletes, respons
         response = delete_custom_object(json.dumps(object_payload))
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             objects_deleted.append(object_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
@@ -315,7 +315,7 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
         response = save_custom_field(json.dumps(field_payload), user=user)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             objects_created.append(field_payload)
             agent_response = f"The custom field was or were created successfully, but the user wants to create a new one. You can see the custom object on previous extracted data."
             session_context["extracted"] = {"custom_object_name": custom_object_name}
@@ -622,7 +622,7 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
         response = update_custom_field(json.dumps(field_payload), user=user)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             objects_updated.append(field_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
@@ -740,7 +740,7 @@ def handle_custom_field_deletes(user, extracted_custom_fields_deletes, response_
         response = delete_custom_field(json.dumps(field_payload))
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             fields_deleted.append(field_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
@@ -782,7 +782,7 @@ def handle_custom_object_records(user, extracted_custom_objects_records, respons
             agent_response = f"Values for custom object {custom_object_name} is not specify on user message. Request omitted."
             save_or_update_conversation_context(session_context, agent_response)
             response_message += (
-                f"⚠️ Got it — you’d like to create a record for <strong>{custom_object_name.replace("__c", "")}</strong>, "
+                f"⚠️ Got it — you’d like to create a record for <strong>{custom_object_name.replace('__c', '')}</strong>, "
                 "but I didn’t see any details to include in the record. <br>"
                 "Could you share the fields and values you'd like to set?<br><br>"
             )
@@ -949,7 +949,7 @@ def handle_custom_record_deletes(user, extracted_custom_records_deletes, respons
         response = delete_custom_record(json.dumps(field_payload))
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             records_deleted.append(field_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:

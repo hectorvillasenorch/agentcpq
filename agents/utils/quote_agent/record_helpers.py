@@ -426,7 +426,7 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message,
         response = save_quote_line_update(item_json, quote)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             updated_products.append(update_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
@@ -668,7 +668,7 @@ def handle_quote_update_request(extracted_updates, quote, response_message, sess
         response = save_quote_update(item_json)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             updated_quotes.append(update_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:

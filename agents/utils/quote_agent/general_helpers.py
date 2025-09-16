@@ -436,7 +436,7 @@ def get_document_pdf(quote):
 
         # ✅ Letterhead
         pdf.setFont("Helvetica", 8)
-        pdf.drawString(20, 770, f"{datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}")
+        pdf.drawString(20, 770, f"{datetime.now().strftime('%m/%d/%Y, %H:%M:%S')}")
 
         # ✅ Quote Header
         pdf.setFont("Helvetica-Bold", 26)

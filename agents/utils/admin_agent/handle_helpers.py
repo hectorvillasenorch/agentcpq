@@ -273,7 +273,7 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message,
         response = save_email_alert(json.dumps(alert_payload), user=user)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             alerts_created.append(alert_payload)
             agent_response = f"The email alert was created successfully."
             session_context["extracted"] = {"alert_name": name}
@@ -545,7 +545,7 @@ def handle_email_alerts_updates(user, extracted_email_alerts_updates, response_m
         response = update_email_alert_record(json.dumps(alert_payload), user= user)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             alerts_updated.append(alert_payload)
             agent_response = f"The email alert was o were updated successfully."
             session_context["extracted"] = {"alert_name": alert_name}
