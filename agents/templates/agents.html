@@ -8,17 +8,66 @@
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/agents/agents_main.css' %}">
     <script src="{% static 'js/agents/agent_main.js' %}" defer></script>
+    <!-- Flatpickr JS & CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
 </head>
-<body class="white lighten-4">  
+<body class="white lighten-4">
     <div class="chat-container">
         <!-- <div id="chat-box" class="chat-box"></div> -->
         <div id="chat-box" class="chat-box">
             {% for msg in chat_messages %}
               <div class="chat-message {{ msg.sender }}">
+                {% if msg.sender == 'user' and msg.hiddenMessage == False %}
+                  <div class="chat-text user"> 
+                    <div class="sender">You: </div>
+                    <div class="message">{{ msg.content|safe }}</div>
+                  </div>
+                {% endif %}
+                
+                {% if msg.sender == 'user' and msg.hiddenMessage == True and 'Update Quote Line' or 'Update Quote' in msg.content %}
+                  <div class="chat-text user"> 
+                    <div class="sender">You: </div>
+                    <div class="message">✅ You have modified the quote through the UI.</div>
+                  </div>
+                {% endif %}
+
+                {% if msg.sender == 'agent' and msg.hiddenMessage == False %}
+                  <div class="chat-text agent">
+                    <div class="senderagent">
+                      <img width="95px" src="{% static 'img/agentcpq-5.png' %}" alt="AgentCPQ Logo">
+                    </div>
+                    <div class="message">{{ msg.content|safe }}</div>
+                  </div>
+                {% endif %}
+
+                {% if msg.sender == 'agent' and 'download_url' in msg.content %}
+                <div class="chat-text agent">
+                    <img width="95px" src="{% static 'img/agentcpq-5.png' %}" alt="AgentCPQ Logo">
+                    <div class="agent-pdf" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
+                {% endif %}
+
                 {% if msg.sender == 'agent' and 'quote_details' in msg.content %}
-                  <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
-                {% else %}
-                  <div class="chat-text">{{ msg.content}}</div>
+                <div class="chat-text agent">
+                    <img width="95px" src="{% static 'img/agentcpq-5.png' %}" alt="AgentCPQ Logo">
+                    <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
+                {% endif %}
+
+                {% if msg.sender == 'agent' and 'validation_rules_details' in msg.content %}
+                <div class="chat-text agent">
+                    <img width="95px" src="{% static 'img/agentcpq-5.png' %}" alt="AgentCPQ Logo">
+                    <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
+                {% endif %}
+
+                {% if msg.sender == 'agent' and 'rules' and 'read_only' in msg.content %}
+                <div class="chat-text agent">
+                    <div class="senderagent">Agent: </div>
+                    <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
                 {% endif %}
               </div>
             {% endfor %}
@@ -32,5 +81,70 @@
         </div>
         </div>
     </div>
+
+    <script>
+  // Inicializar flatpickr
+  flatpickr("#expiration_date", {
+    dateFormat: "m/d/Y", // MM/DD/YYYY
+    defaultDate: "${expirationDateStr}" // asegúrate de que esté en formato ISO (YYYY-MM-DD)
+  });
+
+  function updateExpirationDate(input) {
+    const newDate = input.value; // MM/DD/YYYY
+    const field = input.dataset.field;
+    const quote = input.dataset.quote;
+
+    // Convertir MM/DD/YYYY a YYYY-MM-DD
+    const parts = newDate.split('/');
+    const formatted = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+
+    const updatePayload = [{
+      field: field,
+      value: formatted,
+      quote: quote,
+      hiddenMessage: true
+    }];
+
+    // Enviar al backend
+    sendUserMessage("Update Quote: " + JSON.stringify(updatePayload));
+  }
+  document.addEventListener("DOMContentLoaded", () => {
+  window.addEventListener("message", (event) => {
+    if (!event.data || typeof event.data !== "object") return;
+
+    let { deal_id, deal_name } = event.data;
+    console.log("[iframe] Message received:", event.data);
+
+    if (!deal_id || !deal_name) return;
+    // TODO: Check if this deal has a primary quote from Agentcpq, if it doesnt, message is: Do you want me to create a quote for this Deal? 
+
+    const dealMessage = `Hello!, do you want me to create a quote for ${deal_name} ?`;
+
+    console.log("🟢 Appending deal message:", dealMessage);
+
+    // ✅ Append to the chat box as agent
+    const chatBox = document.getElementById("chat-box");
+    if (chatBox) {
+      const newMessage = document.createElement("div");
+      newMessage.classList.add("chat-text", "agent");
+      newMessage.innerHTML = `
+        <div class="senderagent">
+          <img width="95px" src="/static/img/agentcpq-5.png" alt="AgentCPQ Logo">
+        </div>
+        <div class="message">${dealMessage}</div>
+      `;
+      chatBox.appendChild(newMessage);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    } else {
+      console.warn("⚠️ chat-box not found in DOM.");
+    }
+  });
+});
+
+
+</script>
+
+
+
 </body>
 </html>

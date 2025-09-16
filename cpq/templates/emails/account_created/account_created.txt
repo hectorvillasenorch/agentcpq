@@ -1,0 +1,25 @@
+Hello {{ user.first_name }},
+
+A new account "{{ account.name }}" has been created by {{ account.created_by.first_name|default:account.created_by.username }}.
+
+Account details:
+
+{% if account.industry %}
+    Industry: {{ account.industry }}
+{% endif %}
+
+{% if account.website %}
+    Website: {{ account.website }}
+{% endif %}
+
+{% if account.phone %}
+    Phone: {{ account.phone }}
+{% endif %}
+
+{% if account.address %}
+    Address: {{ account.street }}, {{ account.city }}, {{ account.state }}, {{ account.zip_code }}
+{% endif %}
+
+Created on: {{ account.created_at|date:"F j, Y, g:i a" }}
+
+Thank you!

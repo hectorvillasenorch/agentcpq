@@ -1,0 +1,33 @@
+Hello {{ user.first_name }},
+
+A new "{{ opportunity.name }}" has been created by {{ opportunity.created_by.first_name|default:opportunity.created_by.username }}.
+
+Opportunity Details:
+
+{% if account.industry %}
+    Industry: {{ account.industry }}
+{% endif %}
+
+{% if account.website %}
+    Website: {{ account.website }}
+{% endif %}
+
+{% if account.phone %}
+    Phone: {{ account.phone }}
+{% endif %}
+
+{% if account.address %}
+    Address: {{ account.street }}, {{ account.city }}, {{ account.state }}, {{ account.zip_code }}
+{% endif %}
+
+{% if opportunity.amount %}
+    Amount: {{ opportunity.amount }}
+{% endif %}
+
+{% if opportunity.stage %}
+    Stage: {{ opportunity.stage }}
+{% endif %}
+
+Created on: {{ account.created_at|date:"F j, Y, g:i a" }}
+
+Thank you!

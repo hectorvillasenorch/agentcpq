@@ -1,0 +1,193 @@
+:root {
+  --breadcrumbs-fg: #fc6a3d; /* or any color you prefer */
+}
+/* === FONT SETUP === */
+@font-face {
+  font-family: 'Euclid Circular A';
+  src: url('/static/fonts/EuclidCircularA-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Euclid Circular A';
+  src: url('/static/fonts/EuclidCircularA-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* === GLOBAL === */
+html, body {
+  font-family: 'Euclid Circular A', 'Space Grotesk', sans-serif;
+  background: #f5f5f5;
+  color: #313133;
+  font-size: 20px;
+}
+
+a {
+  color:#313133 !important;
+}
+
+a:hover {
+  color: #fc6a3d;
+}
+
+/* === HEADER === */
+#header {
+  background: #0c1c37;
+  border-bottom: 4px solid #fc6a3d;
+}
+
+#header h1, #header h1 a {
+  color: white !important;
+  font-weight: 700;
+  font-size: 22px;
+}
+
+/* === SIDEBAR === */
+#branding h1 {
+  font-size: 20px;
+  color: white;
+}
+
+#user-tools {
+  color: #ffffff;
+}
+#user-tools a {
+  color: #ffffff !important;
+}
+
+.module caption,
+#nav-sidebar .module caption {
+  background: #233049;
+  color: white;
+  font-weight: bold;
+}
+
+/* === MAIN CONTENT === */
+#content {
+  background-color: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin: 20px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  border-radius: 20px !important;
+}
+
+fieldset {
+  border-color: #ccc;
+  border-radius: 6px;
+}
+
+/* === FORM FIELDS === */
+input, select, textarea {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 16px;
+}
+
+/* === BUTTONS === */
+.button, input[type=submit], .submit-row input, .button.default {
+  background-color: #fc6a3d;
+  color: white;
+  border-radius: 6px;
+  border: none;
+  padding: 8px 16px;
+  font-weight: bold;
+  transition: background-color 0.2s;
+}
+
+.button:hover, input[type=submit]:hover, .submit-row input:hover {
+  background-color: #fc6a3d;
+  color: white;
+}
+
+/* === TABLES === */
+table {
+  font-size: 15px;
+}
+
+table thead th {
+  background-color: #313131;
+  color: white !important;
+  font-weight: bold;
+}
+
+
+table tbody tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+/* table tbody tr:hover {
+  background-color: #ccc;
+} */
+.module caption, #nav-sidebar .module caption {
+    background: #313131;
+    color: white;
+    font-weight: bold;
+}
+table thead th .text a:hover
+ {
+    display: block;
+    cursor: pointer;
+    padding: 8px 10px;
+    background-color: #313131;
+    color: white;
+}
+table thead th .text a
+ {
+    display: block;
+    cursor: pointer;
+    padding: 8px 10px;
+    background-color: #313131;
+    color: white !important;
+}
+/* === LOGIN PAGE === */
+.login #container {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 32px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  width: 400px;
+  font-size: 16px;
+}
+
+.login .submit-row {
+  text-align: center;
+}
+
+.login h1 {
+  color: #fc6a3d;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.login input {
+  border-radius: 6px;
+  border: 1px solid #ccc;
+}
+
+div.breadcrumbs {
+    background: #FFFFFF;
+    padding: 10px 40px;
+    border: none;
+    color: var(--breadcrumbs-fg);
+    text-align: left;
+}
+.breadcrumbs {
+  color: #fc6a3d !important;
+}
+.breadcrumbs a {
+  color: #313131 !important; 
+}
+#branding img {
+    height: 80px !important;
+
+}
+a.section:link, a.section:visited{
+  color: #ffffff !important;
+}
+ 

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .full-page-form {
+    max-width: 600px;
+    margin: 60px auto;
+    padding: 30px;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    background-color: white;
+  }
+
+  .full-page-title {
+    text-align: center;
+    color: #fc6a3d;
+    margin-top: 40px;
+    font-weight: bold;
+    font-size: 28px;
+  }
+
+  .submit-btn {
+    background-color: #fc6a3d;
+  }
+</style>
+
+<h4 class="full-page-title">Create New Custom Object</h4>
+
+<div class="full-page-form">
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+
+    <div class="center-align" style="margin-top: 20px;">
+      <button class="btn waves-effect waves-light submit-btn" type="submit">
+        Save
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

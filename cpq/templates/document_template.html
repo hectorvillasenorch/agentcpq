@@ -1,0 +1,570 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<script src="{% static 'js/agents/agent_main.js' %}" defer></script>
+<style>
+  input:hover,
+  textarea:hover,
+  select:hover {
+    background-color: transparent !important;
+  }
+
+  input,
+  textarea,
+  select {
+    cursor: pointer;
+  }
+  input:focus,
+textarea:focus,
+select:focus {
+  border-bottom: 1px solid #fc6a3d !important;
+  box-shadow: 0 1px 0 0 #fc6a3d !important;
+}
+
+input:focus + label,
+textarea:focus + label,
+select:focus + label {
+  color: #fc6a3d !important;
+}
+
+.field-list .collection-item {
+  background-color: #f2f2f2;
+  border: 1px solid #ddd;
+  font-family: 'Roboto', sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: move;
+  line-height: 1.5;
+}
+
+.drag-icon {
+  color: #9e9e9e;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.green-highlight {
+  background-color: #d4edda !important;
+  transition: background-color 0.3s ease;
+}
+
+.red-highlight {
+  background-color: #f8d7da !important;
+  transition: background-color 0.3s ease;
+}
+
+/* Change checkboxes color when it is activated */
+input[type="checkbox"]:checked + span:before {
+  border-bottom: 2px solid {{ company.secondary_color }} !important;
+  border-right: 2px solid {{ company.secondary_color }} !important;
+}
+
+/* Switch color when it is activated */
+#template_style_switch:checked + .lever {
+  background-color: {{ company.secondary_color }};
+}
+#template_style_switch:checked + .lever:after {
+  background-color: {{ company.secondary_color }};
+}
+
+/* Switch color when it is activated */
+#description_detail_level_switch:checked + .lever {
+  background-color: {{ company.secondary_color }};
+}
+#description_detail_level_switch:checked + .lever:after {
+  background-color: {{ company.secondary_color }};
+}
+
+/* Switch tax information color when it is activated */
+#tax-information-switch:checked + .lever {
+  background-color: {{ company.secondary_color }};
+}
+#tax-information-switch:checked + .lever:after {
+  background-color: {{ company.secondary_color }};
+}
+
+/* Change the span color for checkbox */
+input[type="checkbox"] + span {
+  color: #212121 !important;  /* o el color que prefieras */
+}
+.container{
+  padding: 24px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+  max-width: none !important;
+  width: 100%;
+  
+}
+.card-panel {
+  padding: 24px;
+  margin: .5rem 0 1rem 0;
+  border-radius: 10px;
+  background-color: #fff;
+  border: 1px solid #e0e0e0;
+  box-shadow: none !important;
+  overflow: hidden !important;
+  max-height: none !important;
+  height: auto !important;
+}
+ .agent-limits{
+  padding: 24px;
+  margin: .5rem 0 1rem 0;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
+  box-shadow: none !important;
+}
+.btn, .btn-flat, .btn-small, .btn-large {
+        box-shadow: none !important;
+      }
+#save-button {
+  border-radius: 20px;
+  font-weight: 500;
+  font-size: 14px;
+  padding: 10px 18px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: none;
+  line-height: 1;
+  width: 169px;
+  background-color:#182740 !important;
+}
+.orange.darken-3 {
+    background-color: #182740 !important;
+}
+input[type="checkbox"]:checked + span:before{
+    border-bottom: 2px solid #fc6a3d !important;
+    border-right: 2px solid #fc6a3d !important;
+}
+
+
+/* Heading size + spacing */
+.tenant-title {
+  font-family: 'Euclid Circular A', sans-serif;
+  font-size: 1rem;          /* smaller than default h6 */
+  margin-bottom: 0.75rem;
+}
+
+/* Nice, touch-friendly check-boxes */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;                 /* space between box and text */
+  font-size: 0.95rem;
+  margin: 4px 0;
+}
+
+/* Optional: enlarge tap target slightly */
+.checkbox-label input[type="checkbox"] {
+  transform: scale(1.1);
+}
+
+
+</style>
+
+<div class="container">
+  <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
+    <i class="material-icons left" style="vertical-align: middle;">note_alt</i>
+    Document Management
+  </h4>
+
+  <div class="card-panel white z-depth-1">
+    {% if company %}
+    <form method="post" action="{% url 'cpq:get_document_template' %}" enctype="multipart/form-data">
+      {% csrf_token %}
+
+      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Template Design Style</h6>
+
+      <div class="row" style="margin-bottom: 2rem;">
+        <div class="col s12">
+          <div class="switch">
+            <label>
+              Classic
+              <input type="checkbox" name="template_style" id="template_style_switch" {% if settings.template_style == 'modern' %}checked{% endif %}>
+              <span class="lever"></span>
+              Modern
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <h6 class="tenant-title left-align">Tenant Information</h6>
+
+      <!-- 2️⃣  Grid of check-boxes -->
+      <div class="row tenant-info">
+        <!-- stacks 1-per-row on phones, 2-per-row on small tablets, 3-per-row on ≥992 px -->
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_company_name"
+                  {% if settings.show_company_name %}checked{% endif %} />
+            <span>Name</span>
+          </label>
+        </div>
+
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_company_email"
+                  {% if settings.show_company_email %}checked{% endif %} />
+            <span>Email</span>
+          </label>
+        </div>
+
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_company_address"
+                  {% if settings.show_company_address %}checked{% endif %} />
+            <span>Address</span>
+          </label>
+        </div>
+
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_company_phone"
+                  {% if settings.show_company_phone %}checked{% endif %} />
+            <span>Phone</span>
+          </label>
+        </div>
+
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_company_domain"
+                  {% if settings.show_company_domain %}checked{% endif %} />
+            <span>Domain</span>
+          </label>
+        </div>
+
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_company_logo"
+                  {% if settings.show_company_logo %}checked{% endif %} />
+            <span>Logo</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 1️⃣  Heading -->
+        <h6 class="section-title left-align">Account Information</h6>
+
+        <!-- 2️⃣  Responsive grid of check-boxes -->
+        <div class="row account-info">
+          <div class="col s12 m6 l4">
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_account_name"
+                    {% if settings.show_account_name %}checked{% endif %} />
+              <span>Name</span>
+            </label>
+          </div>
+
+          <div class="col s12 m6 l4">
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_account_website"
+                    {% if settings.show_account_website %}checked{% endif %} />
+              <span>Website</span>
+            </label>
+          </div>
+
+          <div class="col s12 m6 l4">
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_account_phone"
+                    {% if settings.show_account_phone %}checked{% endif %} />
+              <span>Phone</span>
+            </label>
+          </div>
+        </div>
+
+      <!-- 1️⃣  Heading -->
+      <h6 class="section-title left-align">Quote Information</h6>
+
+      <!-- 2️⃣  Responsive grid of check-boxes -->
+      <div class="row quote-info">
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_quote_opportunity"
+                  {% if settings.show_quote_opportunity %}checked{% endif %} />
+            <span>Opportunity</span>
+          </label>
+        </div>
+
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_quote_status"
+                  {% if settings.show_quote_status %}checked{% endif %} />
+            <span>Status</span>
+          </label>
+        </div>
+
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_quote_created_at"
+                  {% if settings.show_quote_created_at %}checked{% endif %} />
+            <span>Created&nbsp;Date</span>
+          </label>
+        </div>
+
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_quote_expires_at"
+                  {% if settings.show_quote_expires_at %}checked{% endif %} />
+            <span>Expiration&nbsp;Date</span>
+          </label>
+        </div>
+
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_quote_notes"
+                  {% if settings.show_quote_notes %}checked{% endif %} />
+            <span>Notes</span>
+          </label>
+        </div>
+      </div>
+
+      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Line Item Information</h6>
+
+      <div class="row">
+
+        <div class="col s12">
+          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Rendered Fields (max 6)</h6>
+          <ul id="visible-fields" class="collection field-list">
+            {% for field in rendered_fields %}
+              <li class="collection-item"><i class="material-icons drag-icon">drag_indicator</i> {{ field }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <div class="col s12">
+          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Omitted Fields</h6>
+          <ul id="available-fields" class="collection field-list">
+            {% for field in omitted_fields %}
+              <li class="collection-item"><i class="material-icons drag-icon">drag_indicator</i> {{ field }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <!-- Description Detail Level -->
+        
+          <div class="col s12">
+            <h6 class="option-title">Description Detail Level</h6>
+
+            <div class="switch detail-switch">
+              <label>
+                Short
+                <input type="checkbox"
+                      name="description_detail_level"
+                      id="description_detail_level_switch"
+                      {% if settings.line_description_detail_level == 'long' %}checked{% endif %} />
+                <span class="lever"></span>
+                Long
+              </label>
+            </div>
+          </div>
+        
+
+        <!--  Responsive grid: Show Discount / Term / Sign  -->
+        <div class="row line-display-options">
+          <div class="col s12 m6 l4">
+            <h6 class="option-title">Show Discount</h6>
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_line_discount"
+                    {% if settings.show_line_discount %}checked{% endif %} />
+              <span>Quote&nbsp;Line&nbsp;Discount</span>
+            </label>
+          </div>
+
+          <div class="col s12 m6 l4">
+            <h6 class="option-title">Show Term&nbsp;(Subscriptions)</h6>
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_subscription_term"
+                    {% if settings.show_subscription_term %}checked{% endif %} />
+              <span>Term</span>
+            </label>
+          </div>
+
+          <div class="col s12 m6 l4">
+            <h6 class="option-title">Show Sign</h6>
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_sign"
+                    {% if settings.show_sign %}checked{% endif %} />
+              <span>Sign</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- 1️⃣  Grid of check-boxes -->
+      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Tax Information</h6>
+
+      <!-- 2️⃣  Grid of check-boxes -->
+      <div class="row">
+        <div class="col s12">
+          <div class="switch detail-switch">
+            <label>
+              Hide Tax Info
+              <input type="checkbox"
+                name="tax-information-switch"
+                id="tax-information-switch"
+                {% if settings.show_quote_tax_information == True %} checked {% endif %}/>
+              <span class="lever"></span>
+              Show Tax Info
+            </label>
+          </div>
+        </div>
+      </div>
+  
+      <!-- ✅ Contenedor que se muestra/oculta -->
+      <div id="tax_info_section" style="display: none;">
+
+        <!-- Input del Tax Rate -->
+        <div class="row">
+          <div class="input-field col s12 m4">
+            <input id="tax_rate" name="tax_rate" type="number" step="0.01" min="0" max="100" value="{{ settings.quote_tax}}">
+            <label for="tax_rate">Tax Rate (%)</label>
+          </div>
+        </div>
+
+        <!-- Checkboxes para mostrar tax info -->
+        <div class="row line-display-options">
+          <div class="col s12 m6 l4">
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_quote_tax_percentage" 
+                {% if settings.show_quote_tax_percentage %} checked {% endif %}/>
+              <span>Show Tax as Percentage</span>
+            </label>
+          </div>
+
+          <div class="col s12 m6 l4">
+            <label class="checkbox-label">
+              <input type="checkbox" name="show_quote_tax_amount"
+                {% if settings.show_quote_tax_amount %} checked {% endif %}/>
+              <span>Show Tax as Amount</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Terms and Conditions</h6>
+
+      <div class="input-field">
+        <textarea id="terms_conditions" name="terms_conditions" class="materialize-textarea">{{ settings.terms_and_conditions }}</textarea>
+        <label for="terms_conditions">Terms and Conditions</label>
+      </div>
+
+      <script>
+        document.addEventListener("DOMContentLoaded", function () {
+          const MAX_VISIBLE = 6;
+
+          const visible = document.getElementById("visible-fields");
+          const available = document.getElementById("available-fields");
+          const saveButton = document.getElementById("save-button");
+
+          const highlight = (element, className) => {
+            element.classList.add(className);
+            setTimeout(() => element.classList.remove(className), 1000);
+          };
+
+          // Inicializa los drag and drop
+          new Sortable(visible, {
+            group: "fields",
+            animation: 150,
+            onAdd: function (evt) {
+              if (visible.children.length > MAX_VISIBLE) {
+                const addedItem = evt.item;
+                const removedItem = visible.lastElementChild;
+                available.appendChild(removedItem);
+
+                highlight(addedItem, "green-highlight");
+                highlight(removedItem, "red-highlight");
+              }
+            }
+          });
+
+          new Sortable(available, {
+            group: "fields",
+            animation: 150,
+          });
+
+          function getFieldNames(container) {
+            return Array.from(container.children).map(li => {
+              // Solo toma el texto real, no el ícono
+              return Array.from(li.childNodes)
+                .filter(node => node.nodeType === Node.TEXT_NODE)
+                .map(node => node.textContent.trim())
+                .join(" ");
+            });
+          }
+
+          // Aquí se actualizan los inputs ocultos justo antes del envío
+          saveButton.addEventListener("click", function () {
+            const renderedFields = getFieldNames(visible);
+            const omittedFields = getFieldNames(available);
+
+            document.getElementById("rendered_fields_input").value = JSON.stringify(renderedFields);
+            document.getElementById("omitted_fields_input").value = JSON.stringify(omittedFields);
+          });
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+          const taxSwitch = document.getElementById('tax-information-switch');
+          const taxSection = document.getElementById('tax_info_section');
+
+          // Mostrar/ocultar al cambiar el switch
+          taxSwitch.addEventListener('change', function () {
+            taxSection.style.display = taxSwitch.checked ? 'block' : 'none';
+          });
+
+          // Opcional: si ya está activado al cargar
+          if (taxSwitch.checked) {
+            taxSection.style.display = 'block';
+          }
+        });
+        </script>
+
+      <input type="hidden" name="rendered_fields" id="rendered_fields_input" />
+      <input type="hidden" name="omitted_fields" id="omitted_fields_input" />
+    
+      <div class="right-align">
+        <button type="submit" id="save-button" class="btn orange darken-2">
+          <i class="material-icons left">save</i> Save
+        </button>
+      </div>
+    </form>
+
+    {% else %}
+    <p style="font-family: 'Euclid Circular A', sans-serif; font-size: 1.1rem; color: #ff6f00;">
+      Tenant information is missing. Please complete the "Company Information" section.
+    </p>
+    {% endif %}
+    
+  </div>
+
+  {% if company %}
+    <!-- Agent Limits -->
+      <div class="row agent-limits">
+
+        <div class="input-field col s12 m6 l3">
+          <label class="active">Plan</label>
+          <p class="limit-value">{{ company.plan }}</p>
+        </div>
+
+        <div class="input-field col s12 m6 l3">
+          <label class="active">Actions&nbsp;Limit</label>
+          <p class="limit-value">{{ company.actions_limit }}</p>
+        </div>
+
+        <div class="input-field col s12 m6 l3">
+          <label class="active">Tenant&nbsp;ID</label>
+          <p class="limit-value">{{ company.tenant_id }}</p>
+        </div>
+
+        <div class="input-field col s12 m6 l3">
+          <label class="active">Version</label>
+          <p class="limit-value">{{ company.version }}</p>
+        </div>
+
+      </div>
+  {% endif %}
+</div>
+{% endblock %}

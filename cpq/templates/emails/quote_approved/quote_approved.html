@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Quote Approved</title>
+</head>
+<body>
+    <p>Hello {{ user.first_name }},</p>
+    <p>Your quote <strong>#{{ quote.name }}</strong> has been <strong>approved</strong> on {{ approval_date|date:"F j, Y" }}.</p>
+    <p>You can now proceed with the next steps.</p>
+    <p>Thank you!</p>
+</body>
+</html>

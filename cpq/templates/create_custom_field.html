@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Custom Fields - AgentCPQ{% endblock %}
+
+{% block content %}
+  <h2 class="text-2xl font-semibold mb-4">Custom Fields</h2>
+<div class="card-panel white" style="border:1px solid #e0e0e0;border-radius:10px;">
+  
+
+<div class="max-w-4xl mx-auto py-10">
+  <h4 class="text-center text-xl font-semibold text-orange-600 mb-6">
+      Create New Custom Field
+  </h4>
+
+  <form method="post"
+        action="{% url 'cpq:create_custom_field' object_name %}"
+        class="bg-white shadow rounded-2xl p-8 space-y-6">
+    {% csrf_token %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Label -->
+      <div>
+        {{ form.label.label_tag }}
+        {{ form.label }}
+      </div>
+
+      <!-- API Name -->
+      <div>
+        {{ form.name.label_tag }}
+        {{ form.name }}
+      </div>
+
+      <!-- CRM (pick-list) -->
+      <div>
+        {{ form.crm.label_tag }}
+        {{ form.crm }}
+      </div>
+
+     <!-- Object Type -->
+      <div>
+        {{ form.object_type.label_tag }}
+        {{ form.object_type }}
+      </div>
+
+      <!-- 
+      ject (optional) -->
+      <div>
+        {{ form.custom_object.label_tag }}
+        {{ form.custom_object }}
+      </div>
+
+      <!-- Data Type -->
+      <div>
+        <label for="id_data_type" class="block text-sm font-medium text-gray-700">Data Type</label>
+        <select id="id_data_type" name="data_type" class="w-full mt-1 border rounded-lg p-2">
+          <option value="text">Text</option>
+          <option value="number">Number</option>
+          <option value="date">Date</option>
+          <option value="boolean">Boolean</option>
+          <option value="dropdown">Dropdown</option>
+          <option value="textarea">Text Area</option>
+          <option value="lookup">Look Up</option>
+        </select>
+      </div>
+     <div id="lookup-model-field" style="display: none;">
+      <label for="id_lookup_model" class="block text-sm font-medium text-gray-700">Lookup Model</label>
+        {{ form.lookup_model }}
+      </div>
+
+      <!-- Required -->
+      <div class="flex items-center space-x-2">
+        {{ form.required }}
+        <span class="text-sm">Required</span>
+      </div>
+    </div>
+
+    <div class="flex justify-end space-x-4 pt-6">
+      <a href="{% url 'cpq:custom_fields' %}" class="px-4 py-2 text-gray-600">Cancel</a>
+     <button class="btn orange darken-2 white-text" type="submit">
+      Save
+      </button>
+    </div>
+  </form>
+</div>
+</div>
+
+
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Init materialize selects
+    const selects = document.querySelectorAll('select');
+    M.FormSelect.init(selects);
+
+    // Removes labels from being on the field.
+    const labels = document.querySelectorAll('label');
+    labels.forEach(label => label.classList.add('active'));
+    
+
+    // Auto-generate API name from label
+    const labelInput = document.getElementById("id_label");
+    const nameInput = document.getElementById("id_name");
+
+    if (labelInput && nameInput) {
+      labelInput.addEventListener("input", function () {
+        const raw = labelInput.value;
+        const formatted = raw.trim()
+                             .toLowerCase()
+                             .replace(/\s+/g, "_")
+                             .replace(/[^\w]/g, "") + "__c";
+        nameInput.value = formatted;
+      });
+    }
+  });
+  document.addEventListener('DOMContentLoaded', function () {
+    const dataTypeSelect = document.getElementById('id_data_type');
+    const lookupField = document.getElementById('lookup-model-field');
+
+    function toggleLookupField() {
+      if (dataTypeSelect.value === 'lookup') {
+        lookupField.style.display = 'block';
+      } else {
+        lookupField.style.display = 'none';
+      }
+    }
+
+    dataTypeSelect.addEventListener('change', toggleLookupField);
+    toggleLookupField();  // Run on load in case "lookup" is pre-selected
+  });
+</script>
+{% endblock %}

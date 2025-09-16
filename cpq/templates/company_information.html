@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<script src="{% static 'js/agents/agent_main.js' %}" defer></script>
+<style>
+  input:hover,
+  textarea:hover,
+  select:hover {
+    background-color: transparent !important;
+  }
+
+  input,
+  textarea,
+  select {
+    cursor: pointer;
+  }
+  input:focus,
+textarea:focus,
+select:focus {
+  border-bottom: 1px solid #fc6a3d !important;
+  box-shadow: 0 1px 0 0 #fc6a3d !important;
+}
+
+input:focus + label,
+textarea:focus + label,
+select:focus + label {
+  color: #fc6a3d !important;
+}
+.container{
+      padding: 24px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+      max-width: none !important;
+      width: 100%;
+      
+    }
+
+.card-panel {
+    padding: 24px;
+    margin: .5rem 0 1rem 0;
+    border-radius: 10px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    box-shadow: none !important;
+}
+ .agent-limits{
+  padding: 24px;
+  margin: .5rem 0 1rem 0;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
+  box-shadow: none !important;
+}
+.btn, .btn-flat, .btn-small, .btn-large {
+        box-shadow: none !important;
+      }
+  .btn-standard {
+      border-radius: 20px;
+      font-weight: 500;
+      font-size: 14px;
+      padding: 10px 18px;
+      height: 42px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: none;
+      line-height: 1;
+      width: 169px;
+      background-color:#182740 !important;
+    }
+    .orange.darken-3 {
+      background-color: #182740 !important;
+    }
+</style>
+<div class="container">
+  <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
+    <i class="material-icons left" style="vertical-align: middle;">business</i>
+    Company Information
+  </h4>
+
+  <div class="card-panel white z-depth-1">
+    <form method="post" action="{% url 'cpq:get_company_information' %}" enctype="multipart/form-data">
+      {% csrf_token %}
+    
+      <div class="row">
+        <div class="input-field col s6">
+          <input id="company_name" name="name" type="text" value="{{ company.name }}">
+          <label for="company_name" class="active">Company Name</label>
+        </div>
+        <div class="input-field col s6">
+          <input id="company_email" name="contact_email" type="email" value="{{ company.contact_email|default_if_none:'' }}">
+          <label for="company_email" class="active">Company Email</label>
+        </div>
+      </div>
+    
+      <div class="row">
+        <div class="input-field col s6">
+          <input id="phone_number" name="phone_number" type="text" value="{{ company.phone_number|default_if_none:'' }}">
+          <label for="phone_number" class="active">Phone Number</label>
+        </div>
+        <div class="input-field col s1">
+        </div>
+        <!-- Primary Color -->
+        <div class="input-field col s2">
+          <input id="primary_color" name="primary_color" type="color" value="{{ company.primary_color }}">
+          <label for="primary_color" class="active" style="top: -1.5rem;">Primary Color</label>
+        </div>
+
+        <!-- Secondary Color -->
+        <div class="input-field col s2">
+          <input id="secondary_color" name="secondary_color" type="color" value="{{ company.secondary_color }}">
+          <label for="secondary_color" class="active" style="top: -1.5rem;">Secondary Color</label>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="input-field col s4">
+          <textarea id="street_address" name="street_address" class="materialize-textarea">{{ company.street_address|default_if_none:'' }}</textarea>
+          <label for="street_address" class="active">Street Address</label>
+        </div>
+
+        <div class="input-field col s4">
+          <textarea id="city" name="city" class="materialize-textarea">{{ company.city|default_if_none:'' }}</textarea>
+          <label for="city" class="active">City</label>
+        </div>
+
+        <div class="input-field col s4">
+          <textarea id="state" name="state" class="materialize-textarea">{{ company.state|default_if_none:'' }}</textarea>
+          <label for="state" class="active">State</label>
+        </div>
+      </div>
+      
+      <div class="row">
+        <div class="file-field input-field col s6">
+          <div class="btn orange darken-2">
+            <span>Upload Logo</span>
+            <input type="file" name="logo">
+          </div>
+          <div class="file-path-wrapper">
+            <input class="file-path validate" type="text" placeholder="Upload a company logo">
+          </div>
+          
+        </div>
+        {% if company.logo %}
+          <div class="col s6">
+            <label>Current Logo:</label><br>
+            <img src="{{ company.logo.url }}" alt="Company Logo" style="max-height: 80px; margin-top: 10px;">
+          </div>
+        {% endif %}
+      </div>
+    
+      <div class="right-align">
+        <button type="submit" class="btn orange darken-3 white-text btn-standard">
+          <i class="material-icons left">save</i> Save
+        </button>
+      </div>
+    </form>
+
+    
+  </div>
+  <div class="row agent-limits">
+    <div class="input-field col s6">
+      <label class="active">Plan</label>
+      <p style="margin-top: 0.5rem;">{{ company.plan }}</p>
+    </div>
+    <div class="input-field col s6">
+      <label class="active">Actions Limit</label>
+      <p style="margin-top: 0.5rem;">{{ company.actions_limit }}</p>
+    </div>
+    <div class="input-field col s6">
+      <label class="active">Tenanat Id</label>
+      <p style="margin-top: 0.5rem;">{{ company.tenant_id }}</p>
+    </div>
+    <div class="input-field col s6">
+      <label class="active">Version</label>
+      <p style="margin-top: 0.5rem;">{{ company.version }}</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

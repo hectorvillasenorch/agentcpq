@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+
+.container{
+      padding: 24px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+      max-width: none !important;
+      width: 100%;
+      
+    }
+    .tabs {
+    position: relative;
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 48px;
+    width: 100%;
+    background-color: #182640;
+    margin: 0 auto;
+    white-space: nowrap;
+}
+.card {
+     box-shadow: none !important;
+    padding: 24px;
+    margin: .5rem 0 1rem 0;
+    border-radius: 15px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+}
+.card .card-content{
+    padding: 5px !important;
+}
+</style>
+<div class="container">
+  <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
+    <i class="material-icons left" style="vertical-align: middle;">rule</i>
+    Rules Management
+  </h4>
+
+  {% if not company %}
+    <p style="font-family: 'Euclid Circular A', sans-serif; font-size: 1.1rem; color: #ff6f00;">
+      Tenant information is missing. Please complete the "Company Information" section.
+    </p>
+  {% else %}
+
+  <ul class="tabs">
+    {% for rule_type in rules_by_type %}
+      <li class="tab col s2">
+        <a href="#tab-{{ rule_type }}" {% if forloop.first %}class="active"{% endif %} style="color:white;">
+          {{ rule_type|title }}
+        </a>
+      </li>
+    {% endfor %}
+  </ul>
+
+  <div class="card z-depth-1">
+    <div class="card-content" style="padding-bottom:0;">
+      <div id="rule-type-titles">
+        {% for rule_type in rules_by_type %}
+          <span id="title-{{ rule_type }}"
+                class="card-title rule-title grey-text text-darken-3"
+                style="display: {% if forloop.first %}block{% else %}none{% endif %}; font-size:1.2rem; font-family:'Euclid Circular A',sans-serif;">
+            {{ rule_type|title }} Rules
+          </span>
+        {% endfor %}
+      </div>
+      {% for rule_type, rules in rules_by_type.items %}
+        <div id="tab-{{ rule_type }}" class="col s12" style="{% if not forloop.first %}display: none;{% endif %}; position: relative;">
+          
+          <!-- ➕ BOTÓN FLOTANTE para agregar regla -->
+          <a href="{% url 'cpq:create_business_rule' %}?type={{ rule_type }}"
+            class="btn-floating halfway-fab waves-effect waves-light tooltipped"
+            data-tooltip="Add {{ rule_type|title }} Rule"
+            style="background-color: {{ company.secondary_color }};">
+            <i class="material-icons" style="color: white;">add</i>
+          </a>
+
+          <table class="striped">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Target</th>
+                <th>Priority</th>
+                <th>Active</th>
+                <th>Error Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for rule in rules %}
+                <tr>
+                  <td>{{ rule.name }}</td>
+                  <td>{{ rule.target_type }}</td>
+                  <td>{{ rule.priority }}</td>
+                  <td>{{ rule.active }}</td>
+                  <td>{{ rule.error_message }}</td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="5">No rules for this type.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const tabLinks = document.querySelectorAll('.tabs .tab a');
+
+    tabLinks.forEach(link => {
+      link.addEventListener('click', function (e) {
+        e.preventDefault();
+
+        // Hide all tab content
+        document.querySelectorAll('.col.s12[id^="tab-"]').forEach(div => {
+          div.style.display = 'none';
+        });
+
+        // Hide all titles
+        document.querySelectorAll('.rule-title').forEach(title => {
+          title.style.display = 'none';
+        });
+
+        // Show selected tab
+        const targetId = this.getAttribute('href');
+        const target = document.querySelector(targetId);
+        if (target) {
+          target.style.display = 'block';
+        }
+
+        // Show the correct title
+        const ruleType = targetId.replace('#tab-', '');
+        const title = document.getElementById(`title-${ruleType}`);
+        if (title) {
+          title.style.display = 'block';
+        }
+
+        // Manage active class
+        tabLinks.forEach(t => t.classList.remove('active'));
+        this.classList.add('active');
+      });
+    });
+  });
+</script>
+
+{% endblock %}

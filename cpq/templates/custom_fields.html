@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% load custom_filters %}
+
+{% block content %}
+<style>
+   h4 {
+    font-family: 'Euclid Circular A', sans-serif;
+    font-weight: bold;
+    font-size: 24px;
+    text-align: center;
+  }
+  .full-page-layout {
+    display: flex;
+    height: calc(100vh - 64px); /* Adjust for navbar/header if needed */
+  }
+
+  .sidebar {
+    position: relative;
+    width: 250px;
+    background-color: #FFFFFF;
+    border-right: 1px solid #e0e0e0;
+    overflow-y: auto;
+    padding-top: 20px;
+  }
+
+  .sidebar a {
+    display: block;
+    padding: 12px 20px;
+    text-decoration: none;
+    color: #333;
+    transition: background 0.2s ease;
+  }
+
+  .sidebar a.active{
+    background-color: #313133;
+    color: white;
+    font-weight: bold;
+  }
+  .sidebar a:hover {
+    background-color: #cacaca;
+    color: white;
+    font-weight: bold;
+  }
+
+  .content-area {
+    flex: 1;
+    padding: 30px;
+    overflow-y: auto;
+    background-color: #fff;
+  }
+  .card .card-content{
+      padding: 0px;
+      border-radius: 0 0 2px 2px;
+    }
+  .z-depth-1, nav, .card-panel, .card, .toast, .btn, .btn-large, .btn-small, .btn-floating, .dropdown-content, .collapsible, .sidenav {
+    -webkit-box-shadow: none;
+  }
+  .section{
+    padding-top: 0rem;
+    padding-bottom: 1rem;
+  }
+  #toggle-create-form{
+    background-color: #fc6a3d;
+  }
+</style>
+
+<div class="full-page-layout">
+
+  <!-- Left Sidebar -->
+  <div class="sidebar">
+    <h4>System Objects</h4>
+    <br>
+    <div style="width: 100%; margin-bottom: 20px;">
+      <button id="toggle-create-form" 
+        class="btn btn-small tooltipped" 
+        data-tooltip="Create New Custom Object"
+        style="background-color: #fc6a3d; display: flex; align-items: center; color:white; justify-content: center; width: 100%;">
+        <i class="material-icons left">add</i> New Object
+      </button>
+    </div>
+    {% for object_type in models %}
+      <a href="#tab-{{ object_type }}" class="object-tab {% if forloop.first %}active{% endif %}">
+        {{ object_type }}
+      </a>
+    {% endfor %}
+
+  </div>
+
+  <!-- Right Content Area -->
+  <div class="content-area">
+    <div id="create-object-form" style="display: none; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px; margin-bottom: 30px;">
+      <h5 style="color: #fc6a3d;">Create New Custom Object</h5>
+      <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <div class="right-align">
+          <button class="btn waves-effect waves-light" type="submit" style="background-color: #fc6a3d;">
+            Save
+          </button>
+        </div>
+      </form>
+    </div>
+    {% for object_type in models %}
+      <div id="tab-{{ object_type }}" class="object-content" style="{% if not forloop.first %}display: none;{% endif %}">
+        {% with fields_by_object_type|dict_get:object_type as obj_fields %}
+          {% if object_type_kinds|dict_get:object_type == "standard" %}
+            {% include "partials/custom_fields_section_for_standard_objects.html" with object_name=object_type standard_fields=obj_fields.standard custom_fields=obj_fields.custom %}
+          {% else %}
+            {% include "partials/custom_fields_section_for_custom_objects.html" with object_name=object_type custom_fields=obj_fields.custom obj_type=object_type records=custom_object_records|dict_get:object_type %}
+          {% endif %}
+        {% endwith %}
+      </div>
+    {% endfor %}
+    
+  </div>
+
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const tabs = document.querySelectorAll('.object-tab');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', function (e) {
+        e.preventDefault();
+
+        // Hide all content divs
+        document.querySelectorAll('.object-content').forEach(div => {
+          div.style.display = 'none';
+        });
+
+        // Remove 'active' class from all tabs
+        tabs.forEach(t => t.classList.remove('active'));
+
+        // Show the clicked content and set active class
+        const targetId = this.getAttribute('href');
+        document.querySelector(targetId).style.display = 'block';
+        this.classList.add('active');
+
+        // 🔥 Aquí formateamos fechas cada vez que cambiamos de tab
+        formatDateElements();
+      });
+    });
+  });
+  document.addEventListener("DOMContentLoaded", function () {
+    const toggleBtn = document.getElementById("toggle-create-form");
+    const formDiv = document.getElementById("create-object-form");
+
+    toggleBtn.addEventListener("click", function () {
+      if (formDiv.style.display === "none") {
+        formDiv.style.display = "block";
+        toggleBtn.innerHTML = '<i class="material-icons left">close</i> Cancel';
+        toggleBtn.style.backgroundColor = "#888";
+      } else {
+        formDiv.style.display = "none";
+        toggleBtn.innerHTML = '<i class="material-icons left">add</i> New Object';
+        toggleBtn.style.backgroundColor = "#ef5d84";
+      }
+    });
+  });
+</script>
+<script>
+  function formatDateElements() {
+    const dateElements = document.querySelectorAll('.datetime-objects:not([data-formatted="true"])');
+
+    dateElements.forEach(el => {
+      const isoDate = el.dataset.datetimeObject;
+      if (!isoDate) return;
+
+      const localDate = new Date(isoDate);
+      const user = el.textContent.trim();
+
+      const formattedDate = localDate.toLocaleString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+
+      el.textContent = `${user} - ${formattedDate}`;
+      el.dataset.formatted = "true";
+    });
+  }
+
+  // 🔁 Formatea los que estén visibles al cargar
+  document.addEventListener("DOMContentLoaded", formatDateElements);
+</script>
+<script>
+    //Script for set correct datatime format
+    document.addEventListener("DOMContentLoaded", function () {
+      const dateElements = document.querySelectorAll('.datetime-custom-fields');
+
+      dateElements.forEach(el => {
+        const isoDate = el.dataset.datetimeField;
+        const localDate = new Date(isoDate);
+        const user = el.textContent.trim();
+
+        const formattedDate = localDate.toLocaleString('en-US', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+
+        el.textContent = `${user} - ${formattedDate}`;
+      });
+    });
+  </script>
+{% if success %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+  const toastHTML = `
+    <span class="green-text text-darken-4">
+      ✅ Custom Object created successfully!
+    </span>`;
+  M.toast({
+    html: toastHTML,
+    displayLength: 4000,
+    classes: 'green lighten-4'
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

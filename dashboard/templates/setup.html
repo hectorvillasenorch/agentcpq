@@ -1,6 +1,6 @@
+{% load static %}
 <style>
-    .admin-section {
-      border: 1px solid #e0e0e0;
+    .admin-section { 
       border-radius: 16px;
       margin-bottom: 32px;
       padding: 24px;
@@ -51,109 +51,28 @@
         box-shadow: none;
         line-height: 1;
         width: 169px;
+        background:red !important;
+    }
+    .container{
+      padding: 24px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+      max-width: none !important;
+      width: 100%;
+      
     }
   </style>
-  
   <div class="container">
-    <h4 class="center-align" style="margin-bottom: 40px;">
-        <i class="material-icons" style="vertical-align: middle; font-size: 28px; margin-right: 8px;">dashboard_customize</i>
-        Setup
-      </h4>
-   <!-- 👥 User Management -->
-<div class="admin-section">
-    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-      <!-- Title and subtitle -->
-      <div>
-        <div class="admin-header" style="margin-bottom: 4px;">User Management</div>
-        <p style="margin-top: 0; font-size: 14px; color: #666;">
-          Manage who can access and administer the AgentCPQ system.
-        </p>
-      </div>
-  
-      <a href="/admin/users/manage" class="btn btn-standard" style="margin-left: 20px;">
-        <i class="material-icons left" style="font-size: 18px;">group</i>
-        Users
-      </a>
-    </div>
-  </div>
-  
-    <!-- 🤖 Agent Management -->
-    <div class="admin-section">
-      <div class="admin-header"> Agent Control Center</div>
-      <p>Enable or disable AI agents within the AgentCPQ platform.</p>
-      <ul class="collection">
-        <li class="collection-item">
-          Quoting Agent — <span class="green-text">Active</span>
-          <a href="/admin/agents/quoting/toggle" class="secondary-content btn-flat">Toggle</a>
-        </li>
-        <li class="collection-item">
-          Pricing Agent — <span class="red-text">Inactive</span>
-          <a href="/admin/agents/pricing/toggle" class="secondary-content btn-flat">Toggle</a>
-        </li>
-        <li class="collection-item">
-          Analytics Agent — <span class="green-text">Active</span>
-          <a href="/admin/agents/analytics/toggle" class="secondary-content btn-flat">Toggle</a>
-        </li>
-      </ul>
-    </div>
-  
-    <div class="admin-section">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <!-- Left: Title + Subtitle -->
-          <div>
-            <div class="admin-header" style="margin-bottom: 4px;">System Usage</div>
-            <p style="margin-top: 0; font-size: 14px; color: #666;">
-              Monitor API usage, agent interactions, and performance history.
-            </p>
-          </div>
-      
-          <a href="/admin/usage" class="btn btn-standard" style="margin-left: 20px;">
-            <i class="material-icons left" style="font-size: 18px;">bar_chart</i>
-            Usage          </a>
-        </div>
-      </div>
-  
-    <!-- 🛠️ Future Config (optional) -->
+    <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
+      <i class="material-icons left" style="vertical-align: middle;">business</i>Integrations
+  </h4>
    
-       <!-- 🔗 Integrations -->
-       <div class="admin-section">
-        <div class="admin-header">🔌 CRM Integration</div>
-    
-    <!-- Salesforce -->
-    <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <div style="display: flex; align-items: center; gap: 14px;">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/Salesforce.com_logo.svg/320px-Salesforce.com_logo.svg.png"
-            alt="Salesforce Logo"
-            style="height: 30px; filter: {% if salesforce_connected %}none{% else %}grayscale(100%) opacity(50%){% endif %}; transition: filter 0.3s;">
-        
-        <div>
-            {% if salesforce_connected %}
-            <p class="status-success">✅ Salesforce Connected</p>
-            {% else %}
-            <p class="status-fail">❌ Not Connected</p>
-            {% endif %}
-        </div>
-        </div>
-    
-        <div style="display: flex; gap: 12px;">
-            {% if salesforce_connected %}
-              <a href="/cpq/field-mapping/?crm=Salesforce&object_type=Opportunity" 
-                 class="btn grey lighten-3 black-text btn-standard">
-                <i class="material-icons left" style="font-size: 18px;">tune</i>
-                Map Fields
-              </a>
-            {% else %}
-              <a href="{% url 'salesforce_login' %}" 
-                 class="btn blue darken-2 white-text btn-standard">
-                <i class="material-icons left" style="font-size: 18px;">vpn_key</i>
-                Connect
-              </a>
-            {% endif %}
-          </div>
-    </div>
-    
+<div class="admin-section">
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;">
+     
   <!-- HubSpot -->
-  <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center;">
+  <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; background: #fafafa;">
     <div style="display: flex; align-items: center; gap: 14px;">
       <img src="https://cdn.worldvectorlogo.com/logos/hubspot-1.svg"
            alt="HubSpot Logo"
@@ -184,8 +103,70 @@
       {% endif %}
     </div>
   </div>
+
+    <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; background: #fafafa;">
+        <div style="display: flex; align-items: center; gap: 14px;">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/Salesforce.com_logo.svg/320px-Salesforce.com_logo.svg.png"
+            alt="Salesforce Logo"
+            style="height: 30px; filter: {% if salesforce_connected %}none{% else %}grayscale(100%) opacity(50%){% endif %}; transition: filter 0.3s;">
+        
+        <div>
+            {% if salesforce_connected %}
+            <p class="status-success">✅ Salesforce Connected</p>
+            {% else %}
+            <p class="status-fail">❌ Not Connected</p>
+            {% endif %}
+        </div>
+        </div>
+    
+        <div style="display: flex; gap: 12px;">
+            {% if salesforce_connected %}
+              <a href="/cpq/field-mapping/?crm=Salesforce&object_type=Opportunity" 
+                 class="btn grey lighten-3 black-text btn-standard">
+                <i class="material-icons left" style="font-size: 18px;">tune</i>
+                Map Fields
+              </a>
+            {% else %}
+              <a href="{% url 'salesforce_login' %}" 
+                 class="btn blue darken-2 white-text btn-standard">
+                <i class="material-icons left" style="font-size: 18px;">vpn_key</i>
+                Connect
+              </a>
+            {% endif %}
+          </div>
+    </div>
+
+<!-- DocuSign -->
+<div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; background: #fafafa;">
+  <div style="display: flex; align-items: center; gap: 14px;">
+    <img src="{% static 'img/docusign_logo.png' %}"
+         alt="DocuSign Logo"
+         style="height: 40px; grayscale(100%) opacity(50%);">
+
+    <div>
+      {% if docusign_connected %}
+        <p class="status-success">Connected</p>
+      {% else %}
+        <p class="status-fail">❌ Not Connected to DocuSign</p>
+      {% endif %}
+    </div>
   </div>
-  <div class="admin-section">
-    <div class="admin-header">Configuration (Coming Soon)</div>
-    <p>API keys, license management, multi-tenant settings, and more.</p>
+
+  <div style="display: flex; gap: 12px;">
+    {% if docusign_connected %}
+    <a href="#" 
+       class="btn grey lighten-3 black-text btn-standard">
+      <i class="material-icons left">description</i>
+      Manage Templates
+    </a>
+    {% else %}
+    <a href="#" 
+       class="btn blue darken-3 white-text btn-standard">
+      <i class="material-icons left">vpn_key</i>
+      Connect
+    </a>
+    {% endif %}
   </div>
+</div>
+</div>
+</div>

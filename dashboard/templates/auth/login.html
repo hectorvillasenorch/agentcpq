@@ -1,0 +1,62 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Login | AgentCPQ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Materialize & Icons -->
+  <link rel="stylesheet" href="{% static 'materialize/materialize.min.css' %}" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+
+  <!-- Your custom CSS -->
+  <link rel="stylesheet" href="{% static 'css/login.css' %}" />
+
+  <!-- 1️⃣ GSAP core (must come first) -->
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js?plugins=TextPlugin,ScrollTrigger"></script>
+
+  <!-- 3️⃣ Your login logic (deferred so DOM is ready) -->
+  
+</head>
+<body>
+  <script src="{% static 'js/agents/login.js' %}" defer></script>
+  <div class="login-wrapper">
+    <section class="login-left z-depth-1">
+     <img src="{% static 'img/logo-bg-white.png' %}" alt="AgentCPQ Logo" class="login-logo" />
+      <form class="login-form" method="post" action="{% url 'login' %}">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+
+        <div class="input-field">
+          {{ form.username }}               {# this renders <input id="id_username" …> #}
+          <label for="{{ form.username.id_for_label }}">Username</label>
+          {{ form.username.errors }}
+        </div>
+
+        <div class="input-field">
+          {{ form.password }}
+          <label for="{{ form.password.id_for_label }}">Password</label>
+          {{ form.password.errors }}
+        </div>
+
+        <div class="center-align">
+          <button type="submit" class="btn login-btn waves-effect waves-light">
+            <i class="material-icons left">login</i> Login
+          </button>
+        </div>
+        <div class="center-align" style="padding-top: 30px;">
+          <span>Forgot your password? <a href="{% url 'password_reset' %}">Click here to reset it</a></span>
+        </div>
+      </form>
+    </section>
+    <section class="login-right">
+      <canvas id="node-canvas"></canvas>
+      <div class="robot-scene">
+        <img src="{% static 'img/botcpq.png' %}" id="robot" class="robot floating" />
+        <p class="takeover-text" id="takeover-message"></p>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

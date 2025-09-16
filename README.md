@@ -240,3 +240,97 @@ def apply_agent_logic(intent: str, context: dict) -> dict:
 def update_session(intent: str, session_data: dict) -> dict:
     """Step 4: Modify session data based on interaction."""
     pass
+
+
+
+# Tenant Usage API
+
+This document describes the secure, HMAC-protected `/api/usage/` endpoint that each AgentCPQ tenant exposes for monthly usage reporting.
+
+---
+
+## 🚀 Overview
+
+On a scheduled basis (e.g. month-end), your central billing system will **pull** usage data from each tenant instance:
+
+1. **Authenticate** via HMAC-signed headers  
+2. **Aggregate** `ActionUsage` records over a date range  
+3. **Upsert** a local `TenantUsageReport` row  
+4. **Return** JSON with totals  
+
+---
+
+## 🗺️ Endpoint
+GET /api/usage/?start=YYYY-MM-DD&end=YYYY-MM-DD
+
+### Query Parameters
+
+| Name   | Format       | Description                   |
+|--------|--------------|-------------------------------|
+| start  | `YYYY-MM-DD` | First day of the billing window |
+| end    | `YYYY-MM-DD` | Last day of the billing window  |
+
+---
+
+## 🔐 Authentication & Replay Protection
+
+Every request **must** include these headers:
+
+| Header       | Example                         | Description                                                                                                  |
+|--------------|---------------------------------|--------------------------------------------------------------------------------------------------------------|
+| `X-API-KEY`  | `C_kV_qjkslmhZmpy…`             | Tenant’s public API key (`Tenant.api_key`).                                                                  |
+| `X-Timestamp`| `2025-07-15T21:47:05Z`          | ISO-8601 UTC timestamp (no fractional seconds). Used to prevent replay.                                       |
+| `X-Signature`| `58691700cf10c2f…`              | HMAC-SHA256 hex digest over `METHOD + PATH_WITH_QUERY + BODY + X-Timestamp`, keyed by `Tenant.api_secret`.   |
+
+- **Timestamp freshness:** must be within ± 5 minutes of server time.  
+- **Replay protection:** rejects stale or malformed timestamps.
+
+---
+
+## 📝 Request Example (cURL)
+
+```bash
+API_KEY="<your_api_key>"
+API_SECRET="<your_api_secret>"
+START="2025-07-01"
+END="2025-07-31"
+
+# 1) ISO-8601 timestamp
+TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# 2) Build path + query
+PATH="/api/usage/?start=${START}&end=${END}"
+
+# 3) String to sign
+MSG="GET${PATH}${TS}"
+
+# 4) Compute signature
+SIG=$(printf "%s" "$MSG" \
+  | openssl dgst -sha256 -hmac "$API_SECRET" \
+  | sed 's/^.* //')
+
+# 5) Call the endpoint
+curl "${BASE_URL}${PATH}" \
+  -H "X-API-KEY: ${API_KEY}" \
+  -H "X-Timestamp: ${TS}" \
+  -H "X-Signature: ${SIG}"
+
+
+📦 Response
+{
+  "tenant_id":        "tenant_0001",
+  "billing_period":   "2025-07-01",
+  "total_actions":    1234,
+  "overflow_actions": 234
+}
+	•	tenant_id: Tenant.tenant_id
+	•	billing_period: first-of-month date
+	•	total_actions: count of ActionUsage rows in the window
+	•	overflow_actions: max(0, total_actions – tenant.actions_limit)
+
+
+⚙️ Tenant Provisioning
+	1.	Create a Tenant
+	•	tenant_id: e.g. "tenant_0003"
+	•	api_key & api_secret are auto-generated.
+	•	Set actions_limit per plan.
