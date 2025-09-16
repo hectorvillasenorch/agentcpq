@@ -1,10 +1,6 @@
 from django.db.models.signals import pre_save, post_save, pre_delete, post_delete
 from django.dispatch import receiver
-<<<<<<< Updated upstream
-from cpq.models import Lead,Quote,Tenant,QuoteDocumentSettings, Account, Opportunity, CustomObject, CustomField, CustomRecord
-=======
-from cpq.models import Lead,Quote,Tenant, Quote, Account, Opportunity, CustomObject, CustomField, CustomRecord
->>>>>>> Stashed changes
+from cpq.models import Lead,Quote,Tenant,Quote,QuoteDocumentSettings, Account, Opportunity, CustomObject, CustomField, CustomRecord
 from hubspot.views import sync_quote_to_hubspot
 from .custom_objects.custom_objects import set_custom_indentifier
 from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
@@ -30,25 +26,15 @@ def set_custom_fields_to_quote_template(sender, instance, **kwargs):
 
 @receiver(post_delete, sender=CustomField)
 def update_quote_template_after_delete(sender, instance, **kwargs):
-    """
-    Executes after deleting a CustomField.
-    Updates the QuoteDocumentSettings configuration to remove it from rendered/omitted.
-    """
-    # Here you pass the object_types you want to keep visible
     set_custom_fields_into_quote_document_settings(["Product", "Quote"])
-
 
 @receiver(post_save, sender=CustomRecord)
 def set_or_create_custom_identifier_for_record(sender, instance, created, **kwargs):
     if created:
         set_custom_indentifier(instance)
 
-
-
 # 📧🔔 EMAIL NOTIFICATIONS SIGNALS
-
 from .utils import run_async
-
 # LEAD HAS BEEN CREATED
 @receiver(post_save, sender=Lead)
 def send_lead_created_email(sender, instance, created, **kwargs):
@@ -67,14 +53,11 @@ def send_opportunity_created_email(sender, instance, created, **kwargs):
     if created:
         run_async(notify_opportunity_created, instance)
 
-
 # OPPORTUNITY HAS CHANGE STAGE TO CLOSED WON OR CLOSED LOST
 @receiver(pre_save, sender=Opportunity)
 def check_opportunity_stage_change(sender, instance, **kwargs):
     if not instance.pk:
-        # Si es nuevo, no tiene cambios
         return
-    
     try:
         old_instance = Opportunity.objects.get(pk=instance.pk)
     except Opportunity.DoesNotExist:
