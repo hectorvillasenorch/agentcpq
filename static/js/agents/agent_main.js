@@ -109,12 +109,23 @@ function enhanceStructuredAgentMessagesHistoryChat() {
   document.querySelectorAll(".agent-json").forEach(div => {
     const raw = div.dataset.raw;
 
-    const keys = ['quote_details:', 'validation_rules_details:', 'rules:', 'email_alerts_details:'];
+    // Claves a buscar en el mensaje
+    const keys = [
+      'quote_details:',
+      'validation_rules_details:',
+      'rules:',
+      'email_alerts_details:',
+      'retrieved_records:'
+    ];
 
     let jsonPart = null;
+    let matchedKey = null;
+
+    // Buscar la primera key que aparezca en el mensaje
     for (const key of keys) {
       const idx = raw.indexOf(key);
       if (idx !== -1) {
+        matchedKey = key;
         const afterKey = raw.slice(idx + key.length);
         jsonPart = extractJson(afterKey);
         if (jsonPart) break;
@@ -122,40 +133,50 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     }
 
     if (!jsonPart) {
-      console.log("enhanceStructuredAgentMessagesHistoryChat");
       div.innerHTML = `<div class="error-message">⚠️ Could not find valid JSON in message</div>`;
       return;
     }
 
     try {
-      //console.log("JsonPart: ", jsonPart);
       const data = JSON.parse(unescapeUnicode(jsonPart));
-      //console.log("Data: ", data);
 
+      // === VALIDATION RULES ===
       if (data.rules || (Array.isArray(data) && data[0]?.rule_type)) {
         const html = renderValidationRuleDetails(data.rules || data);
         div.innerHTML = html;
         return;
       }
 
+      // === RULES ===
       if (data.rules || (Array.isArray(data) && data[0]?.rules_request_description)) {
         const html = renderRules(data);
         div.innerHTML = html;
         return;
       }
 
-      if (Array.isArray(data)) {
-        // Caso 1: llega como array directo
-        if (data[0]?.trigger) {
-          console.log("Email alerts history (array)");
-          
-          const html = renderEmailAlerstDetails(data);
-          console.log("Rendered HTML:", html);
-          div.innerHTML = html;
-          return;
-        }
-      } 
+      // === RETRIEVED RECORDS ===
+      if (matchedKey === 'retrieved_records:') {
+        let messageBeforeJson = raw.slice(0, raw.indexOf(matchedKey)).trim();
 
+        // 1️⃣ Desescapar Unicode
+        messageBeforeJson = unescapeUnicode(messageBeforeJson);
+
+        // 2️⃣ Reemplazar escapes de HTML (como \u003Cbr\u003E)
+        messageBeforeJson = messageBeforeJson.replace(/\\u003C/g, "<").replace(/\\u003E/g, ">");
+
+        const html = renderRetrievedRecords(messageBeforeJson, data);
+        div.innerHTML = html;
+        return;
+      }
+
+      // === EMAIL ALERTS ===
+      if (Array.isArray(data) && data[0]?.trigger) {
+        const html = renderEmailAlerstDetails(data);
+        div.innerHTML = html;
+        return;
+      }
+
+      // === QUOTE DETAILS (por defecto si no entró en nada anterior) ===
       const html = renderReadOnlyQuoteDetails(data);
       div.innerHTML = html;
 
@@ -165,22 +186,20 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     }
   });
 
+  // === PDFs ===
   document.querySelectorAll(".agent-pdf").forEach(div => {
     const raw = unescapeUnicode(div.dataset.raw);
-
     if (!raw.includes("download_url")) return;
 
-    // Get download_url
     const urlMatch = raw.match(/download_url:\s*["']?(.*?)["']?\s*(\n|$)/);
     const versionMatch = raw.match(/document_version:\s*([0-9]+)/);
 
     const downloadUrl = urlMatch ? urlMatch[1].trim() : null;
     const version = versionMatch ? versionMatch[1].trim() : null;
-    //console.log("📄 Extracted PDF Info:", { version, downloadUrl });
 
     if (downloadUrl && version) {
       div.innerHTML = `
-        📄 Quote PDF (v${version}) generated successfully! 
+        📄 Quote PDF (v${version}) generated successfully!
         <a href="${downloadUrl}" target="_blank">Download Here</a>
       `;
     } else {
@@ -188,12 +207,14 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     }
   });
 
-  // Auto-scroll chat
+  // === Auto-scroll chat ===
   const chatBox = document.getElementById("chat-box");
   if (chatBox) {
     chatBox.scrollTop = chatBox.scrollHeight;
   }
 }
+
+
 
 function escapeHtml(text) {
   const map = {
@@ -245,6 +266,14 @@ async function sendMessage() {
 
         const data = await response.json();
 
+        const aiResponse = data.response;
+
+        // --- 1. Check if a new session was created ---
+        if (aiResponse.session_created && aiResponse.redirect_url) {
+            window.location.href = aiResponse.redirect_url; // Redirect to new session
+            return;
+        }
+
         let responseMessage = ""; // Initialize message variable
 
         // ✅ Handle Missing Product Warnings
@@ -293,8 +322,14 @@ async function sendMessage() {
         else if (data.response && data.response.email_alerts_details) {
           console.log("Email Alerts");
           //console.log(data.response);
-          //console.log(data.response.validation_rules_details)
+          //console.log(data.response.email_alerts_details)
           responseMessage += renderEmailAlerstDetails(data.response.email_alerts_details);
+        }
+        // ✅ Analytics Records - retrieved_records
+        else if (data.response && data.response.retrieved_records) {
+          //console.log(data.response);
+          //console.log(data.response.retrieved_records)
+          responseMessage += renderRetrievedRecords(data.response.message, data.response.retrieved_records);
         }
         // ✅ Default Response (Handle General Messages)
         else if (data.response && data.response.message) {
@@ -360,7 +395,6 @@ function appendMessage(className, message) {
 
     // ✅ Detect stored notes as string
     if (className === "agent" && message.includes("validation_rules_details: {")) {
-      console.log("Si entra a esteeee pedoooo")
       try {
         // Extract JSON from string
         const match = message.match(/validation_rules_details:\s({.+})/);
@@ -373,7 +407,7 @@ function appendMessage(className, message) {
       }
     }
 
-    // ✅ Detect stored notes as string
+    // ✅ Detect stored email alerts
     if (className === "agent" && message.includes("email_alerts_details:")) {
       try {
           // Extract JSON from string (object or array)
@@ -384,6 +418,21 @@ function appendMessage(className, message) {
           }
       } catch (e) {
           console.warn("Failed to parse email_alerts_details JSON:", e);
+      }
+    }
+
+    // ✅ Detect stored retrieved records (Analytics Agent)
+    if (className === "agent" && message.includes("retrieved_records:")) {
+      try {
+        // Extract JSON from string
+        const match = message.match(/retrieved_records:\s({.+})/);
+        console.log("Message: ", message);
+        if (match && match[1]) {
+          const records = JSON.parse(match[1]);
+          message = renderRetrievedRecords(records);  // Use your nice formatter
+        }
+      } catch (e) {
+        console.warn("Failed to parse retrieved_records JSON:", e);
       }
     }
   
@@ -2536,6 +2585,186 @@ function renderEmailAlerstDetails(alerts) {
         </div>`;
     }
   });
+
+  return html;
+}
+
+// Convierte snake_case a Title Case
+function normalizeFieldName(fieldName) {
+  return fieldName
+    .replace(/_/g, " ")                    // reemplaza _ por espacio
+    .replace(/\b\w/g, char => char.toUpperCase()); // primera letra de cada palabra en mayúscula
+}
+
+
+function renderRetrievedRecords(userMessage, recordsDetails) {
+  let html = "";
+
+  for (const [objectName, records] of Object.entries(recordsDetails)) {
+    if (!records || records.length === 0) continue;
+
+    const allFields = Object.keys(records[0]);
+
+    html += `
+      <div class="email-alert-container" style="margin-bottom:10px; position:relative;">
+        <div class="email-alert-header" style="
+          display:flex; 
+          justify-content:space-between; 
+          align-items:center;
+        ">
+          <h5 style="margin:0;">${objectName} records.</h5>
+          <button onclick="makeDraggable(this)" style="
+            background:#2563eb; 
+            color:white; 
+            border:none; 
+            border-radius:4px; 
+            padding:2px 6px; 
+            cursor:pointer; 
+            font-size:0.8rem;
+          ">Pop Out</button>
+        </div>
+
+        <div class="email-alert-details" style="
+          overflow-x:auto; 
+          overflow-y:auto; 
+          max-height:300px; 
+          border:1px solid #e5e7eb; 
+          border-radius:0.75rem; 
+          box-shadow:0 2px 6px rgba(0,0,0,0.08); 
+          margin-top:0.5rem;
+        ">
+          <table style="
+            width:max-content; 
+            border-collapse:collapse; 
+            border-radius:0.5rem; 
+            overflow:hidden; 
+            background-color:white; 
+            font-family:'Inter',sans-serif; 
+            color:#111827; 
+            font-size:0.95rem; 
+            display:block;
+          ">
+            <thead>
+              <tr>
+                ${allFields.map(f => `
+                  <th style="
+                    padding:0.75rem 1rem; 
+                    text-align:left; 
+                    border-bottom:1px solid #e5e7eb; 
+                    background-color:#f3f4f6; 
+                    font-weight:600; 
+                    color:#374151; 
+                    text-transform:uppercase; 
+                    font-size:0.85rem; 
+                    position:sticky; 
+                    top:0; 
+                    z-index:2; 
+                    box-shadow:0 2px 3px rgba(0,0,0,0.05); 
+                    white-space:nowrap;
+                  ">${normalizeFieldName(f)}</th>`).join("")}
+              </tr>
+            </thead>
+
+            <tbody>
+              ${records.map(record => `
+                <tr style="hover:background-color:#f9fafb;">
+                  ${allFields.map(field => {
+                    let value = record[field];
+                    if (value === null || value === undefined || value === "") 
+                      return `<td style="padding:0.75rem 1rem; white-space:nowrap; border-bottom:1px solid #e5e7eb;">---</td>`;
+                    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) {
+                      const dateObj = new Date(value);
+                      // Mostrar fecha y hora
+                      value = dateObj.toLocaleString("en-US", {
+                        year: "numeric",
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                        hour12: false  // 24h
+                      });
+                    }
+                    return `<td style="padding:0.75rem 1rem; white-space:nowrap; border-bottom:1px solid #e5e7eb;">${value}</td>`;
+                  }).join("")}
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  // Función global para hacer popup draggable
+  if (!window.makeDraggableAdded) {
+    const script = document.createElement('script');
+    script.innerHTML = `
+      function makeDraggable(button) {
+        const container = button.closest('.email-alert-container');
+        if (!container) return;
+
+        if (!container.classList.contains('popup')) {
+          container.style.position = 'fixed';
+          container.style.top = '50px';
+          container.style.left = '50px';
+          container.style.width = '600px';
+          container.style.height = '400px';
+          container.style.background = 'white';
+          container.style.border = '1px solid #ccc';
+          container.style.borderRadius = '5px';
+          container.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+          container.style.zIndex = '10000';
+          container.style.overflow = 'auto';
+          container.classList.add('popup');
+
+          const header = container.querySelector('.email-alert-header');
+          let offsetX = 0, offsetY = 0, isDown = false;
+
+          header.style.cursor = 'move';
+          header.onmousedown = function(e) {
+            isDown = true;
+            offsetX = e.clientX - container.getBoundingClientRect().left;
+            offsetY = e.clientY - container.getBoundingClientRect().top;
+            document.onmousemove = function(e) {
+              if (!isDown) return;
+              container.style.left = e.clientX - offsetX + 'px';
+              container.style.top = e.clientY - offsetY + 'px';
+            }
+            document.onmouseup = function() {
+              isDown = false;
+              document.onmousemove = null;
+              document.onmouseup = null;
+            }
+          }
+
+          button.innerText = 'Close';
+        } else {
+          container.style.position = '';
+          container.style.top = '';
+          container.style.left = '';
+          container.style.width = '';
+          container.style.height = '';
+          container.style.background = '';
+          container.style.border = '';
+          container.style.boxShadow = '';
+          container.style.zIndex = '';
+          container.style.overflow = '';
+          container.classList.remove('popup');
+          button.innerText = 'Pop Out';
+        }
+      }
+    `;
+    document.body.appendChild(script);
+    window.makeDraggableAdded = true;
+  }
+
+  if (userMessage) {
+    const cleanMessage = userMessage.split("retrieved_records:")[0];
+    html += `<div style="margin-bottom:10px;">
+              <p>${cleanMessage}</p>
+            </div>`;
+  }
 
   return html;
 }

@@ -45,6 +45,11 @@ def dashboard(request):
     custom_object = None
     form = None
 
+    new_chat = request.GET.get("new_chat") == "true"
+    if new_chat:
+        request.session.pop("session_data", None)
+        session_id = None
+
     if object_name:
         custom_object = get_object_or_404(CustomObject, name=object_name)
         DynamicForm = generate_dynamic_form(custom_object)

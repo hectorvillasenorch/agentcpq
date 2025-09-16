@@ -242,6 +242,8 @@ def get_dynamic_form(model_class, crm, object_type):
             self.user = user
             super().__init__(*args, **kwargs)
             User = get_user_model()
+
+            # --- Manejo de updated_by (hidden) ---
             for system_field in ['updated_by']:
                 if hasattr(self._meta.model, system_field) and system_field not in self.fields:
                     self.fields[system_field] = forms.ModelChoiceField(
@@ -249,13 +251,28 @@ def get_dynamic_form(model_class, crm, object_type):
                         required=False,
                         widget=forms.HiddenInput()
                     )
+
+            # --- Manejo de created_by (readonly visible) ---
+            if hasattr(self._meta.model, "created_by"):
+                created_by_value = None
+                if kwargs.get("instance") and kwargs["instance"].created_by:
+                    created_by_value = kwargs["instance"].created_by.get_username()
+                elif self.user:
+                    created_by_value = self.user.get_username()
+
+                self.fields["created_by"] = forms.CharField(
+                    label="Created by",
+                    initial=created_by_value,
+                    required=False,
+                    widget=forms.TextInput(attrs={"readonly": "readonly"})
+                )
+
+            # --- Custom fields dinámicos ---
             instance = kwargs.get("instance")
             self._custom_fields = CustomField.objects.filter(crm=crm, object_type=object_type)
-
             for field in self._custom_fields:
                 field_name = field.name
                 value = self.get_custom_field_value(instance, field) if instance else ""
-
                 self.fields[field_name] = forms.CharField(
                     label=field.label or field.name,
                     required=field.required,
@@ -278,15 +295,19 @@ def get_dynamic_form(model_class, crm, object_type):
         def save(self, commit=True):
             instance = super().save(commit=False)
 
-            # Set updated_by if applicable
+            # --- Asignar created_by SOLO al crear ---
+            if hasattr(instance, "created_by") and not instance.pk and self.user:
+                instance.created_by = self.user
+
+            # --- Asignar updated_by siempre ---
             if hasattr(instance, "updated_by") and self.user:
                 instance.updated_by = self.user
 
             if commit:
                 instance.save()
 
+            # --- Guardar CustomFieldValues ---
             content_type = ContentType.objects.get_for_model(instance)
-
             for field in self._custom_fields:
                 value = self.cleaned_data.get(field.name)
                 if value is not None:
@@ -296,12 +317,13 @@ def get_dynamic_form(model_class, crm, object_type):
                         field=field,
                     )
                     cfv.value = value
-                    cfv.updated_by_user = self.user  # ← esto es clave
+                    cfv.updated_by_user = self.user
                     cfv.save()
 
             return instance
 
     return DynamicCustomForm
+
 
 
 class DynamicQuoteLineForm(forms.ModelForm):

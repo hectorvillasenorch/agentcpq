@@ -26,7 +26,7 @@ from datetime import datetime
 import logging
 logger = logging.getLogger(__name__)
 # LLM Utils
-from .utils.quote_agent.llm_helpers import extract_quote_details, extract_quote_details_with_llm, generate_final_create_quote_message, extract_quote_line_items_to_delete, generate_final_delete_quote_lines_message, generate_final_quote_updates_message, extract_quote_line_to_delete_with_llm, extract_quote_level_discount
+from .utils.quote_agent.llm_helpers import extract_quote_details, extract_quote_details_with_llm, generate_final_create_quote_message, extract_quote_line_items_to_delete, generate_final_delete_quote_lines_message, generate_final_quote_updates_message, extract_quote_line_to_delete_with_llm
 from .utils.quote_agent.llm_helpers import extract_quote_updates, extract_quote_updates_with_llm
 
 # Record Helpers (add products)
@@ -50,9 +50,9 @@ from cpq.notifications.notifications import notify_opportunity_created
 from .utils.quote_agent.general_helpers import extract_line_items_from_user_message
 
 # New LLm Helpers
-from .utils.quote_agent.llm_helpers import extract_products_to_add_with_llm, generate_final_add_product_to_quote_message2, extract_quote_line_updates_with_llm, generate_final_update_line_items_message
+from .utils.quote_agent.llm_helpers import extract_products_to_add_with_llm, generate_final_add_product_to_quote_message, extract_quote_line_updates_with_llm, generate_final_update_line_items_message
 
-from .utils.quote_agent.handle_helpers import handle_products_to_add, handle_line_items_updates
+from .utils.quote_agent.handle_helpers import handle_products_to_add, handle_quote_line_update_request, handle_line_items_updates
 
 # ✅ Load environment variables
 load_dotenv()
@@ -276,7 +276,7 @@ def add_product_to_quote(user, user_message, session_data):
     print(f"Esto es result: {result}")
 
     # --- 5️⃣ Generar mensaje final dinámico usando función separada ---
-    dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_add_product_to_quote_message2(
+    dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_add_product_to_quote_message(
         completed_products=completed_products,
         db_results=result,
         remaining_products=remaining_products,
@@ -287,10 +287,87 @@ def add_product_to_quote(user, user_message, session_data):
         "message": dynamic_message,
         "session_summary": updated_summary
     }
-    
+
 #< ----------------- UPDATE QUOTE LINE -------------------- >
 
 def update_quote_line(user, user_message, session_data):
+
+    """Updates only the modified fields in quote lines."""
+
+    logging.info("🔧 Updating quote line...\n\n")   
+
+    # ✅ Looking for active quote
+    quote = get_active_quote(user_message, session_data)
+
+    # ⚠️ Verify if function return an error
+    if isinstance(quote, dict) and "message" in quote:
+        return quote
+
+    current_state, previous_summary = get_session_context("update_quote_line", session_data)
+
+    line_items_on_user_message = extract_line_items_from_user_message(user_message, quote)
+
+    print(f"\n\nLine items mencionados: {line_items_on_user_message}\n\n")
+
+    # --- 1️⃣ Llamada inicial al LLM para extraer actualizaciones de quote line ---
+    llm_result, tokens_used, cost_est = extract_quote_line_updates_with_llm(
+        user_message=user_message,
+        current_state=current_state,
+        previous_summary=previous_summary,
+        line_items_on_user_message=line_items_on_user_message #Send line items to LLM can updates
+    )
+    
+    # --- 3️⃣ Separar productos completados vs incompletos ---
+    completed_updates = []
+    remaining_updates = []
+
+    for line_item in llm_result["update_quote_line"]:
+        if line_item.get("completed"):
+            completed_updates.append(line_item["data"])
+        else:
+            remaining_updates.append(line_item)
+
+    # Guardar solo los incompletos en session state
+    session_data["state"]["line_items_updates"] = remaining_updates
+
+    # Return if not any completed products
+    if not completed_updates:
+        return {
+            "message": llm_result["agent_message"],
+            "session_summary": llm_result["summary"]
+        }
+    
+    print(f"Esto es completed updates: {completed_updates}")
+    
+    ################################################
+
+    response_message = ""
+
+    # ✅ Handle quote line update request
+    quote, response_message, updated_products = handle_quote_line_update_request(completed_updates, quote, response_message)
+    log_action_usage("UpdateQuoteLine", user, "Quote", quote.name)
+    # ✅ Update quote (subtotal, discounts fields and net amount)
+    quote.save()
+
+    # ✅ Safe active quote to session data
+    set_active_quote_to_session_data(session_data, quote)
+
+    # --- 5️⃣ Generar mensaje final dinámico usando función separada ---
+    dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_update_line_items_message(
+        completed_updates=completed_updates,
+        db_results=response_message,
+        remaining_updates=remaining_updates,
+        previous_summary=llm_result["summary"]
+    )
+
+    return {
+        "message": dynamic_message,
+        "session_summary": updated_summary
+    }
+    
+#< ----------------- UPDATE QUOTE LINE -------------------- >
+
+def update_quote_line2(user, user_message, session_data):
     """
     Handles product creation requests for multiple products.
     Tracks products in session state, saves completed products, 

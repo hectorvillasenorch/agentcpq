@@ -33,7 +33,6 @@ def product_agent(user, action, user_message, session_data):
     action_map = {
         "CreateProductRecord": create_product,
         "UpdateProductRecord": update_product
-        # "UpdateBundle": generate_quote_pdf,
     }
 
     # ✅ Dynamically call the function if action exists in map
@@ -51,14 +50,14 @@ def create_product(user, user_message, session_data):
     """
     current_state, previous_summary = get_session_context("create_product", session_data)
 
-    # --- 1️⃣ Llamada inicial al LLM para extraer productos ---
+    # --- Initial call to the LLM to extract products ---
     llm_result, tokens_used, cost_est = extract_product_data_with_llm(
         user_message=user_message,
         current_state=current_state,
         previous_summary=previous_summary
     )
 
-    # --- 3️⃣ Separar productos completados vs incompletos ---
+    # --- Separate completed vs. incomplete products ---
     completed_products = []
     remaining_products = []
 
@@ -68,7 +67,7 @@ def create_product(user, user_message, session_data):
         else:
             remaining_products.append(product)
 
-    # Guardar solo los incompletos en session state
+    # Save only the incomplete ones in the session state
     session_data["state"]["create_product"] = remaining_products
 
     # Return if not any completed products
@@ -78,10 +77,10 @@ def create_product(user, user_message, session_data):
             "session_summary": llm_result["summary"]
         }
 
-    # --- 4️⃣ Persistir productos completados y capturar errores ---
+    # --- Persist completed products and capture errors ---
     result = handle_create_product(user, completed_products)
 
-    # --- 5️⃣ Generar mensaje final dinámico usando función separada ---
+    # --- Generate final dynamic message using a separate function ---
     dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_product_message(
         completed_products=completed_products,
         db_results=result,

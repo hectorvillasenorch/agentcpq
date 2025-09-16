@@ -119,6 +119,37 @@ def get_session_context(action, session_data):
                 "summary": None
             }
 
+        if action == "show_metrics":
+            context_data = {
+                "show_metrics": [
+                    {
+                        "data": {
+                            "object": None,
+                            "method": "read",
+                            "limit": None,
+                            "conditions": [
+                                {
+                                    "field": None,
+                                    "operator": None,
+                                    "value": None
+                                },
+                                {
+                                    "field": None,
+                                    "operator": None,
+                                    "value": None
+                                }
+                            ],
+                            "sort": {
+                                "field": None,
+                                "order": None
+                            }
+                        },
+                        "completed": False
+                    }
+                ],
+                "summary": None
+            }
+
         session_data["state"] = context_data
 
     current_state = session_data["state"][action]

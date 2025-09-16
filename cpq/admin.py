@@ -23,13 +23,14 @@ class CustomFieldAdmin(admin.ModelAdmin):
 
 class DynamicCustomFieldAdmin(admin.ModelAdmin):
     def get_form(self, request, obj=None, **kwargs):
-        return self.form  # Already set per model
+        form_class = self.form
 
-    # def get_fieldsets(self, request, obj=None):
-    #     return [(None, {'fields': list(self.form().fields.keys())})]
-    def get_fieldsets(self, request, obj=None):
-        form = self.get_form(request, obj=obj)
-        return [(None, {'fields': list(form.base_fields.keys())})]
+        class RequestBoundForm(form_class):
+            def __init__(self, *args, **inner_kwargs):
+                inner_kwargs['user'] = request.user
+                super().__init__(*args, **inner_kwargs)
+
+        return RequestBoundForm
 
 
 

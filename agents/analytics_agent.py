@@ -15,7 +15,92 @@ from django.conf import settings
 from reportlab.lib.colors import HexColor
 from django.http import JsonResponse
 from django.db import models
+import logging
+logger = logging.getLogger(__name__)
 
+# LLM Helpers
+from .utils.analytics_agent.llm_helpers import extract_metrics_with_llm, generate_final_metrics_message
+
+# Handle Helpers
+from .utils.analytics_agent.handle_helpers import handle_show_metrics
+
+# Windows Context Helpers
+from .utils.session_context_helpers.session_context_helpers import get_session_context
+
+
+def analytics_agent(user, action, user_message, session_data):
+    action_map = {
+        "ShowMetrics": show_metrics,
+    }
+
+    # ✅ Dynamically call the function if action exists in map
+    if action in action_map:
+        return action_map[action](user, user_message, session_data)
+
+    return {"message": "🤖 Sorry, I couldn’t understand your request."}
+
+def show_metrics(user, user_message, session_data):
+    """
+    Handles metrics display requests for system objects.
+    Retrieves and aggregates data across different models,
+    and generates dynamic summaries or insights for monitoring.
+    """
+    logging.info("🔧 Showing metrics...\n\n")
+    
+
+    current_state, previous_summary = get_session_context("show_metrics", session_data)
+
+
+    # --- Initial LLM call to extract quote line updates ---
+    llm_result, tokens_used, cost_est = extract_metrics_with_llm(
+        user_message=user_message,
+        current_state=current_state,
+        previous_summary=previous_summary
+    )
+
+    # --- 3️⃣ Separate completed products vs. incomplete products ---
+    completed_metrics = []
+    remaining_metrics = []
+
+    for line_item in llm_result["show_metrics"]:
+        if line_item.get("completed"):
+            completed_metrics.append(line_item["data"])
+        else:
+            remaining_metrics.append(line_item)
+
+    # Save incomplete on session state
+    session_data["state"]["show_metrics"] = remaining_metrics
+
+    # Return if not any completed products
+    if not completed_metrics:
+        return {
+            "message": llm_result["agent_message"],
+            "session_summary": llm_result["summary"]
+        }
+
+    response_message, results = handle_show_metrics(user, completed_metrics)
+
+
+    # --- 5️⃣ Generar mensaje final dinámico usando función separada ---
+    dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_metrics_message(
+        completed_metrics=completed_metrics,
+        db_results=response_message,
+        remaining_metrics=remaining_metrics,
+        previous_summary=llm_result["summary"]
+    )
+    
+    if results:
+        return {
+        "message": dynamic_message,
+        "session_summary": updated_summary,
+        "retrieved_records": results,
+        "hiddenMessage": True
+    }
+
+    return {
+        "message": dynamic_message,
+        "session_summary": updated_summary
+    }
 
 
 def agent_analytics(action, payload, session_data, crm='agentCPQ' ):

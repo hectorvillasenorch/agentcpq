@@ -9,7 +9,7 @@ from ..orchestrator.context_handle_helpers import save_or_update_conversation_co
 
 def find_product_and_normalize_variables(sku, name):
     try:
-        product = Product.objects.get(Q(sku=sku) | Q(name=sku) | Q(sku=name) | Q(name=name))
+        product = Product.objects.get(Q(sku=sku) | Q(name=name))
     except Product.DoesNotExist:
         return None, sku, name
 

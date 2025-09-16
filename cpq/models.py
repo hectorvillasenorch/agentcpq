@@ -667,6 +667,7 @@ class BusinessRule(models.Model):
     error_message = models.TextField(blank=True, help_text="Message shown when the rule is triggered.")
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_business_rules')
     conditions = models.JSONField(default=list, blank=True, help_text="List of conditions for the rule.")
 
     def __str__(self):
@@ -1200,20 +1201,7 @@ class ActionUsage(models.Model):
     def __str__(self):
         return f"{self.action} by {self.user or 'System'} on {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
 
-    
-class EmailAlert(models.Model):
-    TRIGGER_CHOICES = [
-        ("lead_created", "New Lead Created"),
-        ("account_created", "New Account Created"),
-        ("opportunity_created", "New Opportunity Created"),
-        ("opportunity_closed_won", "Opportunity Closed Won"),
-        ("opportunity_closed_lost", "Opportunity Closed Lost"),
-        ("quote_sent_for_approval", "Quote Sent for Approval"),
-        ("quote_approved", "Quote Approved"),
-        ("quote_rejected", "Quote Rejected"),
-        ("quote_expiring", "Quote Expiring Soon"),
-        ("subscription_renewal", "Subscription Renewal Reminder"),
-    ]
+
 
 class TenantUsageReport(models.Model):
     tenant = models.ForeignKey(
@@ -1277,12 +1265,19 @@ class TenantUsageLog(models.Model):
         return f"{self.tenant_id} ({self.billing_period}) – {self.status}"
 
 
-class EmailNotification(models.Model):
-    recipient = models.EmailField()
-    subject = models.CharField(max_length=255)
-    template_name = models.CharField(max_length=100)
-    context = models.JSONField()
-    sent_at = models.DateTimeField(auto_now_add=True)
+class EmailAlert(models.Model):
+    TRIGGER_CHOICES = [
+        ("lead_created", "New Lead Created"),
+        ("account_created", "New Account Created"),
+        ("opportunity_created", "New Opportunity Created"),
+        ("opportunity_closed_won", "Opportunity Closed Won"),
+        ("opportunity_closed_lost", "Opportunity Closed Lost"),
+        ("quote_sent_for_approval", "Quote Sent for Approval"),
+        ("quote_approved", "Quote Approved"),
+        ("quote_rejected", "Quote Rejected"),
+        ("quote_expiring", "Quote Expiring Soon"),
+        ("subscription_renewal", "Subscription Renewal Reminder"),
+    ]
 
     NATIVE_OBJECT_CHOICES = [
         ("Lead", "Lead"),

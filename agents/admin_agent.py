@@ -269,6 +269,7 @@ def create_validation_rule(user, user_message, session_data):
                 error_message=error_message,
                 active=active,
                 conditions=conditions,  # conditions JSON
+                created_by=user
             )
 
             # Set rule's name

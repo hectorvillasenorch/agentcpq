@@ -57,6 +57,13 @@ def handle_create_product(user, completed_products):
             result.append(result_payload)
             continue
 
+        # ✅ Check if name exists
+        if Product.objects.filter(name=name).exists():
+            result_payload["error"] = f"Error: Product '{name}' already exists in the database"
+            result.append(result_payload)
+            continue
+
+
         # ✅ Create product record
         response = create_product_record(user, product_data)
 

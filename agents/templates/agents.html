@@ -76,6 +76,13 @@
                       <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
                   </div>
                 {% endif %}
+
+                {% if msg.sender == 'agent' and 'retrieved_records' in msg.content %}
+                  <div class="chat-text agent">
+                      <img width="95px" src="{% static 'img/agentcpq-5.png' %}" alt="AgentCPQ Logo">
+                      <div class="agent-json hola-hola" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
+                {% endif %}
               </div>
             {% endfor %}
           </div>
@@ -89,7 +96,7 @@
         </div>
     </div>
 
-    <script>
+<script>
   // Inicializar flatpickr
   flatpickr("#expiration_date", {
     dateFormat: "m/d/Y", // MM/DD/YYYY
@@ -117,6 +124,7 @@
   }
 </script>
 
-{% include "floating_drawer.html" %}
+<!-- {% include "floating_drawer.html" %} -->
+
 </body>
 </html>

@@ -1,4 +1,5 @@
 import openai
+import re
 import json
 import os
 import logging
@@ -8,6 +9,7 @@ from agents.bundles_agent import bundles_agent
 from agents.admin_agent import admin_agent
 from agents.approvals_agent import approval_agent
 from agents.custom_object_agent import custom_object_agent
+from agents.analytics_agent import analytics_agent
 from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
 from django.contrib.auth.models import User
@@ -103,21 +105,22 @@ def orchestrate_request(user, user_message, session_data):
         content=user_message
     )
 
-    # Solo para debug
+
     session_data.setdefault("state", {})
+    # For debug
     print(f"\n\nCurrent session state: {session_data["state"]}\n\n")
 
-    # Get or create message history on session_data
+    # 🔹 Get or create message history on session_data
     session_data.setdefault("message_history", [])
 
-    # 🔹 Construir historial de mensajes
+    # 🔹 Build message history
     message_history = session_data.get("message_history", [])
 
-    # Recortar los últimos MAX_HISTORY mensajes
+    # 🔹 Trim the last MAX_HISTORY messages
     recent_history = get_recent_messages(message_history, max_messages=6)
 
 
-    # Construir historial en formato roles
+    # 🔹 Build history in roles format
     messages = [
         {
             "role": "system",
@@ -128,17 +131,15 @@ def orchestrate_request(user, user_message, session_data):
         }
     ]
 
-    # Agregar el historial recortado
+    # 🔹 Add the trimmed history
     for msg in recent_history:
         role = "assistant" if msg["sender"] == "agent" else "user"
         messages.append({"role": role, "content": msg["message"]})
-        # 👇 debug: imprimir msg con índice y saltos de línea
-        print(f"\n\nIndex {recent_history.index(msg)} -> msg:\n{msg}\n\n")
 
-    # Nuevo mensaje del usuario
+    # 🔹 New user message
     messages.append({"role": "user", "content": user_message})
 
-    # Lista de labels
+    # 🔹 List of labels
     custom_objects = CustomObject.objects.all()
     custom_objects_list = [co.label for co in custom_objects]
 
@@ -150,7 +151,7 @@ def orchestrate_request(user, user_message, session_data):
         - "AddProductToQuote"
         - "GenerateQuoteDocument"
         - "ProvideDates"
-        - "ShowQuoteDetails"
+        - "ShowQuoteDetails" → Use when the user requests details of one specific quote (e.g. "show me the details of quote Q-123", "open the quote for ACPQ-TEAM").
         - "UpdateQuoteLine"
         - "UpdateQuote"
         - "ShowQuoteNotes"
@@ -185,6 +186,7 @@ def orchestrate_request(user, user_message, session_data):
         - "CreateEmailAlert"
         - "UpdateEmailAlert"
         - "DeleteEmailAlert"
+        - "ShowMetrics" → Use when the user requests listings, catalogs, or filtered searches across objects. (e.g. "show me my product catalog", "list my last 5 quotes", "show me all leads created this month").
         """
     })
 
@@ -199,6 +201,7 @@ def orchestrate_request(user, user_message, session_data):
         )
 
         decision = response.choices[0].message.content.strip().replace('"', '')
+        #decision = re.sub(r'[^\w\s\-\_\.\,]', '', decision)
         logging.info(f"\n🟢 AI Decision Received: {decision} \n")
 
     except Exception as e:
@@ -247,209 +250,6 @@ def orchestrate_request(user, user_message, session_data):
 
     logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
     return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
-
-def orchestrate_request2(user, user_message, session_data):
-    session_context = {
-        k: str(v) for k, v in session_data.items()
-        if isinstance(v, (str, int, float, list, dict))
-    }
-
-    session_id = session_data.get("session_id")
-
-    user = User.objects.get(username=user)
-
-    if not session_id:
-        chat_session = ChatSession.objects.create(
-            user=user,
-            session_id=str(uuid4()),
-            title=user_message[:30]
-        )
-        session_data["session_id"] = chat_session.session_id
-    else:
-        chat_session = ChatSession.objects.get(session_id=session_id)
-
-    # Save user message
-    ChatMessage.objects.create(
-        session=chat_session,
-        sender="user",
-        content=user_message
-    )
-
-    session_data.setdefault("state", {})
-
-    session_data.setdefault("message_history", [])
-    message_history = session_data.get("message_history", [])
-
-    recent_history = get_recent_messages(session_data.get("message_history", []), max_messages=6)
-
-    # Labels dinámicos de Custom Objects
-    custom_objects = CustomObject.objects.all()
-    custom_objects_list = [co.label for co in custom_objects]
-
-    # 🔹 Nueva instrucción en formato JSON
-    system_prompt = f"""
-        You are an AI assistant that classifies user requests into one or more predefined actions.
-
-        STRICT RULES:
-        - Classify ONLY the content inside <LAST_USER_MESSAGE>…</LAST_USER_MESSAGE>.
-        - Conversation history is for CONTEXT ONLY. DO NOT classify anything from it.
-        - Always return a JSON array of objects.
-        - Each object must have:
-        - "action": one label from the list below
-        - "message": the exact fragment of the LAST user message related to that action
-        - If the LAST user message implies multiple actions, split it into multiple objects.
-        - Do not explain, do not add extra text, do not add emojis. Only return the JSON array.
-        - If the LAST user message implies multiple requests of the SAME action type, do not split them into multiple objects.
-        - Always return a single object per action type.
-        - In that object, include all relevant parts of the user message inside "message".
-        - Do not send multiple separate objects for the same action.
-
-        Example:
-        User: "remove discount from PRODUCT-001 and add PRODUCT-002 to quote"
-        Response:
-        [
-        {{
-            "action": "UpdateQuoteLine",
-            "message": "remove discount from PRODUCT-001"
-        }},
-        {{
-            "action": "AddProductToQuote",
-            "message": "add PRODUCT-002 to quote"
-        }}
-        ]
-
-        Possible labels:
-        - "CreateQuote"
-        - "AddProductToQuote"
-        - "GenerateQuoteDocument"
-        - "ProvideDates"
-        - "ShowQuoteDetails"
-        - "UpdateQuoteLine"
-        - "UpdateQuote"
-        - "ShowQuoteNotes"
-        - "DeleteQuoteLine"
-        - "DeleteQuote"
-        - "CreateProductRecord"
-        - "UpdateProductRecord"
-        - "SubmitForApproval"
-        - "CheckApprovalStatus"
-        - "ApproveQuote"
-        - "RejectQuote"
-        - "RecallQuote"
-        - "ShowAccountDetails"
-        - "GeneralQuery"
-        - "CreateValidationRule"
-        - "ShowRules"
-        - "UpdateRule"
-        - "DeleteRule"
-        - "AddProductToBundle"
-        - "UpdateBundleOption"
-        - "DeleteBundleOption"
-        - "DeleteBundleComponentFromQuote"
-        - "CreateCustomObject"
-        - "UpdateCustomObject"
-        - "DeleteCustomObject"
-        - "CreateCustomField"
-        - "UpdateCustomField"
-        - "DeleteCustomField"
-        - "CreateCustomRecord" (for {custom_objects_list})
-        - "UpdateCustomRecord" (for {custom_objects_list})
-        - "DeleteCustomRecord" (for {custom_objects_list})
-        - "CreateEmailAlert"
-        - "UpdateEmailAlert"
-        - "DeleteEmailAlert"
-        """
-    
-    # Construye un texto de historial SOLO para contexto (puedes formatearlo como bullets)
-    history_lines = []
-    for msg in recent_history:
-        who = "assistant" if msg["sender"] == "agent" else "user"
-        history_lines.append(f"{who}: {msg['message']}")
-        print(f"\n\nMensaje: {msg["message"]}\n\n")
-    history_text = "\n".join(history_lines) if history_lines else "No prior messages."
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {
-            "role": "system",
-            "content": f"CONTEXT ONLY (DO NOT CLASSIFY THIS):\n{history_text}"
-        },
-        {
-            "role": "user",
-            "content": f"<LAST_USER_MESSAGE>\n{user_message}\n</LAST_USER_MESSAGE>"
-        },
-    ]
-
-    tokens, est_cost = estimate_cost(messages, model=OPENAI_MODEL)
-    logging.info(f"\n\n💰 ORCHESTRATOR - Estimated tokens: {tokens}, approx cost: ${est_cost:.6f}\n\n")
-
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=messages,
-            temperature=0
-        )
-
-        raw_decision = response.choices[0].message.content.strip()
-        logging.info(f"\n🟢 AI Decision Raw: {raw_decision}\n")
-
-        try:
-            decisions = json.loads(raw_decision)  # 👈 Ahora es un array
-        except json.JSONDecodeError as e:
-            logging.error(f"❌ JSON parse error: {e}")
-            return {"message": "⚠️ Sorry, AI response was not valid JSON."}
-
-    except Exception as e:
-        logging.error(f"❌ Error in OpenAI call: {e}")
-        return {"message": "⚠️ Sorry, an error occurred while processing your request."}
-
-    action_map = get_action_map()
-    final_results = []
-
-    for item in decisions:
-        action = item.get("action")
-        fragment = item.get("message", "")
-
-        if action not in action_map:
-            logging.warning(f"⚠️ Unknown action: {action}")
-            continue
-
-        result = run_agent_async(action_map[action], user, action, fragment, session_data)
-
-        if not result:
-            logging.error(f"❌ Agent for '{action}' returned None.")
-            continue
-
-        agent_message = result.get("message", "")
-        hiddenMessage = result.get("hiddenMessage", False)
-
-        if session_data and fragment and agent_message:
-            update_message_history(session_data, fragment, agent_message)
-
-        session_summary = result.get("session_summary", None)
-        if session_data and session_summary:
-            update_summary(session_data, session_summary)
-
-        ChatMessage.objects.create(
-            session=chat_session,
-            sender="agent",
-            content=agent_message,
-            hiddenMessage=hiddenMessage
-        )
-
-        final_results.append(result)
-
-    if not final_results:
-        return {"message": "⚠️ No valid actions executed."}
-
-    # 🔹 Combinar mensajes si hay varios
-    combined_message = "<br><br>".join([res.get("message", "") for res in final_results])
-    return {
-        "message": combined_message,
-        "session_id": session_data["session_id"],
-        "results": final_results
-    }
-
 
 
 def orchestrate_request_trigger(user, user_message, session_data, decision):
@@ -666,7 +466,10 @@ def get_action_map():
         # EmailAlerts
         "CreateEmailAlert": admin_agent,
         "UpdateEmailAlert": admin_agent,
-        "DeleteEmailAlert": admin_agent
+        "DeleteEmailAlert": admin_agent,
+
+        # Metrics Agent
+        "ShowMetrics": analytics_agent
     }
 
 
