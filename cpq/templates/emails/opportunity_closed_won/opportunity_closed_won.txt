@@ -1,15 +1,15 @@
 {% load humanize %}
 {% if user %}Hello {{ user.first_name|default:user.username }},{% else %}Hello,{% endif %}
 
-A new opportunity "{{ opportunity.name }}" has been created{% if opportunity.created_by %} by {{ opportunity.created_by.first_name|default:opportunity.created_by.username }}.{% endif %}
+Congratulations, {{ opportunity.name }} has been Closed Won!
 
 Opportunity Details:
 {% if opportunity.amount %}- Amount: ${{ opportunity.amount|floatformat:2|intcomma }}{% else %}- Amount: $0.00{% endif %}
-{% if opportunity.stage %}- Stage: {{ opportunity.stage }}{% endif %}
+- Stage: {{ opportunity.stage }}
 
-Created on: {{ opportunity.created_at|date:"F j, Y, g:i a" }}
+Closed on: {{ opportunity.updated_at|date:"F j, Y, g:i a" }}
 
-Thank you!
+Congratulations!
 
 ---
 This email was automatically sent by the AgentCPQ system — please do not reply.

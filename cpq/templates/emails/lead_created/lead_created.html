@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Lead Created</title>
+</head>
+<body>
+    
+</body>
+</html>
+
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Lead Created</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Space Grotesk', sans-serif;
+        background-color: #f4f4f4;
+        margin: 0;
+        padding: 0;
+        color: #333;
+      }
+      .container {
+        max-width: 600px;
+        margin: 2rem auto;
+        background: #fff;
+        padding: 2rem;
+        border-radius: 10px;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
+      }
+      p {
+        font-size: 16px;
+        line-height: 1.6;
+      }
+      .button {
+        display: inline-block;
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+        background-color: #fc6a3d;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        text-decoration: none;
+        border-radius: 6px;
+        font-weight: 600;
+        text-align: center;
+      }
+      .footer {
+        margin-top: 2rem;
+        font-size: 14px;
+        color: #777;
+        text-align: center;
+      }
+      .header-box {
+        background: linear-gradient(135deg, #041530, #233049);
+        width: 100%;
+        color: white;
+        text-align: center;
+        padding-bottom: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header-box">
+        <!-- Hardcore image link for now -->
+        <img src="https://i.imgur.com/hPpLMOL.png" alt="AgentCPQ Logo" width="40%">
+        <h2 class="reset-text">Lead Created</h2>
+      </div>
+      <div class="container-mail">
+        {% if user %}
+          <p>Hello {{ user.first_name|default:user.username }},</p>
+          <p>A new lead <strong>{{ lead.name }}</strong> has been created by {{ lead.created_by.first_name|default:lead.created_by.username }}.</p>
+
+          {% if lead.phone or lead.email or lead.source or lead.contact or lead.status or lead.notes or lead.assigned_to %}
+              <p>Lead Details:</p>
+
+              <ul>
+                {% if lead.phone %}
+                    <li>Phone: {{ lead.phone }}</li>
+                {% endif %}
+
+                {% if lead.email %}
+                    <li>Email: {{ lead.email }}</li>
+                {% endif %}
+
+                {% if lead.source %}
+                    <li>Source: {{ lead.source }}</li>
+                {% endif %}
+
+                {% if lead.contact %}
+                    <li>Contact: {{ lead.contact }}</li>
+                {% endif %}
+
+                {% if lead.status %}
+                    <li>Status: {{ lead.status }}</li>
+                {% endif %}
+
+                {% if lead.notes %}
+                    <li>Notes: {{ lead.notes }}</li>
+                {% endif %}
+
+                {% if lead.assigned_to %}
+                    <li>Assigned To: {{ lead.assigned_to }}</li>
+                {% endif %}
+              </ul>
+          {% endif %}
+
+          <p>Created on: {{ lead.created_at|date:"F j, Y, g:i a" }}</p>
+          <p>Thank you!</p>
+        {% else %}
+          <p>Hello,</p>
+          <p>A new lead <strong>{{ lead.name }}</strong> has been created by {{ lead.created_by.first_name|default:lead.created_by.username }}.</p>
+
+          {% if lead.phone or lead.email or lead.source or lead.contact or lead.status or lead.notes or lead.assigned_to %}
+              <p>Lead Details:</p>
+
+              <ul>
+                {% if lead.phone %}
+                    <li>Phone: {{ lead.phone }}</li>
+                {% endif %}
+
+                {% if lead.email %}
+                    <li>Email: {{ lead.email }}</li>
+                {% endif %}
+
+                {% if lead.source %}
+                    <li>Source: {{ lead.source }}</li>
+                {% endif %}
+
+                {% if lead.contact %}
+                    <li>Contact: {{ lead.contact }}</li>
+                {% endif %}
+
+                {% if lead.status %}
+                    <li>Status: {{ lead.status }}</li>
+                {% endif %}
+
+                {% if lead.notes %}
+                    <li>Notes: {{ lead.notes }}</li>
+                {% endif %}
+
+                {% if lead.assigned_to %}
+                    <li>Assigned To: {{ lead.assigned_to }}</li>
+                {% endif %}
+              </ul>
+          {% endif %}
+
+          <p>Created on: {{ lead.created_at|date:"F j, Y, g:i a" }}</p>
+          <p>Thank you!</p>
+        {% endif %}
+      </div>
+
+      <div class="footer">
+        This email was automatically sent by the AgentCPQ system — please do not reply.  
+      </div>
+    </div>
+  </body>
+</html>

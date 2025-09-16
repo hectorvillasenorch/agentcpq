@@ -1,8 +1,9 @@
+{% load humanize %}
 <!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <title>Account Created</title>
+    <title>Quote Rejected</title>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
     <style>
       body {
@@ -28,7 +29,7 @@
         display: inline-block;
         margin-top: 1rem;
         margin-bottom: 1rem;
-        background-color: #fc6a3d;
+        background-color: #dc3545; /* rojo para rechazo */
         color: white;
         padding: 0.75rem 1.5rem;
         text-decoration: none;
@@ -55,41 +56,32 @@
     <div class="container">
       <div class="header-box">
         <img src="https://i.imgur.com/hPpLMOL.png" alt="AgentCPQ Logo" width="40%">
-        <h2 class="reset-text">Account Created</h2>
+        <h2 class="reset-text">Quote Rejected ❌</h2>
       </div>
       <div class="container-mail">
-        
         <p>
           Hello{% if user %} {{ user.first_name|default:user.username }}{% endif %},
         </p>
 
         <p>
-          A new account <strong>{{ account.name }}</strong> has been created
-          {% if account.created_by %}
-            by {{ account.created_by.first_name|default:account.created_by.username }}.
-          {% endif %}
+          The quote <strong>{{ quote.name }}</strong> has been rejected.
         </p>
 
-        {% if account.industry or account.website or account.phone or account.address %}
-          <p>Account Details:</p>
-          <ul>
-            {% if account.industry %}
-                <li>Industry: {{ account.industry }}</li>
-            {% endif %}
-            {% if account.website %}
-                <li>Website: {{ account.website }}</li>
-            {% endif %}
-            {% if account.phone %}
-                <li>Phone: {{ account.phone }}</li>
-            {% endif %}
-            {% if account.address %}
-                <li>Address: {{ account.street }}, {{ account.city }}, {{ account.state }}, {{ account.zip_code }}</li>
-            {% endif %}
-          </ul>
-        {% endif %}
+        <p>Quote Details:</p>
+        <ul>
+          {% if quote.net_amount %}
+            <li>Amount: ${{ quote.net_amount|floatformat:2|intcomma }}</li>
+          {% else %}
+            <li>Amount: $0.00</li>
+          {% endif %}
+          <li>Status: {{ quote.status }}</li>
+        </ul>
 
-        <p>Created on: {{ account.created_at|date:"F j, Y, g:i a" }}</p>
-        <p>Thank you!</p>
+        <p>Rejected on: {{ quote.updated_at|date:"F j, Y, g:i a" }}</p>
+        {% if quote.updated_by %}
+          <p>Rejected by: <strong>{{ quote.updated_by.get_full_name|default:quote.updated_by.username }}</strong></strong></p>
+        {% endif %}
+        <p>Please review the quote and make the necessary changes if applicable.</p>
       </div>
 
       <div class="footer">

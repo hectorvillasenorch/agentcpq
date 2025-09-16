@@ -1,8 +1,9 @@
+{% load humanize %}
 <!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <title>Account Created</title>
+    <title>Opportunity Closed Won</title>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
     <style>
       body {
@@ -28,7 +29,7 @@
         display: inline-block;
         margin-top: 1rem;
         margin-bottom: 1rem;
-        background-color: #fc6a3d;
+        background-color: #28a745;
         color: white;
         padding: 0.75rem 1.5rem;
         text-decoration: none;
@@ -55,7 +56,7 @@
     <div class="container">
       <div class="header-box">
         <img src="https://i.imgur.com/hPpLMOL.png" alt="AgentCPQ Logo" width="40%">
-        <h2 class="reset-text">Account Created</h2>
+        <h2 class="reset-text">Opportunity Closed Won ✅</h2>
       </div>
       <div class="container-mail">
         
@@ -64,32 +65,22 @@
         </p>
 
         <p>
-          A new account <strong>{{ account.name }}</strong> has been created
-          {% if account.created_by %}
-            by {{ account.created_by.first_name|default:account.created_by.username }}.
-          {% endif %}
+          Congratulations, {{ opportunity.name }} has been <strong>Closed Won</strong>!
         </p>
 
-        {% if account.industry or account.website or account.phone or account.address %}
-          <p>Account Details:</p>
-          <ul>
-            {% if account.industry %}
-                <li>Industry: {{ account.industry }}</li>
-            {% endif %}
-            {% if account.website %}
-                <li>Website: {{ account.website }}</li>
-            {% endif %}
-            {% if account.phone %}
-                <li>Phone: {{ account.phone }}</li>
-            {% endif %}
-            {% if account.address %}
-                <li>Address: {{ account.street }}, {{ account.city }}, {{ account.state }}, {{ account.zip_code }}</li>
-            {% endif %}
-          </ul>
-        {% endif %}
+        <p>Opportunity Details:</p>
+        <ul>
+          {% if opportunity.amount %}
+            <li>Amount: ${{ opportunity.amount|floatformat:2|intcomma }}</li>
+          {% else %}
+            <li>Amount: $0.00</li>
+          {% endif %}
 
-        <p>Created on: {{ account.created_at|date:"F j, Y, g:i a" }}</p>
-        <p>Thank you!</p>
+          <li>Stage: {{ opportunity.stage }}</li>
+        </ul>
+
+        <p>Closed on: {{ opportunity.updated_at|date:"F j, Y, g:i a" }}</p>
+        <p>Congratulations!</p>
       </div>
 
       <div class="footer">
