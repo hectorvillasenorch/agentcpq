@@ -117,7 +117,7 @@ def orchestrate_request(user, user_message, session_data):
 
     session_data.setdefault("state", {})
     # For debug
-    print(f"\n\nCurrent session state: {session_data["state"]}\n\n")
+    print(f"\n\nCurrent session state: {session_data['state']}\n\n")
 
     # 🔹 Get or create message history on session_data
     session_data.setdefault("message_history", [])
