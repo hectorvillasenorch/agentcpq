@@ -170,6 +170,17 @@ input[type="number"] {
   background-color: #f2f2f2;
 }
 
+/* ====== Collapsible Side Navigation ====== */
+.sidenav.sidenav-fixed {
+  transform: translateX(0);
+  transition: transform 0.3s ease-in-out;
+  will-change: transform;
+}
+
+.sidenav.sidenav-fixed.is-collapsed {
+  transform: translateX(-105%);
+}
+
 /* ============================================================ */
 
 .quote-details div {
@@ -308,11 +319,11 @@ h2 {
   overflow-y: auto;
   padding: 15px;
   background-color: #ffffff;
-  border: 1px solid #ddd;
+  border: 0px;
   border-radius: 5px;
   display: flex;
   flex-direction: column;
-  font-size: 20px;
+  font-size: 18px;
 }
 
 /* ✅ User & Agent Messages */
@@ -326,10 +337,11 @@ h2 {
 }
 
 .user{
-  background-color: #f6f6f6;
-  color: #313133;
-  align-self: flex-end;
-  box-shadow: 0px 2px 2px #dddddd;
+    background-color: #fafafa;
+    color: #000000;
+    align-self: flex-end;
+    box-shadow: 3px 3px 4px #f6f6f6;
+    border: 1px solid #ebebeb;
 }
 
 .agent {
@@ -360,6 +372,7 @@ h2 {
   background: white;
   border-top: 1px solid #ddd;
   padding: 10px;
+  margin-bottom: 30px;
 }
 
 
@@ -440,6 +453,7 @@ input[type=text]:not(.browser-default){
   border-radius: 12px;
   padding: 8px 12px;
   border: none;
+  box-shadow: none;
 }
 
 .sender {

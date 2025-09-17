@@ -156,9 +156,22 @@ h2{
   padding: 20px;
   width: 100%;
   margin: 10px auto;
-  overflow-y: auto;
+  /* overflow-y: auto; */
   border-radius: 5px;
 }
+
+ #sidenav.collapsed {
+    width: 0;
+    padding: 0;
+  }
+
+  #sidenav.collapsed * {
+    display: none;
+  }
+
+  #sidenav.expanded {
+    width: 250px;
+  }
 
 /* === Table Styling (Responsive) === */
 table {

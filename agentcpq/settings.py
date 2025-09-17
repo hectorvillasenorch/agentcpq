@@ -20,7 +20,8 @@ DEBUG = True
 
 ALLOWED_HOSTS = [
     '.herokuapp.com', 
-    'sympletech.agentcpq.ai'
+    'sympletech.agentcpq.ai',
+    '127.0.0.1'
     ]
 
 
@@ -51,6 +52,8 @@ CORS_ALLOWED_ORIGINS = [
     NGROK_FULL_URL,
     "chrome-extension://cijelopfcdehkcadcjmbjehppoocjknh"
 ]
+
+X_FRAME_OPTIONS = 'ALLOWALL'  # or 'ALLOWALL'
 
 # Application definition
 INSTALLED_APPS = [
