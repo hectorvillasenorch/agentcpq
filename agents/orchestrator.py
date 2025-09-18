@@ -88,6 +88,7 @@ def orchestrate_request(user, user_message, session_data):
 
     user = User.objects.get(username=user)
 
+    # Robust session handling: create if missing or absent
     if not session_id:
         chat_session = ChatSession.objects.create(
             user=user,
@@ -96,7 +97,15 @@ def orchestrate_request(user, user_message, session_data):
         )
         session_data["session_id"] = chat_session.session_id
     else:
-        chat_session = ChatSession.objects.get(session_id=session_id)
+        try:
+            chat_session = ChatSession.objects.get(session_id=session_id)
+        except ChatSession.DoesNotExist:
+            chat_session = ChatSession.objects.create(
+                user=user,
+                session_id=session_id,
+                title=user_message[:30]
+            )
+            session_data["session_id"] = chat_session.session_id
 
     # Save user message
     ChatMessage.objects.create(
@@ -108,7 +117,7 @@ def orchestrate_request(user, user_message, session_data):
 
     session_data.setdefault("state", {})
     # For debug
-    print(f"\n\nCurrent session state: {session_data["state"]}\n\n")
+    print(f"\n\nCurrent session state: {session_data['state']}\n\n")
 
     # 🔹 Get or create message history on session_data
     session_data.setdefault("message_history", [])
@@ -262,11 +271,19 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
         chat_session = ChatSession.objects.create(
             user=user,
             session_id=str(uuid4()),
-            title=user_message[:30]  # Optionally use part of the first message
+            title=user_message[:30]
         )
         session_data["session_id"] = chat_session.session_id
     else:
-        chat_session = ChatSession.objects.get(session_id=session_id)
+        try:
+            chat_session = ChatSession.objects.get(session_id=session_id)
+        except ChatSession.DoesNotExist:
+            chat_session = ChatSession.objects.create(
+                user=user,
+                session_id=session_id,
+                title=user_message[:30]
+            )
+            session_data["session_id"] = chat_session.session_id
 
     #Extract the JSON to give the hidden field (Only for update message)
     if user_message.startswith("Update Quote Line:"):
@@ -480,5 +497,4 @@ def get_trigger_phrases():
         "generate pdf",
         "create quote pdf",
     ]
-
 

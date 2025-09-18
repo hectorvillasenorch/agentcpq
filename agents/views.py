@@ -8,8 +8,11 @@ from django.views.decorators.csrf import csrf_exempt
 from django.template.context_processors import csrf
 from dotenv import load_dotenv
 from django.contrib.auth.models import User
+from django.views.decorators.clickjacking import xframe_options_exempt
+from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from agents.models import ChatSession
+
 
 from .orchestrator import handle_user_request  # or orchestrate_request if needed
 
@@ -20,6 +23,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-4"
 
 
+@xframe_options_exempt
+@login_required
 def agents_chat(request):
     """Render the chat page with CSRF token."""
     context = {}
@@ -101,7 +106,7 @@ def chat_with_gpt(request):
         session_data["session_id"] = custom_session_id
 
     #Debbug the session id if is custom or not
-    logger.info(f"\n\n🔹 REQUEST: Session Data: {request.session.get("session_data", {})}\n\n")
+    logger.info(f"🔹 REQUEST: Session Data: {request.session.get('session_data', {})}")
 
     # --- 5. Handle pending actions (if any) ---
     pending_action = session_data.get("pending_action")

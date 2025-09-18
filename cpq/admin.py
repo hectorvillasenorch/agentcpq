@@ -132,7 +132,8 @@ admin.site.register(Account, AccountAdmin)
 class QuoteAdmin(DynamicCustomFieldAdmin):
     form = get_dynamic_form(Quote, crm="AgentCPQ", object_type="Quote")
     list_display = ('name','account', 'opportunity', 'net_amount', 'status', 'expiration_date', 'created_at', 'updated_at')
-    search_fields = ('name', 'qteid')  # <- asegúrate de que esto esté aquí
+    # Required because QuoteDocumentAdmin uses autocomplete_fields=("quote",)
+    search_fields = ('name', 'qteid', 'account__name', 'opportunity__name')
 
 admin.site.register(Quote, QuoteAdmin)
 

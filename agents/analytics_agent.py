@@ -200,7 +200,10 @@ def build_query_from_payload(payload):
         elif isinstance(value, (int, float)):
             conditions.append(f"{key} = {value}")
         elif isinstance(value, list):
-            values = ", ".join(f"'{str(v).replace('\'', '\'\'')}'" if isinstance(v, str) else str(v) for v in value)
+            values = ", ".join(
+                "'{}'".format(str(v).replace("'", "''")) if isinstance(v, str) else str(v)
+                for v in value
+            )
             conditions.append(f"{key} IN ({values})")
     where_clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
 

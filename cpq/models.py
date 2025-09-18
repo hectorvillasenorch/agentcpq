@@ -1202,7 +1202,6 @@ class ActionUsage(models.Model):
         return f"{self.action} by {self.user or 'System'} on {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
 
 
-
 class TenantUsageReport(models.Model):
     tenant = models.ForeignKey(
         Tenant,
@@ -1263,7 +1262,6 @@ class TenantUsageLog(models.Model):
 
     def __str__(self):
         return f"{self.tenant_id} ({self.billing_period}) – {self.status}"
-
 
 class EmailAlert(models.Model):
     TRIGGER_CHOICES = [
@@ -1346,7 +1344,7 @@ class EmailAlert(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='email_alerts_updated')
 
-    def __str__(self):
+    def _str_(self):
         return f"Email Alert: {self.description}, when: {self.trigger}, options: {self.offset_days if self.offset_days else self.scheduled_cron}"
     
 class EmailAlertRecipient(models.Model):

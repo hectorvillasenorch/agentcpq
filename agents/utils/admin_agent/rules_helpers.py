@@ -394,7 +394,7 @@ def handle_rules_updates(extracted_updates, response_message, session_context):
 
         response_message += f"🧾 Rule: {name}<br>"
         response_message += f"🏷️ Field: {field_labels.get(field, field.capitalize())}<br>"
-        response_message += f"✏️ Value: {value if field != "conditions" else generate_conditions_format(value)}<br><br>"
+        response_message += f"✏️ Value: {value if field != 'conditions' else generate_conditions_format(value)}<br><br>"
 
         # Validate request informatio
         is_valid, feedback, rule = validate_rule_update_request(name, field, value, session_context)
@@ -417,7 +417,7 @@ def handle_rules_updates(extracted_updates, response_message, session_context):
         response = update_rule_record(update_payload)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             updated_rules.append(update_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:

@@ -302,19 +302,15 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
 
 
 # SAVE QUOTE LINE ITEM ON DATABASE (UPDATE_QUOTE_LINE)
-
 def update_quote_line_record(user, update_payload, line_item, quote):
     try:
-        
         quantity = update_payload.get("quantity", None)
         discount_type = update_payload.get("discount_type", None)
         discount_percentage = update_payload.get("discount_percentage", None)
         discount_amount = update_payload.get("discount_amount", None)
         term = update_payload.get("term", None)
-
         # If product has custom fields, then create that custom fields to quote line
         copy_custom_fields_values_from_product_to_quote_line(line_item)
-
         # Update values
         if quantity is not None:
             line_item.quantity = quantity
@@ -326,27 +322,19 @@ def update_quote_line_record(user, update_payload, line_item, quote):
             line_item.discount_amount = discount_amount
         if term is not None:
             line_item.term = term
-
         line_item.save()
-
         print("✅ DEBUG: Line item updated:", line_item)  # Debugging step
-
-        # ✅ Instead of returning JsonResponse, return a success message string
-        #log_action_usage("CreateProductRecord", user, "Product", product.sku)
 
         return {
             "success": True
         }
-       
-
     except Exception as e:
         print(f"Error trying yo save update quote line: {str(e)}")
         return {
             "message": f"⚠️ Error updating line item: {str(e)}",
             "success": False
         }
-    
-# SAVE QUOTE LINE ITEM ON DATABASE (UI)
+
 def save_quote_line_update(request, quote):
     try:
         update = json.loads(request)  # Extract JSON array
@@ -559,7 +547,7 @@ def handle_quote_update_request(extracted_updates, quote, response_message):
         response = save_quote_update(item_json)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             updated_quotes.append(update_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:

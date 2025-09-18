@@ -122,9 +122,41 @@
     // Enviar al backend
     sendUserMessage("Update Quote: " + JSON.stringify(updatePayload));
   }
-</script>
+  document.addEventListener("DOMContentLoaded", () => {
+  window.addEventListener("message", (event) => {
+    if (!event.data || typeof event.data !== "object") return;
 
-<!-- {% include "floating_drawer.html" %} -->
+    let { deal_id, deal_name } = event.data;
+    console.log("[iframe] Message received:", event.data);
+
+    if (!deal_id || !deal_name) return;
+    // TODO: Check if this deal has a primary quote from Agentcpq, if it doesnt, message is: Do you want me to create a quote for this Deal? 
+
+    const dealMessage = `Hello!, do you want me to create a quote for ${deal_name} ?`;
+
+    console.log("🟢 Appending deal message:", dealMessage);
+
+    // ✅ Append to the chat box as agent
+    const chatBox = document.getElementById("chat-box");
+    if (chatBox) {
+      const newMessage = document.createElement("div");
+      newMessage.classList.add("chat-text", "agent");
+      newMessage.innerHTML = `
+        <div class="senderagent">
+          <img width="95px" src="/static/img/agentcpq-5.png" alt="AgentCPQ Logo">
+        </div>
+        <div class="message">${dealMessage}</div>
+      `;
+      chatBox.appendChild(newMessage);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    } else {
+      console.warn("⚠️ chat-box not found in DOM.");
+    }
+  });
+});
+
+
+</script>
 
 </body>
 </html>

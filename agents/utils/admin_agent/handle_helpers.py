@@ -572,7 +572,7 @@ def handle_email_alerts_updates(user, extracted_email_alerts_updates, response_m
         response = update_email_alert_record(json.dumps(alert_payload), user= user)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             alerts_updated.append(alert_payload)
             agent_response = f"The email alert was o were updated successfully."
             session_context["extracted"] = {"alert_name": alert_name}
@@ -625,7 +625,7 @@ def handle_email_alerts_deletes(extracted_email_alerts_deletes, response_message
         response = delete_email_alert_record(json.dumps(alert_payload))
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             alerts_deleted.append(alert_payload)
             agent_response = f"The email alert was o were deleted successfully."
             session_context["extracted"] = {"alert_name": alert_name}

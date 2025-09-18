@@ -354,7 +354,7 @@ def handle_option_updates(extracted_updates, response_message):
             response = save_update_option(item_json, option)
 
             if response.get("success"):
-                response_message += f"{response.get("message")}<br><br>"
+                response_message += f"{response.get('message')}<br><br>"
                 updated_options.append(update_payload)
                 logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
             else:

@@ -1,13 +1,9 @@
-import redis
 import json
 import logging
 import tiktoken
 from agents.models import SessionState
 
 logger = logging.getLogger(__name__)
-
-# Conexión a Redis
-#r = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
 
 # No borrar esta function para no romper el codigo hasta adaptar todas las functions al nuevo LLM
 def save_or_update_conversation_context(session_context, agent_response):
