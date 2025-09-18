@@ -146,7 +146,7 @@ def chat_with_gpt(request):
             "response": {
                 "response": ai_response,
                 "session_created": True,
-                "redirect_url": f"/dashboard?view=agents&session_id={new_chat_session.session_id}"
+                "redirect_url": f"/dashboard/?view=agents&session_id={new_chat_session.session_id}"
             }
         })
 
