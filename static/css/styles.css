@@ -144,8 +144,12 @@ h2{
   flex-direction: column;
   height: 100vh;
   padding: 0;
-  transition: margin-left 0.3s ease-in-out;
+  /* transition: margin-left 0.1s ease-in-out; */
   overflow: hidden;
+}
+.main-content-collapsed {
+  margin-left: 55px !important;
+  /* transition: margin-left 0.1s ease-in-out; */
 }
 /* === Content Area === */
 #content-area {
@@ -172,6 +176,29 @@ h2{
   #sidenav.expanded {
     width: 250px;
   }
+
+.sidenav-fixed.collapse_sidebar {
+  width: 60px !important;
+  overflow-x: hidden;
+  /* transition: 0.1s ease; */
+}
+
+/* Hide text labels and section titles */
+.sidenav-fixed.collapse_sidebar .nav-label,
+.sidenav-fixed.collapse_sidebar .session-list-title {
+  display: none !important;
+}
+
+/* Center icons in collapsed mode */
+.sidenav-fixed.collapse_sidebar a {
+  display: flex;
+  justify-content: center;
+}
+
+/* Prevent layout issues in collapsed mode */
+.sidenav-fixed.collapse_sidebar a i {
+  margin: 0 auto;
+}
 
 /* === Table Styling (Responsive) === */
 table {

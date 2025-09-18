@@ -51,6 +51,21 @@ function toggleSidebar() {
     document.querySelector(".sidenav-fixed").classList.toggle("active");
 }
 
+function colapseSidebar() {
+    const sidenav = document.querySelector(".sidenav-fixed");
+    const icon = document.getElementById("collapse-icon");
+    const maincontent = document.querySelector(".main-content");
+
+    const isCollapsed = sidenav.classList.toggle("collapse_sidebar");
+    maincontent.classList.toggle("main-content-collapsed", isCollapsed);
+
+    // Save collapsed state
+    localStorage.setItem("sidebarCollapsed", isCollapsed ? "true" : "false");
+
+    // Toggle icon direction
+    icon.textContent = isCollapsed ? "chevron_right" : "chevron_left";
+}
+
 function unescapeUnicode(str) {
     return str.replace(/\\u[\dA-F]{4}/gi, function (match) {
       return String.fromCharCode(parseInt(match.replace(/\\u/g, ''), 16));
@@ -341,7 +356,7 @@ async function sendMessage() {
         }
 
         // ✅ Append the final response message to the chat
-        appendMessage("agent", `<div class="senderagent"><img width="95px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
+        appendMessage("agent", `<div class="senderagent"><img width="110px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
 
         // ✅ Handle Temporary Quote Details After Update Quote Line, Add Product And Delete Quote Line Item
         if (data.response && data.response.update_details && data.response.temporaryMessage){
