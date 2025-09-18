@@ -13,13 +13,6 @@ from django.utils.text import slugify
 # admin.site.register(Subscription)
 # admin.site.register(Asset)
 
-@admin.register(CustomObject)
-class CustomObjectAdmin(admin.ModelAdmin):
-    list_display = ('name', 'label', 'description')  # Adjust as needed
-
-@admin.register(CustomField)
-class CustomFieldAdmin(admin.ModelAdmin):
-    list_display = ("label", "name", "data_type", "custom_object","object_type")
 
 class DynamicCustomFieldAdmin(admin.ModelAdmin):
     def get_form(self, request, obj=None, **kwargs):
@@ -31,6 +24,16 @@ class DynamicCustomFieldAdmin(admin.ModelAdmin):
                 super().__init__(*args, **inner_kwargs)
 
         return RequestBoundForm
+    
+@admin.register(CustomObject)
+class CustomObjectAdmin(DynamicCustomFieldAdmin):
+    form = get_dynamic_form(CustomObject, crm="AgentCPQ", object_type="CustomObject")
+    list_display = ('name', 'label', 'description')  # Adjust as needed
+
+@admin.register(CustomField)
+class CustomFieldAdmin(DynamicCustomFieldAdmin):
+    form = get_dynamic_form(CustomField, crm="AgentCPQ", object_type="CustomField")
+    list_display = ("label", "name", "data_type", "object_type", "custom_object", "created_by", "created_at")
 
 
 
@@ -207,17 +210,18 @@ class OptionInline(admin.TabularInline):
 class ProductAdmin(DynamicCustomFieldAdmin):
     change_list_template = "admin/product/change_list.html"
 
-    readonly_fields = ('created_by', 'updated_by')
+    # 🔹 quitar 'created_by' de readonly_fields
+    readonly_fields = ('updated_by',)
 
     def get_fieldsets(self, request, obj=None):
         form = self.get_form(request, obj)()
         return [(None, {'fields': list(form.fields.keys())})]
-    
+
     def save_model(self, request, obj, form, change):
         if hasattr(obj, 'created_by'):
-            if not change:
+            if not change:  # creación
                 obj.created_by = request.user
-            else:
+            else:  # edición
                 original = self.model.objects.get(pk=obj.pk)
                 obj.created_by = original.created_by
 
@@ -384,8 +388,9 @@ admin.site.register(Option, OptionAdmin)
 ### Uncomment to Enable This Feature ####
 
 @admin.register(BusinessRule)
-class BusinessRuleAdmin(admin.ModelAdmin):
-    list_display = ('name', 'rule_type', 'active')  # replace with actual fields
+class BusinessRuleAdmin(DynamicCustomFieldAdmin):
+    form = get_dynamic_form(BusinessRule, crm="AgentCPQ", object_type="BusinessRule")
+    list_display = ('name', 'rule_type', 'active', 'created_by', 'created_at')
     search_fields = ('name',)
     list_filter = ('rule_type', 'active')
 

@@ -3,6 +3,7 @@ from .models import CustomField, BusinessRule, RuleCondition, CustomObject, Quot
 from django.forms import modelformset_factory
 from django.apps import apps
 from django.contrib.auth import get_user_model
+from django.contrib.contenttypes.models import ContentType
 
 from django.contrib.auth.models import User
 from .models import EmailAlert
@@ -233,51 +234,60 @@ def generate_dynamic_form(custom_object):
 
 
 def get_dynamic_form(model_class, crm, object_type):
+
     class DynamicCustomForm(forms.ModelForm):
         class Meta:
             model = model_class
             fields = '__all__'
+            exclude = ('updated_by',)
 
         def __init__(self, *args, user=None, **kwargs):
             self.user = user
             super().__init__(*args, **kwargs)
             User = get_user_model()
 
-            # --- Manejo de updated_by (hidden) ---
-            for system_field in ['updated_by']:
-                if hasattr(self._meta.model, system_field) and system_field not in self.fields:
-                    self.fields[system_field] = forms.ModelChoiceField(
-                        queryset=User.objects.all(),
-                        required=False,
-                        widget=forms.HiddenInput()
-                    )
+            # --- Manejo de due_date ---
+            if hasattr(self._meta.model, "due_date"):
+                instance = kwargs.get("instance")
+                self.fields["due_date"] = forms.DateField(
+                    label="Due Date",
+                    required=False,
+                    initial=instance.due_date if instance else None,
+                    widget=forms.DateInput(attrs={"type": "date"})
+                )
 
             # --- Manejo de created_by (readonly visible) ---
             if hasattr(self._meta.model, "created_by"):
-                created_by_value = None
                 if kwargs.get("instance") and kwargs["instance"].created_by:
-                    created_by_value = kwargs["instance"].created_by.get_username()
+                    initial_user = kwargs["instance"].created_by
                 elif self.user:
-                    created_by_value = self.user.get_username()
+                    initial_user = self.user
+                else:
+                    initial_user = None
 
-                self.fields["created_by"] = forms.CharField(
-                    label="Created by",
-                    initial=created_by_value,
+                self.fields["created_by"] = forms.ModelChoiceField(
+                    queryset=User.objects.all(),
+                    initial=initial_user,
                     required=False,
-                    widget=forms.TextInput(attrs={"readonly": "readonly"})
+                    disabled=True,  # readonly
+                    label="Created by"
                 )
 
-            # --- Custom fields dinámicos ---
+            # --- Manejo de campos dinámicos ---
             instance = kwargs.get("instance")
             self._custom_fields = CustomField.objects.filter(crm=crm, object_type=object_type)
+
             for field in self._custom_fields:
                 field_name = field.name
                 value = self.get_custom_field_value(instance, field) if instance else ""
-                self.fields[field_name] = forms.CharField(
-                    label=field.label or field.name,
-                    required=field.required,
-                    initial=value
-                )
+
+                # Solo si el campo dinámico no existe en el formulario, crearlo
+                if field_name not in self.fields:
+                    self.fields[field_name] = forms.CharField(
+                        label=field.label or field.name,
+                        required=field.required,
+                        initial=value
+                    )
 
         def get_custom_field_value(self, instance, custom_field):
             if not instance:

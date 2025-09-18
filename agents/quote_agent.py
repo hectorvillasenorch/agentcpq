@@ -131,7 +131,8 @@ def create_quote(user,user_message, session_data):
         opportunity=opportunity,
         status="Draft",
         net_amount=Decimal("0.00"),
-        owner=user
+        owner=user,
+        created_by=user
     )
 
     # ✅ Assign formatted name after creation using quote.id

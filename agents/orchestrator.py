@@ -135,7 +135,7 @@ def orchestrate_request(user, user_message, session_data):
             "role": "system",
             "content": """
             You are an AI assistant that classifies user requests into predefined actions.
-            Only answer with ONE label from the list provided, no explanations, no emojis.
+            Only answer with ONE label from the list provided, no explanations, no emojis, do not use this emoji: ✅.
             """
         }
     ]

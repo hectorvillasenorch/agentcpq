@@ -49,10 +49,12 @@ class Lead(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
     notes = models.TextField(blank=True)
     assigned_to = models.CharField(max_length=100, blank=True)
-    created_at = models.DateTimeField(default=timezone.now)
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_leads')
+
+    created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_leads')
-    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_leads')
+
     def save(self, *args, **kwargs):
         if not self.leadId:
             self.leadId = generate_agentcpq_id()
@@ -84,7 +86,6 @@ class Account(models.Model):
     accid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='accounts')
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_accounts')
      # Address fields
     street = models.CharField(max_length=255, blank=True, null=True)
     city = models.CharField(max_length=100, blank=True, null=True)
@@ -92,6 +93,8 @@ class Account(models.Model):
     zip_code = models.CharField(max_length=20, blank=True, null=True)
     tenant_id = models.CharField(max_length=30, unique=False,null=True)
     # country = models.CharField(max_length=100, blank=True, null=True)
+
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_accounts')
     
 
     def save(self, *args, **kwargs):
@@ -111,12 +114,13 @@ class Contact(models.Model):
     job_title = models.CharField(max_length=100, blank=True)
     notes = models.TextField(blank=True)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='contacts')
     contactId = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_contacts')
     is_primary = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_contacts')
 
     def save(self, *args, **kwargs):
         if not self.contactId:
@@ -156,8 +160,6 @@ class Opportunity(models.Model):
     stage = models.CharField(max_length=50, choices=STAGE_CHOICES, default='Prospecting')
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     expected_close_date = models.DateField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_opportunities')
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     primary_quote = models.ForeignKey(
         "Quote", 
@@ -167,6 +169,10 @@ class Opportunity(models.Model):
     )
     oppid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     hs_deal_id = models.CharField(max_length=18, unique=True, db_index=True, editable=False, null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_opportunities')
+
     class Meta:
         verbose_name = "Opportunity"
         verbose_name_plural = "Opportunities"
@@ -202,10 +208,11 @@ class Activity(models.Model):
     opportunity = models.ForeignKey('Opportunity', on_delete=models.SET_NULL, null=True, blank=True, related_name='activities')
     contact = models.ForeignKey('Contact', on_delete=models.SET_NULL, null=True, blank=True, related_name='activities')
     notes = models.TextField(blank=True)
-    created_at = models.DateTimeField(default=timezone.now)
+    activityid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_activities')
-    activityid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Activity"
@@ -295,8 +302,6 @@ class Quote(models.Model):
     tax_percentage = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Draft')
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
     discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage")
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
@@ -308,6 +313,9 @@ class Quote(models.Model):
     synced = models.BooleanField(default=False)
     last_synced_at = models.DateTimeField(null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_quotes')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quotes')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_quotes')
 
@@ -417,7 +425,6 @@ class QuoteLine(models.Model):
     is_bundle_component_selected = models.BooleanField(default=False)
     parent_line = models.ForeignKey('self', null=True, blank=True, related_name="child_lines", on_delete=models.CASCADE)  # for nesting
     product_option = models.ForeignKey("Option", null=True, blank=True, on_delete=models.SET_NULL)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quote_lines')
     billing_frequency = models.CharField(
         max_length=20,
         choices=[("monthly", "monthly"), ("quarterly", "quarterly"), ("annual", "annual"), ("one_time", "one_time")],
@@ -432,6 +439,7 @@ class QuoteLine(models.Model):
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quote_lines')
     updated_at = models.DateTimeField(auto_now=True)
 
     def update_discount_fields(self):
@@ -666,6 +674,7 @@ class BusinessRule(models.Model):
     priority = models.IntegerField(default=0, help_text="Higher priority rules run first.")
     error_message = models.TextField(blank=True, help_text="Message shown when the rule is triggered.")
     active = models.BooleanField(default=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_business_rules')
     conditions = models.JSONField(default=list, blank=True, help_text="List of conditions for the rule.")
@@ -963,6 +972,7 @@ class CustomObject(models.Model):
     name = models.CharField(max_length=255, unique=True)
     label = models.CharField(max_length=255)              
     description = models.TextField(blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_custom_objects')
     updated_at = models.DateTimeField(auto_now=True)
@@ -980,6 +990,7 @@ class CustomRecord(models.Model):
     custom_identifier = models.CharField(max_length=10, unique=True, blank=True, null=True)
     object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE, related_name='records')
     record_id = models.UUIDField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_custom_records')
     updated_at = models.DateTimeField(auto_now=True)
@@ -1006,10 +1017,6 @@ class CustomField(models.Model):
     object_type = models.CharField(max_length=50)
     data_type = models.CharField(max_length=50)  # text, number, date, etc.
     required = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='creted_custom_fields')
-    updated_at = models.DateTimeField(auto_now=True)
-    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_fields')
     custom_object = models.ForeignKey(CustomObject, on_delete=models.CASCADE, null=True, blank=True, related_name='custom_fields')
     lookup_model = models.CharField(
         max_length=100,
@@ -1018,6 +1025,12 @@ class CustomField(models.Model):
         help_text="Format: 'app_label.ModelName' (e.g., 'cpq.Account')"
     )
     options = models.JSONField(blank=True, null=True, help_text="Used for Dropdown data_type. List of options.")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='creted_custom_fields')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_fields')
+    
     class Meta:
         verbose_name = "Custom Field"
         verbose_name_plural = "Custom Fields"
