@@ -230,14 +230,16 @@ class ProductAdmin(DynamicCustomFieldAdmin):
         # Keep custom fields (CustomFieldValue)
         for field in CustomField.objects.filter(crm="AgentCPQ", object_type="Product"):
             field_name = field.name
+            print(f"\n\n Field Name: {field_name} \n\n")
             if field_name in form.cleaned_data:
                 value = form.cleaned_data[field_name]
+                print(f"\n\n Value for {field_name}: {value}\n\n")
                 cf_value, _ = CustomFieldValue.objects.get_or_create(
                     content_type=ContentType.objects.get_for_model(obj),
                     object_id=obj.id,
                     field=field,
                 )
-                cf_value.value = value
+                cf_value.value = value if value else ""
                 cf_value.updated_by_user = request.user
                 cf_value.save()
     

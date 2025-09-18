@@ -1044,7 +1044,7 @@ class CustomFieldValue(models.Model):
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)  # Generic relation
     object_id = models.PositiveIntegerField(null=True, blank=True)
     content_object = GenericForeignKey("content_type", "object_id")
-    value = models.TextField()
+    value = models.TextField(blank=True)
     record = models.ForeignKey(CustomRecord, null=True, blank=True, on_delete=models.CASCADE, related_name="custom_field_values")
     created_at = models.DateTimeField(auto_now_add=True)
 

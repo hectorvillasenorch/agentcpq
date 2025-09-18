@@ -50,6 +50,26 @@ PRODUCT_FIELDS = [
     ("term", "Term")
 ]
 
+DATA_TYPE_MAPPING = {
+    "text": forms.CharField,
+    "number": forms.DecimalField,  # o forms.IntegerField si quieres solo enteros
+    "date": forms.DateField,
+    "boolean": forms.BooleanField,
+    "dropdown": forms.ChoiceField,
+    "textarea": forms.CharField,
+    "lookup": forms.ModelChoiceField,  # se asigna queryset dinámico
+}
+
+WIDGET_MAPPING = {
+    "text": forms.TextInput(attrs={"class": "w-full border rounded p-2"}),
+    "number": forms.NumberInput(attrs={"class": "w-full border rounded p-2"}),
+    "date": forms.DateInput(attrs={"type": "date", "class": "w-full border rounded p-2"}),
+    "boolean": forms.CheckboxInput(),
+    "dropdown": forms.Select(attrs={"class": "w-full border rounded p-2"}),
+    "textarea": forms.Textarea(attrs={"class": "w-full border rounded p-2", "rows": 3}),
+    "lookup": forms.Select(attrs={"class": "w-full border rounded p-2"}),  # luego asignas queryset
+}
+
 
 def get_model_choices():
     choices = []
@@ -78,6 +98,11 @@ class CustomFieldForm(forms.ModelForm):
             'label', 'name', 'crm', 'object_type', 
             'custom_object', 'data_type', 'required', 'lookup_model'
         ]
+        widgets = {
+            'data_type': forms.Select(attrs={
+                'class': 'w-full mt-1 border rounded-lg p-2'
+            }),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -102,49 +127,51 @@ class CustomFieldForm(forms.ModelForm):
             raise forms.ValidationError("Lookup fields require a lookup model (e.g., cpq.Account).")
 
         return cleaned_data
+
+
     
-class CustomFieldForm(forms.ModelForm):
-    lookup_model = forms.ChoiceField(
-        required=False,
-        choices=get_model_choices(),  # dynamically populated
-        widget=forms.Select(attrs={'class': 'browser-default'})
-    )
-    data_type = forms.ChoiceField(
-        choices=DATA_TYPE_CHOICES, 
-        widget=forms.Select(attrs={'class': 'browser-default'})
-    )
-    crm = forms.ChoiceField(choices=CRM_CHOICES)
-
-    class Meta:
-        model = CustomField
-        fields = [
-            'label', 'name', 'crm', 'object_type', 
-            'custom_object', 'data_type', 'required', 'lookup_model'
-        ]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['custom_object'].required = False
-        self.fields['object_type'].required = False
-        self.fields['lookup_model'].required = False
-
-    def clean(self):
-        cleaned_data = super().clean()
-        object_type = cleaned_data.get("object_type")
-        custom_object = cleaned_data.get("custom_object")
-        data_type = cleaned_data.get("data_type")
-        lookup_model = cleaned_data.get("lookup_model")
-
-        if custom_object:
-            cleaned_data["object_type"] = custom_object.name
-
-        if not object_type and not custom_object:
-            raise forms.ValidationError("You must select an Object Type and a Custom Object if required.")
-
-        if data_type == "lookup" and not lookup_model:
-            raise forms.ValidationError("Lookup fields require a lookup model (e.g., cpq.Account).")
-
-        return cleaned_data
+#class CustomFieldForm(forms.ModelForm):
+#    lookup_model = forms.ChoiceField(
+#        required=False,
+#        choices=get_model_choices(),  # dynamically populated
+#        widget=forms.Select(attrs={'class': 'browser-default'})
+#    )
+#    data_type = forms.ChoiceField(
+#        choices=DATA_TYPE_CHOICES, 
+#        widget=forms.Select(attrs={'class': 'browser-default'})
+#    )
+#    crm = forms.ChoiceField(choices=CRM_CHOICES)
+#
+#    class Meta:
+#        model = CustomField
+#        fields = [
+#            'label', 'name', 'crm', 'object_type', 
+#            'custom_object', 'data_type', 'required', 'lookup_model'
+#        ]
+#
+#    def __init__(self, *args, **kwargs):
+#        super().__init__(*args, **kwargs)
+#        self.fields['custom_object'].required = False
+#        self.fields['object_type'].required = False
+#        self.fields['lookup_model'].required = False
+#
+#    def clean(self):
+#        cleaned_data = super().clean()
+#        object_type = cleaned_data.get("object_type")
+#        custom_object = cleaned_data.get("custom_object")
+#        data_type = cleaned_data.get("data_type")
+#        lookup_model = cleaned_data.get("lookup_model")
+#
+#        if custom_object:
+#            cleaned_data["object_type"] = custom_object.name
+#
+#        if not object_type and not custom_object:
+#            raise forms.ValidationError("You must select an Object Type and a Custom Object if required.")
+#
+#        if data_type == "lookup" and not lookup_model:
+#            raise forms.ValidationError("Lookup fields require a lookup model (e.g., cpq.Account).")
+#
+#        return cleaned_data
 
 
 class CustomObjectForm(forms.ModelForm):
@@ -246,9 +273,10 @@ def get_dynamic_form(model_class, crm, object_type):
             super().__init__(*args, **kwargs)
             User = get_user_model()
 
+            instance = kwargs.get("instance")
+
             # --- Manejo de due_date ---
             if hasattr(self._meta.model, "due_date"):
-                instance = kwargs.get("instance")
                 self.fields["due_date"] = forms.DateField(
                     label="Due Date",
                     required=False,
@@ -258,8 +286,8 @@ def get_dynamic_form(model_class, crm, object_type):
 
             # --- Manejo de created_by (readonly visible) ---
             if hasattr(self._meta.model, "created_by"):
-                if kwargs.get("instance") and kwargs["instance"].created_by:
-                    initial_user = kwargs["instance"].created_by
+                if instance and instance.created_by:
+                    initial_user = instance.created_by
                 elif self.user:
                     initial_user = self.user
                 else:
@@ -274,20 +302,68 @@ def get_dynamic_form(model_class, crm, object_type):
                 )
 
             # --- Manejo de campos dinámicos ---
-            instance = kwargs.get("instance")
             self._custom_fields = CustomField.objects.filter(crm=crm, object_type=object_type)
 
             for field in self._custom_fields:
                 field_name = field.name
                 value = self.get_custom_field_value(instance, field) if instance else ""
 
-                # Solo si el campo dinámico no existe en el formulario, crearlo
                 if field_name not in self.fields:
-                    self.fields[field_name] = forms.CharField(
-                        label=field.label or field.name,
-                        required=field.required,
-                        initial=value
-                    )
+                    field_class = DATA_TYPE_MAPPING.get(field.data_type, forms.CharField)
+                    widget = WIDGET_MAPPING.get(field.data_type, forms.TextInput())
+
+                    # --- Dropdown ---
+                    if field.data_type == "dropdown" and field.options:
+                        if not field.required:
+                            choices = [("", "---")] + [(opt, opt) for opt in field.options]
+                        else:
+                            choices = [(opt, opt) for opt in field.options]
+
+                        self.fields[field_name] = field_class(
+                            label=field.label or field.name,
+                            required=field.required,
+                            initial=value if value else "",
+                            choices=choices,
+                            widget=widget
+                        )
+
+                    # --- Lookup (FK) ---
+                    elif field.data_type == "lookup" and field.lookup_model:
+                        qs = field.lookup_model.objects.all()
+                        self.fields[field_name] = field_class(
+                            label=field.label or field.name,
+                            required=field.required,
+                            initial=value,
+                            queryset=qs,
+                            widget=widget
+                        )
+
+                    # --- Textarea ---
+                    elif field.data_type == "textarea":
+                        self.fields[field_name] = field_class(
+                            label=field.label or field.name,
+                            required=field.required,
+                            initial=value,
+                            widget=widget
+                        )
+
+                    # --- Number ---
+                    elif field.data_type == "number":
+                        self.fields[field_name] = field_class(
+                            label=field.label or field.name,
+                            required=field.required,
+                            initial=value,
+                            widget=widget
+                        )
+
+                    # --- Text (por defecto) ---
+                    else:
+                        self.fields[field_name] = field_class(
+                            label=field.label or field.name,
+                            required=field.required,
+                            initial=value,
+                            widget=widget
+                        )
 
         def get_custom_field_value(self, instance, custom_field):
             if not instance:
@@ -320,19 +396,23 @@ def get_dynamic_form(model_class, crm, object_type):
             content_type = ContentType.objects.get_for_model(instance)
             for field in self._custom_fields:
                 value = self.cleaned_data.get(field.name)
-                if value is not None:
-                    cfv, created = CustomFieldValue.objects.get_or_create(
-                        content_type=content_type,
-                        object_id=instance.id,
-                        field=field,
-                    )
-                    cfv.value = value
-                    cfv.updated_by_user = self.user
-                    cfv.save()
+                # Guardar None si está vacío
+                if value is None:
+                    value = ""
+
+                cfv, created = CustomFieldValue.objects.get_or_create(
+                    content_type=content_type,
+                    object_id=instance.id,
+                    field=field,
+                )
+                cfv.value = value
+                cfv.updated_by_user = self.user
+                cfv.save()
 
             return instance
 
     return DynamicCustomForm
+
 
 
 

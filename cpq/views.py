@@ -184,41 +184,43 @@ def set_primary_quote(request, quote_id):
 
 
 # Maybe it is not used
-def create_custom_field(request):
-    if request.method == "POST":
-        crm = request.POST["crm"]
-        object_type = request.POST["object_type"]
-        name = request.POST["name"]
-        label = request.POST["label"]
-        data_type = request.POST["data_type"]
-        required = "required" in request.POST
+#def create_custom_field(request):
+#    if request.method == "POST":
+#        crm = request.POST["crm"]
+#        object_type = request.POST["object_type"]
+#        name = request.POST["name"]
+#        label = request.POST["label"]
+#        data_type = request.POST["data_type"]
+#        required = "required" in request.POST
+#        options = request.POST.getlist("options[]")
 
         # ✅ Save to DB
-        field = CustomField.objects.create(
-            crm=crm,
-            object_type=object_type,
-            name=name,
-            label=label,
-            data_type=data_type,
-            required=required,
-            created_by=request.user
-        )
-
-        if field:
-            quote_document_settings = QuoteDocumentSettings.objects.first()
-            if quote_document_settings:
-                # Add label at the end of omitted_fields
-                omitted = quote_document_settings.omitted_fields or []
-                
-                if label not in omitted:  # Avoid duplicated
-                    omitted.append(label)
-                    quote_document_settings.omitted_fields = omitted
-                    quote_document_settings.save()
-
-        return redirect("custom_fields")
-
-    fields = CustomField.objects.all().order_by("-created_at")
-    return render(request, "custom_fields.html", {"fields": fields})
+#        field = CustomField.objects.create(
+#            crm=crm,
+#            object_type=object_type,
+#            name=name,
+#            label=label,
+#            data_type=data_type,
+#            required=required,
+#            options=options if options else None,
+#            created_by=request.user
+#        )
+#
+#        if field:
+#            quote_document_settings = QuoteDocumentSettings.objects.first()
+#            if quote_document_settings:
+#                # Add label at the end of omitted_fields
+#                omitted = quote_document_settings.omitted_fields or []
+#                
+#                if label not in omitted:  # Avoid duplicated
+#                    omitted.append(label)
+#                    quote_document_settings.omitted_fields = omitted
+#                    quote_document_settings.save()
+#
+#        return redirect("custom_fields")
+#
+#    fields = CustomField.objects.all().order_by("-created_at")
+#    return render(request, "custom_fields.html", {"fields": fields})
 
 def get_standard_fields(model_name):
     mapping = {
@@ -365,6 +367,11 @@ def create_custom_field(request, object_name):
             field = form.save(commit=False)
             field.created_by = request.user
             field.updated_by = request.user
+
+            # Get options if exists
+            options = request.POST.getlist("options[]")
+            field.options = options if options else None
+
             field.save()
 
             # 🔧 Lógica personalizada aquí
@@ -400,20 +407,28 @@ def edit_custom_field(request, field_id):
         if form.is_valid():
             updated_field = form.save(commit=False)
             updated_field.updated_by = request.user
+
+            # Guardar las opciones del dropdown si el tipo es 'dropdown'
+            if form.cleaned_data['data_type'] == 'dropdown':
+                # request.POST.getlist('options[]') obtiene todos los inputs de opciones
+                options = request.POST.getlist('options[]')
+                # Filtrar valores vacíos
+                updated_field.options = [opt for opt in options if opt.strip()]
+            else:
+                updated_field.options = []  # Limpiar si ya no es dropdown
+
             updated_field.save()
             return redirect('cpq:custom_fields')
     else:
         form = CustomFieldForm(instance=custom_field)
-        # Get related values
         related_values = custom_field.values.all()
-
-        print(f"\n\nRelated Values: {related_values}\n\n")
 
     return render(request, 'edit_custom_field.html', {
         'form': form,
         'field_id': field_id,
         'related_values': related_values
     })
+
 
 @require_POST
 def delete_custom_field(request, field_id):
