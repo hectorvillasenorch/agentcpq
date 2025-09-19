@@ -44,6 +44,7 @@ def extract_product_data_with_llm(user_message, current_state, previous_summary=
     - Optional: description, is_subscription, term, family.
     - Assume that the product will not be a subscription or a bundle unless the user indicates otherwise.
     - If product is bundle (is_bundle = True, the required fields would now be name and sku, price is not necessary and you can mark completed as True if they are already configured.)
+    - If product is bundle (is_bundle =  True) set price as 0, and if name and sku are provided by the user, mark completed as true.
     - completed=true only if required fields are present.
     - agent_message should be short, friendly, professional, emoji-rich, ask follow-ups.
     - This message is a continuation of an ongoing conversation. Do NOT start with greetings like 'Hello' or 'Hi'. Just continue naturally.

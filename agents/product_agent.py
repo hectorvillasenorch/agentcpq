@@ -80,6 +80,8 @@ def create_product(user, user_message, session_data):
     # --- Persist completed products and capture errors ---
     result = handle_create_product(user, completed_products)
 
+    print(f"Result: {result}")
+
     # --- Generate final dynamic message using a separate function ---
     dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_product_message(
         completed_products=completed_products,
