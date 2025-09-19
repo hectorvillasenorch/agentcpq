@@ -266,6 +266,14 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
                 )
                 continue
 
+            # Check if custom field exists for this specific custom object
+            if CustomField.objects.filter(name=name, custom_object=co_obj).exists():
+                response_message += (
+                    f"⚠️ Heads up! A custom field named <strong>{name}</strong> already exists for {co_obj.label} custom object. "
+                    "Please choose a different name for this new field.<br><br>"
+                )
+                continue
+
         elif object_type:
             valid_object_types = [
                 "Activity", "Lead", "Contact", "Account",
@@ -281,17 +289,17 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
                     "<strong>Quote</strong>, or <strong>QuoteLine</strong>."
                 )
 
+             # Check if custom field exists for this specific custom object
+            if CustomField.objects.filter(name=name, object_type=object_type).exists():
+                response_message += (
+                    f"⚠️ Heads up! A custom field named <strong>{name}</strong> already exists for {object_type} standard object. "
+                    "Please choose a different name for this new field.<br><br>"
+                )
+                continue
+
 
         if label is None:
             response_message += f"⚠️ Oops! It looks like you didn’t provide a label for the custom field. Could you tell me what you’d like to name this field?<br><br>"
-            continue
-
-        # Check if custom field exists
-        if CustomField.objects.filter(name=name).exists():
-            response_message += (
-                f"⚠️ Heads up! A custom field named <strong>{name}</strong> already exists. "
-                "Please choose a different name for this new field.<br><br>"
-            )
             continue
         
         if not crm:

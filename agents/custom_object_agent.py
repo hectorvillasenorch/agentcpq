@@ -174,10 +174,6 @@ def create_custom_field(user, user_message, session_data):
     extracted_custom_fields = extract_custom_fields(user_message, custom_objects)
 
     if not extracted_custom_fields:
-        session_context["item_index"] = 1
-        session_context["extracted"] = "Something went wrong when LLM trying to extract custom fields data."
-        agent_response = f"An error occurred while extracting your custom fields data. Please try again."
-        save_or_update_conversation_context(session_context, agent_response)
         return {
         "message": "⚠️ AgentCPQ: An error occurred while extracting your custom fields data. Please try again."
         }
