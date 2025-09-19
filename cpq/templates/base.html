@@ -27,7 +27,7 @@
     <!-- Top Section -->
 
     <div style="flex-grow: 1;">
-          <a href="{% url 'dashboard' %}?view=agents">
+        <a href="{% if request.session.last_dashboard_session %}{{ request.session.last_dashboard_session }}{% else %}{% url 'dashboard' %}{% endif %}">
             <i class="material-icons">arrow_back</i> Back To AgentCPQ
         </a>
         <div class="brand">

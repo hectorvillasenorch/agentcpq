@@ -233,8 +233,6 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
         label = label.title()
 
         if not custom_object_name and not object_type:
-            agent_response = "Since the user didn't specify the custom object, reprocess the previously extracted data as new, including the custom object mentioned in the latest message."
-            save_or_update_conversation_context(session_context, agent_response)
             response_message += f"<b>🔄 Custom Field Request #{index} 🔄</b><br>"
             response_message += (
                 "⚠️ Oops! It looks like you didn’t specify which custom or standard object this field belongs to. "
@@ -242,33 +240,49 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
             )
             continue
 
-        if not custom_object_name.endswith('__c'):
-            custom_object_name.lower().replace(" ", "_") + "__c" if custom_object_name else None
-
-        # Add full item for session context
-        session_context["item_index"] = index
-        session_context["extracted"] = custom_field
-
-
-        # Validate if user specify an custom object name
-        try:
-            co_obj = CustomObject.objects.get(name=custom_object_name)
-        except CustomObject.DoesNotExist:
-            agent_response = "Since the user didn't specify the custom object, reprocess the previously extracted data as new, including the custom object mentioned in the latest message."
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"<b>🔄 Custom Field Request #{index} 🔄</b><br>"
-            response_message += f"⚠️ Oops! It looks like you didn’t specify a custom object for this custom field(s). Could you tell me which object it should belong to?<br><br>"
-            continue
-
-        # ✅ Format response message
-        if index == 1 and custom_object_name:
-            response_message += f"<b>🧩 <u>Fields for {co_obj.label}</u>🧩</b><br><br>"
-
         response_message += f"<b>🔄 Custom Field Request #{index} 🔄</b><br>"
 
+        if custom_object_name:
+
+            if not custom_object_name.endswith('__c'):
+                custom_object_name.lower().replace(" ", "_") + "__c" if custom_object_name else None
+
+
+            # Validate if user specify an custom object name
+            try:
+                co_obj = CustomObject.objects.get(name=custom_object_name)
+            except CustomObject.DoesNotExist:
+                response_message += f"⚠️ Oops! It looks like you didn’t specify a custom object for this custom field(s). Could you tell me which object it should belong to?<br><br>"
+                continue
+
+            # ✅ Format response message
+            if index == 1 and custom_object_name:
+                response_message += f"<b>🧩 <u>Fields for {co_obj.label}</u>🧩</b><br><br>"
+
+            if custom_object_name and not CustomObject.objects.filter(name=custom_object_name).exists():
+                response_message += (
+                    f"⚠️ Oops! The custom object <strong>{custom_object_name}</strong> doesn't exist yet. "
+                    "Please create it first or check for typos before adding fields to it.<br><br>"
+                )
+                continue
+
+        elif object_type:
+            valid_object_types = [
+                "Activity", "Lead", "Contact", "Account",
+                "Opportunity", "Product", "Quote", "QuoteLine"
+            ]
+
+            if object_type not in valid_object_types:
+                response_message += (
+                    "⚠️ The object type must be one of: "
+                    "<strong>Activity</strong>, <strong>Lead</strong>, "
+                    "<strong>Contact</strong>, <strong>Account</strong>, "
+                    "<strong>Opportunity</strong>, <strong>Product</strong>, "
+                    "<strong>Quote</strong>, or <strong>QuoteLine</strong>."
+                )
+
+
         if label is None:
-            agent_response = "Label is not specify on user message."
-            save_or_update_conversation_context(session_context, agent_response)
             response_message += f"⚠️ Oops! It looks like you didn’t provide a label for the custom field. Could you tell me what you’d like to name this field?<br><br>"
             continue
 
@@ -279,25 +293,27 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
                 "Please choose a different name for this new field.<br><br>"
             )
             continue
+        
+        if not crm:
+            crm = "AgentCPQ"
 
-
-        if custom_object_name and not CustomObject.objects.filter(name=custom_object_name).exists():
-            agent_response = f"There's no custom object named '{custom_object_name}' in the system."
-            save_or_update_conversation_context(session_context, agent_response)
+        if crm and crm not in ["AgentCPQ", "HubSpot", "Salesforce"]:
             response_message += (
-                f"⚠️ Oops! The custom object <strong>{custom_object_name}</strong> doesn't exist yet. "
-                "Please create it first or check for typos before adding fields to it.<br><br>"
+                "⚠️ The CRM must be <strong>AgentCPQ</strong>, "
+                "<strong>HubSpot</strong>, or <strong>Salesforce</strong>."
             )
             continue
 
+
         if data_type == "dropdown" and options is None:
-            agent_response = f"The dropdown field '{label}' is missing its options. Extract the previous data and add to options key the options that user mentionated on his message."
-            save_or_update_conversation_context(session_context, agent_response)
             response_message += (
                 f"⚠️ The dropdown field <strong>{label}</strong> doesn't include any options. "
                 "Please specify the choices you'd like to include.<br><br>"
             )
             continue
+
+        if not required:
+            required = False
 
         field_payload = {
             "label": label,
@@ -306,7 +322,7 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
             "data_type": data_type if data_type else "text",
             "object_type": object_type if custom_object_name is None else custom_object_name,
             "required": required if required else False,
-            "custom_object_name": custom_object_name if object_type is None else None,
+            "custom_object_name": custom_object_name if custom_object_name else None,
             "lookup_model": lookup_model if lookup_model else "admin.Logentry",
             "options": options if options else None
         }

@@ -287,20 +287,12 @@ def extract_custom_fields(user_message, custom_objects):
     prompt = f"""
     Extract structured custom fields details from the following request.
 
-    **IMPORTANT FOR CONVERSATION CONTEXT:**
-    If the user message is accompanied by previously extracted data entries , you must:
-    - Use that data to preserve the context of each item, assuming the user is continuing an incomplete task.
-    - Only update the items the user refers, and retain the others as incomplete.
-    - Return a list of all items (updated and pending) with the following structure.
-    However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
-    **--FINAL CONVERSATION CONTEXT--**
-
 
     Return a JSON array of fields, where each object must include:
 
     - "label" (string): The label of the Custom Field
     - "crm" (string): The CRM associated with the custom field.
-    - "object_type": The default object in AgentCPQ that the field belongs to. Must be one of: Lead, Contact, Account, Opportunity, Product, Quote, or QuoteLine.
+    - "object_type": The default object in AgentCPQ that the field belongs to. Must be one of: Activity, Lead, Contact, Account, Opportunity, Product, Quote, or QuoteLine.
     - "data_type" (string): The data type of the custom field. Must be one of: text, number, date, boolean, dropdown, text_area, or lookup.
     - "required" (boolean): Indicates whether the field is required in the custom object.
     - "custom_object" (String): The label or name of the custom object this field belongs to. Must be one of: {custom_objects}
@@ -361,7 +353,7 @@ def extract_custom_fields(user_message, custom_objects):
 
     **Requirements:**
     - If no "label" is found in the message, return null as "label".
-    - If no "crm" is found in the message, return null as "crm".
+    - If no "crm" is found in the message, return "AgentCPQ" as "crm".
     - If no "object_type" is found in the message, return null as "object_type".
     - If no "data_type" is found in the message, return null as "data_type".
     - If no "required" is found in the message, return null as "required".
