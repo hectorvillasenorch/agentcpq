@@ -86,6 +86,17 @@
               </div>
             {% endfor %}
           </div>
+          <div id="agent-feedback" style="display: none; text-align: left;">
+            <div class="chat-text agent">
+              <div class="senderagent">
+                <img width="95px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
+              </div>
+              <div class="message">
+                <img src="/static/img/thinking.gif" alt="Agent is thinking..." width="100">
+                
+              </div>
+            </div>
+          </div>
         <div class="chat-input-container">
         <div class="input-wrapper">
             <input type="text" id="user-input" placeholder="Create a Quote..." class="chat-input">
@@ -122,7 +133,11 @@
     // Enviar al backend
     sendUserMessage("Update Quote: " + JSON.stringify(updatePayload));
   }
+  
   document.addEventListener("DOMContentLoaded", () => {
+    window.USER_NAME = "{{ request.user.first_name|default:request.user.username|escapejs }}";
+    renderGreeting();
+
   window.addEventListener("message", (event) => {
     if (!event.data || typeof event.data !== "object") return;
 

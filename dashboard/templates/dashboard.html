@@ -21,7 +21,7 @@
 
     <div style="flex-grow: 1;">
         <div class="brand">
-            <img src="{% static 'img/logo-small.png' %}" width="70%" alt="AgentCPQ Logo"/>
+            <img src="{% static 'img/logo-small.png' %}" width="80%" alt="AgentCPQ Logo"/>
         </div>
         <a href="{% url 'dashboard' %}?view=agents&new_chat=true" class="new-chat-button">
             <i class="material-icons">smart_toy</i>
@@ -68,7 +68,6 @@
             {% endfor %}
         </div>
     </div>
-
    <!-- Fixed Logout/Login Section -->
     <div style="padding: 16px;">
         {% if user.is_authenticated %}
@@ -86,7 +85,6 @@
             </button>
         {% endif %}
     </div>
-    
 </div> 
         <!-- Main Content -->
         <main class="main-content">
