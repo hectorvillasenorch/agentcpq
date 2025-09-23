@@ -28,6 +28,16 @@ function setupSessionSwitching() {
   });
 }
 
+function showAgentFeedback() {
+  const feedback = document.getElementById("agent-feedback");
+  if (feedback) feedback.style.display = "block";
+}
+
+function hideAgentFeedback() {
+  const feedback = document.getElementById("agent-feedback");
+  if (feedback) feedback.style.display = "none";
+}
+
 function setupChatListeners() {
   console.log("Setting up chat listeners...");
 
@@ -47,8 +57,44 @@ function setupChatListeners() {
   console.log("Chat listeners attached.");
 }
 
+function renderGreeting() {
+  const chatBox = document.getElementById("chat-box");
+  const userName = window.USER_NAME || "User";
+  // Check if chat box exists and is empty
+  if (!chatBox || chatBox.children.length > 0) return;
+
+  const greetingText = `👋 Hello <b>${userName}</b>, how can I help you today?`;
+
+  const greeting = document.createElement("div");
+  greeting.classList.add("chat-text", "agent");
+  greeting.innerHTML = `
+    <div class="senderagent">
+      <img width="95px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
+    </div>
+    <div class="message">${greetingText}</div>
+  `;
+
+  chatBox.appendChild(greeting);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
 function toggleSidebar() {
     document.querySelector(".sidenav-fixed").classList.toggle("active");
+}
+
+function colapseSidebar() {
+    const sidenav = document.querySelector(".sidenav-fixed");
+    const icon = document.getElementById("collapse-icon");
+    const maincontent = document.querySelector(".main-content");
+
+    const isCollapsed = sidenav.classList.toggle("collapse_sidebar");
+    maincontent.classList.toggle("main-content-collapsed", isCollapsed);
+
+    // Save collapsed state
+    localStorage.setItem("sidebarCollapsed", isCollapsed ? "true" : "false");
+
+    // Toggle icon direction
+    icon.textContent = isCollapsed ? "chevron_right" : "chevron_left";
 }
 
 function unescapeUnicode(str) {
@@ -251,6 +297,7 @@ async function sendMessage() {
         const urlParams = new URLSearchParams(window.location.search);
         const sessionId = urlParams.get("session_id");  // 👈 Obtén el session_id desde la URL
 
+        showAgentFeedback();
         const response = await fetch("/agents/chat/", {   
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -341,7 +388,8 @@ async function sendMessage() {
         }
 
         // ✅ Append the final response message to the chat
-        appendMessage("agent", `<div class="senderagent"><img width="95px" src="/static/img/agentcpq-5.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
+        appendMessage("agent", `<div class="senderagent"><img width="110px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
+        hideAgentFeedback();
 
         // ✅ Handle Temporary Quote Details After Update Quote Line, Add Product And Delete Quote Line Item
         if (data.response && data.response.update_details && data.response.temporaryMessage){
@@ -354,6 +402,7 @@ async function sendMessage() {
     } catch (error) {
         console.error("Error:", error);
         appendMessage("agent-message", `<strong>Error:</strong> ${error.message}`);
+        hideAgentFeedback();
     }
 }
 

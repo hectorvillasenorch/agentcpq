@@ -22,77 +22,80 @@
     <!-- Sidebar -->
     <div class="sidebar-toggle" onclick="toggleSidebar()">☰</div>
 
-<div class="sidenav sidenav-fixed" style="display: flex; flex-direction: column; height: 100vh;">
-
-    <!-- Top Section -->
-
+<div id="sidenav" class="sidenav sidenav-fixed" style="display: flex; flex-direction: column; height: 100vh;">
     <div style="flex-grow: 1;">
-        <a href="{% if request.session.last_dashboard_session %}{{ request.session.last_dashboard_session }}{% else %}{% url 'dashboard' %}{% endif %}">
-            <i class="material-icons">arrow_back</i> Back To AgentCPQ
+        <a href="{% url 'dashboard' %}?view=agents">
+            <i class="material-icons">arrow_back</i> <span class="nav-label">Back To AgentCPQ</span>
         </a>
         <div class="brand">
-            <img src="{% static 'img/logo-small.png' %}" alt="AgentCPQ Logo" style="width: 70%; margin: 0 auto;"/>
+          <img id="sidebar-logo" src="{% static 'img/logo-small.png' %}" alt="AgentCPQ Logo"style="width: 85%; margin: 0 auto;" />
         </div>
+
         <p class="session-list-title">Organization</p>
-            <a href="{% url 'cpq:get_company_information' %}">
-                <i class="material-icons">business</i> Company Information
-            </a>
-            <a href="{% url 'cpq:usage_dashboard' %}">
-                <i class="material-icons">receipt_long</i> Usage
-            </a>
+        <a href="{% url 'cpq:get_company_information' %}">
+            <i class="material-icons">business</i> <span class="nav-label">Company Information</span>
+        </a>
+        <a href="{% url 'cpq:usage_dashboard' %}">
+            <i class="material-icons">receipt_long</i> <span class="nav-label">Usage</span>
+        </a>
 
         <div class="divider"></div>
 
         <div class="session-list">
             <p class="session-list-title">System</p>
             <a href="{% url 'cpq:custom_fields' %}">
-                <i class="material-icons">view_list</i> Manage Metadata
+                <i class="material-icons">view_list</i> <span class="nav-label">Manage Metadata</span>
             </a>
             {% if request.user.is_superuser or perms.auth.view_user %}
                 <a href="{% url 'admin:auth_user_changelist' %}">
-                    <i class="material-icons">group</i> Users
+                    <i class="material-icons">group</i> <span class="nav-label">Users</span>
                 </a>
             {% endif %}
-            {% if perms.cpq %}  
+            {% if perms.cpq %}
                 <a href="{% url 'admin:app_list' 'cpq' %}">
-                    <i class="material-icons">settings</i> CPQ Admin
+                    <i class="material-icons">settings</i> <span class="nav-label">CPQ Admin</span>
                 </a>
             {% endif %}
-             {% if request.user.is_superuser or perms.auth.view_user %}
+            {% if request.user.is_superuser or perms.auth.view_user %}
                 <a href="{% url 'dashboard' %}?view=setup">
-                    <i class="material-icons">integration_instructions</i> Integrations
+                    <i class="material-icons">integration_instructions</i> <span class="nav-label">Integrations</span>
                 </a>
             {% endif %}
 
             <p class="session-list-title">Notifications</p>
             <a href="{% url 'cpq:manage_notifications' %}">
-              <i class="material-icons">notifications</i> Manage Notifications
+                <i class="material-icons">notifications</i> <span class="nav-label">Manage Notifications</span>
             </a>
-            
+
             <p class="session-list-title">Rules</p>
             <a href="{% url 'cpq:business_rules' %}">
-              <i class="material-icons">rule</i> Manage Rules
+                <i class="material-icons">rule</i> <span class="nav-label">Manage Rules</span>
             </a>
 
             <p class="session-list-title">Document</p>
             <a href="{% url 'cpq:get_document_template' %}">
-                <i class="material-icons">note_alt</i> Manage Document
+                <i class="material-icons">note_alt</i> <span class="nav-label">Manage Document</span>
             </a>
         </div>
     </div>
 
-    <!-- Fixed Logout Button -->
-    {% if user.is_authenticated %}
-    <div style="padding: 16px; margin-top: auto;">
-        <form method="post" action="{% url 'logout' %}">
-            {% csrf_token %}
-            <button type="submit" class="btn-flat white-text" style="display: flex; align-items: center; background: none; border: none; cursor: pointer;">
-                <i class="material-icons" style="margin-right: 8px;">logout</i> Logout
-            </button>
-        </form>
-    </div>
-    {% endif %}
+  <!-- Fixed Logout/Login Section -->
+    <div style="padding: 16px;">
+        {% if user.is_authenticated %}
+            <form method="post" action="{% url 'logout' %}" style="padding: 16px;">
+                {% csrf_token %}
+                <button type="submit" class="btn-flat white-text" style="display: flex; align-items: center; background: none; border: none; cursor: pointer;">
+                    <i class="material-icons" style="margin-right: 8px;">logout</i>
+                    <span class="nav-label">Logout</span>
+                </button>
+            </form>
 
+            <button onclick="colapseSidebar()" class="btn-flat white-text mt-4" style="display: flex; align-items: center; background: none; border: none; cursor: pointer;">
+                <i id="collapse-icon" class="material-icons" style="margin-right: 8px; font-weight: 800; font-size: 30px;">chevron_left</i>
+                <span class="nav-label">Collapse Sidebar</span>
+            </button>
+        {% endif %}
+    </div>
 </div>
 
     <!-- Main Content -->
@@ -118,6 +121,20 @@
                               .replace(/[^\w]/g, "") + "__c";
           nameInput.value = formatted;
         });
+      }
+    });
+
+    document.addEventListener("DOMContentLoaded", function () {
+      const isCollapsed = localStorage.getItem("sidebarCollapsed") === "true";
+      const sidenav = document.querySelector(".sidenav-fixed");
+      const icon = document.getElementById("collapse-icon");
+      const maincontent = document.querySelector(".main-content");
+
+      if (isCollapsed) {
+          sidenav.classList.add("collapse_sidebar");
+          maincontent.classList.add("main-content-collapsed");
+
+          if (icon) icon.textContent = "chevron_right";
       }
     });
   </script>

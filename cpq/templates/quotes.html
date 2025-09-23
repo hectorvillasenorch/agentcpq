@@ -148,16 +148,28 @@
   }
   </style>
   
-  <div class="container-fluid" style="width: 100%;">
+  <div class="container" style="width: 100%;">
 
-    <h2>
+    <h4>
         <i class="material-icons">request_quote</i> My Quotes
-      </h2>
+      </h4>
       <ul class="collapsible">
         {% for opportunity, quotes in grouped_quotes %}
           <li class="{% if forloop.first %}active{% endif %}">
-            <div class="collapsible-header" style="font-size: 1.3rem; font-weight: bold;">
-              <i class="material-icons">folder</i>{{ opportunity.name }}
+          <div class="collapsible-header" style="font-size: 1.3rem; font-weight: bold; display: flex; flex-direction: column;">
+  <!-- Top line: Opportunity Name | Stage | Amount -->
+              <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <i class="material-icons">folder</i>
+                <span style="color: #fc6a3d;">{{ opportunity.name }}</span>
+                <span>| <b>Stage:</b> {{ opportunity.stage }} | <b>Amount:</b> ${{ opportunity.amount }}</span>
+              </div>
+
+              <!-- Bottom line: Account, Close Date, Created Date -->
+              <div style="font-size: 0.85rem; font-weight: normal; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 16px; padding-left: 32px; color: #666;">
+                <span><b>Account:</b> {{ opportunity.account.name }}</span>
+                <span><b>Close Date:</b> {{ opportunity.close_date }}</span>
+                <span><b>Created:</b> {{ opportunity.created_date }}</span>
+              </div>
             </div>
             <div class="collapsible-body" style="padding: 0 1rem;">
               <ul class="collapsible quote-collapsible">

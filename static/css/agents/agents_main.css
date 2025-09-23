@@ -21,7 +21,7 @@ input[type="number"] {
     padding: 20px;
     background: #ffffff;
     border-radius: 25px;
-    box-shadow: 0px 6px 32px rgb(49 49 51 / 21%);
+    box-shadow: 0px 2px 5px rgb(49 49 51 / 21%);
   }
 
 /* ✅ Quote Header */
@@ -170,6 +170,18 @@ input[type="number"] {
   background-color: #f2f2f2;
 }
 
+/* ====== Collapsible Side Navigation ====== */
+.sidenav.sidenav-fixed.collapse_sidebar {
+  transform: translateX(0);
+  transition: transform 0.3s ease-in-out;
+  will-change: transform;
+  width: 60px !important;
+}
+
+.sidenav.sidenav-fixed.is-collapsed {
+  transform: translateX(-105%);
+}
+
 /* ============================================================ */
 
 .quote-details div {
@@ -308,11 +320,11 @@ h2 {
   overflow-y: auto;
   padding: 15px;
   background-color: #ffffff;
-  border: 1px solid #ddd;
+  border: 0px;
   border-radius: 5px;
   display: flex;
   flex-direction: column;
-  font-size: 20px;
+  font-size: 18px;
 }
 
 /* ✅ User & Agent Messages */
@@ -322,14 +334,15 @@ h2 {
   border-radius: 15px;
   margin: 15px 0;
   word-wrap: break-word;
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .user{
-  background-color: #f6f6f6;
-  color: #313133;
-  align-self: flex-end;
-  box-shadow: 0px 2px 2px #dddddd;
+    background-color: #ffffff;
+    color: #000000;
+    align-self: flex-end;
+    box-shadow: 3px 3px 4px #d8d8d8;
+    border: 1px solid #d7d7d7;
 }
 
 .agent {
@@ -354,24 +367,27 @@ h2 {
 }
 
 /* ✅ Chat Input Container */
-.chat-input-container {
-  display: flex;
-  flex-direction: column;
-  background: white;
-  border-top: 1px solid #ddd;
-  padding: 10px;
+.chat-input-container{
+    display: flex;
+    flex-direction: column;
+    background: white;
+    border-top: 0px solid #ddd;
+    padding: 10px;
+    margin-bottom: 60px;
+    /* box-shadow: 0px -3px 20px 0px gray; */
 }
 
 
 /* ✅ Input and Send Button Wrapper */
-.input-wrapper {
-  display: flex;
-  align-items: center;
-  border: 1px solid #ccc;
-  border-radius: 10px;
-  padding: 10px;
-  background: #f9f9f9;
-  width: 100%;
+.input-wrapper{
+    display: flex;
+    align-items: center;
+    border: 0.5px solid black;
+    border-radius: 9px;
+    padding: 10px;
+    background: #ffffff;
+    width: 100%;
+    box-shadow: -1px 1px 3px #cacaca;
 }
 
 input[type=text]:not(.browser-default){
@@ -404,7 +420,7 @@ input[type=text]:not(.browser-default){
 
 /* ✅ Send Button */
 .send-button {
-  background-color: #2196F3;
+  background-color: #f96b35;
   color: white;
   border: none;
   padding: 12px 15px;
@@ -414,7 +430,7 @@ input[type=text]:not(.browser-default){
 }
 
 .send-button:hover {
-  background-color: #1976D2;
+  background-color: #f96b35;
 }
 
 
@@ -440,6 +456,7 @@ input[type=text]:not(.browser-default){
   border-radius: 12px;
   padding: 8px 12px;
   border: none;
+  box-shadow: none;
 }
 
 .sender {
