@@ -237,7 +237,7 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
                 ],
                 "sort": {
                     "field": sort_data.get("field"),
-                    "order": sort_data.get("order", "asc")
+                    "order": sort_data.get("order", "desc")
                 }
             },
             "completed": item.get("completed", False)

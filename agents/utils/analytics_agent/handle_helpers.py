@@ -66,9 +66,16 @@ def handle_show_metrics(user, completed_metrics):
         # --- Ordenamiento ---
         if sort and sort.get("field"):
             order_field = sort["field"]
-            if sort.get("order") == "desc":
+            user_order = sort.get("order")
+            if not user_order:
+                order_field = f"-{order_field}"  # default DESC
+            elif user_order.lower() == "desc":
                 order_field = f"-{order_field}"
             qs = qs.order_by(order_field)
+        else:
+            # Default order when user didn't specify: DESC by created_at
+            if hasattr(model, "created_at"):
+                qs = qs.order_by("-created_at")
 
         # --- Límite ---
         if limit:
