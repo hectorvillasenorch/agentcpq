@@ -14,15 +14,15 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-def approval_agent(action, user_message, session_data):
+def approval_agent(user, action, user_message, session_data):
     """Handles approval-related actions dynamically using GPT message parsing."""
-    
+
     # ✅ Extract structured intent and parameters from the user message
     parsed_data = parse_user_message(user_message)
     action = parsed_data.get("action", "Unknown")
     parameters = parsed_data.get("parameters", {})
 
-    logging.info(f" 🟡 >>>>>>>>>>>>>>>>>> QUOTE ID: {parameters.get("quote_id")}")
+    logging.info(f" 🟡 >>>>>>>>>>>>>>>>>> QUOTE ID: {parameters.get('quote_id')}")
 
     # ✅ Handle unknown actions
     if action == "Unknown":
@@ -45,7 +45,7 @@ def approval_agent(action, user_message, session_data):
 
 
 def submit_for_approval(user_message, session_data, quote_name=None, quote_id=None):
-    
+
     logging.info("🔄 Processing quote submission or status check...")
 
     # ✅ Extract quote name if not provided
@@ -166,7 +166,7 @@ def get_approval_status(user_message=None, session_data=None, quote_id=None, sta
     """
     logging.warning(f"⚠️ Quote ID:==========================> {quote_id} ")
     try:
-        
+
         # ✅ 1. If no quote_id provided, check session_data for active quote
         if not quote_id and session_data and isinstance(session_data.get("active_quote"), dict):
             quote_id = session_data["active_quote"].get("quote_id")
@@ -179,7 +179,7 @@ def get_approval_status(user_message=None, session_data=None, quote_id=None, sta
             }
 
         # ✅ 3. Retrieve the quote
-        
+
         quote = Quote.objects.get(id=quote_id)
         # except Quote.DoesNotExist:
         #     logging.warning(f"⚠️ Quote with ID `{quote_id}` not found. Auto-approving it.")
@@ -250,7 +250,7 @@ def approve_quote(user_message, session_data):
 
         if not approval:
             return {"message": f"⚠️ No pending approval found for quote {quote.name}."}
-        
+
         if approval.status == "Approved":
             return {"message": f"✅ Quote {quote.name} has already been approved."}
 
@@ -376,14 +376,14 @@ def parse_user_message(user_message):
     system_prompt = """
     You are an AI assistant that extracts structured data from natural language user messages.
     Your task is to analyze a given message and return a JSON object with:
-    
+
     - "action": The type of action (e.g., "CheckApprovalStatus", "SubmitForApproval", "ApproveQuote", "RejectQuote", "RecallQuote").
     - "parameters": A dictionary of key parameters such as:
         - "quote_id" (if mentioned)
         - "status" (if a specific approval status is requested, e.g., "Pending", "Approved", "Rejected")
-    
+
     If the action or parameters are unclear, return "action": "Unknown" and "parameters": {}.
-    
+
     Example Input: "Check the approval status for quote Q-00032."
     Example Output:
     {
@@ -392,7 +392,7 @@ def parse_user_message(user_message):
             "quote_id": "Q-00032"
         }
     }
-    
+
     Example Input: "What are the pending approvals for quote Q-00045?"
     Example Output:
     {
@@ -402,7 +402,7 @@ def parse_user_message(user_message):
             "status": "Pending"
         }
     }
-    
+
     Example Input: "Reject quote Q-00050 because it's missing pricing details."
     Example Output:
     {

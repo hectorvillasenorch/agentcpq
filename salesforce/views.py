@@ -13,7 +13,7 @@ from datetime import timezone as dt_timezone
 
 def salesforce_login(request):
     """Redirect the user to Salesforce OAuth login using PKCE."""
-    
+
     # ✅ Generate PKCE values
     code_verifier = pkce.generate_code_verifier()
     code_challenge = pkce.get_code_challenge(code_verifier)
@@ -92,7 +92,7 @@ def token_receiver(request):
     instance_url = request.GET.get("instance_url")
     if not access_token or not instance_url:
         return JsonResponse({"error": "Missing token data"}, status=400)
-    
+
     # Store the token (for simplicity, using a default user_id)
     SalesforceToken.objects.update_or_create(
         user_id="default",
@@ -104,12 +104,12 @@ def token_receiver(request):
 
 def test_salesforce_api(request):
     """Calls Salesforce API to fetch basic Account data."""
-    
+
     # ✅ Get stored Salesforce token
     token_entry = SalesforceToken.objects.first()
     if not token_entry:
         return JsonResponse({"error": "No valid Salesforce authentication found"}, status=401)
-    
+
     access_token = token_entry.access_token
     instance_url = token_entry.instance_url
 
@@ -172,7 +172,7 @@ def sync_quote_to_salesforce(request, quote_id):
         return JsonResponse({"error": "Quote is not linked to an Opportunity"}, status=400)
 
     opportunity_id = quote.sf_opportunity_id  # Ensure we store the Salesforce ID in AgentCPQ
-    
+
     # ✅ Step 1: Update Opportunity with Quote Data
     opportunity_update_payload = {
         "Amount": str(quote.net_amount),  # ✅ Update Opportunity value
@@ -185,7 +185,7 @@ def sync_quote_to_salesforce(request, quote_id):
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     })
-    
+
     if opp_response.status_code >= 400:
         return JsonResponse({"error": "Failed to update Salesforce Opportunity", "details": opp_response.json()}, status=400)
 
@@ -205,7 +205,7 @@ def sync_quote_to_salesforce(request, quote_id):
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         })
-        
+
         if line_item_response.status_code >= 400:
             failed_lines.append(line.id)
 

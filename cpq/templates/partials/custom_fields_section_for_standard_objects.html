@@ -39,57 +39,69 @@
 
       <!-- floating “add” button -->
       <a href="{% url 'cpq:create_custom_field' object_name %}"
-         class="btn-floating halfway-fab waves-effect waves-light deep-orange accent-4 tooltipped"
-         data-tooltip="Add Custom Field">
+        class="btn-floating halfway-fab waves-effect waves-light deep-orange accent-4 tooltipped"
+        data-tooltip="Add Custom Field">
         <i class="material-icons">add</i>
       </a>
 
       {% if custom_fields %}
-      <table class="striped highlight responsive-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Label</th>
-            <th>Type</th>
-            <th>Required</th>
-            <th>Values</th>
-            <th>Last Modified By</th>
-            <th>Created By</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for field in custom_fields %}
+      <div style="max-height:500px; overflow:auto;">
+        <table class="striped highlight responsive-table" style="min-width:800px;">
+          <thead>
             <tr>
-              <td>{{ field.name }}</td>
-              <td>{{ field.label }}</td>
-              <td>{{ field.data_type }}</td>
-              <td>{{ field.required|yesno:"Yes,No" }}</td>
-              {% if field.data_type in "dropdown,multiselect,radio" and field.values %}
-                <td>{{ field.values }}</td>
-              {% else %}
-                <td class="grey-text">—</td>
-              {% endif %}
-              {% if field.updated_by %}
-                <td class="datetime-custom-fields" data-datetime-field="{{ field.updated_at|date:'c' }}">{{ field.updated_by }}</td>
-              {% else %}
-                <td>No updates yet.</td>
-              {% endif %}
-              <td class="datetime-custom-fields" data-datetime-field="{{ field.created_at|date:'c' }}">{{ field.created_by }}</td>
-              <td>
-                <a href="{% url 'cpq:edit_custom_field' field.id %}" class="btn-flat">
-                  <i class="material-icons">edit</i>
-                </a>
-              </td>
+              <th>Name</th>
+              <th>Label</th>
+              <th>Type</th>
+              <th>Required</th>
+              <th>Options</th>
+              <th>Last Modified By</th>
+              <th>Created By</th>
+              <th>Actions</th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {% for field in custom_fields %}
+              <tr>
+                <td>{{ field.name }}</td>
+                <td>{{ field.label }}</td>
+                <td>{{ field.data_type }}</td>
+                <td>{{ field.required|yesno:"Yes,No" }}</td>
+                {% if field.data_type in "dropdown,multiselect,radio" and field.options %}
+                    <td>
+                        {% for option in field.options %}
+                            {{ option }}{% if not forloop.last %}, {% endif %}
+                        {% endfor %}
+                    </td>
+                {% else %}
+                    <td>-</td>
+                {% endif %}
+                {% if field.updated_by %}
+                  <td class="single-line datetime-custom-fields" data-datetime-field="{{ field.updated_at|date:'c' }}">{{ field.updated_by }}</td>
+                {% else %}
+                  <td class="single-line">No updates yet.</td>
+                {% endif %}
+                <td class="single-line datetime-custom-fields" data-datetime-field="{{ field.created_at|date:'c' }}">{{ field.created_by }}</td>
+                <td>
+                  <a href="{% url 'cpq:edit_custom_field' field.id %}" class="btn-flat">
+                    <i class="material-icons">edit</i>
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
       {% else %}
       <p class="grey-text">No custom fields for {{ object_name }}.</p>
       {% endif %}
     </div>
   </div>
 
+  <style>
+    /* Mantener columnas de Modified By en una sola línea */
+    .single-line {
+      white-space: nowrap;
+    }
+  </style>
 
 </div>

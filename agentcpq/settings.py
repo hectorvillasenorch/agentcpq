@@ -34,17 +34,17 @@ DEBUG = True
 
 # ALLOWED_HOSTS = []
 ALLOWED_HOSTS = [
-    '127.0.0.1', 
-    'localhost', 
+    '127.0.0.1',
+    'localhost',
     NGROK_URI,
 ]
 
 # Allow Django to be embedded in an IFrame (required for Salesforce)
 X_FRAME_OPTIONS = 'ALLOWALL'
 
-CSRF_COOKIE_SECURE = True 
+CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
-SESSION_COOKIE_AGE = 86400  
+SESSION_COOKIE_AGE = 86400
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 
 CORS_ALLOWED_ORIGINS = [
@@ -88,6 +88,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "cpq.middleware.SaveLastDashboardSessionMiddleware",
 ]
 
 ROOT_URLCONF = "agentcpq.urls"

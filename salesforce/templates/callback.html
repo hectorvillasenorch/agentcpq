@@ -12,7 +12,7 @@
 
             if (accessToken && instanceUrl) {
                 // Redirect to token receiver with token as query parameters
-                window.location.href = "/salesforce/token-receiver/?access_token=" 
+                window.location.href = "/salesforce/token-receiver/?access_token="
                     + encodeURIComponent(accessToken) + "&instance_url=" + encodeURIComponent(instanceUrl);
             } else {
                 document.body.innerHTML = "<h3>Error: Missing access token.</h3>";

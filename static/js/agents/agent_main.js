@@ -1,6 +1,6 @@
 document.addEventListener("DOMContentLoaded", function () {
   setupChatListeners();
-  setupSessionSwitching(); 
+  setupSessionSwitching();
   enhanceStructuredAgentMessagesHistoryChat(); // 🔥
 });
 
@@ -28,6 +28,16 @@ function setupSessionSwitching() {
   });
 }
 
+function showAgentFeedback() {
+  const feedback = document.getElementById("agent-feedback");
+  if (feedback) feedback.style.display = "block";
+}
+
+function hideAgentFeedback() {
+  const feedback = document.getElementById("agent-feedback");
+  if (feedback) feedback.style.display = "none";
+}
+
 function setupChatListeners() {
   console.log("Setting up chat listeners...");
 
@@ -47,8 +57,44 @@ function setupChatListeners() {
   console.log("Chat listeners attached.");
 }
 
+function renderGreeting() {
+  const chatBox = document.getElementById("chat-box");
+  const userName = window.USER_NAME || "User";
+  // Check if chat box exists and is empty
+  if (!chatBox || chatBox.children.length > 0) return;
+
+  const greetingText = `👋 Hello <b>${userName}</b>, how can I help you today?`;
+
+  const greeting = document.createElement("div");
+  greeting.classList.add("chat-text", "agent");
+  greeting.innerHTML = `
+    <div class="senderagent">
+      <img width="95px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
+    </div>
+    <div class="message">${greetingText}</div>
+  `;
+
+  chatBox.appendChild(greeting);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
 function toggleSidebar() {
     document.querySelector(".sidenav-fixed").classList.toggle("active");
+}
+
+function colapseSidebar() {
+    const sidenav = document.querySelector(".sidenav-fixed");
+    const icon = document.getElementById("collapse-icon");
+    const maincontent = document.querySelector(".main-content");
+
+    const isCollapsed = sidenav.classList.toggle("collapse_sidebar");
+    maincontent.classList.toggle("main-content-collapsed", isCollapsed);
+
+    // Save collapsed state
+    localStorage.setItem("sidebarCollapsed", isCollapsed ? "true" : "false");
+
+    // Toggle icon direction
+    icon.textContent = isCollapsed ? "chevron_right" : "chevron_left";
 }
 
 function unescapeUnicode(str) {
@@ -63,7 +109,7 @@ function unescapeUnicode(str) {
 function enhanceStructuredAgentMessages() {
     document.querySelectorAll(".agent-json").forEach(div => {
       const raw = div.dataset.raw;
-      
+
       const jsonStr = extractJson(raw);
       if (!jsonStr) {
         console.log("enhanceStructuredAgentMessages")
@@ -73,7 +119,7 @@ function enhanceStructuredAgentMessages() {
 
       try {
         const data = JSON.parse(unescapeUnicode(jsonStr));
-        // Procesa data
+        // Process data
       } catch (e) {
         console.error("JSON parse failed:", e, jsonStr);
         div.innerHTML = `<div class="error-message">❌ JSON parsing error</div>`;
@@ -83,7 +129,7 @@ function enhanceStructuredAgentMessages() {
 
 /*
 * ✅ enhanceStructuredAgentMessages in history chat, NOT in real time
-*/
+
 function extractJson(text) {
   const startObj = text.indexOf('{');
   const startArr = text.indexOf('[');
@@ -97,6 +143,7 @@ function extractJson(text) {
 
   return text.slice(start).trim();
 }
+ */
 
 function unescapeUnicode(str) {
   return str.replace(/\\u[\dA-F]{4}/gi, function (match) {
@@ -108,12 +155,23 @@ function enhanceStructuredAgentMessagesHistoryChat() {
   document.querySelectorAll(".agent-json").forEach(div => {
     const raw = div.dataset.raw;
 
-    const keys = ['quote_details:', 'validation_rules_details:', 'rules:'];
+    // Claves a buscar en el mensaje
+    const keys = [
+      'quote_details:',
+      'validation_rules_details:',
+      'rules:',
+      'email_alerts_details:',
+      'retrieved_records:'
+    ];
 
     let jsonPart = null;
+    let matchedKey = null;
+
+    // Buscar la primera key que aparezca en el mensaje
     for (const key of keys) {
       const idx = raw.indexOf(key);
       if (idx !== -1) {
+        matchedKey = key;
         const afterKey = raw.slice(idx + key.length);
         jsonPart = extractJson(afterKey);
         if (jsonPart) break;
@@ -121,30 +179,50 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     }
 
     if (!jsonPart) {
-      console.log("enhanceStructuredAgentMessagesHistoryChat");
       div.innerHTML = `<div class="error-message">⚠️ Could not find valid JSON in message</div>`;
       return;
     }
 
     try {
-      //console.log("JsonPart: ", jsonPart);
       const data = JSON.parse(unescapeUnicode(jsonPart));
-      //console.log("Data: ", data);
 
+      // === VALIDATION RULES ===
       if (data.rules || (Array.isArray(data) && data[0]?.rule_type)) {
         const html = renderValidationRuleDetails(data.rules || data);
         div.innerHTML = html;
         return;
       }
 
+      // === RULES ===
       if (data.rules || (Array.isArray(data) && data[0]?.rules_request_description)) {
-        //const html = renderValidationRuleDetails(data.rules || data);
-        //console.log("Render Rules | Show rules")
         const html = renderRules(data);
         div.innerHTML = html;
         return;
       }
 
+      // === RETRIEVED RECORDS ===
+      if (matchedKey === 'retrieved_records:') {
+        let messageBeforeJson = raw.slice(0, raw.indexOf(matchedKey)).trim();
+
+        // 1️⃣ Desescapar Unicode
+        messageBeforeJson = unescapeUnicode(messageBeforeJson);
+
+        // 2️⃣ Reemplazar escapes de HTML (como \u003Cbr\u003E)
+        messageBeforeJson = messageBeforeJson.replace(/\\u003C/g, "<").replace(/\\u003E/g, ">");
+
+        const html = renderRetrievedRecords(messageBeforeJson, data);
+        div.innerHTML = html;
+        return;
+      }
+
+      // === EMAIL ALERTS ===
+      if (Array.isArray(data) && data[0]?.trigger) {
+        const html = renderEmailAlerstDetails(data);
+        div.innerHTML = html;
+        return;
+      }
+
+      // === QUOTE DETAILS (por defecto si no entró en nada anterior) ===
       const html = renderReadOnlyQuoteDetails(data);
       div.innerHTML = html;
 
@@ -154,35 +232,35 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     }
   });
 
+  // === PDFs ===
   document.querySelectorAll(".agent-pdf").forEach(div => {
-  const raw = unescapeUnicode(div.dataset.raw);
+    const raw = unescapeUnicode(div.dataset.raw);
+    if (!raw.includes("download_url")) return;
 
-  if (!raw.includes("download_url")) return;
+    const urlMatch = raw.match(/download_url:\s*["']?(.*?)["']?\s*(\n|$)/);
+    const versionMatch = raw.match(/document_version:\s*([0-9]+)/);
 
-  // Get download_url
-  const urlMatch = raw.match(/download_url:\s*["']?(.*?)["']?\s*(\n|$)/);
-  const versionMatch = raw.match(/document_version:\s*([0-9]+)/);
+    const downloadUrl = urlMatch ? urlMatch[1].trim() : null;
+    const version = versionMatch ? versionMatch[1].trim() : null;
 
-  const downloadUrl = urlMatch ? urlMatch[1].trim() : null;
-  const version = versionMatch ? versionMatch[1].trim() : null;
-  //console.log("📄 Extracted PDF Info:", { version, downloadUrl });
+    if (downloadUrl && version) {
+      div.innerHTML = `
+        📄 Quote PDF (v${version}) generated successfully!
+        <a href="${downloadUrl}" target="_blank">Download Here</a>
+      `;
+    } else {
+      div.innerHTML = `<div class="error-message">⚠️ Could not extract PDF fields</div>`;
+    }
+  });
 
-  if (downloadUrl && version) {
-    div.innerHTML = `
-      📄 Quote PDF (v${version}) generated successfully! 
-      <a href="${downloadUrl}" target="_blank">Download Here</a>
-    `;
-  } else {
-    div.innerHTML = `<div class="error-message">⚠️ Could not extract PDF fields</div>`;
-  }
-});
-
-  // Auto-scroll chat
+  // === Auto-scroll chat ===
   const chatBox = document.getElementById("chat-box");
   if (chatBox) {
     chatBox.scrollTop = chatBox.scrollHeight;
   }
 }
+
+
 
 function escapeHtml(text) {
   const map = {
@@ -219,7 +297,8 @@ async function sendMessage() {
         const urlParams = new URLSearchParams(window.location.search);
         const sessionId = urlParams.get("session_id");  // 👈 Obtén el session_id desde la URL
 
-        const response = await fetch("/agents/chat/", {   
+        showAgentFeedback();
+        const response = await fetch("/agents/chat/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message: userMessage, session_id: sessionId})
@@ -233,6 +312,14 @@ async function sendMessage() {
         }
 
         const data = await response.json();
+
+        const aiResponse = data.response;
+
+        // --- 1. Check if a new session was created ---
+        if (aiResponse.session_created && aiResponse.redirect_url) {
+            window.location.href = aiResponse.redirect_url; // Redirect to new session
+            return;
+        }
 
         let responseMessage = ""; // Initialize message variable
 
@@ -248,7 +335,7 @@ async function sendMessage() {
         // ✅ Handle Approval History Response
         if (data.response && data.response.history) {
             responseMessage += renderApprovalHistory(data.response);
-        } 
+        }
         // ✅ Handle Quote Details Response
         else if (data.response && data.response.quote_details && !data.response.quote_notes) {
           //console.log("Quote Details");
@@ -263,7 +350,7 @@ async function sendMessage() {
         else if (data.response.download_url) {
             console.log(data.response);
             responseMessage += `📄 Quote PDF (v${data.response.document_version}) generated successfully! <a href="${data.response.download_url}" target="_blank">Download Here</a>`;
-        } 
+        }
         // ✅ Handle Validation Rules Response
         else if (data.response && data.response.validation_rules_details) {
           console.log("Validation Rules Details");
@@ -278,17 +365,31 @@ async function sendMessage() {
           //console.log(data.response.validation_rules_details)
           responseMessage += renderRules(data.response.rules);
         }
+        // ✅ Email Alerts
+        else if (data.response && data.response.email_alerts_details) {
+          console.log("Email Alerts");
+          //console.log(data.response);
+          //console.log(data.response.email_alerts_details)
+          responseMessage += renderEmailAlerstDetails(data.response.email_alerts_details);
+        }
+        // ✅ Analytics Records - retrieved_records
+        else if (data.response && data.response.retrieved_records) {
+          //console.log(data.response);
+          //console.log(data.response.retrieved_records)
+          responseMessage += renderRetrievedRecords(data.response.message, data.response.retrieved_records);
+        }
         // ✅ Default Response (Handle General Messages)
         else if (data.response && data.response.message) {
             responseMessage += `<div class="general-message">${data.response.message}</div>`;
-        } 
+        }
         // ✅ Handle Unexpected Empty Response
         else {
             responseMessage += `<div class="error-message">🤖 No response received. Please try again.</div>`;
         }
 
         // ✅ Append the final response message to the chat
-        appendMessage("agent", `<div class="senderagent"><img width="95px" src="/static/img/agentcpq-5.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
+        appendMessage("agent", `<div class="senderagent"><img width="110px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
+        hideAgentFeedback();
 
         // ✅ Handle Temporary Quote Details After Update Quote Line, Add Product And Delete Quote Line Item
         if (data.response && data.response.update_details && data.response.temporaryMessage){
@@ -301,6 +402,7 @@ async function sendMessage() {
     } catch (error) {
         console.error("Error:", error);
         appendMessage("agent-message", `<strong>Error:</strong> ${error.message}`);
+        hideAgentFeedback();
     }
 }
 
@@ -311,7 +413,7 @@ function appendMessage(className, message) {
     const chatBox = document.getElementById("chat-box");
     let messageBubble = document.createElement("div");
     messageBubble.classList.add("chat-message", className);
-  
+
     // ✅ Detect stored quote_details as string
     if (className === "agent" && message.includes("quote_details: {")) {
       try {
@@ -353,14 +455,45 @@ function appendMessage(className, message) {
         console.warn("Failed to parse validation_rules_details JSON:", e);
       }
     }
-  
+
+    // ✅ Detect stored email alerts
+    if (className === "agent" && message.includes("email_alerts_details:")) {
+      try {
+          // Extract JSON from string (object or array)
+          const match = message.match(/email_alerts_details:\s(\[.+\]|\{.+\})/s);
+          if (match && match[1]) {
+              const alerts = JSON.parse(match[1]);
+              message = renderEmailAlerstDetails(alerts);  // Use your nice formatter
+          }
+      } catch (e) {
+          console.warn("Failed to parse email_alerts_details JSON:", e);
+      }
+    }
+
+    // ✅ Detect stored retrieved records (Analytics Agent)
+    if (className === "agent" && message.includes("retrieved_records:")) {
+      try {
+        // Extract JSON from string
+        const match = message.match(/retrieved_records:\s({.+})/);
+        console.log("Message: ", message);
+        if (match && match[1]) {
+          const records = JSON.parse(match[1]);
+          message = renderRetrievedRecords(records);  // Use your nice formatter
+        }
+      } catch (e) {
+        console.warn("Failed to parse retrieved_records JSON:", e);
+      }
+    }
+
     messageBubble.innerHTML = message;
     chatBox.appendChild(messageBubble);
 
     // ✅ Re-initializes select from Materialize
-    const selects = messageBubble.querySelectorAll('select');
-    if (selects.length > 0) {
+   const selects = messageBubble.querySelectorAll('select');
+    if (selects.length > 0 && typeof M !== 'undefined' && M.FormSelect) {
         M.FormSelect.init(selects);
+    } else {
+        console.warn("Materialize M.FormSelect not available or no selects found.");
     }
 
     if (message.includes("agent-json")) {
@@ -441,7 +574,7 @@ function renderQuoteDetails(quote) {
                   ` : "*****"}
                   </p>
                 </div>
-                
+
                 <div class="discount">
                   <p><strong>Discount: </strong>
                     ${(quote.discount_type && quote.discount_percentage && quote.discount_amount) ? `
@@ -479,7 +612,7 @@ function renderQuoteDetails(quote) {
           if (cleaned.toLowerCase() === "discount") {
             headers.push(`<th>Discount (%)</th>`);
             headers.push(`<th>Discount (USD)</th>`);
-          } 
+          }
           else if (cleaned === "Total Price") {
             headers.push(`<th>Subscription</th>`);
             headers.push(`<th>Term</th>`);
@@ -564,10 +697,10 @@ function renderQuoteDetails(quote) {
                 type="number"
                 min="1"
                 class="editable-field"
-                value="${item.quantity}" 
+                value="${item.quantity}"
                 data-quote="${quote.quote_name}"
                 data-quoteline-id="${item.id}"
-                data-sku="${item.sku}" 
+                data-sku="${item.sku}"
                 data-field="quantity"
                 onchange="updateQuoteLine(this)">
             </td>`;
@@ -594,14 +727,14 @@ function renderQuoteDetails(quote) {
                   const val = parseFloat(item.discount_percentage.replace('%', ''));
                   return Number.isInteger(val) ? val : val.toFixed(2);
                 })()}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)">
             </td>`;
             html += `
             <td class="centered-td">
               <input name="discountAmount" type="number" min="0" max="100"
                 value="${item.discount_amount.replace('$', '')}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)">
             </td>`;
         } else if (field === "Total Price") {
@@ -624,7 +757,7 @@ function renderQuoteDetails(quote) {
                   onchange="updateQuoteLine(this)"
                   style="text-align: center;">
               </td>`;
-          
+
           html += `
             <td class="total-price" data-sku="${item.sku}">
               ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
@@ -772,8 +905,8 @@ function renderQuoteDetails(quote) {
         } else if (field === "Quantity") {
           html += `
             <td>
-              <input type="number" min="1" value="${item.quantity}" 
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+              <input type="number" min="1" value="${item.quantity}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)">
             </td>`;
         } else if (field === "Description") {
@@ -797,14 +930,14 @@ function renderQuoteDetails(quote) {
                   const val = parseFloat(item.discount_percentage.replace('%', ''));
                   return Number.isInteger(val) ? val : val.toFixed(2);
                 })()}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)">
             </td>`;
             html += `
             <td class="centered-td">
               <input name="discountAmount" type="number" min="0" max="100"
                 value="${item.discount_amount.replace('$', '')}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)">
             </td>`;
         } else if (field === "Total Price") {
@@ -840,7 +973,7 @@ function renderQuoteDetails(quote) {
   if(quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)){
     html += `
       <p class="subtotal-amount">
-        Tax: 
+        Tax:
         ${
           quote.show_quote_tax_percentage && quote.show_quote_tax_amount
             ? `(${parseFloat(quote.tax_percentage)}%) `
@@ -916,7 +1049,7 @@ function renderQuoteDetailsMobile(quote) {
       ${
         quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)
           ? `<p>
-              <b>Tax:</b> 
+              <b>Tax:</b>
               ${
                 quote.show_quote_tax_percentage && quote.show_quote_tax_amount
                   ? `(${parseFloat(quote.tax_percentage)}%) `
@@ -983,7 +1116,7 @@ function renderReadOnlyQuoteDetails(quote) {
                 <div class="expiration">
                   <p><strong>Expiration Date:</strong> ${quote.expiration_date ? formattedDate : "---"}</p>
                 </div>
-                
+
                 <div class="discount">
                   <p style="color: red;"><strong>Discount: </strong>
                     ${quote.discount_percentage}% ( - $${quote.discount_amount} )
@@ -1006,7 +1139,7 @@ function renderReadOnlyQuoteDetails(quote) {
           if (cleaned.toLowerCase() === "discount") {
             headers.push(`<th>Discount (%)</th>`);
             headers.push(`<th>Discount (USD)</th>`);
-          } 
+          }
           else if (cleaned === "Total Price") {
             headers.push(`<th>Subscription</th>`);
             headers.push(`<th>Term</th>`);
@@ -1089,10 +1222,10 @@ function renderReadOnlyQuoteDetails(quote) {
                 type="number"
                 min="1"
                 class="editable-field"
-                value="${item.quantity}" 
+                value="${item.quantity}"
                 data-quote="${quote.quote_name}"
                 data-quoteline-id="${item.id}"
-                data-sku="${item.sku}" 
+                data-sku="${item.sku}"
                 data-field="quantity"
                 onchange="updateQuoteLine(this)"
                 disabled>
@@ -1118,7 +1251,7 @@ function renderReadOnlyQuoteDetails(quote) {
                   const val = parseFloat(item.discount_percentage.replace('%', ''));
                   return Number.isInteger(val) ? val : val.toFixed(2);
                 })()}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)"
                 disabled>
             </td>`;
@@ -1126,7 +1259,7 @@ function renderReadOnlyQuoteDetails(quote) {
             <td class="centered-td">
               <input name="discountAmount" type="number" min="0" max="100"
                 value="${item.discount_amount.replace('$', '')}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)"
                 disabled>
             </td>`;
@@ -1151,7 +1284,7 @@ function renderReadOnlyQuoteDetails(quote) {
                   style="text-align: center;"
                   disabled>
               </td>`;
-          
+
           html += `
             <td class="total-price" data-sku="${item.sku}">
               ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
@@ -1261,8 +1394,8 @@ function renderReadOnlyQuoteDetails(quote) {
         } else if (field === "Quantity") {
           html += `
             <td>
-              <input type="number" min="1" value="${item.quantity}" 
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+              <input type="number" min="1" value="${item.quantity}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"
                 disabled>
             </td>`;
@@ -1287,7 +1420,7 @@ function renderReadOnlyQuoteDetails(quote) {
                   const val = parseFloat(item.discount_percentage.replace('%', ''));
                   return Number.isInteger(val) ? val : val.toFixed(2);
                 })()}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)"
                 disabled>
             </td>`;
@@ -1295,7 +1428,7 @@ function renderReadOnlyQuoteDetails(quote) {
             <td class="centered-td">
               <input name="discountAmount" type="number" min="0" max="100"
                 value="${item.discount_amount.replace('$', '')}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)"
                 disabled>
             </td>`;
@@ -1330,7 +1463,7 @@ function renderReadOnlyQuoteDetails(quote) {
   if(quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)){
     html += `
       <p class="subtotal-amount">
-        Tax: 
+        Tax:
         ${
           quote.show_quote_tax_percentage && quote.show_quote_tax_amount
             ? `(${parseFloat(quote.tax_percentage)}%) `
@@ -1375,7 +1508,7 @@ function renderQuoteNotes(quote, notes) {
   html += `
           <div class="row">
             <div class="input-field">
-              <textarea id="quote-notes" class="materialize-textarea" 
+              <textarea id="quote-notes" class="materialize-textarea"
                         oninput="autoResize(this); updateQuoteNotes(this)">
                 ${notes || ''}
               </textarea>
@@ -1469,7 +1602,7 @@ async function updateQuoteLine(input) {
     const field = input.dataset.field;
     let newValue = input.value.trim();
     //console.log("Entra a updateQuoteLine");
-  
+
     if (["quantity", "discount_amount", "discount_percentage", "term"].includes(field)) {
       newValue = parseFloat(newValue);
     }
@@ -1551,7 +1684,7 @@ async function updateQuoteLine(input) {
                 }
             });
 
-            
+
             // ✅ Update subtotal
             const subtotalElement = quoteContainer.querySelector(".subtotal-amount");
 
@@ -1777,7 +1910,7 @@ function showTemporaryQuoteDetails(quote) {
                 <div class="expiration">
                   <p><strong>Expiration Date:</strong> ${quote.expiration_date ? formattedDate : "---"}</p>
                 </div>
-                
+
                 <div class="discount">
                   <p style="color: red;"><strong>Discount: </strong>
                     ${quote.discount_percentage}% ( - $${quote.discount_amount} )
@@ -1800,7 +1933,7 @@ function showTemporaryQuoteDetails(quote) {
           if (cleaned.toLowerCase() === "discount") {
             headers.push(`<th>Discount (%)</th>`);
             headers.push(`<th>Discount (USD)</th>`);
-          } 
+          }
           else if (cleaned === "Total Price") {
             headers.push(`<th>Subscription</th>`);
             headers.push(`<th>Term</th>`);
@@ -1913,7 +2046,7 @@ function showTemporaryQuoteDetails(quote) {
               <td class="centered-td">
                   <div class="centered-td">${item.term}</div>
               </td>`;
-          
+
           html += `
             <td class="total-price" data-sku="${item.sku}">
               ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
@@ -2078,7 +2211,7 @@ function showTemporaryQuoteDetails(quote) {
   if(quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)){
     html += `
       <p class="subtotal-amount">
-        Tax: 
+        Tax:
         ${
           quote.show_quote_tax_percentage && quote.show_quote_tax_amount
             ? `(${parseFloat(quote.tax_percentage)}%) `
@@ -2117,7 +2250,7 @@ function renderValidationRuleDetails(rules, read_only=false) {
   rules.forEach((rule) => {
     if (rule.success){
       var head_text = `✅ New validation rule created successfully | ${rule.name} ✅`;
-      html += 
+      html +=
         `<div class="rule-container">
           <div class="rule-header">
               <h5>${head_text}</h3>
@@ -2161,7 +2294,7 @@ function renderValidationRuleDetails(rules, read_only=false) {
         </div>`;
     }
     else if (rule.error){
-      html += 
+      html +=
         `<div class="rule-container">
           <div class="rule-header">
               <h5>⚠️ Error creating validation rule ⚠️</h3>
@@ -2179,7 +2312,7 @@ function renderValidationRuleDetails(rules, read_only=false) {
           </div>
         </div>`;
     }
-    
+
   });
 
   return html;
@@ -2190,23 +2323,23 @@ function renderRules(group_rules) {
   //console.log(rules);
 
   group_rules.forEach((group) => {
-    html += 
+    html +=
         `<span>
             ${group.rules_request_description}
           </span>`;
-    
+
     if (group.rules.length === 0){
-      html += 
+      html +=
         `<br>
         <span>
             ⚠️ No rules found matching these specifications ⚠️
           </span>`;
     }
-    
+
     group.rules.forEach((rule) => {
 
       var head_text = `📖 Rule | ${rule.name}`;
-      html += 
+      html +=
         `<div class="rule-container">
           <div class="rule-header">
               <h5>${head_text}</h3>
@@ -2414,5 +2547,275 @@ function loadTabContent(type) {
         });
     }
 
-    // Puedes hacer lo mismo para 'bundles' y 'accounts'
+}
+
+function renderEmailAlerstDetails(alerts) {
+  let html = "";
+
+  alerts.forEach((alert) => {
+    if (alert.success){
+      var head_text = `✅ New email alert created successfully ✅`;
+
+      // Función interna para renderizar chips
+      function renderChips(items, colorClass) {
+        if(!items || items.length === 0) return `<span class="grey-text">None</span>`;
+        return items.map(item => `<span class="chip ${colorClass} white-text">${item}</span>`).join(" ");
+      }
+
+      html +=
+        `<div class="email-alert-container">
+          <div class="email-alert-header">
+              <h5>${head_text}</h3>
+              <span style="margin-left: 10px; font-weight: bold; color: ${alert.active ? 'green' : 'red'};">
+                ${alert.active ? '🟢 Active' : '🔴 Inactive'}
+              </span>
+          </div>
+          <div class="email-alert-details">
+
+              <div class="email-alert-name">
+                <label><strong>Name:</strong></label>
+                <input type="text" value="${alert.name}" readonly/>
+              </div>
+
+              <div class="email-alert-description">
+                <label><strong>Description:</strong></label>
+                <input type="text" value="${alert.description}" readonly/>
+              </div>
+
+              <div class="trigger">
+                <label><strong>Trigger:</strong></label>
+                <input type="text" value="${alert.trigger}" readonly/>
+              </div>
+
+              <div class="native_object">
+                <label><strong>Native Object:</strong></label>
+                <input type="text" value="${alert.native_object}" readonly/>
+              </div>
+
+              <div class="custom_object">
+                <label><strong>Custom Object:</strong></label>
+                <input type="text" value="${alert.custom_object ? alert.custom_object : '---'}" readonly/>
+              </div>
+
+              <div class="offset_days">
+                <label><strong>Offset Days:</strong></label>
+                <input type="text" value="${alert.offset_days ? alert.offset_days : '---'}" readonly/>
+              </div>
+
+              <div class="schedule_cron">
+                <label><strong>Schedule Cron:</strong></label>
+                <input type="text" value="${alert.schedule_cron ? alert.schedule_cron : '---'}" readonly/>
+              </div>
+
+              <div class="created_by">
+                <label><strong>Created By:</strong></label>
+                <input style="font-size: 1rem;" type="text" value="${alert.created_at} - ${alert.created_by}" readonly/>
+              </div>
+
+              <div class="recipients_users">
+                <label><strong>Recipients Users:</strong></label>
+                <div class="chips-container">
+                  ${renderChips(alert.recipients_users, "blue")}
+                </div>
+              </div>
+
+              <div class="recipients_roles">
+                <label><strong>Recipients Roles:</strong></label>
+                <div class="chips-container">
+                  ${renderChips(alert.recipients_roles, "deep-purple")}
+                </div>
+              </div>
+
+              <div class="recipients_externals">
+                <label><strong>Recipients Externals:</strong></label>
+                <div class="chips-container">
+                  ${renderChips(alert.recipients_external, "green")}
+                </div>
+              </div>
+          </div>
+        </div>`;
+    }
+  });
+
+  return html;
+}
+
+// Convierte snake_case a Title Case
+function normalizeFieldName(fieldName) {
+  return fieldName
+    .replace(/_/g, " ")                    // reemplaza _ por espacio
+    .replace(/\b\w/g, char => char.toUpperCase()); // primera letra de cada palabra en mayúscula
+}
+
+
+function renderRetrievedRecords(userMessage, recordsDetails) {
+  let html = "";
+
+  for (const [objectName, records] of Object.entries(recordsDetails)) {
+    if (!records || records.length === 0) continue;
+
+    const allFields = Object.keys(records[0]);
+
+    html += `
+      <div class="email-alert-container" style="margin-bottom:10px; position:relative;">
+        <div class="email-alert-header" style="
+          display:flex;
+          justify-content:space-between;
+          align-items:center;
+        ">
+          <h5 style="margin:0;">${objectName} records.</h5>
+          <button onclick="makeDraggable(this)" style="
+            background:#2563eb;
+            color:white;
+            border:none;
+            border-radius:4px;
+            padding:2px 6px;
+            cursor:pointer;
+            font-size:0.8rem;
+          ">Pop Out</button>
+        </div>
+
+        <div class="email-alert-details" style="
+          overflow-x:auto;
+          overflow-y:auto;
+          max-height:300px;
+          border:1px solid #e5e7eb;
+          border-radius:0.75rem;
+          box-shadow:0 2px 6px rgba(0,0,0,0.08);
+          margin-top:0.5rem;
+        ">
+          <table style="
+            width:max-content;
+            border-collapse:collapse;
+            border-radius:0.5rem;
+            overflow:hidden;
+            background-color:white;
+            font-family:'Inter',sans-serif;
+            color:#111827;
+            font-size:0.95rem;
+            display:block;
+          ">
+            <thead>
+              <tr>
+                ${allFields.map(f => `
+                  <th style="
+                    padding:0.75rem 1rem;
+                    text-align:left;
+                    border-bottom:1px solid #e5e7eb;
+                    background-color:#f3f4f6;
+                    font-weight:600;
+                    color:#374151;
+                    text-transform:uppercase;
+                    font-size:0.85rem;
+                    position:sticky;
+                    top:0;
+                    z-index:2;
+                    box-shadow:0 2px 3px rgba(0,0,0,0.05);
+                    white-space:nowrap;
+                  ">${normalizeFieldName(f)}</th>`).join("")}
+              </tr>
+            </thead>
+
+            <tbody>
+              ${records.map(record => `
+                <tr style="hover:background-color:#f9fafb;">
+                  ${allFields.map(field => {
+                    let value = record[field];
+                    if (value === null || value === undefined || value === "")
+                      return `<td style="padding:0.75rem 1rem; white-space:nowrap; border-bottom:1px solid #e5e7eb;">---</td>`;
+                    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) {
+                      const dateObj = new Date(value);
+                      // Mostrar fecha y hora
+                      value = dateObj.toLocaleString("en-US", {
+                        year: "numeric",
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                        hour12: false  // 24h
+                      });
+                    }
+                    return `<td style="padding:0.75rem 1rem; white-space:nowrap; border-bottom:1px solid #e5e7eb;">${value}</td>`;
+                  }).join("")}
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  // Función global para hacer popup draggable
+  if (!window.makeDraggableAdded) {
+    const script = document.createElement('script');
+    script.innerHTML = `
+      function makeDraggable(button) {
+        const container = button.closest('.email-alert-container');
+        if (!container) return;
+
+        if (!container.classList.contains('popup')) {
+          container.style.position = 'fixed';
+          container.style.top = '50px';
+          container.style.left = '50px';
+          container.style.width = '600px';
+          container.style.height = '400px';
+          container.style.background = 'white';
+          container.style.border = '1px solid #ccc';
+          container.style.borderRadius = '5px';
+          container.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+          container.style.zIndex = '10000';
+          container.style.overflow = 'auto';
+          container.classList.add('popup');
+
+          const header = container.querySelector('.email-alert-header');
+          let offsetX = 0, offsetY = 0, isDown = false;
+
+          header.style.cursor = 'move';
+          header.onmousedown = function(e) {
+            isDown = true;
+            offsetX = e.clientX - container.getBoundingClientRect().left;
+            offsetY = e.clientY - container.getBoundingClientRect().top;
+            document.onmousemove = function(e) {
+              if (!isDown) return;
+              container.style.left = e.clientX - offsetX + 'px';
+              container.style.top = e.clientY - offsetY + 'px';
+            }
+            document.onmouseup = function() {
+              isDown = false;
+              document.onmousemove = null;
+              document.onmouseup = null;
+            }
+          }
+
+          button.innerText = 'Close';
+        } else {
+          container.style.position = '';
+          container.style.top = '';
+          container.style.left = '';
+          container.style.width = '';
+          container.style.height = '';
+          container.style.background = '';
+          container.style.border = '';
+          container.style.boxShadow = '';
+          container.style.zIndex = '';
+          container.style.overflow = '';
+          container.classList.remove('popup');
+          button.innerText = 'Pop Out';
+        }
+      }
+    `;
+    document.body.appendChild(script);
+    window.makeDraggableAdded = true;
+  }
+
+  if (userMessage) {
+    const cleanMessage = userMessage.split("retrieved_records:")[0];
+    html += `<div style="margin-bottom:10px;">
+              <p>${cleanMessage}</p>
+            </div>`;
+  }
+
+  return html;
 }

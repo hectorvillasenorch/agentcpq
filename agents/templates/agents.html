@@ -20,14 +20,14 @@
             {% for msg in chat_messages %}
               <div class="chat-message {{ msg.sender }}">
                 {% if msg.sender == 'user' and msg.hiddenMessage == False %}
-                  <div class="chat-text user"> 
+                  <div class="chat-text user">
                     <div class="sender">You: </div>
                     <div class="message">{{ msg.content|safe }}</div>
                   </div>
                 {% endif %}
-                
+
                 {% if msg.sender == 'user' and msg.hiddenMessage == True and 'Update Quote Line' or 'Update Quote' in msg.content %}
-                  <div class="chat-text user"> 
+                  <div class="chat-text user">
                     <div class="sender">You: </div>
                     <div class="message">✅ You have modified the quote through the UI.</div>
                   </div>
@@ -36,7 +36,7 @@
                 {% if msg.sender == 'agent' and msg.hiddenMessage == False %}
                   <div class="chat-text agent">
                     <div class="senderagent">
-                      <img width="95px" src="{% static 'img/agentcpq-5.png' %}" alt="AgentCPQ Logo">
+                      <img width="115px" src="{% static 'img/agentcpq-chat-icon.png' %}" alt="AgentCPQ Logo">
                     </div>
                     <div class="message">{{ msg.content|safe }}</div>
                   </div>
@@ -44,33 +44,58 @@
 
                 {% if msg.sender == 'agent' and 'download_url' in msg.content %}
                 <div class="chat-text agent">
-                    <img width="95px" src="{% static 'img/agentcpq-5.png' %}" alt="AgentCPQ Logo">
+                    <img width="115px" src="{% static 'img/agentcpq-chat-icon.png' %}" alt="AgentCPQ Logo">
                     <div class="agent-pdf" data-raw="{{ msg.content|escapejs }}"></div>
                   </div>
                 {% endif %}
 
                 {% if msg.sender == 'agent' and 'quote_details' in msg.content %}
                 <div class="chat-text agent">
-                    <img width="95px" src="{% static 'img/agentcpq-5.png' %}" alt="AgentCPQ Logo">
+                    <img width="115px" src="{% static 'img/agentcpq-chat-icon.png' %}" alt="AgentCPQ Logo">
                     <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
                   </div>
                 {% endif %}
 
                 {% if msg.sender == 'agent' and 'validation_rules_details' in msg.content %}
                 <div class="chat-text agent">
-                    <img width="95px" src="{% static 'img/agentcpq-5.png' %}" alt="AgentCPQ Logo">
+                    <img width="115px" src="{% static 'img/agentcpq-chat-icon.png' %}" alt="AgentCPQ Logo">
                     <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
                   </div>
                 {% endif %}
 
                 {% if msg.sender == 'agent' and 'rules' and 'read_only' in msg.content %}
-                <div class="chat-text agent">
-                    <div class="senderagent">Agent: </div>
+                  <div class="chat-text agent">
+                    <img width="115px" src="/media/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
                     <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
+                {% endif %}
+
+                {% if msg.sender == 'agent' and 'email_alerts_details' in msg.content %}
+                  <div class="chat-text agent">
+                      <img width="115px" src="/media/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
+                      <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
+                {% endif %}
+
+                {% if msg.sender == 'agent' and 'retrieved_records' in msg.content %}
+                  <div class="chat-text agent">
+                      <img width="115px" src="{% static 'img/agentcpq-chat-icon.png' %}" alt="AgentCPQ Logo">
+                      <div class="agent-json hola-hola" data-raw="{{ msg.content|escapejs }}"></div>
                   </div>
                 {% endif %}
               </div>
             {% endfor %}
+          </div>
+          <div id="agent-feedback" style="display: none; text-align: left;">
+            <div class="chat-text agent">
+              <div class="senderagent">
+                <img width="95px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
+              </div>
+              <div class="message">
+                <img src="/static/img/thinking.gif" alt="Agent is thinking..." width="40">
+
+              </div>
+            </div>
           </div>
         <div class="chat-input-container">
         <div class="input-wrapper">
@@ -82,7 +107,7 @@
         </div>
     </div>
 
-    <script>
+<script>
   // Inicializar flatpickr
   flatpickr("#expiration_date", {
     dateFormat: "m/d/Y", // MM/DD/YYYY
@@ -108,8 +133,45 @@
     // Enviar al backend
     sendUserMessage("Update Quote: " + JSON.stringify(updatePayload));
   }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    window.USER_NAME = "{{ request.user.first_name|default:request.user.username|escapejs }}";
+    renderGreeting();
+
+  window.addEventListener("message", (event) => {
+    if (!event.data || typeof event.data !== "object") return;
+
+    let { deal_id, deal_name } = event.data;
+    console.log("[iframe] Message received:", event.data);
+
+    if (!deal_id || !deal_name) return;
+    // TODO: Check if this deal has a primary quote from Agentcpq, if it doesnt, message is: Do you want me to create a quote for this Deal?
+
+    const dealMessage = `Hello!, do you want me to create a quote for ${deal_name} ?`;
+
+    console.log("🟢 Appending deal message:", dealMessage);
+
+    // ✅ Append to the chat box as agent
+    const chatBox = document.getElementById("chat-box");
+    if (chatBox) {
+      const newMessage = document.createElement("div");
+      newMessage.classList.add("chat-text", "agent");
+      newMessage.innerHTML = `
+        <div class="senderagent">
+          <img width="95px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
+        </div>
+        <div class="message">${dealMessage}</div>
+      `;
+      chatBox.appendChild(newMessage);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    } else {
+      console.warn("⚠️ chat-box not found in DOM.");
+    }
+  });
+});
+
+
 </script>
 
-{% include "floating_drawer.html" %}
 </body>
 </html>

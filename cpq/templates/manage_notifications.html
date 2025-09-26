@@ -70,15 +70,7 @@ input[type="checkbox"]:checked + span:before {
 input[type="checkbox"] + span {
   color: #212121 !important;  /* o el color que prefieras */
 }
-.container{
-  padding: 24px;
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-  max-width: none !important;
-  width: 100%;
-  
-}
+
 .card-panel {
   padding: 24px;
   margin: .5rem 0 1rem 0;
@@ -120,7 +112,7 @@ input[type="checkbox"] + span {
     <div class="card-panel white z-depth-1">
       <i class="material-icons left" style="vertical-align: middle;">{{ group.icon }}</i>
       <b><h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">{{ group.title }}</h6></b>
-      
+
       <!-- Contenedor principal -->
       <div class="p-6">
 
@@ -210,13 +202,13 @@ input[type="checkbox"] + span {
       const utcDate = new Date(utcString + 'Z'); // Z indica UTC
 
       // Opciones de formato
-      const options = { 
-          year: 'numeric', 
-          month: '2-digit', 
+      const options = {
+          year: 'numeric',
+          month: '2-digit',
           day: '2-digit',
-          hour: '2-digit', 
+          hour: '2-digit',
           minute: '2-digit',
-          hour12: true 
+          hour12: true
       };
 
       // Convertir a local

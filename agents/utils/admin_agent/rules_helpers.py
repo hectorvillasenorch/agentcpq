@@ -14,8 +14,6 @@ from .general_helpers import generate_conditions_format
 # Record Helpers
 from .record_helpers import update_rule_record
 
-# Context Helpers
-from ..orchestrator.context_handle_helpers import save_or_update_conversation_context, make_session_context
 
 def check_for_rules_quote_line_level(target_type, rule_type, quote, product, quote_line):
     #   Accept one rule type (str) or many types (list)
@@ -137,7 +135,7 @@ def check_validation_conditions(data, quote, product, quote_line, depth=1):
     else:
         logging.warning(f"{indent}❌ Unexpected data type: {type(data).__name__}")
         return False
-    
+
 def check_for_rules_quote_level(target_type, rule_type, quote):
     #   Accept one rule type (str) or many types (list)
     if isinstance(rule_type, str):
@@ -258,7 +256,7 @@ def check_validation_conditions_for_quote_level(data, quote, depth=1):
     else:
         logging.warning(f"{indent}❌ Unexpected data type: {type(data).__name__}")
         return False
-    
+
 
 def build_temp_quote_line(quote, product, quantity, discount_type, discount_amount, term):
     """
@@ -316,7 +314,7 @@ def handle_extracted_rules_details(extracted_rules_details):
                 return {
                     "message": "⚠️ For security reasons, we cannot show all the rules. If you want to render all rules, please type: show all rules."
                 }
-            
+
             # If name exists, found just by name
             if name:
                 if isinstance(name, list):
@@ -354,7 +352,7 @@ def handle_extracted_rules_details(extracted_rules_details):
                 # Active
                 if active is not None:
                     query = query.filter(active=active)
-            
+
             resulting_rules.append({
                 "rules_request_description": request_description,
                 "rules": list(query)
@@ -365,8 +363,8 @@ def handle_extracted_rules_details(extracted_rules_details):
     except Exception as e:
         logging.warning(f"❌ Error in handle_extracted_rules_details: {e}")
         return e
-    
-def handle_rules_updates(extracted_updates, response_message, session_context):
+
+def handle_rules_updates(extracted_updates, response_message):
     logging.info("🔧 Handling rule updates...")
 
     updated_rules = []
@@ -375,10 +373,6 @@ def handle_rules_updates(extracted_updates, response_message, session_context):
         name = update.get("name", None)
         field = update.get("field", None)
         value = update.get("value", None)
-
-        # Add full item for session context
-        session_context["item_index"] = index
-        session_context["extracted"] = update
 
         response_message += f"<b>🔄 <u>Rule Update Request #{index}</u> 🔄</b><br>"
         # ✅ Format response message
@@ -394,10 +388,10 @@ def handle_rules_updates(extracted_updates, response_message, session_context):
 
         response_message += f"🧾 Rule: {name}<br>"
         response_message += f"🏷️ Field: {field_labels.get(field, field.capitalize())}<br>"
-        response_message += f"✏️ Value: {value if field != "conditions" else generate_conditions_format(value)}<br><br>"
+        response_message += f"✏️ Value: {value if field != 'conditions' else generate_conditions_format(value)}<br><br>"
 
         # Validate request informatio
-        is_valid, feedback, rule = validate_rule_update_request(name, field, value, session_context)
+        is_valid, feedback, rule = validate_rule_update_request(name, field, value)
 
         if not is_valid:
             response_message += feedback
@@ -417,29 +411,24 @@ def handle_rules_updates(extracted_updates, response_message, session_context):
         response = update_rule_record(update_payload)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             updated_rules.append(update_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
             error_msg = response.get("message", "Unknown error.")
             response_message += f"{error_msg}<br>"
+
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
-            agent_response = f"Error: {error_msg}"
-            save_or_update_conversation_context(session_context, agent_response)
 
     return response_message, updated_rules
 
-def handle_rules_deletes(extracted_deletes, response_message, session_context):
+def handle_rules_deletes(extracted_deletes, response_message):
     logging.info("🔧 Handling rule deletions...")
 
     deleted_rules = []
 
     for index, update in enumerate(extracted_deletes, start=1):
         name = update.get("name", None)
-
-        # Add full item for session context
-        session_context["item_index"] = index
-        session_context["extracted"] = update
 
         response_message += f"<b>🔄 <u>Rule Delete Request #{index}</u> 🔄</b><br>"
         # ✅ Format response message
@@ -456,8 +445,7 @@ def handle_rules_deletes(extracted_deletes, response_message, session_context):
         except BusinessRule.DoesNotExist:
             logging.warning(f"⚠️ Error: The rule with the name {name} does not exist.")
             response_message += f"⚠️ Error: The rule with the name <strong>{name}</strong> does not exist.<br><br>"
-            agent_response = f"Error: The rule with the name <strong>{name}</strong> does not exist."
-            save_or_update_conversation_context(session_context, agent_response)
+
             continue
 
     return response_message, deleted_rules

@@ -75,8 +75,8 @@ def create_custom_object(user, user_message, session_data):
         return {
             "message": f"No custom objects were created. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -114,8 +114,8 @@ def update_custom_object(user, user_message, session_data):
         return {
             "message": f"No custom objects were updated. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -153,8 +153,8 @@ def delete_custom_object(user, user_message, session_data):
         return {
             "message": f"No custom objects were deleted. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -174,10 +174,6 @@ def create_custom_field(user, user_message, session_data):
     extracted_custom_fields = extract_custom_fields(user_message, custom_objects)
 
     if not extracted_custom_fields:
-        session_context["item_index"] = 1
-        session_context["extracted"] = "Something went wrong when LLM trying to extract custom fields data."
-        agent_response = f"An error occurred while extracting your custom fields data. Please try again."
-        save_or_update_conversation_context(session_context, agent_response)
         return {
         "message": "⚠️ AgentCPQ: An error occurred while extracting your custom fields data. Please try again."
         }
@@ -192,8 +188,8 @@ def create_custom_field(user, user_message, session_data):
         return {
             "message": f"No custom fields were created. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -231,8 +227,8 @@ def update_custom_field(user, user_message, session_data):
         return {
             "message": f"No custom fields were updated. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -271,8 +267,8 @@ def delete_custom_field(user, user_message, session_data):
         return {
             "message": f"No custom fields were deleted. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -329,8 +325,8 @@ def create_custom_record(user, user_message, session_data):
         return {
             "message": f"No custom records were created. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -389,8 +385,8 @@ def update_custom_record(user, user_message, session_data):
         return {
             "message": f"No custom records were updated. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -428,8 +424,8 @@ def delete_custom_record(user, user_message, session_data):
         return {
             "message": f"No custom records were deleted. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True

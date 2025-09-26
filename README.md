@@ -17,7 +17,7 @@ agentcpq/
 │   ├── orchestrator.py    # ➜ Central AI-based Orchestrator logic
 │   ├── quote_agent.py     # ➜ Handles quote-specific AI logic
 │   ├── product_agent.py   # ➜ Handles product-related AI logic
-│   ├── bundle_agent.py    # ➜ Handles bundle configurations  
+│   ├── bundle_agent.py    # ➜ Handles bundle configurations
 │   ├── pricing_agent.py   # ➜ Handles pricing & discount logic
 │   ├── approvals.py       # ➜ Handles approval workflows
 │   ├── urls.py            # ➜ Defines agent-related API endpoints
@@ -49,19 +49,19 @@ agentcpq/
 
 ## **🚀 Key Features**
 ### **Quote Management**
-✅ **Create Quotes**: AI-driven quote creation based on user input.  
-✅ **Add Products to Quotes**: Select and configure products dynamically.  
-✅ **Apply Discounts**: AI recommends optimal discounts based on customer history.  
+✅ **Create Quotes**: AI-driven quote creation based on user input.
+✅ **Add Products to Quotes**: Select and configure products dynamically.
+✅ **Apply Discounts**: AI recommends optimal discounts based on customer history.
 ✅ **Generate Quote PDF**: AI generates quote documents for sales teams.
 
 ### **Product & Bundle Management**
-✅ **Create & Update Products**: Add new SKUs or modify existing products.  
-✅ **Configure Bundles**: AI recommends product combinations for optimal pricing.  
+✅ **Create & Update Products**: Add new SKUs or modify existing products.
+✅ **Configure Bundles**: AI recommends product combinations for optimal pricing.
 ✅ **Subscription Management**: Handles recurring billing and contract terms.
 
 ### **Pricing & Approval Logic**
-✅ **Calculate Pricing**: AI-driven pricing logic with proration support.  
-✅ **Approval Workflows**: AI submits quotes for approval based on predefined rules.  
+✅ **Calculate Pricing**: AI-driven pricing logic with proration support.
+✅ **Approval Workflows**: AI submits quotes for approval based on predefined rules.
 ✅ **Notifications**: Alerts sales teams when approvals are completed.
 
 ---
@@ -105,12 +105,12 @@ python manage.py runserver
 ---
 
 ## **🎯 Usage Workflow**
-1️⃣ **Sales rep:** “Create a quote with Product A001 for ACME Corp.”  
-2️⃣ **AI:** “✅ Created quote for ACME Corp. Would you like to add products?”  
-3️⃣ **Sales rep:** “Add Product B002 and apply a 10% discount.”  
-4️⃣ **AI:** “✅ Added product & discount applied. Do you need a quote PDF?”  
-5️⃣ **Sales rep:** “Yes, generate the quote document.”  
-6️⃣ **AI:** “📄 Your quote PDF is ready. Here’s the download link.”  
+1️⃣ **Sales rep:** “Create a quote with Product A001 for ACME Corp.”
+2️⃣ **AI:** “✅ Created quote for ACME Corp. Would you like to add products?”
+3️⃣ **Sales rep:** “Add Product B002 and apply a 10% discount.”
+4️⃣ **AI:** “✅ Added product & discount applied. Do you need a quote PDF?”
+5️⃣ **Sales rep:** “Yes, generate the quote document.”
+6️⃣ **AI:** “📄 Your quote PDF is ready. Here’s the download link.”
 
 ---
 
@@ -130,41 +130,41 @@ agent_map = {
 ---
 
 ## **📌 Roadmap**
-✅ **MVP**: Core quoting & product functionality  
+✅ **MVP**: Core quoting & product functionality
 
 **MVP-Features**:
 - Core quoting -- All CPQ functionality
 - Approval Quote
-- Make it send with DocuSign -- NEED 
+- Make it send with DocuSign -- NEED
 - Allow voice to text
 
 ## ✅ **USE CASES / PROMPTS FOR MVP**
 
-### 1. Pricing Inquiry  
-**Jane from TechCorp mentioned that they’re evaluating  and asked for pricing on 25 seats.**  
+### 1. Pricing Inquiry
+**Jane from TechCorp mentioned that they’re evaluating  and asked for pricing on 25 seats.**
 *Agent should infer the need to generate a quote for 25 licenses.*
 
-### 2. Competitive Analysis  
-**Acme Inc. is looking at upgrading their existing CPQ system and wants a comparison between our AI-AgentCPQ and their current solution.**  
+### 2. Competitive Analysis
+**Acme Inc. is looking at upgrading their existing CPQ system and wants a comparison between our AI-AgentCPQ and their current solution.**
 *Agent should recognize the need for a competitive analysis or product recommendation.*
 
-### 3. Proposal Request  
-**Michael from XYZ Enterprises liked the demo and said he’d need a proposal for a 3-year contract with an annual subscription.**  
+### 3. Proposal Request
+**Michael from XYZ Enterprises liked the demo and said he’d need a proposal for a 3-year contract with an annual subscription.**
 *Agent should suggest creating a subscription quote with a multi-year term.*
 
-### 4. Upsell Opportunity  
-**I had a great call with Lisa at CloudTech—she's interested in adding 50 more licenses to their existing contract.**  
+### 4. Upsell Opportunity
+**I had a great call with Lisa at CloudTech—she's interested in adding 50 more licenses to their existing contract.**
 *Agent should identify this as an upsell opportunity and prepare a quote update.*
 
-### 5. Discount Request  
-**The finance team at GlobalSoft is reviewing our pricing, and they asked if we offer bulk discounts for 100+ seats.**  
+### 5. Discount Request
+**The finance team at GlobalSoft is reviewing our pricing, and they asked if we offer bulk discounts for 100+ seats.**
 *Agent should infer a request for discounting rules or pricing flexibility.*
 
-🔜 **Integrations**: Support for Salesforce, HubSpot, and more  
-🔜 **Advanced AI**: Adaptive learning for better quote recommendations  
+🔜 **Integrations**: Support for Salesforce, HubSpot, and more
+🔜 **Advanced AI**: Adaptive learning for better quote recommendations
 
 
-✅ **Go to Market Strategy**: 
+✅ **Go to Market Strategy**:
 - Focus on big guys
 
 ## APPROVALS
@@ -178,14 +178,14 @@ agent_map = {
 
 ## EMOJIS
 ✅ Success
-⚠️ Warning	
+⚠️ Warning
 ⛔ Invalid Method
-🚨 Invalid JSON	
-🔥 Server Error	
+🚨 Invalid JSON
+🔥 Server Error
 🔵 Information Only	🔵 or ℹ️
 
 
-# #agent_template.py 
+# #agent_template.py
 
 def agent_logic(user_message: str, session_data: dict, crm: dict) -> dict:
     """
@@ -253,10 +253,10 @@ This document describes the secure, HMAC-protected `/api/usage/` endpoint that e
 
 On a scheduled basis (e.g. month-end), your central billing system will **pull** usage data from each tenant instance:
 
-1. **Authenticate** via HMAC-signed headers  
-2. **Aggregate** `ActionUsage` records over a date range  
-3. **Upsert** a local `TenantUsageReport` row  
-4. **Return** JSON with totals  
+1. **Authenticate** via HMAC-signed headers
+2. **Aggregate** `ActionUsage` records over a date range
+3. **Upsert** a local `TenantUsageReport` row
+4. **Return** JSON with totals
 
 ---
 
@@ -282,7 +282,7 @@ Every request **must** include these headers:
 | `X-Timestamp`| `2025-07-15T21:47:05Z`          | ISO-8601 UTC timestamp (no fractional seconds). Used to prevent replay.                                       |
 | `X-Signature`| `58691700cf10c2f…`              | HMAC-SHA256 hex digest over `METHOD + PATH_WITH_QUERY + BODY + X-Timestamp`, keyed by `Tenant.api_secret`.   |
 
-- **Timestamp freshness:** must be within ± 5 minutes of server time.  
+- **Timestamp freshness:** must be within ± 5 minutes of server time.
 - **Replay protection:** rejects stale or malformed timestamps.
 
 ---

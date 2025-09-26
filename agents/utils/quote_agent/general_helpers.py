@@ -24,6 +24,7 @@ from .db_helpers import get_or_create_quote_ui_render, log_action_usage
 from datetime import datetime, timezone
 import boto3
 from botocore.config import Config
+from typing import Set
 
 
 logger = logging.getLogger(__name__)
@@ -126,7 +127,7 @@ def get_quote_details(quote):
     quote_details_settings, quote_document_settings = get_or_create_quote_ui_render()
     if quote_document_settings is None:
         return{
-            "error": True, 
+            "error": True,
             "message": "⚠️ The quote data can’t be rendered because there’s no quote template available. Please create one in <b>Admin > Manage Document</b>"
         }
     print(f"\nRendered fields on UI Quote Details: {quote_details_settings.rendered_fields}")
@@ -252,6 +253,11 @@ def get_active_quote(user_message, session_data):
         try:
             quote = Quote.objects.get(name=quote_name)
             logging.info(f"🟢 Found and set active quote: {quote.name}")
+
+            # 🔑 Save active_quote on session_data
+            set_active_quote_to_session_data(session_data, quote)
+
+
             for quote_line in QuoteLine.objects.filter(quote=quote):
                 # If Product has custom fields, then create custom fields to QuoteLine
                 copy_custom_fields_values_from_product_to_quote_line(quote_line)
@@ -362,7 +368,7 @@ def set_custom_fields_into_quote_document_settings(object_types: list):
     si no estaban en rendered_fields.
     """
     # 1. Obtener todos los CustomFields válidos para los object_types
-    valid_custom_field_labels = set()
+    valid_custom_field_labels: Set[str] = set()
     for obj_type in object_types:
         custom_fields = CustomField.objects.filter(object_type=obj_type)
         valid_custom_field_labels.update(f"{obj_type}.{cf.label}" for cf in custom_fields)
@@ -423,7 +429,7 @@ def get_document_pdf(quote):
         pdf = canvas.Canvas(buffer, pagesize=letter)
         pdf.setTitle(f"Quote {quote.name}")
         CBLACK = "#000000"
-        
+
 
         # MODERN TEMPLATE
         if template.template_style == 'modern':
@@ -436,7 +442,7 @@ def get_document_pdf(quote):
 
         # ✅ Letterhead
         pdf.setFont("Helvetica", 8)
-        pdf.drawString(20, 770, f"{datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}")
+        pdf.drawString(20, 770, f"{datetime.now().strftime('%m/%d/%Y, %H:%M:%S')}")
 
         # ✅ Quote Header
         pdf.setFont("Helvetica-Bold", 26)
@@ -461,14 +467,14 @@ def get_document_pdf(quote):
         # ------------------------------------
         pdf.setStrokeColor(HexColor(SCOLOR))
         pdf.setLineWidth(2)
-        pdf.line(32, 700, 580, 700) 
+        pdf.line(32, 700, 580, 700)
 
         # ✅ Set Y and X position for Company Information
         y_position = 660
         x_position = 50
         company_count = 0
         pdf.setFont("Helvetica-Bold", 12)
-        
+
         # ✅ Company Information
         if template.show_company_name and company.name:
             pdf.drawString(x_position, y_position, f"{company.name}")
@@ -496,7 +502,7 @@ def get_document_pdf(quote):
             pdf.setFillColor(HexColor(CBLACK))
             company_count += 1
             y_position -= 15
-        
+
         # ✅ Company phone
         if template.show_company_phone and company.phone_number:
             pdf.setFillColor(HexColor("#888888"))
@@ -517,7 +523,7 @@ def get_document_pdf(quote):
         y_position = 660
         x_position = 350
         account_count = 0
-    
+
         # ✅ Account Name
         if template.show_account_name and account.name:
             pdf.setFillColor(HexColor(CBLACK))
@@ -606,12 +612,12 @@ def get_document_pdf(quote):
 
                     new_page_bool = True
                     lines_before_new_page = index
-                    
+
                     lines_count = 15
                 else:
                     pdf.drawString(left_margin, y_position, line)
                     y_position -= line_spacing
-            
+
             #-----------------
             if new_page_bool:
                 lines_count += line_spacing * (len(lines) - lines_before_new_page)
@@ -626,7 +632,7 @@ def get_document_pdf(quote):
             # Set all up back again
             pdf.setFont("Helvetica-Bold", 12)
             pdf.setFillColor(HexColor(CBLACK))
-        
+
         x_position = 50
         y_position -= 30
         font_name = "Helvetica-Bold"
@@ -713,7 +719,7 @@ def get_document_pdf(quote):
                     y_position += 15
                     pdf.setStrokeColor(HexColor(SCOLOR))
                     pdf.setLineWidth(1)
-                    pdf.line(50, y_position, right_margin, y_position) 
+                    pdf.line(50, y_position, right_margin, y_position)
                     pdf.showPage()
                     y_position = letter[1] - 50  # Reinicia desde arriba con margen
 
@@ -743,14 +749,14 @@ def get_document_pdf(quote):
 
                         # Imprimir el texto del encabezado
                         pdf.drawString(aligned_x, y_position, display_field)
-                    
+
                     y_position -= 15
                     # ------------------------------------
                     pdf.setStrokeColor(HexColor(SCOLOR))
                     pdf.setLineWidth(1)
-                    pdf.line(50, y_position, 562, y_position) 
+                    pdf.line(50, y_position, 562, y_position)
                     y_position -= 27
-            
+
                 # Configuramos una variable para saber el tamaño maximo en el eje Y del texto mas grande de la linea
                 max_text_height = 0
                 for index, field_title in enumerate(template.rendered_fields):
@@ -794,7 +800,7 @@ def get_document_pdf(quote):
                             pdf.setFillColor(HexColor("#000000"))
                             pdf.drawString(aligned_x, y_position, sku)
                             pdf.setFont("Helvetica", product_font_size)
-                            pdf.setFillColor(HexColor("#666666"))  
+                            pdf.setFillColor(HexColor("#666666"))
                             pdf.drawString(aligned_x, y_position - 10, product)
 
                         # Si Product And SKU está al final
@@ -806,9 +812,9 @@ def get_document_pdf(quote):
 
                             name_aligned_x = column_x + column_spacing - product_text_width
                             pdf.setFont("Helvetica", product_font_size)
-                            pdf.setFillColor(HexColor("#666666"))  
+                            pdf.setFillColor(HexColor("#666666"))
                             pdf.drawString(name_aligned_x, y_position - 10, product)
-                        
+
                         # Si Product And SKU está en medio
                         else:
                             sku_aligned_x = column_x + (column_spacing - sku_text_width) / 2
@@ -817,7 +823,7 @@ def get_document_pdf(quote):
                             pdf.drawString(sku_aligned_x, y_position, sku)
                             name_aligned_x = column_x + (column_spacing - product_text_width) / 2
                             pdf.setFont("Helvetica", product_font_size)
-                            pdf.setFillColor(HexColor("#666666"))  
+                            pdf.setFillColor(HexColor("#666666"))
                             pdf.drawString(name_aligned_x, y_position - 10, product)
 
                     # === Description column: render inline HTML with ReportLab Paragraph ===
@@ -887,7 +893,7 @@ def get_document_pdf(quote):
                             try:
                                 # Buscar el CustomField correspondiente
                                 custom_field = CustomField.objects.get(object_type=model_name, label=field_label)
-                                
+
                                 # Buscar el CustomFieldValue en la línea de cotización
                                 ct = ContentType.objects.get_for_model(line)
                                 custom_value = CustomFieldValue.objects.get(
@@ -964,7 +970,7 @@ def get_document_pdf(quote):
                             pdf.drawString(aligned_x, y, wrapped_line)
 
                         text_height = len(wrapped_lines) * line_spacing + 5
-                        
+
                         # Imprimir term y discount en caso que el campo sea Total Price
                         #print(f"Field: {field_title}")
                         if field_title == "Total Price":
@@ -1141,7 +1147,7 @@ def get_document_pdf(quote):
             y_position -= 30
             x_position = 50
 
-        
+
 
         if template.terms_and_conditions:
             if y_position < 50:  # Si nos acercamos al final de la hoja
@@ -1152,7 +1158,7 @@ def get_document_pdf(quote):
             value_font = "Helvetica-Bold"
             value_size = 12
             terms_and_conditions_width = pdf.stringWidth(tac_value, value_font, value_size)
-            
+
             left_margin = 50
             right_margin = 50
             usable_width = letter[0] - left_margin - right_margin  # 612 - 100 = 512
@@ -1179,12 +1185,12 @@ def get_document_pdf(quote):
                     y_position = letter[1] - 50  # Reinicia desde arriba con margen
                     pdf.setFont(font_name, font_size)
                     pdf.setFillColor(HexColor(CBLACK))
-                
+
                 pdf.drawString(left_margin, y_position, line)
                 y_position -= line_spacing
-            
+
             y_position -= 18
-            
+
         #Show sign
         x_position = 50
         if template.show_sign:
@@ -1223,7 +1229,7 @@ def get_document_pdf(quote):
             pdf.setFont("Helvetica", 10)
             pdf.setFillColor(HexColor(CBLACK))
             pdf.drawString(x_position, y_position, "Name")
-                
+
 
         # ✅ Save PDF to buffer
         pdf.showPage()
@@ -1261,7 +1267,7 @@ def get_document_pdf(quote):
             quote=quote,
             version=next_version,
             name=pdf_filename,
-            file=saved_path,  
+            file=saved_path,
             generated_by="system"
         )
         logger.debug(f"Saved to R2: {saved_path}")
@@ -1277,3 +1283,49 @@ def get_document_pdf(quote):
             "message": f"⚠️ Error generating PDF: {str(e)}",
             "success": False
             }
+
+
+def extract_line_items_from_user_message(user_message: str, quote=None):
+    """
+    Extracts the line items mentioned in the user's message.
+
+    Args:
+        user_message (str): The user's message.
+        quote (Quote, optional): Active Quote object. If provided, only its line items will be searched.
+
+    Returns:
+        list[dict]: List of line items found with editable fields.
+    """
+    if quote is None:
+        print("No active quote provided.")
+        return []
+
+    # Get only the line items associated with the quote
+    quote_lines = quote.quote_lines.all()
+    if not quote_lines.exists():
+        print("No line items found in the active quote.")
+        return []
+
+    user_message_lower = user_message.lower()
+    matched_items = []
+
+    for line in quote_lines:
+        # Normalize SKU and name to compare in a case-insensitive way
+        sku = (line.sku or "").lower()
+        name = (line.product_name or "").lower()
+
+        # Check if SKU or name appears in the user's message
+        if (sku and sku in user_message_lower) or (name and name in user_message_lower):
+            matched_items.append({
+                "sku": line.sku,
+                "name": line.product_name,
+                "fields": {
+                    "quantity": line.quantity,
+                    "discount_percentage": float(line.discount_percentage or 0),
+                    "discount_amount": float(line.discount_amount or 0),
+                    "term": line.term,
+                    "unit_price": float(line.unit_price or 0)
+                }
+            })
+
+    return matched_items

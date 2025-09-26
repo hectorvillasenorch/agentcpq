@@ -1,5 +1,3 @@
-
-
 <div class="section">
 
   <!-- 🔹 STANDARD FIELDS -->
@@ -17,32 +15,34 @@
           <i class="material-icons">edit</i>
         </a>
 
-        <table class="striped highlight responsive-table">
-          <thead>
-            <tr>
-              <th>Label</th>
-              <th>Name</th>
-              <th>Description</th>
-              <th>Last Modified By</th>
-              <th>Created By</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for record in records %}
-            <tr>
-              <td>{{ record.label }}</td>
-              <td>{{ record.name }}</td>
-              <td class="description-cell">{{ record.description }}</td> 
-              {% if record.updated_by %}
-                <td class="datetime-objects" data-datetime-object="{{ record.updated_at|date:'c' }}">{{ record.updated_by }}</td>
-              {% else %}
-                <td>No updates yet.</td>
-              {% endif %}
-              <td class="datetime-objects" data-datetime-object="{{ record.created_at|date:'c' }}">{{ record.created_by }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+        <div style="max-height:400px; overflow-y:auto;">
+          <table class="striped highlight responsive-table">
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Last Modified By</th>
+                <th>Created By</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for record in records %}
+              <tr>
+                <td>{{ record.label }}</td>
+                <td>{{ record.name }}</td>
+                <td class="description-cell">{{ record.description }}</td>
+                {% if record.updated_by %}
+                  <td class="datetime-objects" data-datetime-object="{{ record.updated_at|date:'c' }}">{{ record.updated_by }}</td>
+                {% else %}
+                  <td>No updates yet.</td>
+                {% endif %}
+                <td class="datetime-objects" data-datetime-object="{{ record.created_at|date:'c' }}">{{ record.created_by }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       {% else %}
         <p>No records found for {{ object_name }}.</p>
       {% endif %}
@@ -64,46 +64,67 @@
       </a>
 
       {% if custom_fields %}
-      <table class="striped highlight responsive-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Label</th>
-            <th>Type</th>
-            <th>Required</th>
-            <th>Options</th>
-            <th>Last Modified By</th>
-            <th>Created By</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for field in custom_fields %}
+      <div style="max-height:400px; overflow:auto;">
+        <table class="striped highlight responsive-table" style="min-width:800px;">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Label</th>
+              <th>Type</th>
+              <th>Required</th>
+              <th>Options</th>
+              <th>Last Modified By</th>
+              <th>Created By</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for field in custom_fields %}
             <tr>
               <td>{{ field.name }}</td>
               <td>{{ field.label }}</td>
               <td>{{ field.data_type }}</td>
               <td>{{ field.required|yesno:"Yes,No" }}</td>
               {% if field.data_type in "dropdown,multiselect,radio" and field.options %}
-                <td>{{ field.options }}</td>
+              <td>
+                {% for option in field.options %}
+                  {{ option }}{% if not forloop.last %}, {% endif %}
+                {% endfor %}
+              </td>
               {% else %}
-                <td class="grey-text">—</td>
+              <td>-</td>
               {% endif %}
               {% if field.updated_by %}
-                <td class="datetime-custom-fields" data-datetime-field="{{ field.updated_at|date:'c' }}">{{ field.updated_by }}</td>
+              <td class="single-line datetime-custom-fields" data-datetime-field="{{ field.updated_at|date:'c' }}">{{ field.updated_by }}</td>
               {% else %}
-                <td>No updates yet.</td>
+              <td class="single-line">No updates yet.</td>
               {% endif %}
-              <td class="datetime-custom-fields" data-datetime-field="{{ field.created_at|date:'c' }}">{{ field.created_by }}</td>
+              <td class="single-line datetime-custom-fields" data-datetime-field="{{ field.created_at|date:'c' }}">{{ field.created_by }}</td>
               <td>
                 <a href="{% url 'cpq:edit_custom_field' field.id %}" class="btn-flat">
                   <i class="material-icons">edit</i>
                 </a>
               </td>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <style>
+        /* Descripción puede romper línea */
+        .description-cell {
+          white-space: normal !important;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+        }
+
+        /* Last Modified / Created By en una sola línea, pero tabla hace scroll si se rompe */
+        .single-line {
+          white-space: nowrap;
+        }
+      </style>
+
       {% else %}
       <p class="grey-text">No custom fields for {{ object_name }}.</p>
       {% endif %}
@@ -117,5 +138,5 @@
       overflow-wrap: break-word;
     }
   </style>
-  
+
 </div>

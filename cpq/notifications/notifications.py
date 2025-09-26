@@ -43,6 +43,7 @@ def notify_users(alerts, instance, template_name, subject, context_builder):
             )
 
 
+# LEAD CREATED
 def notify_lead_created(lead):
     email_alerts = EmailAlert.objects.filter(trigger="lead_created")
 
@@ -57,7 +58,7 @@ def notify_lead_created(lead):
         },
     )
 
-
+# ACCOUNT CREATED
 def notify_account_created(account):
     email_alerts = EmailAlert.objects.filter(trigger="account_created")
 
@@ -72,8 +73,8 @@ def notify_account_created(account):
         }
     )
 
-        
 
+# OPPORTUNITY CREATED
 def notify_opportunity_created(opportunity):
     email_alerts = EmailAlert.objects.filter(trigger="opportunity_created")
 
@@ -88,7 +89,7 @@ def notify_opportunity_created(opportunity):
         },
     )
 
-
+# OPPORTUNITY CLOSED WON
 def notify_opportunity_closed_won(opportunity):
     email_alerts = EmailAlert.objects.filter(trigger="opportunity_closed_won")
 
@@ -103,7 +104,7 @@ def notify_opportunity_closed_won(opportunity):
         },
     )
 
-
+# OPPORTUNITY CLOSED LOST
 def notify_opportunity_closed_lost(opportunity):
     email_alerts = EmailAlert.objects.filter(trigger="opportunity_closed_lost")
 
@@ -118,7 +119,7 @@ def notify_opportunity_closed_lost(opportunity):
         },
     )
 
-
+# QUOTE SENT FOR APPROVAL
 def notify_quote_sent_for_approval(quote):
     email_alerts = EmailAlert.objects.filter(trigger="quote_sent_for_approval")
 
@@ -133,7 +134,7 @@ def notify_quote_sent_for_approval(quote):
         },
     )
 
-
+# QUOTE APPROVED
 def notify_quote_approved(quote):
     email_alerts = EmailAlert.objects.filter(trigger="quote_approved")
 
@@ -148,7 +149,7 @@ def notify_quote_approved(quote):
         },
     )
 
-
+# QUOTE REJECTED
 def notify_quote_rejected(quote):
     email_alerts = EmailAlert.objects.filter(trigger="quote_rejected")
 
@@ -164,7 +165,7 @@ def notify_quote_rejected(quote):
     )
 
 
-    
+
 
 
 def get_users_for_alert(instance, alert):

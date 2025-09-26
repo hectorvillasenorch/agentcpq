@@ -10,7 +10,7 @@
     <script src="{% static 'materialize/materialize.min.js' %}" defer></script>
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
     <script src="{% static 'js/agents/agent_main.js' %}" defer></script>
-    
+
     <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}">
 </head>
 <body>
@@ -21,83 +21,109 @@
 
     <div style="flex-grow: 1;">
         <div class="brand">
-            <img src="{% static 'img/logo-small.png' %}" width="70%" alt="AgentCPQ Logo"/>
+            <img src="{% static 'img/logo-small.png' %}" width="80%" alt="AgentCPQ Logo"/>
         </div>
-        <a href="{% url 'dashboard' %}?view=agents" class="new-chat-button">
+        <a href="{% url 'dashboard' %}?view=agents&new_chat=true" class="new-chat-button">
             <i class="material-icons">smart_toy</i>
-            New Chat<span style="margin: 0 4px;">+</span> 
+            <span class="nav-label">New Chat</span><span class="nav-label" style="margin: 0 4px;">+</span>
         </a>
+
         <a href="{% url 'dashboard' %}?view=products">
-            <i class="material-icons">inventory_2</i> Products
+            <i class="material-icons">inventory_2</i>
+            <span class="nav-label">Products</span>
         </a>
+
         <a href="{% url 'dashboard' %}?view=quotes">
-            <i class="material-icons">request_quote</i> Quotes
+            <i class="material-icons">request_quote</i>
+            <span class="nav-label">Quotes</span>
         </a>
+
         {% if custom_objects %}
-                {% for obj in custom_objects %}
-                     <a href="{% url 'dashboard' %}?view=custom&object_name={{ obj.name }}">
-                        <i class="material-icons">description</i> {{ obj.label }}
-                    </a>
-                {% endfor %}
+            {% for obj in custom_objects %}
+                <a href="{% url 'dashboard' %}?view=custom&object_name={{ obj.name }}">
+                    <i class="material-icons">description</i>
+                    <span class="nav-label">{{ obj.label }}</span>
+                </a>
+            {% endfor %}
         {% endif %}
+
         {% if request.user.is_staff %}
             <a href="{% url 'cpq:get_company_information' %}">
-                <i class="material-icons">business</i> Admin
+                <i class="material-icons">business</i>
+                <span class="nav-label">Admin</span>
             </a>
         {% endif %}
-    
+
         <div class="divider"></div>
+
         <div class="session-list">
             <p class="session-list-title">Recent Activity</p>
             {% for chat in chat_sessions %}
                 <a href="{% url 'dashboard' %}?view=agents&session_id={{ chat.session_id }}" class="chat-history-item" data-session-id="{{ chat.session_id }}">
                     <i class="material-icons">chat</i>
-                    {{ chat.title|default:"Untitled"|truncatechars:24 }}
+                    <span class="nav-label">{{ chat.title|default:"Untitled"|truncatechars:24 }}</span>
                 </a>
             {% empty %}
-                <p style="padding: 0 16px;">No past chats</p>
+                <p class="nav-label" style="padding: 0 16px;">No past chats</p>
             {% endfor %}
         </div>
     </div>
-
-    <!-- Fixed Logout/Login Section -->
+   <!-- Fixed Logout/Login Section -->
     <div style="padding: 16px;">
         {% if user.is_authenticated %}
             <form method="post" action="{% url 'logout' %}" style="padding: 16px;">
                 {% csrf_token %}
                 <button type="submit" class="btn-flat white-text" style="display: flex; align-items: center; background: none; border: none; cursor: pointer;">
-                    <i class="material-icons" style="margin-right: 8px;">logout</i> Logout
+                    <i class="material-icons" style="margin-right: 8px;">logout</i>
+                    <span class="nav-label">Logout</span>
                 </button>
             </form>
-        
+
+            <button onclick="colapseSidebar()" class="btn-flat white-text mt-4" style="display: flex; align-items: center; background: none; border: none; cursor: pointer;">
+                <i id="collapse-icon" class="material-icons" style="margin-right: 8px; font-weight: 800; font-size: 30px;">chevron_left</i>
+                <span class="nav-label">Collapse Sidebar</span>
+            </button>
         {% endif %}
     </div>
-    
-    </div> 
+</div>
         <!-- Main Content -->
         <main class="main-content">
-          <div id="content-area">
-            {% if request.GET.view == "agents" %}
-                {% include "agents.html" %}
-            {% elif request.GET.view == "products" %}
-                {% include "products.html" %}
-            {% elif request.GET.view == "quotes" %}
-                {% include "quotes.html" %}
-            {% elif request.GET.view == "setup" %}
-                {% include "setup.html" %}
-            {% elif request.GET.view == "payment__c" %}
-                {% include "objs_listviews.html" %}
-            {% elif not form and not custom_object %}
-                <p class="grey-text text-darken-2 center-align">Select an option from the sidebar.</p>
-            {% elif form and custom_object and request.GET.object_name %}
-                <div class="section">
-                    <h2><i class="material-icons" style="vertical-align: middle; margin-right: 8px;">description</i>{{ custom_object.label }}</h2>
-                    {% include "custom_objects/record_form.html" with form=form custom_object=custom_object next_identifier=next_identifier%}
-                </div>
-            {% endif %}
-        </div>
+            <div id="content-area">
+                {% if request.GET.view == "agents" %}
+                    {% include "agents.html" %}
+                {% elif request.GET.view == "products" %}
+                    {% include "products.html" %}
+                {% elif request.GET.view == "quotes" %}
+                    {% include "quotes.html" %}
+                {% elif request.GET.view == "setup" %}
+                    {% include "setup.html" %}
+                {% elif request.GET.view == "payment__c" %}
+                    {% include "objs_listviews.html" %}
+                {% elif not form and not custom_object %}
+                    <p class="grey-text text-darken-2 center-align">Select an option from the sidebar.</p>
+                {% elif form and custom_object and request.GET.object_name %}
+                    <div class="section">
+                        <h2><i class="material-icons" style="vertical-align: middle; margin-right: 8px;">description</i>{{ custom_object.label }}</h2>
+                        {% include "custom_objects/record_form.html" with form=form custom_object=custom_object next_identifier=next_identifier%}
+                    </div>
+                {% endif %}
+            </div>
         </main>
     </div>
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+            const isCollapsed = localStorage.getItem("sidebarCollapsed") === "true";
+            const sidenav = document.querySelector(".sidenav-fixed");
+            const icon = document.getElementById("collapse-icon");
+            const maincontent = document.querySelector(".main-content");
 
+            if (isCollapsed) {
+                sidenav.classList.add("collapse_sidebar");
+                maincontent.classList.add("main-content-collapsed");
+
+                if (icon) icon.textContent = "chevron_right";
+            }
+        });
+    </script>
 </body>
 </html>

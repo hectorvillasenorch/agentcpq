@@ -1,98 +1,130 @@
 {% extends "base.html" %}
 {% block title %}Email Alert - AgentCPQ{% endblock %}
+{% block body_class %}email-alert-page{% endblock %}
 
 {% block content %}
 
-<h2 class="text-2xl font-semibold mb-4">Email Alert</h2>
-<div class="card-panel white" style="border:1px solid #e0e0e0;border-radius:10px;">
+<div class="page-scroll-container" style="height: calc(100vh - 40px); overflow-y: auto; padding: 20px;">
+  <h2 class="text-2xl font-semibold mb-4">Email Alert</h2>
+  <div class="card-panel white" style="border:1px solid #e0e0e0;border-radius:10px;">
 
-<div class="max-w-4xl mx-auto py-10">
-  <h4 class="text-center text-xl font-semibold text-orange-600 mb-6">
-      Edit Email Alert
-  </h4>
+    <div class="max-w-4xl mx-auto py-10">
+      <h4 class="text-center text-xl font-semibold text-orange-600 mb-6">
+          Edit Email Alert
+      </h4>
 
-  <form method="POST" class="space-y-4">
-    {% csrf_token %}
+      <form method="POST" class="space-y-4">
+        {% csrf_token %}
 
-    <!-- Name -->
-    <div>
-      {{ form.name.label_tag }}
-      {{ form.name }}
+        <!-- Name -->
+        <div>
+          {{ form.name.label_tag }}
+          {{ form.name }}
+        </div>
+
+        <!-- Description -->
+        <div>
+          {{ form.description.label_tag }}
+          {{ form.description }}
+        </div>
+
+        <!-- Trigger -->
+        <div>
+          {{ form.trigger.label_tag }}
+          {{ form.trigger }}
+        </div>
+
+        <!-- Native Object -->
+        <div>
+          {{ form.native_object.label_tag }}
+          {{ form.native_object }}
+        </div>
+
+        <!-- Custom Object -->
+        <div>
+          {{ form.custom_object.label_tag }}
+          {{ form.custom_object }}
+        </div>
+
+        <!-- Recipients Users -->
+        <div class="input-field">
+          <label for="user-chips" class="active">Recipients Users</label>
+          <div id="user-chips" class="chips chips-autocomplete"></div>
+          <input type="hidden" name="recipients_users" id="recipients_users">
+        </div>
+
+        <!-- Recipients Roles -->
+        <div class="input-field">
+          <label for="role-chips" class="active">Recipients Roles</label>
+          <div id="role-chips" class="chips chips-autocomplete"></div>
+          <input type="hidden" name="recipients_roles" id="recipients_roles">
+        </div>
+
+        <!-- Recipients External -->
+        <div class="input-field">
+          <label for="external-chips" class="active">Recipients External</label>
+          <div id="external-chips" class="chips chips-placeholder"></div>
+          <input type="hidden" name="recipients_external" id="recipients_external">
+        </div>
+
+        <!-- Offset Days -->
+        <div>
+          {{ form.offset_days.label_tag }}
+          {{ form.offset_days }}
+        </div>
+
+        <!-- Scheduled Cron -->
+        <div>
+          {{ form.scheduled_cron.label_tag }}
+          {{ form.scheduled_cron }}
+        </div>
+
+        <!-- Active -->
+        <div class="input-field flex items-center space-x-2">
+          <label class="flex items-center space-x-2">
+            {{ form.active }}
+            <span class="text-sm">Active</span>
+          </label>
+        </div>
+
+        <div class="flex justify-between items-center mt-8">
+          <!-- Botón de eliminar (izquierda) -->
+          <a class="btn red modal-trigger" href="#deleteModal">Delete Email Alert</a>
+
+          <!-- Botones de Cancelar y Guardar (derecha) -->
+          <div class="space-x-2">
+            <a href="javascript:history.back()" class="btn grey">Cancel</a>
+            <button type="submit" class="btn">Save</button>
+          </div>
+        </div>
+
+      </form>
+
+      <!-- Modal de confirmación de borrado -->
+      <div id="deleteModal" class="modal">
+        <div class="modal-content">
+          <h4 class="red-text">Confirm Deletion</h4>
+          <p>Are you sure you want to delete this email alert?</p>
+        </div>
+        <div class="modal-footer">
+          <form method="post" action="{% url 'cpq:delete_email_alert' notification.name %}">
+            {% csrf_token %}
+            <a href="#!" class="modal-close btn grey">Cancel</a>
+            <button type="submit" class="btn red">Delete</button>
+          </form>
+        </div>
+      </div>
+
     </div>
-
-    <!-- Description -->
-    <div>
-      {{ form.description.label_tag }}
-      {{ form.description }}
-    </div>
-
-    <!-- Trigger -->
-    <div>
-      {{ form.trigger.label_tag }}
-      {{ form.trigger }}
-    </div>
-
-    <!-- Native Object -->
-    <div>
-      {{ form.native_object.label_tag }}
-      {{ form.native_object }}
-    </div>
-
-    <!-- Custom Object -->
-    <div>
-      {{ form.custom_object.label_tag }}
-      {{ form.custom_object }}
-    </div>
-
-    <!-- Recipients Users -->
-    <div class="input-field">
-      <label for="user-chips" class="active">Recipients Users</label>
-      <div id="user-chips" class="chips chips-autocomplete"></div>
-      <input type="hidden" name="recipients_users" id="recipients_users">
-    </div>
-
-    <!-- Recipients Roles -->
-    <div class="input-field">
-      <label for="role-chips" class="active">Recipients Roles</label>
-      <div id="role-chips" class="chips chips-autocomplete"></div>
-      <input type="hidden" name="recipients_roles" id="recipients_roles">
-    </div>
-
-    <!-- Recipients External -->
-    <div class="input-field">
-      <label for="external-chips" class="active">Recipients External</label>
-      <div id="external-chips" class="chips chips-placeholder"></div>
-      <input type="hidden" name="recipients_external" id="recipients_external">
-    </div>
-
-    <!-- Offset Days -->
-    <div>
-      {{ form.offset_days.label_tag }}
-      {{ form.offset_days }}
-    </div>
-
-    <!-- Scheduled Cron -->
-    <div>
-      {{ form.scheduled_cron.label_tag }}
-      {{ form.scheduled_cron }}
-    </div>
-
-    <!-- Active -->
-    <div class="input-field flex items-center space-x-2">
-      <label class="flex items-center space-x-2">
-        {{ form.active }}
-        <span class="text-sm">Active</span>
-      </label>
-    </div>
-
-    <button type="submit" class="btn">Save</button>
-  </form>
-
-</div>
+  </div>
 </div>
 
 <script>
   document.addEventListener('DOMContentLoaded', function () {
+    // Inicializar modals de Materialize
+    const modals = document.querySelectorAll('.modal');
+    M.Modal.init(modals);
+
     // Inicializar selects y labels
     const selects = document.querySelectorAll('select');
     M.FormSelect.init(selects);
@@ -109,9 +141,7 @@
       });
     }
 
-    // ---------------------------
     // Trigger → Native Object Mapping
-    // ---------------------------
     const triggerToObjectMap = {
       'lead_created': 'Lead',
       'account_created': 'Account',
@@ -124,15 +154,12 @@
       'quote_expiring_soon': 'Quote',
       'subscription_renewal': 'Subscription'
     };
-
     const triggerSelect = document.getElementById('id_trigger');
     const nativeSelect = document.getElementById('id_native_object');
     const customSelect = document.getElementById('id_custom_object');
-
     if (triggerSelect && nativeSelect) {
       triggerSelect.addEventListener('change', () => {
-        const selectedTrigger = triggerSelect.value;
-        const mappedObject = triggerToObjectMap[selectedTrigger];
+        const mappedObject = triggerToObjectMap[triggerSelect.value];
         if (mappedObject) {
           const option = Array.from(nativeSelect.options).find(o => o.text === mappedObject || o.value === mappedObject);
           if (option) {
@@ -142,31 +169,22 @@
         }
       });
     }
-
-    // Exclusividad Native / Custom Object
+    // Exclusividad Native / Custom
     if (nativeSelect && customSelect) {
-      nativeSelect.addEventListener('change', () => {
-        if(nativeSelect.value){ customSelect.selectedIndex=0; M.FormSelect.init(customSelect);}
-      });
-      customSelect.addEventListener('change', () => {
-        if(customSelect.value){ nativeSelect.selectedIndex=0; M.FormSelect.init(nativeSelect);}
-      });
+      nativeSelect.addEventListener('change', () => { if(nativeSelect.value){ customSelect.selectedIndex=0; M.FormSelect.init(customSelect);} });
+      customSelect.addEventListener('change', () => { if(customSelect.value){ nativeSelect.selectedIndex=0; M.FormSelect.init(nativeSelect);} });
     }
 
-    // ---------------------------
     // USERS CHIPS
-    // ---------------------------
     let users = [
       {% for u in form.fields.recipients_users.queryset %}
         { tag: "{{ u.username }}", id: "{{ u.id }}" },
       {% endfor %}
     ];
-
     function syncHiddenUsers(){
       const chips = userInstances[0].chipsData;
       const selectedIds = chips.map(c => users.find(u => u.tag===c.tag)?.id).filter(Boolean);
       document.getElementById("recipients_users").value = selectedIds.join(",");
-
       chips.forEach((chip, index) => {
         if(!users.find(u => u.tag === chip.tag)){
           userInstances[0].deleteChip(index);
@@ -177,109 +195,50 @@
         }
       });
     }
-
     let userInstances = M.Chips.init(document.querySelectorAll('#user-chips'), {
-      autocompleteOptions: { 
-        data: users.reduce((acc,u)=>(acc[u.tag]=null,acc),{}), 
-        limit: Infinity, 
-        minLength:1 
-      },
-      data: [
-        {% for u in form.instance.recipients_users.all %}
-          { tag: "{{ u.username }}" },
-        {% endfor %}
-      ],
+      autocompleteOptions: { data: users.reduce((acc,u)=>(acc[u.tag]=null,acc),{}), limit: Infinity, minLength:1 },
+      data: [{% for u in form.instance.recipients_users.all %}{ tag: "{{ u.username }}" },{% endfor %}],
       onChipAdd: syncHiddenUsers,
       onChipDelete: syncHiddenUsers
     });
     syncHiddenUsers();
 
-    // ---------------------------
     // ROLES CHIPS
-    // ---------------------------
     let roleMap = {
       {% for key, label in roles_choices %}
         "{{ key }}": "{{ label }}",
       {% endfor %}
     };
-
-    // Inicializamos chips con roles existentes
-    let initialRoles = [
-      {% for r in initial_roles %}
-        { tag: "{{ r.tag }}", value: "{{ r.value }}" },
-      {% endfor %}
-    ];
-
+    let initialRoles = [{% for r in initial_roles %}{ tag: "{{ r.tag }}", value: "{{ r.value }}" },{% endfor %}];
     function syncHiddenRoles() {
       const chips = roleInstances[0].chipsData;
-
-      // Aplicamos clase morada a todos los chips actuales
       const chipElems = document.querySelectorAll('#role-chips .chip');
-      chipElems.forEach(chip => {
-        chip.classList.add('deep-purple', 'white-text');
-      });
-
-      // Validamos que cada chip sea un rol válido
+      chipElems.forEach(chip => chip.classList.add('deep-purple', 'white-text'));
       chips.forEach((chip, index) => {
-        // Buscamos la key correspondiente
         const roleKey = Object.keys(roleMap).find(k => roleMap[k] === chip.tag);
-        if (!roleKey) {
-          roleInstances[0].deleteChip(index);
-          M.toast({html: 'Invalid role!'});
-        } else {
-          // Guardamos el value correcto
-          chip.value = roleKey;
-        }
+        if (!roleKey) { roleInstances[0].deleteChip(index); M.toast({html: 'Invalid role!'}); } else { chip.value = roleKey; }
       });
-
-      // Siempre enviamos un array de keys (value) como JSON
-      const selectedKeys = chips.map(c => c.value).filter(Boolean);
-      document.getElementById("recipients_roles").value = JSON.stringify(selectedKeys);
+      document.getElementById("recipients_roles").value = JSON.stringify(chips.map(c => c.value).filter(Boolean));
     }
-
-    // Inicialización de los chips
     let roleInstances = M.Chips.init(document.querySelectorAll('#role-chips'), {
-      autocompleteOptions: { 
-        data: Object.fromEntries(Object.values(roleMap).map(v => [v, null])),
-        limit: Infinity,
-        minLength: 1
-      },
+      autocompleteOptions: { data: Object.fromEntries(Object.values(roleMap).map(v => [v, null])), limit: Infinity, minLength: 1 },
       data: initialRoles,
       onChipAdd: syncHiddenRoles,
       onChipDelete: syncHiddenRoles
     });
-
-    // Llamamos una vez al cargar para asegurar valor inicial
     syncHiddenRoles();
 
-
-    // ---------------------------
     // EXTERNAL EMAILS CHIPS
-    // ---------------------------
-    let emails_external = [
-      {% for email in emails_external %}
-        { tag: "{{ email }}" },
-      {% endfor %}
-    ];
-
+    let emails_external = [{% for email in emails_external %}{ tag: "{{ email }}" },{% endfor %}];
     function syncHiddenExternal(){
       const chips = externalInstances[0].chipsData;
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
       chips.forEach((chip, index) => {
-        if(!emailRegex.test(chip.tag)){
-          externalInstances[0].deleteChip(index);
-          M.toast({html: 'Invalid email!'});
-        } else {
-          const chipElem = externalInstances[0].el.querySelectorAll('.chip')[index];
-          if(chipElem) chipElem.className = 'chip green white-text';
-        }
+        if(!emailRegex.test(chip.tag)){ externalInstances[0].deleteChip(index); M.toast({html: 'Invalid email!'}); }
+        else { const chipElem = externalInstances[0].el.querySelectorAll('.chip')[index]; if(chipElem) chipElem.className = 'chip green white-text'; }
       });
-
-      const emails = chips.map(c => c.tag);
-      document.getElementById("recipients_external").value = emails.join(",");
+      document.getElementById("recipients_external").value = chips.map(c => c.tag).join(",");
     }
-
     let externalInstances = M.Chips.init(document.querySelectorAll('#external-chips'), {
       placeholder: 'Enter an email',
       secondaryPlaceholder: '+Email',

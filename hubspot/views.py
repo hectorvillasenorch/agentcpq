@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from hubspot.models import HubspotToken
 from django.utils.timezone import now, timedelta
 import requests
-from django.views.decorators.csrf import csrf_exempt 
+from django.views.decorators.csrf import csrf_exempt
 from cpq.models import Opportunity, Account, Product, SystemFieldMapping, Quote
 from django.utils import timezone
 from decimal import Decimal
@@ -224,7 +224,7 @@ def sync_quote_to_hubspot(quote):
 
 @csrf_exempt
 def get_hubspot_schema(request):
-  
+
     object_type = request.GET.get("object_type")
 
     hs_object_map = {
@@ -250,11 +250,11 @@ def get_hubspot_schema(request):
         props = res.json().get("results", [])
 
         crm_fields = [p["name"] for p in props if not p.get("hidden")]
-        
+
         return JsonResponse({"fields": crm_fields})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
-    
+
 def get_contacts():
     token = HubspotToken.objects.get(user_id="default")  # adjust if needed
 
@@ -439,7 +439,7 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
             m.local_field: m.crm_field
             for m in SystemFieldMapping.objects.filter(crm="HubSpot", field_type="QuoteLine")
         }
-        delete_existing_line_items(hs_deal_id, headers)    
+        delete_existing_line_items(hs_deal_id, headers)
         print(f"✅ DELETING EXISTING LINE ITEMS....")
 
         for line in quote.quote_lines.all():
@@ -531,7 +531,7 @@ def sync_opportunity_to_hubspot(opportunity_id, user_id="default"):
             line_item_url = "https://api.hubapi.com/crm/v3/objects/line_items"
             line_item_resp = requests.post(line_item_url, headers=headers, json=line_item_data)
 
-            
+
 
             if line_item_resp.status_code in [200, 201]:
                 line_item_id = line_item_resp.json()["id"]
@@ -679,7 +679,7 @@ def debug_validate_sync_view(request):
 
 def create_hubspot_property(object_type, name, label, data_type, user_id="default"):
     access_token = get_valid_hubspot_token(user_id)
-    
+
     url = f"https://api.hubapi.com/crm/v3/properties/{object_type}"
     headers = {
         "Authorization": f"Bearer {access_token}",

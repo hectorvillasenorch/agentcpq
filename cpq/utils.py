@@ -1,8 +1,8 @@
 from django.shortcuts import render, get_object_or_404
 from .models import CustomObject, CustomField, CustomRecord, CustomFieldValue
 from django.contrib.contenttypes.models import ContentType
-import threading, logging
-
+import threading
+import logging
 
 def run_async(func, *args, **kwargs):
     def wrapper():

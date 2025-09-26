@@ -72,14 +72,6 @@
     font-size: 28px;
     color: #ef5d84;
   }
-
-  .container-fluid {
-    padding: 24px;
-    background: #fff;
-    border-radius: 16px;
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-    height: auto;
-  }
 /* basic look (striped + hover) */
 .product-table {
   width: 100%;
@@ -128,16 +120,22 @@
 }
 </style>
 
-<div class="container-fluid">
-  <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
-    <form action="{% url 'sync_hubspot_products' %}" method="post" style="margin:0;">
-      {% csrf_token %}
-      <input type="hidden" name="user_id" value="default">
-      <input type="hidden" name="next" value="{{ request.get_full_path }}">
-      <button type="submit" class="btn">Sync HubSpot Products</button>
-    </form>
-  </div>
-  <h2><i class="material-icons"></i>Product Catalog</h2>
+<div class="container">
+ <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+  <h4 style="display: flex; align-items: center; margin: 0; font-weight: 600;">
+    <i class="material-icons" style="margin-right: 8px;">inventory_2</i>
+    Product Catalog
+  </h4>
+
+  <form action="{% url 'sync_hubspot_products' %}" method="post" style="margin: 0;">
+    {% csrf_token %}
+    <input type="hidden" name="user_id" value="default">
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <button type="submit" class="custom-sync-btn">
+     <i class="material-icons" style="font-size: 22px; margin-right: 1px;">sync</i>
+    </button>
+  </form>
+</div>
   <table class="product-table">
   <thead>
     <tr>

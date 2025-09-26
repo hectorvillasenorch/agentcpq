@@ -37,13 +37,18 @@ import re
 @login_required
 def dashboard(request):
     view = request.GET.get("view", "agents")
-    object_name = request.GET.get("object_name") 
+    object_name = request.GET.get("object_name")
     session_id = request.GET.get("session_id")
     user = request.user
     accounts = get_user_accounts(user)
-    
+
     custom_object = None
     form = None
+
+    new_chat = request.GET.get("new_chat") == "true"
+    if new_chat:
+        request.session.pop("session_data", None)
+        session_id = None
 
     if object_name:
         custom_object = get_object_or_404(CustomObject, name=object_name)
@@ -64,10 +69,10 @@ def dashboard(request):
 
     if view == "setup" and not user.is_staff:
         return HttpResponseForbidden("You do not have access to the setup view.")
-    
+
     products = Product.objects.all() if view == "products" else None
     options = Option.objects.all() if view == "products" else None
-    bundles = Product.objects.filter(is_bundle=True) 
+    bundles = Product.objects.filter(is_bundle=True)
 
     if products:
         for product in products:
@@ -104,7 +109,7 @@ def dashboard(request):
                 hubspot_connected = True
     except HubspotToken.DoesNotExist:
         pass
-    
+
     records_custom_object, field_values_by_record = get_values_by_record(custom_object)
     lookup_options = get_lookup_data_for_form(custom_object)
 
@@ -347,12 +352,11 @@ def get_next_custom_identifier(last_identifier):
     match = re.match(r"^([A-Z]+)-(\d{5})$", last_identifier)
     if not match:
         return None  # O manejar el error de formato
-    
+
     prefix = match.group(1)
     number = int(match.group(2))
-    
+
     next_number = number + 1
     next_number_str = str(next_number).zfill(5)
-    
-    return f"{prefix}-{next_number_str}"
 
+    return f"{prefix}-{next_number_str}"

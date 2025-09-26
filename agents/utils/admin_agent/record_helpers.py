@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
+from django.forms.models import model_to_dict
 import logging
 import json
 
@@ -32,7 +33,7 @@ def update_rule_record(update_request):
             "message": response_message,
             "success": True
         }
-    
+
     except ValueError as ve:
         return {
             "message": str(ve),
@@ -46,7 +47,7 @@ def update_rule_record(update_request):
             "success": False
         }
 
-    
+
 def save_email_alert(payload_json, user=None):
     """
     Save an EmailAlert instance based on the payload.
@@ -97,7 +98,8 @@ def save_email_alert(payload_json, user=None):
                 email_alert.recipients_users.set(users_qs)
 
         return {
-            "message": f"✅ Email alert '{description}' created successfully. Trigger: {trigger}, Object: {native_object or custom_object_name}",
+            "message": f"✅ Email alert '{description}' created successfully.",
+            "email_details": email_alert,
             "success": True
         }
 
@@ -107,7 +109,7 @@ def save_email_alert(payload_json, user=None):
             "message": f"❌ Error creating email alert: {str(e)}",
             "success": False
         }
-    
+
 
 def update_email_alert_record(payload_json, user=None):
     """
@@ -123,8 +125,8 @@ def update_email_alert_record(payload_json, user=None):
             "message": f"❌ Error updating email alert: {str(e)}",
             "success": False
         }
-    
-    
+
+
 
     alert_name = data.get("alert_name")
     if not alert_name:
@@ -233,5 +235,45 @@ def update_email_alert_record(payload_json, user=None):
 
         return {
             "message": f"✅ Email alert '{alert.name}' updated successfully.",
+            "success": True
+        }
+
+def delete_email_alert_record(payload_json, user=None):
+    """
+    Delete an EmailAlert instance based on the payload.
+    payload_json: JSON string con los campos normalizados de la alerta
+    """
+    try:
+        data = json.loads(payload_json)
+    except json.JSONDecodeError as e:
+        logging.warning(f"⚠️ Error updating email alert (update_email_alert function): {str(e)}")
+        return {
+            "message": f"❌ Error updating email alert: {str(e)}",
+            "success": False
+        }
+
+
+
+    alert_name = data.get("alert_name")
+    if not alert_name:
+        return {"message": "⚠️ 'alert_name' is required", "success": False}
+
+    try:
+        alert = EmailAlert.objects.get(name=alert_name)
+    except EmailAlert.DoesNotExist:
+        logging.warning(f"⚠️ Email alert '{alert_name}' does not exist.")
+        return {
+            "message": f"⚠️ Email alert '{alert_name}' does not exist.",
+            "success": False
+        }
+
+
+    with transaction.atomic():
+        # ---- Actualizar campos básicos ----
+
+        alert.delete()
+
+        return {
+            "message": f"✅ Email alert '{alert.name}' deleted successfully.",
             "success": True
         }

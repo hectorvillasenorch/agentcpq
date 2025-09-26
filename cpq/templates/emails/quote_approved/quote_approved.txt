@@ -19,4 +19,4 @@ Approved by: {{ quote.updated_by.get_full_name|default:quote.updated_by.username
 
 Please proceed with the next steps for this approved quote.
 
-This email was automatically sent by the AgentCPQ system — please do not reply.  
+This email was automatically sent by the AgentCPQ system — please do not reply.
