@@ -27,6 +27,7 @@ from collections import defaultdict
 from django.contrib.auth.models import User, Group
 from django.utils import timezone
 from .models import EmailAlert
+from cpq.models import default_rendered_fields_for_quote_document_settings, default_omitted_fields_for_quote_document_settings
 
 # HubSpot sync
 from hubspot.views import sync_opportunity_to_hubspot
@@ -627,8 +628,8 @@ def get_document_template(request):
 
     if document_settings is None:
         document_settings = QuoteDocumentSettings.objects.create(
-            rendered_fields=QuoteDocumentSettings.default_rendered_fields(),
-            omitted_fields=QuoteDocumentSettings.default_omitted_fields()
+            rendered_fields=default_rendered_fields_for_quote_document_settings(),
+            omitted_fields=default_omitted_fields_for_quote_document_settings()
         )
 
     # Hardcore for now

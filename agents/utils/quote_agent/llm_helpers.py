@@ -1347,8 +1347,15 @@ def generate_final_add_product_to_quote_message(completed_products, db_results, 
     2) An updated short summary that extends the previous summary with changes from this iteration.
     Returns (message_text, updated_summary, tokens_used, cost_est).
     """
-
-    successful = [r['product'] for r in db_results if r['status'] == 'success']
+    
+    successful = [
+        {
+            'product': r['product'],
+            'inclusion_message': r.get('inclusion_message')  # usa get por si no existe
+        }
+        for r in db_results
+        if r['status'] == 'success'
+    ]
     failed = [(r['product'], r['error']) for r in db_results if r['status'] == 'fail']
 
     final_prompt = f"""
@@ -1379,6 +1386,9 @@ def generate_final_add_product_to_quote_message(completed_products, db_results, 
     - Don't specify that there were no errors when adding products.
     - Don't specify that there are no incomplete items.
     - If there are no pending or incomplete products, do not mention that fact in the message. Only include pending or incomplete products when they exist.
+
+    Instructions for "message" and "inclusion_message"
+    - If the key "inclusion_message" is included in the database response, add a message indicating the products that were added, their quantities, and which product triggered the rule. The details will be in the "inclusion rule" key.
 
     Instructions for "summary":
     - Write a short but detailed summary that continues the previous summary with the new changes.
@@ -1425,3 +1435,4 @@ def generate_final_add_product_to_quote_message(completed_products, db_results, 
         updated_summary = previous_summary
 
     return message, updated_summary, tokens_used, cost_est
+

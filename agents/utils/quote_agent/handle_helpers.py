@@ -10,7 +10,7 @@ from .record_helpers import update_quote_line_record, save_quote_line_update
 from .general_helpers import normalize_term_for_product, copy_custom_fields_values_from_product_to_quote_line
 
 #Rules Helpers
-from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules_quote_line_level, check_for_rules_quote_level
+from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules_quote_line_level, check_inclusion_rules_for_quote_level, check_for_rules_quote_level
 
 # ----------- UPDATE QUOTE LINE ----------- #
 
@@ -42,6 +42,8 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
             "status": "fail",
             "error": None
         }
+
+        print(f"\n\nProduct Data: {product_data}\n\n")
 
         # ✅ Set up variables
         sku = product_data.get("sku")
@@ -105,6 +107,11 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
             result_payload["error"] = f"🛑 Product {product.name}/{product.sku} triggered one or more validation rules 🛑<br>{validations_message}"
             result.append(result_payload)
             continue
+
+        inclusions = check_inclusion_rules_for_quote_level(user, "quote_line", "inclusion", quote, product)
+
+        if inclusions:
+            result_payload["inclusion_message"] = inclusions
 
         #################################################
 

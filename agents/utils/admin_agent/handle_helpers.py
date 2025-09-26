@@ -4,6 +4,7 @@ from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from cpq.models import CustomObject, EmailAlert
 from django.utils.html import escape
+from cpq.models import BusinessRule
 
 # Record Helpers
 from agents.utils.admin_agent.record_helpers import save_email_alert, update_email_alert_record, delete_email_alert_record
@@ -623,3 +624,123 @@ def is_valid_cron(cron_str):
     """Simple regex to check 5-field cron format (minute, hour, day, month, weekday)."""
     cron_regex = r'^(\S+\s){4}\S+$'
     return re.match(cron_regex, cron_str)
+
+
+def handle_create_inclusion_rule(user, completed_rules, response_message,):
+
+    saved_rules = []
+
+    for index, item in enumerate(completed_rules, start=1):
+        try:
+            description = item["description"]
+            rule_type = item["rule_type"]
+            target_type = item["target_type"]
+            priority = item["priority"]
+            message = item["message"]
+            active = item["active"]
+            conditions = item["conditions"]
+        except Exception as e:
+            return {
+                "message": f"🚫 Error: {e}"
+            }
+
+        # DESCRIPTION: must be a string
+        if not description:
+            error = "⚠️ Missing rule description: No description was provided for this rule. Please include a descriptive description to identify it clearly."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        # RULE_TYPE: must be a string and one of the allowed values
+        if not rule_type:
+            error = "⚠️ Missing rule type: Please specify whether this rule is validation, inclusion, or exclusion."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        if rule_type != "inclusion":
+            error = "⚠️ Invalid rule type: the rule type must be 'inclusion'."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        # TARGET_TYPE: must be a string and one of the allowed values
+        valid_target_types = {"quote", "quote_line", "product", "multiple"}
+        if not target_type:
+            error = "⚠️ Missing target type: Please define the level where this rule applies (quote, quote_line, product, or multiple)."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        target_type_lower = target_type.lower()
+
+        if target_type_lower not in valid_target_types:
+            error = f"⚠️ Invalid value for target_type: expected one of {valid_target_types}, but got '{target_type}'."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        target_type = target_type_lower
+
+        # PRIORITY: must be an integer
+        if priority is None:
+            error = "⚠️ Missing priority: No priority value was provided. Please assign a priority number."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        # ERROR_MESSAGE: must be a string
+        if not message:
+            error = "⚠️ Missing message: Please include a message that describes what should happen when the rule is triggered."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        # CONDITIONS: must be a dict (object)
+        if not conditions:
+            error = "⚠️ Missing conditions: Please provide the logic and fields that define when this rule is triggered."
+            response_message += error
+            logging.warning(error)
+            continue
+
+
+        logging.info(f"\n✅ LLM returned a valid rule JSON. Ready to save the rule {description} to the database.")
+
+        try:
+            rule = BusinessRule.objects.create(
+                description=description,
+                rule_type=rule_type,
+                target_type=target_type,
+                priority=priority,
+                error_message=message,
+                active=active,
+                conditions=conditions,  # conditions JSON
+                created_by=user
+            )
+
+            # Set rule's name
+            rule.name = f"IR-{rule.id:05d}"
+            rule.save()
+            saved_rules.append(rule)
+
+            success = f"✅ Inclusion rule '{rule.name}' ('{rule.description}') saved successfully with ID {rule.id}."
+
+            response_message += success
+            logging.info(success)
+
+        except Exception as e:
+            error = f"❌ Error saving rule to database: {str(e)}"
+            response_message += error
+            logging.error(error)
+
+            continue
+
+
+    return response_message, saved_rules

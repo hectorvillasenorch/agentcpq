@@ -242,7 +242,8 @@ def orchestrate_request(user, user_message, session_data):
         for key, value in result.items():
             if key not in (
                 "message", "session_id", "hiddenMessage", "temporaryMessage",
-                "update_details", "iterations", "success", "quote_id", "notes", "tokens", "cost", "session_summary"
+                "update_details", "iterations", "success", "quote_id", "notes",
+                "tokens", "cost", "session_summary", "rules_created"
             ):
                 agent_message += f"\n\n{key}:\n{json.dumps(value, indent=2)}"
 

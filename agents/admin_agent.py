@@ -9,14 +9,17 @@ from django.db.models import Q
 from django.forms.models import model_to_dict
 from django.contrib.auth.models import User
 
-#LLM helpers
+# LLM helpers
 from .utils.admin_agent.llm_helpers import extract_validation_rules, extract_rules_details_to_render, extract_rule_updates, extract_rule_deletes, extract_custom_object_updates, extract_email_alerts_deletes, extract_inclusion_rules
 
-#Rules helpers
+# Rules helpers
 from .utils.admin_agent.rules_helpers import handle_extracted_rules_details, handle_rules_updates, handle_rules_deletes
 
-#General helpers
+# General helpers
 from .utils.admin_agent.general_helpers import get_rules_details
+
+# Handle helpers
+from .utils.admin_agent.handle_helpers import handle_create_inclusion_rule
 
 # Session Context Helpers
 from .utils.session_context_helpers.session_context_helpers import get_session_context
@@ -283,20 +286,52 @@ def create_inclusion_rule(user, user_message, session_data):
         previous_summary=previous_summary
     )
 
+    # --- 3️⃣ Separar productos completados vs incompletos ---
+    completed_rules = []
+    remaining_rules = []
+
+    for rule in llm_result["create_inclusion_rule"]:
+        if rule.get("completed"):
+            completed_rules.append(rule["data"])
+        else:
+            remaining_rules.append(rule)
+
+    # Guardar solo los incompletos en session state
+    session_data["state"]["line_items_updates"] = remaining_rules
+
+    # Return if not any completed items
+    if not completed_rules:
+        return {
+            "message": llm_result["agent_message"],
+            "session_summary": llm_result["summary"]
+        }
+    
+    ################################################
+
+    response_message = ""
+
+    # ✅ Handle create inclusion rule
+    response_message, rules_created = handle_create_inclusion_rule(user, completed_rules, response_message)
+
+    #log_action_usage("CreateInclusionRule", user, "Quote", quote.name)
+    # ✅ Update quote (subtotal, discounts fields and net amount)
+    #quote.save()
+
     return {
-        "message": "Trying to create inclusion rule"
+        "message": response_message
     }
 
-
-    if not extracted_rules:
-        return {
-            "message": "⚠️ The AgentCPQ assistant could not correctly extract your rules. Please try again."
-        }
-
-    response_message = []
+    # --- 5️⃣ Generar mensaje final dinámico usando función separada ---
+    dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_create_inclusion_rule_message(
+        completed_rules=completed_rules,
+        db_results=response_message,
+        remaining_rules=remaining_rules,
+        previous_summary=llm_result["summary"]
+    )
 
     return {
-        "message": "Create Validation Rule"
+        "message": dynamic_message,
+        "session_summary": updated_summary
     }
 
 

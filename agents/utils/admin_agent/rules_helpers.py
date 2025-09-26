@@ -27,8 +27,6 @@ def check_for_rules_quote_line_level(target_type, rule_type, quote, product, quo
         Q(target_type=target_type) | Q(target_type="multiple")
     ).order_by('-priority')
 
-    #print(f"\n\nRules: {rules}\n\n")
-
 
     triggered_rules = []
 
@@ -135,6 +133,56 @@ def check_validation_conditions(data, quote, product, quote_line, depth=1):
     else:
         logging.warning(f"{indent}❌ Unexpected data type: {type(data).__name__}")
         return False
+
+def check_inclusion_rules_for_quote_level(user, target_type, rule_type, quote, product):
+
+
+    rules = BusinessRule.objects.filter(
+        active=True,
+        rule_type=rule_type
+        ).filter(
+        Q(target_type=target_type) | Q(target_type="multiple")
+    ).order_by('-priority')
+
+
+    triggered_rules = ""
+
+
+    for rule in rules:
+        try:
+            conditions = rule.conditions
+        except Exception as e:
+            logging.warning(f"Error: {e}")
+            continue # Skip the rules with conditions bad formed
+
+        print(f"\n📜 Evaluating inclusion rule: {rule.name} ('{rule.description}')")
+        if rule.rule_type == "inclusion":
+            logging.warning("Comprobando si la regla aplica")
+            success, result = check_inclusion_rule(user, conditions, quote, product)
+
+            if success:
+                logging.warning(f"La rule {rule.name} se ha triggereado")
+                triggered_rules += f"Rule: {rule.name} has been triggered -> {rule.error_message}."
+            else:
+                logging.warning("La regla no aplica.")
+
+    return triggered_rules
+
+def check_inclusion_rule(user, conditions, quote, product):
+    # Handle products to add
+    from ..quote_agent.handle_helpers import handle_products_to_add
+
+    trigger_product = conditions.get("trigger_product")
+    
+    if (trigger_product["sku"] == product.sku) or (trigger_product["name"] == product.sku) or (trigger_product["name"] == product.name) or (trigger_product["sku"] == product.name):
+        included_products = conditions.get("included_products")
+
+        result = handle_products_to_add(user, included_products, quote, allow_updates=True)
+
+        return "success", result
+
+    return "failed", None
+            
 
 def check_for_rules_quote_level(target_type, rule_type, quote):
     #   Accept one rule type (str) or many types (list)

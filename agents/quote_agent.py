@@ -173,7 +173,7 @@ def create_quote(user,user_message, session_data):
     result.append("🟢 Products provided in initial quote creation.")
 
     # ✅ Save quote products
-    quote, response_message, added_products = save_quote_products(extracted_products, quote, response_message)
+    quote, response_message, added_products = save_quote_products(user, extracted_products, quote, response_message)
 
     # ✅ Update quote (subtotal, discounts fields and net amount)
     quote.save()
@@ -210,6 +210,8 @@ def create_quote(user,user_message, session_data):
         response_message += "⚠️ No approval suggestion."
 
     result.append(response_message)
+
+    print(f"\n\nEsto es result: {result}\n\n")
 
     dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_create_quote_message(
         quote=extracted_details,
@@ -335,8 +337,6 @@ def update_quote_line(user, user_message, session_data):
             "message": llm_result["agent_message"],
             "session_summary": llm_result["summary"]
         }
-
-    print(f"Esto es completed updates: {completed_updates}")
 
     ################################################
 
