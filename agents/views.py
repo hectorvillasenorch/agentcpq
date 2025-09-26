@@ -33,7 +33,7 @@ def agents_chat(request):
 
 
 def _handle_pending_action(pending_action, user_message, session_data):
- 
+
     if pending_action == "confirm_opportunity":
         session_data["opportunity_name"] = user_message
         session_data["pending_action"] = None
@@ -75,7 +75,7 @@ def _handle_pending_action(pending_action, user_message, session_data):
 @csrf_exempt
 def chat_with_gpt(request):
     """API endpoint to process user messages and route them based on AI-determined intent."""
-    
+
     # --- 1. Validate request method ---
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request method. Use POST."}, status=405)
@@ -122,7 +122,7 @@ def chat_with_gpt(request):
                 request.session["session_data"] = session_data
                 logger.info(f"[Pending Action Resolved] Response: {result['message']}")
                 return JsonResponse({"response": result})
-            
+
     if "session_id" not in session_data:
         user_obj = User.objects.get(username=request.user.username)
         new_chat_session = ChatSession.objects.create(

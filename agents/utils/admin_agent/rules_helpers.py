@@ -135,7 +135,7 @@ def check_validation_conditions(data, quote, product, quote_line, depth=1):
     else:
         logging.warning(f"{indent}❌ Unexpected data type: {type(data).__name__}")
         return False
-    
+
 def check_for_rules_quote_level(target_type, rule_type, quote):
     #   Accept one rule type (str) or many types (list)
     if isinstance(rule_type, str):
@@ -256,7 +256,7 @@ def check_validation_conditions_for_quote_level(data, quote, depth=1):
     else:
         logging.warning(f"{indent}❌ Unexpected data type: {type(data).__name__}")
         return False
-    
+
 
 def build_temp_quote_line(quote, product, quantity, discount_type, discount_amount, term):
     """
@@ -314,7 +314,7 @@ def handle_extracted_rules_details(extracted_rules_details):
                 return {
                     "message": "⚠️ For security reasons, we cannot show all the rules. If you want to render all rules, please type: show all rules."
                 }
-            
+
             # If name exists, found just by name
             if name:
                 if isinstance(name, list):
@@ -352,7 +352,7 @@ def handle_extracted_rules_details(extracted_rules_details):
                 # Active
                 if active is not None:
                     query = query.filter(active=active)
-            
+
             resulting_rules.append({
                 "rules_request_description": request_description,
                 "rules": list(query)
@@ -363,7 +363,7 @@ def handle_extracted_rules_details(extracted_rules_details):
     except Exception as e:
         logging.warning(f"❌ Error in handle_extracted_rules_details: {e}")
         return e
-    
+
 def handle_rules_updates(extracted_updates, response_message):
     logging.info("🔧 Handling rule updates...")
 
@@ -445,7 +445,7 @@ def handle_rules_deletes(extracted_deletes, response_message):
         except BusinessRule.DoesNotExist:
             logging.warning(f"⚠️ Error: The rule with the name {name} does not exist.")
             response_message += f"⚠️ Error: The rule with the name <strong>{name}</strong> does not exist.<br><br>"
-            
+
             continue
 
     return response_message, deleted_rules

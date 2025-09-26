@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from cpq.models import CustomObject, EmailAlert
+from django.utils.html import escape
 
 # Record Helpers
 from agents.utils.admin_agent.record_helpers import save_email_alert, update_email_alert_record, delete_email_alert_record
@@ -58,18 +59,21 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message)
         # ---- DESCRIPTION ----
         if not description:
             agent_response = f"⚠️ No description specified for email alert #{index}. AgentCPQ could not infer a description."
-            alerts_created.append(f"{agent_response}<br>")
-
+            #alerts_created.append(f"{agent_response}<br>")
+            logging.warning(agent_response)
+            response_message += agent_response
             continue
 
         # ---- TRIGGER ----
         if not trigger or trigger not in TRIGGER_CHOICES:
+            safe_trigger = escape(trigger or "")
             agent_response = (
-                f"⚠️ The trigger '{trigger}' is not valid for email alert #{index}. "
-                f"Please select one from the following list: {', '.join(TRIGGER_CHOICES)}."
+                f"⚠️ The trigger '{safe_trigger}' is not valid for email alert #{index}. " # nosec B608
+                f"Please select one from the following list: {', '.join(escape(t) for t in TRIGGER_CHOICES)}." # nosec B608
             )
             alerts_created.append(f"{agent_response}<br>")
-
+            logging.warning(f"Invalid trigger received: {trigger}")  # Hard for logs
+            response_message += agent_response
             continue
 
         # ---- OBJECT VALIDATION ----
@@ -80,6 +84,8 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message)
                 "or a custom object for this alert."
             )
             alerts_created.append(f"{agent_response}<br>")
+            logging.warning(agent_response)
+            response_message += agent_response
 
             continue
 
@@ -88,11 +94,15 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message)
 
         # ---- NATIVE OBJECT ----
         if native_object and native_object not in NATIVE_OBJECT_CHOICES:
+            safe_native_object = escape(native_object or "")
             agent_response = (
-                f"⚠️ The native object '{native_object}' is not valid. "
-                f"Valid options are: {', '.join(NATIVE_OBJECT_CHOICES)}."
+                f"⚠️ The native object '{safe_native_object}' is not valid. "
+                f"Valid options are: {', '.join(escape(o) for o in NATIVE_OBJECT_CHOICES)}."
             )
             alerts_created.append(f"{agent_response}<br>")
+            logging.warning(agent_response)
+            response_message += agent_response
+
             continue
 
         # ---- CUSTOM OBJECT ----
@@ -100,12 +110,14 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message)
             try:
                 co_obj = CustomObject.objects.get(name=custom_object_name)
             except CustomObject.DoesNotExist:
+                safe_custom_object = escape(custom_object_name or "")
                 agent_response = (
-                    f"⚠️ The custom object '{custom_object_name}' does not exist. "
-                    f"Please select one from the existing custom objects: "
-                    f"{', '.join(CustomObject.objects.values_list('name', flat=True))}."
+                    f"⚠️ The custom object '{safe_custom_object}' does not exist. " # nosec B608
+                    f"Please select one from the existing custom objects: " # nosec B608
+                    f"{', '.join(escape(name) for name in CustomObject.objects.values_list('name', flat=True))}." # nosec B608
                 )
                 alerts_created.append(f"{agent_response}<br>")
+                response_message += agent_response
 
                 continue
 
@@ -125,10 +137,12 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message)
         recipients_users = valid_users
 
         if invalid_users:
-            alerts_created.append(
+            agent_response = (
                 f"⚠️ The following users were not found in the system and will not be notified: "
-                f"{', '.join(invalid_users)}.<br>"
+                f"{', '.join(escape(u) for u in invalid_users)}.<br>"
             )
+            alerts_created.append(agent_response)
+            response_message += agent_response
 
         # ---- RECIPIENTS ROLES ----
         if not isinstance(recipients_roles, list):
@@ -140,10 +154,12 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message)
         recipients_roles = valid_roles
 
         if invalid_roles:
-            alerts_created.append(
+            agent_response = (
                 f"⚠️ The following roles are invalid and will not be notified: "
-                f"{', '.join(invalid_roles)}.<br>"
+                f"{', '.join(escape(u) for u in invalid_roles)}.<br>"
             )
+            alerts_created.append(agent_response)
+            response_message += agent_response
 
         # ---- RECIPIENTS EXTERNAL ----
         if not isinstance(recipients_external, list):
@@ -162,15 +178,13 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message)
         recipients_external = valid_external
 
         if invalid_external:
-            #response_message += (
-            #    f"⚠️ The following external emails do not have correct format and will not be included: "
-            #    f"{', '.join(invalid_external)}.<br>"
-            #)
-
-            alerts_created.append(
+            agent_response = (
                 f"⚠️ The following external emails do not have correct format and will not be included: "
-                f"{', '.join(invalid_external)}.<br>"
+                f"{', '.join(escape(e) for e in invalid_external)}.<br>"
             )
+
+            alerts_created.append(agent_response)
+            response_message += agent_response
 
         # ---- CHECK IF ANY RECIPIENTS ----
         if not (recipients_users or recipients_roles or recipients_external):
@@ -178,6 +192,7 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message)
                 f"⚠️ No recipients were specified for email alert '{description}', so it cannot be saved."
             )
             alerts_created.append(f"{agent_response}<br>")
+            response_message += agent_response
 
             continue
 
@@ -189,6 +204,7 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message)
                     f"Valid triggers for offset_days: quote_expiring, subscription_renewal."
                 )
                 alerts_created.append(f"{agent_response}<br>")
+                response_message += agent_response
 
                 continue
 
@@ -200,15 +216,18 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message)
                     f"Valid triggers for scheduled_cron: quote_expiring, subscription_renewal."
                 )
                 alerts_created.append(f"{agent_response}<br>")
+                response_message += agent_response
 
                 continue
 
             if not is_valid_cron(scheduled_cron):
+                safe_cron = escape(scheduled_cron or "")
                 agent_response = (
-                    f"⚠️ The cron expression '{scheduled_cron}' is not valid. "
+                    f"⚠️ The cron expression '{safe_cron}' is not valid. "
                     "Please provide a valid 5-field cron expression (minute hour day month weekday)."
                 )
                 alerts_created.append(f"{agent_response}<br>")
+                response_message += agent_response
 
                 continue
 
@@ -257,14 +276,14 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message)
 
 
         if response.get("success"):
-            
+
             alerts_created.extend(get_email_details(response["email_details"]))
 
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
             error_msg = response.get("message", "Unknown error.")
             alerts_created.append(f"{error_msg}<br>")
-            
+
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
 
     return response_message, alerts_created
@@ -303,7 +322,7 @@ def handle_email_alerts_updates(user, extracted_email_alerts_updates, response_m
 
     for index, alert in enumerate(extracted_email_alerts_updates, start=1):
         alert_name = alert.get("alert_name", None)
-        
+
         # ---- ALERT NAME ----
         if not alert_name:
             agent_response = f"⚠️ No alert_name specified for email alert #{index}. AgentCPQ could not determine which alert to update."
@@ -331,9 +350,11 @@ def handle_email_alerts_updates(user, extracted_email_alerts_updates, response_m
 
         # ---- TRIGGER ----
         if trigger and trigger not in TRIGGER_CHOICES:
+            safe_trigger = escape(trigger)
+            safe_choices = ", ".join(escape(t) for t in TRIGGER_CHOICES)
             agent_response = (
-                f"⚠️ The trigger '{trigger}' is not valid for email alert #{index}. "
-                f"Please select one from the following list: {', '.join(TRIGGER_CHOICES)}."
+                f"⚠️ The trigger '{safe_trigger}' is not valid for email alert #{index}. " # nosec B608
+                f"Please select one from the following list: {safe_choices}." # nosec B608
             )
             response_message += f"{agent_response}<br>"
 
@@ -354,11 +375,19 @@ def handle_email_alerts_updates(user, extracted_email_alerts_updates, response_m
             try:
                 co_obj = CustomObject.objects.get(name=custom_object_name)
             except CustomObject.DoesNotExist:
+                # Get the custom object names as a list (force evaluation)
+                names = list(CustomObject.objects.values_list("name", flat=True))
+
+                # Escape to prevent XSS when displaying in HTML
+                safe_names = ", ".join(escape(n) for n in names)
+                safe_custom_object_name = escape(custom_object_name)
+
+                # bandit: disable=B608 - false positive: this is message formatting, not SQL construction
                 agent_response = (
-                    f"⚠️ The custom object '{custom_object_name}' does not exist. "
-                    f"Please select one from the existing custom objects: "
-                    f"{', '.join(CustomObject.objects.values_list('name', flat=True))}."
+                    f"⚠️ The custom object '{safe_custom_object_name}' does not exist. " # nosec B608
+                    f"Please select one from the existing custom objects: {safe_names}." # nosec B608
                 )
+
                 response_message += f"{agent_response}<br>"
 
                 continue
@@ -525,7 +554,7 @@ def handle_email_alerts_deletes(extracted_email_alerts_deletes, response_message
 
     for index, alert in enumerate(extracted_email_alerts_deletes, start=1):
         alert_name = alert.get("alert_name", None)
-        
+
         # ---- ALERT NAME ----
         if not alert_name:
             agent_response = f"⚠️ No alert_name specified for email alert #{index}. AgentCPQ could not determine which alert to update."
@@ -538,7 +567,7 @@ def handle_email_alerts_deletes(extracted_email_alerts_deletes, response_message
         except EmailAlert.DoesNotExist:
             agent_response = f"⚠️ The email alert with alert_name '{alert_name}' does not exist in the database. AgentCPQ cannot update it."
             response_message += f"{agent_response}<br>"
-            
+
             continue
 
 
@@ -559,7 +588,7 @@ def handle_email_alerts_deletes(extracted_email_alerts_deletes, response_message
         else:
             error_msg = response.get("message", "Unknown error.")
             response_message += f"{error_msg}<br>"
-            
+
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
 
     return response_message, alerts_deleted

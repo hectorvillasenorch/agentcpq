@@ -4,7 +4,7 @@ from .db_helpers import find_product_and_normalize_variables
 from cpq.models import QuoteLine
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 
-# 
+#
 from .record_helpers import update_quote_line_record, save_quote_line_update
 
 from .general_helpers import normalize_term_for_product, copy_custom_fields_values_from_product_to_quote_line
@@ -42,7 +42,7 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
             "status": "fail",
             "error": None
         }
-        
+
         # ✅ Set up variables
         sku = product_data.get("sku")
         name = product_data.get("name")
@@ -75,10 +75,10 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
                 continue
         except (TypeError, InvalidOperation):
             discount_value = Decimal(0)
-        
+
         ################ FINAL SET UP VARIABLES ################
 
-        # ✅ Check if the product exists and normalize sku and name variables 
+        # ✅ Check if the product exists and normalize sku and name variables
         #    in case the LLM identified the sku as the name and vice versa
         product, sku, name = find_product_and_normalize_variables(sku, name)
 
@@ -246,7 +246,7 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
                             )
 
                             bundle_response_message += f"&emsp;🔧 Added {option.quantity}x {option.product_option.sku}/{option.product_option.name} ({option.parent_product})<br>"
-                        
+
                         elif option.default_selected == False and option.product_option:
                             QuoteLine.objects.create(
                                 quote=quote,
@@ -288,7 +288,7 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
             # ✅ Force saving and reloading from DB to verify
             quote_line.refresh_from_db()
             logging.info(f"=>>>>>>>>>>>>>>>>>>>> Saved Total Price in DB: {quote_line.total_price}")
-            
+
             if discount_type == "percentage":
                 discount_message = f"✅ Added {quantity}x {sku}/{name} to quote {quote.name} with a {discount_value}% discount.<br>"
             elif discount_type == "amount":
@@ -305,7 +305,7 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
             result_payload["error"] = f"Error adding product {sku}/{name}: {str(e)}"
             logging.error(f"❌ Error adding product {sku}/{name}: {str(e)}")
             result.append(result_payload)
-    
+
     return result
 
 # ----------- UPDATE QUOTE LINE ----------- #
@@ -318,7 +318,7 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
     updated_products = []
 
     for index, item in enumerate(extracted_updates, start=1):
-            
+
         sku = item.get("sku", None)
         name = item.get("name", None)
         field = item.get("field", None)
@@ -350,7 +350,7 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
         if value is None:
             response_message += f"⚠️ Error: No value was detected in your request. Please specify the new value for the update.<br><br>"
             continue
-        
+
         try:
             numeric_value = Decimal(value)
         except (InvalidOperation, ValueError, TypeError):
@@ -366,7 +366,7 @@ def handle_quote_line_update_request(extracted_updates, quote, response_message)
             continue
 
         # After general validations
-        # ✅ Check if the product exists and normalize sku and name variables 
+        # ✅ Check if the product exists and normalize sku and name variables
         #    in case the LLM identified the sku as the name and vice versa
         product, sku, name = find_product_and_normalize_variables(sku, name)
 
@@ -434,7 +434,7 @@ def handle_line_items_updates(user, completed_updates, quote):
         sku = item.get("sku", None)
         name = item.get("name", None)
         fields = item.get("fields", None)
-        
+
         quantity = fields.get("quantity", None)
         discount_type = fields.get("discount_type", None)
         discount_percentage = fields.get("discount_percentage", None)

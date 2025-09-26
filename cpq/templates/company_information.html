@@ -64,7 +64,7 @@ select:focus + label {
   <div class="card-panel white z-depth-1">
     <form method="post" action="{% url 'cpq:get_company_information' %}" enctype="multipart/form-data">
       {% csrf_token %}
-    
+
       <div class="row">
         <div class="input-field col s6">
           <input id="company_name" name="name" type="text" value="{{ company.name }}">
@@ -75,7 +75,7 @@ select:focus + label {
           <label for="company_email" class="active">Company Email</label>
         </div>
       </div>
-    
+
       <div class="row">
         <div class="input-field col s6">
           <input id="phone_number" name="phone_number" type="text" value="{{ company.phone_number|default_if_none:'' }}">
@@ -112,7 +112,7 @@ select:focus + label {
           <label for="state" class="active">State</label>
         </div>
       </div>
-      
+
       <div class="row">
         <div class="file-field input-field col s6">
           <div class="btn orange darken-2">
@@ -122,7 +122,7 @@ select:focus + label {
           <div class="file-path-wrapper">
             <input class="file-path validate" type="text" placeholder="Upload a company logo">
           </div>
-          
+
         </div>
         {% if company.logo %}
           <div class="col s6">
@@ -131,7 +131,7 @@ select:focus + label {
           </div>
         {% endif %}
       </div>
-    
+
       <div class="right-align">
         <button type="submit" class="btn orange darken-3 white-text btn-standard">
           <i class="material-icons left">save</i> Save
@@ -139,7 +139,7 @@ select:focus + label {
       </div>
     </form>
 
-    
+
   </div>
   <div class="row agent-limits">
     <div class="input-field col s6">

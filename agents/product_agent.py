@@ -1,4 +1,4 @@
-from cpq.models import Product 
+from cpq.models import Product
 import openai
 from dotenv import load_dotenv
 import json, inspect
@@ -45,7 +45,7 @@ def product_agent(user, action, user_message, session_data):
 def create_product(user, user_message, session_data):
     """
     Handles product creation requests for multiple products.
-    Tracks products in session state, saves completed products, 
+    Tracks products in session state, saves completed products,
     and generates dynamic messages using LLM including DB errors.
     """
     current_state, previous_summary = get_session_context("create_product", session_data)
@@ -104,7 +104,7 @@ def extract_sku_from_message(user_message):
 
         prompt = f"""
         Extract the SKU from the following user message. If no SKU is found, return "MISSING_SKU".
-        
+
         Example 1:
         User: "Update product ACPQ-003, change is_subscription to true."
         Output: ACPQ-003
@@ -200,7 +200,7 @@ def update_product(user, user_message, session_data):
     except Exception as e:
         return {"message": f"⚠️ Error updating product details: {str(e)}", "product_details": None}
 
-  
+
 
 def update_product_record(user,updated_product_details):
     """Update the product in the database and return a success message."""
@@ -230,7 +230,7 @@ def update_product_record(user,updated_product_details):
         return f"⚠️ Error: Product with SKU `{sku}` not found."
     except Exception as e:
         return f"⚠️ Error updating product `{sku}`: {str(e)}"
-     
+
 
 def gpt_modify_product_details(user_message, product_details):
     """Use GPT to modify product details based on user request."""
@@ -238,9 +238,9 @@ def gpt_modify_product_details(user_message, product_details):
         client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
         prompt = f"""
-        Modify the following product details based on the user's request. 
+        Modify the following product details based on the user's request.
         If a field is not mentioned, keep its current value.
-        
+
         Current product details:
         {json.dumps(product_details, indent=2)}
 
@@ -262,7 +262,7 @@ def gpt_modify_product_details(user_message, product_details):
     except Exception as e:
         print(f"⚠️ Error modifying product details: {str(e)}")
         return None
-    
+
 def clean_llm_response(raw_response: str) -> str:
     # Clean triple backticks and text json if are present
     pattern = r"```(?:json)?\s*(.*?)\s*```"

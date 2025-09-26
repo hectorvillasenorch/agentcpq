@@ -1,7 +1,7 @@
 from django.test import TestCase
 
 # Importa la función create_quote desde donde la tengas
-from .quote_agent import create_quote  
+from .quote_agent import create_quote
 
 from  cpq.models import Account, Opportunity, Product, Quote
 

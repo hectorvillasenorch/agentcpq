@@ -37,7 +37,7 @@ def handle_create_product(user, completed_products):
             result_payload["error"] = f"Error: Missing required fields: {', '.join(missing_fields)}."
             result.append(result_payload)
             continue
-        
+
         if not isinstance(sku, str):
             result_payload["error"] = "Error: SKU must be a string."
             result.append(result_payload)

@@ -8,5 +8,5 @@ class SaveLastDashboardSessionMiddleware(MiddlewareMixin):
             # Solo guardar si la URL empieza con /dashboard/
             if path.startswith("/dashboard/") or path == "/dashboard":
                 request.session["last_dashboard_session"] = request.get_full_path()
-        
+
         return None

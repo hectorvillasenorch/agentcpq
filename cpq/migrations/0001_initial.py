@@ -178,14 +178,14 @@ class Migration(migrations.Migration):
                     "rendered_fields",
                     models.JSONField(
                         blank=True,
-                        default=cpq.models.QuoteDocumentSettings.default_rendered_fields,
+                        default=cpq.models.default_rendered_fields_for_quote_document_settings,
                     ),
                 ),
                 (
                     "omitted_fields",
                     models.JSONField(
                         blank=True,
-                        default=cpq.models.QuoteDocumentSettings.default_omitted_fields,
+                        default=cpq.models.default_omitted_fields_for_quote_document_settings,
                     ),
                 ),
                 (
@@ -234,14 +234,14 @@ class Migration(migrations.Migration):
                     "rendered_fields",
                     models.JSONField(
                         blank=True,
-                        default=cpq.models.QuoteUIRender.default_rendered_fields,
+                        default=cpq.models.default_rendered_fields_for_quote_ui_render,
                     ),
                 ),
                 (
                     "omitted_fields",
                     models.JSONField(
                         blank=True,
-                        default=cpq.models.QuoteUIRender.default_omitted_fields,
+                        default=cpq.models.default_omitted_fields_for_quote_ui_render,
                     ),
                 ),
                 ("show_quote_subtotal", models.BooleanField(default=True)),
@@ -1473,7 +1473,7 @@ class Migration(migrations.Migration):
                     "expiration_date",
                     models.DateTimeField(
                         blank=True,
-                        default=cpq.models.Quote.default_expiration_date,
+                        default=cpq.models.default_expiration_date,
                         null=True,
                     ),
                 ),

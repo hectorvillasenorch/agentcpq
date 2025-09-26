@@ -26,8 +26,8 @@ from datetime import datetime
 import logging
 logger = logging.getLogger(__name__)
 # LLM Utils
-from .utils.quote_agent.llm_helpers import extract_quote_details, extract_quote_details_with_llm, generate_final_create_quote_message, extract_quote_line_items_to_delete, generate_final_delete_quote_lines_message, generate_final_quote_updates_message, extract_quote_line_to_delete_with_llm
-from .utils.quote_agent.llm_helpers import extract_quote_updates, extract_quote_updates_with_llm
+from .utils.quote_agent.llm_helpers import extract_quote_details_with_llm, generate_final_create_quote_message, extract_quote_line_items_to_delete, generate_final_delete_quote_lines_message, generate_final_quote_updates_message, extract_quote_line_to_delete_with_llm
+from .utils.quote_agent.llm_helpers import extract_quote_updates_with_llm
 
 # Record Helpers (add products)
 from .utils.quote_agent.record_helpers import save_quote_products, save_quote_line_update, handle_quote_update_request, save_quote_update
@@ -94,8 +94,6 @@ def create_quote(user,user_message, session_data):
 
     current_state, previous_summary = get_session_context("create_product", session_data)
 
-    # ✅ Extract the quote details with LLM
-    #extracted_details = extract_quote_details(user_message)
 
     # --- 1️⃣ Llamada inicial al LLM para extraer quote details ---
     llm_result, tokens_used, cost_est = extract_quote_details_with_llm(
@@ -119,7 +117,7 @@ def create_quote(user,user_message, session_data):
     # - If message in result (error or pending_action) return
     if isinstance(result_account_and_opportunity, dict) and "message" in result_account_and_opportunity:
         return result_account_and_opportunity
-    
+
     result = []
 
     # - If not, get account and opportunity
@@ -144,7 +142,7 @@ def create_quote(user,user_message, session_data):
 
     # ✅ Extract products
     extracted_products = extracted_details.get("products", [])
-    
+
     # In case the quote is created without any products
     if not extracted_products:
 
@@ -165,7 +163,7 @@ def create_quote(user,user_message, session_data):
             "message": dynamic_message,
             "session_summary": updated_summary
         }
-    
+
     # In case the quote is created with any products
     logging.info("🟢 Products provided in initial quote creation.")
 
@@ -192,7 +190,7 @@ def create_quote(user,user_message, session_data):
 
     # ✅ Update quote session
     set_active_quote_to_session_data(session_data, quote)
-    
+
     # ✅ Check if the quote requires approval after adding the product
     approval_suggestion = get_approval_status("", "", quote.id, "")
 
@@ -204,7 +202,7 @@ def create_quote(user,user_message, session_data):
         return {
             "message": f"✅ Quote `{quote.name}` created for {account.name} under opportunity `{opportunity.name}`.<br>Would you like to add more products now?"
         }
-    
+
     # Append approval message or default notice
     if "message" in approval_suggestion:
         response_message += f"{approval_suggestion['message']}"
@@ -238,7 +236,7 @@ def add_product_to_quote(user, user_message, session_data):
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
         return quote
-    
+
 
     current_state, previous_summary = get_session_context("add_product_to_quote", session_data)
 
@@ -295,7 +293,7 @@ def update_quote_line(user, user_message, session_data):
 
     """Updates only the modified fields in quote lines."""
 
-    logging.info("🔧 Updating quote line...\n\n")   
+    logging.info("🔧 Updating quote line...\n\n")
 
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)
@@ -317,7 +315,7 @@ def update_quote_line(user, user_message, session_data):
         previous_summary=previous_summary,
         line_items_on_user_message=line_items_on_user_message #Send line items to LLM can updates
     )
-    
+
     # --- 3️⃣ Separar productos completados vs incompletos ---
     completed_updates = []
     remaining_updates = []
@@ -337,9 +335,9 @@ def update_quote_line(user, user_message, session_data):
             "message": llm_result["agent_message"],
             "session_summary": llm_result["summary"]
         }
-    
+
     print(f"Esto es completed updates: {completed_updates}")
-    
+
     ################################################
 
     response_message = ""
@@ -365,13 +363,13 @@ def update_quote_line(user, user_message, session_data):
         "message": dynamic_message,
         "session_summary": updated_summary
     }
-    
+
 #< ----------------- UPDATE QUOTE LINE -------------------- >
 
 def update_quote_line2(user, user_message, session_data):
     """
     Handles product creation requests for multiple products.
-    Tracks products in session state, saves completed products, 
+    Tracks products in session state, saves completed products,
     and generates dynamic messages using LLM including DB errors.
     """
     logging.info("🔧 Updating quote line...\n\n")
@@ -382,7 +380,7 @@ def update_quote_line2(user, user_message, session_data):
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
         return quote
-    
+
 
     current_state, previous_summary = get_session_context("update_quote_line", session_data)
 
@@ -441,14 +439,11 @@ def update_quote(user, user_message, session_data):
     """Updates only the modified fields in quote lines."""
 
     logging.info("🔧 Updating quote...\n\n")
-    
+
     # 🧠 Make the session context
     #session_context = make_session_context(user, "UpdateQuote", "quote_agent", session_data, user_message)
 
     current_state, previous_summary = get_session_context("update_quote", session_data)
-        
-    # ✅ Extract quote line updates with LLM
-    #extracted_updates = extract_quote_updates(user_message)
 
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)
@@ -484,7 +479,7 @@ def update_quote(user, user_message, session_data):
             "message": llm_result["agent_message"],
             "session_summary": llm_result["summary"]
         }
-    
+
     extracted_updates = []
 
     for quote_update in llm_result["update_quote"]:
@@ -497,7 +492,7 @@ def update_quote(user, user_message, session_data):
         return {
             "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
         }
-    
+
     response_message = ""
 
     # ✅ Handle quote line update request
@@ -519,13 +514,13 @@ def update_quote(user, user_message, session_data):
         return {
             "message": f"No quotes were updated. <br><br>{dynamic_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": dynamic_message,
         "temporaryMessage": True
         }
-    
+
 def delete_quote_line(user, user_message, session_data):
     """Deleting quote line item from quote"""
     # 🧠 Make the session context
@@ -563,7 +558,7 @@ def delete_quote_line(user, user_message, session_data):
                 "message": llm_result["agent_message"],
                 "session_summary": llm_result["summary"]
             }
-        
+
         #extracted_sku = extract_quote_line_items_to_delete(user_message)
 
         extracted_sku = []
@@ -580,19 +575,19 @@ def delete_quote_line(user, user_message, session_data):
             agent_response = f"Missing fields: quantity, discount or term"
 
             return quote
-        
+
         logging.info(f"🔄 Deleting quote line item from quote {quote}...")
 
         if not extracted_sku:
             # ✅ Save quote in session data
             set_active_quote_to_session_data(session_data, quote)
-            
+
             return {
                 "message": "⚠️ Failed to extract SKUs or product names for removing the quote line item. Please try again or check your input."
             }
-        
+
         for index, item in enumerate(extracted_sku, start=1):
-        
+
             sku = item["sku"]
             name = item["name"]
 
@@ -606,13 +601,13 @@ def delete_quote_line(user, user_message, session_data):
 
             sku = product.sku
             name = product.name
-            
+
             # Check is quote line exists in active quote
             try:
                 quote_line = QuoteLine.objects.get(quote=quote, product=product, is_bundle_child=False)
 
                 quote_line.delete()
-                
+
                 log_action_usage("DeleteQuoteLine", user, "Quote", quote.name)
 
                 response_message += f"✅ The quote line with product SKU '{product.sku}' was successfully deleted from quote '{quote.name}'.<br>"
@@ -632,7 +627,7 @@ def delete_quote_line(user, user_message, session_data):
         return {
             "message": "⚠️ Error: Quote not found. Please check the quote name."
         }
-    
+
     # ✅ Save quote in session data
     set_active_quote_to_session_data(session_data, quote)
 
@@ -668,7 +663,7 @@ def delete_quote(user, user_message, session_data):
         # ⚠️ Verify if function return an error
         if isinstance(quote, dict) and "message" in quote:
             return quote
-        
+
         logging.info(f"Deleting quote with name: {quote.name}...")
 
         #If quote status is not in Draft Status
@@ -690,13 +685,13 @@ def delete_quote(user, user_message, session_data):
         else:
             return {
                 "message": f"⚠️ Quote '{quote.name}' can not be deleted because it's status is '{quote.status}'. Only 'Draft' quotes can be deleted."
-            }   
+            }
 
     except Quote.DoesNotExist:
         return {
             "message": "⚠️ Quote doesn't exist."
         }
-    
+
     except Exception as e:
 
         logging.exception("An unexpected error occurred while deleting the quote.")
@@ -738,7 +733,7 @@ def show_quote_details(user, user_message, session_data):
         set_active_quote_to_session_data(session_data, quote)
 
         return {"message": "Here are the quote details:", "quote_details": quote_details, "hiddenMessage": "True"}
-    
+
     except Exception as e:
         session_context["item_index"] = 1
         session_context["extracted"] = "No extracted data, user just wants to show quote details."
@@ -764,7 +759,7 @@ def show_quote_notes(user, user_message, session_data):
             agent_response = f"No active quote was found, just save data and retry."
             save_or_update_conversation_context(session_context, agent_response)
             return quote
-        
+
         logging.info(f"Showing notes for quote: {quote.name}...")
 
         notes = quote.notes
@@ -774,13 +769,13 @@ def show_quote_notes(user, user_message, session_data):
             return {
                 "message": msg
             }
-        
+
         msg = f"<b>Quote Notes:</b><br><br>{notes}"
-        
+
         return {
             "message": msg
         }
-    
+
     except Exception as e:
         logging.exception("An unexpected error occurred while showing the quote.")
         session_context["item_index"] = 1
@@ -809,10 +804,10 @@ def generate_quote_pdf(user,user_message, session_data):
         agent_response = f"No active quote was found, just save data and retry."
         save_or_update_conversation_context(session_context, agent_response)
         return quote
-    
+
     try:
         result = get_document_pdf(quote)
-        
+
 
         # ✅ Save quote in session data
         set_active_quote_to_session_data(session_data, quote)
@@ -855,7 +850,7 @@ def update_quote_line_from_ui(user, user_message, session_data):
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
         return quote
-    
+
     try:
         json_match = re.search(r'\{.*\}', user_message)
 
@@ -886,13 +881,13 @@ def update_quote_line_from_ui(user, user_message, session_data):
     except Exception as e:
         logging.warning(f"⚠️ Error updating quote line: {str(e)}")
         return {"message": f"⚠️ Error updating quote line: {str(e)}"}
-    
+
 #< ----------------- UPDATE QUOTE FROM UI -------------------- >
-        
+
 def update_quote_from_ui(user,user_message, session_data):
     """Handles updates to quote lines triggered from the UI."""
     logging.info("📝 Updating quote from front-end UI...")
-    
+
     try:
         json_match = re.search(r'\{.*\}', user_message)
 
@@ -913,7 +908,7 @@ def update_quote_from_ui(user,user_message, session_data):
                     "original_value": "original_value",
                     "hiddenMessage": True
                 }
-            
+
             #Replace "quote" for "quote_id" on dict
             data["quote_id"] = quote.id
             del data["quote"]  # Delete previous key

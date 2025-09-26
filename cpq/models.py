@@ -8,7 +8,7 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from decimal import Decimal, ROUND_HALF_UP
 from django.contrib.postgres.fields import JSONField
 from django.db.models import JSONField
-from dateutil.relativedelta import relativedelta
+from dateutil.relativedelta import relativedelta # type: ignore
 from django.contrib.auth.models import User
 from django.conf import settings
 import os , uuid
@@ -74,7 +74,7 @@ class Lead(models.Model):
         return self.contact
     def __str__(self):
         return self.first_name + ' ' + self.last_name
-    
+
 
 class Account(models.Model):
     name = models.CharField(max_length=255)
@@ -95,13 +95,13 @@ class Account(models.Model):
     # country = models.CharField(max_length=100, blank=True, null=True)
 
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_accounts')
-    
+
 
     def save(self, *args, **kwargs):
         if not self.accid:
             self.accid = generate_agentcpq_id()
         super().save(*args, **kwargs)
-    
+
     def __str__(self):
         return self.name
 
@@ -162,7 +162,7 @@ class Opportunity(models.Model):
     expected_close_date = models.DateField(blank=True, null=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     primary_quote = models.ForeignKey(
-        "Quote", 
+        "Quote",
         on_delete=models.SET_NULL,  # Set to NULL if quote is deleted
         related_name="opportunity_primary_quote",
         null=True, blank=True
@@ -181,7 +181,7 @@ class Opportunity(models.Model):
         if not self.oppid:
             self.oppid = generate_agentcpq_id()
         super().save(*args, **kwargs)
-    
+
     def __str__(self):
         return self.name
 
@@ -227,7 +227,7 @@ class Activity(models.Model):
         return f"{self.subject} ({self.get_activity_type_display()})"
 
 class Product(models.Model):
-    
+
     name = models.CharField(max_length=255)
     sku = models.CharField(max_length=100, unique=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -242,7 +242,7 @@ class Product(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_products')
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_products')
-    
+
     description = models.TextField(blank=True)
 
     def get_custom_fields(self):
@@ -280,6 +280,10 @@ class Option(models.Model):
     def __str__(self):
         return f"{self.parent_product.name}"
 
+# Default expiration date for Quote model
+def default_expiration_date():
+        return timezone.now().date() + relativedelta(months=1)
+
 class Quote(models.Model):
     """Now linked to an Opportunity instead of a Customer."""
     STATUS_CHOICES = [
@@ -289,9 +293,6 @@ class Quote(models.Model):
         ('Rejected', 'Rejected'),
         ('Closed', 'Closed'),
     ]
-
-    def default_expiration_date():
-        return timezone.now().date() + relativedelta(months=1)
 
     name = models.CharField(max_length=255)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="quotes")
@@ -306,19 +307,18 @@ class Quote(models.Model):
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
     expiration_date = models.DateTimeField(default=default_expiration_date, blank=True, null=True)
-    notes = models.TextField(blank=True, null=True) 
+    notes = models.TextField(blank=True, null=True)
     qteid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     hs_deal_id = models.CharField(max_length=64,blank=True,null=True,help_text="The HubSpot Deal ID linked to this quote")
     hs_primary = models.BooleanField(default=False,help_text="Marks this quote as the primary quote for the HubSpot deal")
     synced = models.BooleanField(default=False)
     last_synced_at = models.DateTimeField(null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_quotes')
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quotes')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_quotes')
-
 
     def get_total_discount_percentage(self):
         """
@@ -338,7 +338,7 @@ class Quote(models.Model):
 
     def get_subtotal_amount(self):
         return self.quote_lines.filter(is_bundle_child=False).aggregate(subtotal=Sum("total_price"))["subtotal"] or 0
-    
+
     def update_discount_fields(self):
         self.discount_percentage = Decimal(str(self.discount_percentage or 0)).quantize(Decimal("0.01"))
         self.discount_amount = Decimal(str(self.discount_amount or 0)).quantize(Decimal("0.01"))
@@ -352,7 +352,7 @@ class Quote(models.Model):
                 self.discount_percentage = ((self.discount_amount / self.subtotal) * Decimal("100.00")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             else:
                 self.discount_percentage = Decimal("0.00")
-    
+
     def update_net_amount(self):
         discount = Decimal("0.00")
         subtotal = Decimal(str(self.subtotal or 0))
@@ -476,7 +476,7 @@ class QuoteLine(models.Model):
         discount_per_unit = min(discount_per_unit, self.unit_price)
 
         self.subtotal = (self.unit_price - discount_per_unit).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    
+
     def update_total_price(self):
         """Calculate total_price = quantity * unit_price - discount according to discount_type"""
 
@@ -495,7 +495,7 @@ class QuoteLine(models.Model):
         base_price = unit_net_price * self.quantity
 
         if self.is_subscription:
-            term = self.term if self.term else 1 
+            term = self.term if self.term else 1
             self.total_price = (base_price * term).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         else:
             self.total_price = base_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -519,11 +519,11 @@ class QuoteLine(models.Model):
             for child in self.child_lines.filter(is_bundle_component_selected=True)
         )
         self.unit_price = total
-    
+
     def check_if_is_bundle_component_deselected(self):
         if self.is_bundle_child and self.is_bundle_component_selected == False:
             self.total_price = Decimal("0.00")
-        
+
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -580,7 +580,7 @@ class QuoteLine(models.Model):
         # Set total price to 0 if is a bundle component deselected
         if self.is_bundle_child:
             self.check_if_is_bundle_component_deselected()
-        
+
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -653,7 +653,7 @@ class ApprovalRule(models.Model):
             if not condition.matches(quote):
                 return False
         return True
-    
+
 class BusinessRule(models.Model):
     RULE_TYPES = [
         ("validation", "Validation"),
@@ -681,7 +681,7 @@ class BusinessRule(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.rule_type}, Priority {self.priority})"
-    
+
 class RuleCondition(models.Model):
     OPERATORS = [
         ('>=', 'Greater Than or Equal'),
@@ -695,7 +695,7 @@ class RuleCondition(models.Model):
     #rule = models.ForeignKey(
     #    'ApprovalRule',
     #    on_delete=models.CASCADE,
-    #    null=True, 
+    #    null=True,
     #    related_name='conditions'
     #)
     rule = models.ForeignKey(BusinessRule, on_delete=models.CASCADE)
@@ -749,7 +749,7 @@ class RuleCondition(models.Model):
             return quote.get_total_discount_percentage()
         elif field_name == "total_amount":
             return quote.get_total_amount()
-        
+
         # Fallback or dynamic attribute retrieval:
         return getattr(quote, field_name, 0)
 
@@ -854,7 +854,7 @@ class SystemFieldMapping(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('crm', 'field_type', 'local_field', 'crm_field') 
+        unique_together = ('crm', 'field_type', 'local_field', 'crm_field')
 
     def __str__(self):
         return f"{self.crm} - {self.field_type} - {self.local_field} → {self.crm_field}"
@@ -939,10 +939,10 @@ class Tenant(models.Model):
             saved_path = default_storage.save(new_path, ContentFile(logo_content))
             self.logo.name = saved_path
             self.save(update_fields=["logo"])
-    
+
 def temp_file_path(instance, filename):
     return f"temp/quotes/{filename}"
-    
+
 class QuoteDocument(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name='documents')
     version = models.PositiveIntegerField()
@@ -970,7 +970,7 @@ class QuoteDocument(models.Model):
 
 class CustomObject(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    label = models.CharField(max_length=255)              
+    label = models.CharField(max_length=255)
     description = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -980,11 +980,11 @@ class CustomObject(models.Model):
 
     def __str__(self):
         return self.label or self.name
-    
+
     class Meta:
         verbose_name = "Custom Object"
         verbose_name_plural = "Custom Objects"
-        
+
 #dummy model for all custom objects
 class CustomRecord(models.Model):
     custom_identifier = models.CharField(max_length=10, unique=True, blank=True, null=True)
@@ -995,7 +995,7 @@ class CustomRecord(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_custom_records')
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_records')
-    
+
     def __str__(self):
         label = f"{self.object_type.name} record"
         try:
@@ -1030,14 +1030,14 @@ class CustomField(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='creted_custom_fields')
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_fields')
-    
+
     class Meta:
         verbose_name = "Custom Field"
         verbose_name_plural = "Custom Fields"
 
     def __str__(self):
         return f"{self.crm}.{self.object_type}.{self.name}"
-    
+
 
 class CustomFieldValue(models.Model):
     field = models.ForeignKey(CustomField, on_delete=models.CASCADE, related_name="values")
@@ -1049,35 +1049,31 @@ class CustomFieldValue(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-
-        if hasattr(self, 'updated_by_user') and self.updated_by_user and hasattr(self.field, 'updated_by'):
-            self.field.updated_by = self.updated_by_user
-            self.field.save(update_fields=['updated_by', 'updated_at'])
-
-    updated_by_user = None  # Temporary field (part of django admin view)
-
-    def save(self, *args, **kwargs):
-        is_changed = False
+        is_changed = True
         if self.pk:
             try:
                 original = CustomFieldValue.objects.get(pk=self.pk)
                 is_changed = original.value != self.value
             except CustomFieldValue.DoesNotExist:
                 is_changed = True
-        else:
-            is_changed = True
 
         super().save(*args, **kwargs)
 
         if is_changed and self.updated_by_user:
-            self.field.updated_by = self.updated_by_user
-            self.field.save(update_fields=['updated_by', 'updated_at'])
+            if hasattr(self.field, 'updated_by'):
+                self.field.updated_by = self.updated_by_user
+                self.field.save(update_fields=['updated_by', 'updated_at'])
 
     def __str__(self):
         return f"{self.content_object} - {self.field.label}: {self.value}"
-    
-    
+
+
+
+def default_rendered_fields_for_quote_document_settings():
+        return ['Product And SKU', 'Description', 'Quantity', 'Unit Price', 'Total Price']
+
+def default_omitted_fields_for_quote_document_settings():
+    return ['Product', 'SKU', 'Discount']
 
 class QuoteDocumentSettings(models.Model):
     DESIGN_CHOICES = [
@@ -1089,13 +1085,7 @@ class QuoteDocumentSettings(models.Model):
         ('short', 'Short'),
         ('long', 'Modern'),
     ]
-    
-    def default_rendered_fields():
-        return ['Product And SKU', 'Description', 'Quantity', 'Unit Price', 'Total Price']
 
-    def default_omitted_fields():
-        return ['Product', 'SKU', 'Discount']
-    
 
     # Company information
     show_company_name = models.BooleanField(default=True)
@@ -1127,8 +1117,8 @@ class QuoteDocumentSettings(models.Model):
     show_line_discount_percentage = models.BooleanField(default=False)
     show_line_discount_amount = models.BooleanField(default=False)
     show_line_discount = models.BooleanField(default=True)
-    rendered_fields = JSONField(default=default_rendered_fields, blank=True)
-    omitted_fields = JSONField(default=default_omitted_fields, blank=True)
+    rendered_fields = JSONField(default=default_rendered_fields_for_quote_document_settings, blank=True)
+    omitted_fields = JSONField(default=default_omitted_fields_for_quote_document_settings, blank=True)
 
     #Quote Line Description
     line_description_detail_level = models.CharField(
@@ -1158,14 +1148,14 @@ class QuoteDocumentSettings(models.Model):
 
     def __str__(self):
         return f"PDF Settings"
-    
-class QuoteUIRender(models.Model):
 
-    def default_rendered_fields():
+def default_rendered_fields_for_quote_ui_render():
         return ['sku_product', 'quantity', 'unit_price', 'discount_percentage', 'discount_amount', 'subscription', 'term', 'total_price']
 
-    def default_omitted_fields():
-        return []
+def default_omitted_fields_for_quote_ui_render():
+    return []
+
+class QuoteUIRender(models.Model):
 
     # Quote information
     show_quote_account = models.BooleanField(default=True)
@@ -1175,8 +1165,8 @@ class QuoteUIRender(models.Model):
     show_quote_discount = models.BooleanField(default=True)
 
     # Line items information
-    rendered_fields = JSONField(default=default_rendered_fields, blank=True)
-    omitted_fields = JSONField(default=default_omitted_fields, blank=True)
+    rendered_fields = JSONField(default=default_rendered_fields_for_quote_ui_render, blank=True)
+    omitted_fields = JSONField(default=default_omitted_fields_for_quote_ui_render, blank=True)
 
     # Subtotal and net amount information
     show_quote_subtotal = models.BooleanField(default=True)
@@ -1252,19 +1242,19 @@ class TenantUsageReport(models.Model):
 
     def __str__(self):
         return f"{self.tenant.tenant_id} – {self.billing_period:%Y-%m}"
-    
+
 class TenantUsageLog(models.Model):
     tenant_id = models.CharField(max_length=50, db_index=True)
     billing_period = models.DateField()
-    
+
     status = models.CharField(max_length=20, choices=[
         ("success", "Success"),
         ("failure", "Failure")
     ])
-    
+
     http_status = models.IntegerField(null=True, blank=True)
     message = models.TextField(blank=True, help_text="Response body or error message")
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1359,7 +1349,7 @@ class EmailAlert(models.Model):
 
     def _str_(self):
         return f"Email Alert: {self.description}, when: {self.trigger}, options: {self.offset_days if self.offset_days else self.scheduled_cron}"
-    
+
 class EmailAlertRecipient(models.Model):
     email_alert = models.ForeignKey("EmailAlert", on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE)

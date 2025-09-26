@@ -17,7 +17,7 @@
             display: flex;
             min-height: 100vh;
         }
-    
+
         .main-content {
             flex: 1;
             padding: 40px 60px;
@@ -70,7 +70,7 @@
             border-radius: 8px !important;
             width: 100%;
         }
-        
+
     </style>
 </head>
 <body>
@@ -133,8 +133,8 @@
     </div>
   </main>
 </div>
-   
-    
+
+
     <script>
         const localFields = {{ local_fields|safe }};
         const fieldMappings = {{ mappings_json|safe }};
@@ -146,7 +146,7 @@
           var elems = document.querySelectorAll('select');
           M.FormSelect.init(elems);
           updateFields();
-          
+
       });
       function onAnyDropdownChange() {
         const crm = document.getElementById("crm").value;
@@ -154,28 +154,28 @@
         window.location.href = `/cpq/field-mapping/?crm=${crm}&object_type=${objectType}`;
         console.log("🧠 localFields is:", localFields);
       }
-      
+
       async function saveMappings() {
           let formData = new FormData();
           let crm = document.getElementById("crm").value;
           let objectType = document.getElementById("object_type").value;
-          
+
           formData.append("crm", crm);
           formData.append("object_type", objectType);
-          
+
           document.querySelectorAll('#mapping-table-body tr').forEach(row => {
             const input = row.querySelector('input, select'); // support both <input> and <select>
             if (input) {
                 formData.append(input.id.replace("map_", ""), input.value);
             }
           });
-      
+
           try {
-              let response = await fetch("/cpq/save-field-mappings/", {  
+              let response = await fetch("/cpq/save-field-mappings/", {
                   method: "POST",
                   body: formData
               });
-      
+
               let data = await response.json();
               if (data.success) {
                   M.toast({html: `✅ Mappings for ${crm} - ${objectType} saved!`, classes: "green lighten-1"});
@@ -187,31 +187,31 @@
               M.toast({html: "❌ Server error. Try again later.", classes: "red lighten-1"});
           }
       }
-      
+
       async function updateFields() {
         const objectType = document.getElementById("object_type").value;
-    
+
         const tableBody = document.getElementById("mapping-table-body");
         tableBody.innerHTML = "";
-    
+
         let crmFields = [];
-    
+
         try {
             const res = await fetch(`/cpq/hubspot/schema/?object_type=${objectType}`);
             const data = await res.json();
-    
+
             if (data.error) {
                 console.warn("⚠️ HubSpot schema fetch failed:", data.error);
                 M.toast({ html: "⚠️ CRM fields not available", classes: "orange lighten-1" });
             } else {
                 crmFields = data.fields;
             }
-    
+
         } catch (err) {
             console.error("HubSpot schema fetch error:", err);
             M.toast({ html: "⚠️ Failed to fetch CRM schema", classes: "orange lighten-1" });
         }
-    
+
         localFields.forEach(field => {
     const row = document.createElement("tr");
 
@@ -227,7 +227,7 @@
     input.className = "crm-input";
     input.id = `map_${field.replace(/\W+/g, '_')}`;
     input.placeholder = "Enter CRM field";
-    
+
     // ✅ Pre-fill saved mapping from DB
     const saved = fieldMappings[field];
     if (saved) {
@@ -255,7 +255,7 @@
     row.appendChild(td2);
     tableBody.appendChild(row);
 });
-    
+
         M.FormSelect.init(document.querySelectorAll('select'));
     }
       </script>

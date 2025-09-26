@@ -49,6 +49,7 @@ def extract_product_data_with_llm(user_message, current_state, previous_summary=
     - agent_message should be short, friendly, professional, emoji-rich, ask follow-ups.
     - This message is a continuation of an ongoing conversation. Do NOT start with greetings like 'Hello' or 'Hi'. Just continue naturally.
     - The message is sensitive to HTML tags, so if you want to make line breaks use the <br> tag.
+    - Do NOT use emojis for message.
     - Create a short, detailed summary with the previous summary + the changes you made in this iteration.
     """
 
@@ -120,7 +121,7 @@ def generate_final_product_message(completed_products, db_results, remaining_pro
     failed = [(r['product'], r['error']) for r in db_results if r['status'] == 'fail']
 
     final_prompt = f"""
-    This is an ongoing conversation about product creation. 
+    This is an ongoing conversation about product creation.
     The assistant should return a JSON with two fields only: "message" and "summary".
 
     Context:

@@ -24,7 +24,7 @@ def create_product_record(user,product_details):
         return {
             "success": True
         }
-       
+
 
     except Exception as e:
         return {

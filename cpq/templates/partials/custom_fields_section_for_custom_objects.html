@@ -31,7 +31,7 @@
               <tr>
                 <td>{{ record.label }}</td>
                 <td>{{ record.name }}</td>
-                <td class="description-cell">{{ record.description }}</td> 
+                <td class="description-cell">{{ record.description }}</td>
                 {% if record.updated_by %}
                   <td class="datetime-objects" data-datetime-object="{{ record.updated_at|date:'c' }}">{{ record.updated_by }}</td>
                 {% else %}
@@ -138,5 +138,5 @@
       overflow-wrap: break-word;
     }
   </style>
-  
+
 </div>

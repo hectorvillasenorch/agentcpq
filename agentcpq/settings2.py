@@ -11,9 +11,11 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 from pathlib import Path
+from dotenv import load_dotenv
+from decouple import config
 import os
 import logging
-from dotenv import load_dotenv
+import sys
 
 NGROK_FULL_URL = "https://0d0e3e34c51c.ngrok-free.app"
 NGROK_URI = "0d0e3e34c51c.ngrok-free.app"
@@ -36,7 +38,7 @@ DEBUG = True
 
 # ALLOWED_HOSTS = []
 ALLOWED_HOSTS = [
-    '.herokuapp.com', 
+    '.herokuapp.com',
     'sympletech.agentcpq.ai'
     ]
 # Allow Django to be embedded in an IFrame (required for Salesforce)

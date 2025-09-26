@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 from cpq.models import CustomObject
 
-# TDOO STOP Call to GPT 
+# TDOO STOP Call to GPT
 # Pything to understand request, and catch before hitting LLM
 
 # Context Session Helpers
@@ -46,7 +46,7 @@ def handle_user_request(user,user_message, session_data):
             "session_reset": True,
             "chat_sessions": list(ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at"))
         }
-    
+
     # 🧠 Shortcut manual
     message = user_message.lower()
 
@@ -176,6 +176,7 @@ def orchestrate_request(user, user_message, session_data):
         - "ShowAccountDetails"
         - "GeneralQuery"
         - "CreateValidationRule"
+        - "CreateInclusionRule"
         - "ShowRules"
         - "UpdateRule"
         - "DeleteRule"
@@ -323,7 +324,7 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
 
     if decision in action_map:
         result = action_map[decision](user,decision, user_message, session_data)
-        
+
         agent_message = result.get("message", "")
 
         hiddenMessage = result.get("hiddenMessage", False)
@@ -343,7 +344,7 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
         result["session_id"] = session_data["session_id"]
 
         return result
-    
+
     logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
     return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
 
@@ -386,7 +387,7 @@ def handle_general_query(user,decision, user_message, session_data):
         # ✅ Return as a structured JSON response
         return {
             "success": True,
-            "message": ai_response  
+            "message": ai_response
         }
 
 
@@ -398,7 +399,7 @@ def handle_general_query(user,decision, user_message, session_data):
                 "message": "⚠️ Error processing your request. Please try again later."
             }
         }
-    
+
 def should_reset_session(user_message):
     """Use GPT to determine if the user intends to reset the session."""
     prompt = f"""
@@ -465,6 +466,7 @@ def get_action_map():
 
         # Rules
         "CreateValidationRule": admin_agent,
+        "CreateInclusionRule": admin_agent,
         "ShowRules": admin_agent,
         "UpdateRule": admin_agent,
         "DeleteRule": admin_agent,
@@ -497,4 +499,3 @@ def get_trigger_phrases():
         "generate pdf",
         "create quote pdf",
     ]
-

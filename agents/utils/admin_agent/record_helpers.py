@@ -33,7 +33,7 @@ def update_rule_record(update_request):
             "message": response_message,
             "success": True
         }
-    
+
     except ValueError as ve:
         return {
             "message": str(ve),
@@ -47,7 +47,7 @@ def update_rule_record(update_request):
             "success": False
         }
 
-    
+
 def save_email_alert(payload_json, user=None):
     """
     Save an EmailAlert instance based on the payload.
@@ -109,7 +109,7 @@ def save_email_alert(payload_json, user=None):
             "message": f"❌ Error creating email alert: {str(e)}",
             "success": False
         }
-    
+
 
 def update_email_alert_record(payload_json, user=None):
     """
@@ -125,8 +125,8 @@ def update_email_alert_record(payload_json, user=None):
             "message": f"❌ Error updating email alert: {str(e)}",
             "success": False
         }
-    
-    
+
+
 
     alert_name = data.get("alert_name")
     if not alert_name:
@@ -251,8 +251,8 @@ def delete_email_alert_record(payload_json, user=None):
             "message": f"❌ Error updating email alert: {str(e)}",
             "success": False
         }
-    
-    
+
+
 
     alert_name = data.get("alert_name")
     if not alert_name:
@@ -270,7 +270,7 @@ def delete_email_alert_record(payload_json, user=None):
 
     with transaction.atomic():
         # ---- Actualizar campos básicos ----
-        
+
         alert.delete()
 
         return {

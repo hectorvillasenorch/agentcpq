@@ -13,8 +13,8 @@ from django.views.decorators.clickjacking import xframe_options_exempt
 urlpatterns = [
     path('', root_redirect),
     path('dashboard/', include('dashboard.urls')),
-    path('agents/', include('agents.urls')),  
-    path('cpq/', include('cpq.urls')), 
+    path('agents/', include('agents.urls')),
+    path('cpq/', include('cpq.urls')),
     path("salesforce/", include("salesforce.urls")),
     path('admin/', admin.site.urls),
     path('hubspot/', include('hubspot.urls')),
@@ -44,5 +44,3 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-
-

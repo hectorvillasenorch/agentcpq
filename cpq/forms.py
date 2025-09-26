@@ -87,7 +87,7 @@ class CustomFieldForm(forms.ModelForm):
         widget=forms.Select(attrs={'class': 'browser-default'})
     )
     data_type = forms.ChoiceField(
-        choices=DATA_TYPE_CHOICES, 
+        choices=DATA_TYPE_CHOICES,
         widget=forms.Select(attrs={'class': 'browser-default'})
     )
     crm = forms.ChoiceField(choices=CRM_CHOICES)
@@ -95,7 +95,7 @@ class CustomFieldForm(forms.ModelForm):
     class Meta:
         model = CustomField
         fields = [
-            'label', 'name', 'crm', 'object_type', 
+            'label', 'name', 'crm', 'object_type',
             'custom_object', 'data_type', 'required', 'lookup_model'
         ]
         widgets = {
@@ -129,7 +129,7 @@ class CustomFieldForm(forms.ModelForm):
         return cleaned_data
 
 
-    
+
 #class CustomFieldForm(forms.ModelForm):
 #    lookup_model = forms.ChoiceField(
 #        required=False,
@@ -137,7 +137,7 @@ class CustomFieldForm(forms.ModelForm):
 #        widget=forms.Select(attrs={'class': 'browser-default'})
 #    )
 #    data_type = forms.ChoiceField(
-#        choices=DATA_TYPE_CHOICES, 
+#        choices=DATA_TYPE_CHOICES,
 #        widget=forms.Select(attrs={'class': 'browser-default'})
 #    )
 #    crm = forms.ChoiceField(choices=CRM_CHOICES)
@@ -145,7 +145,7 @@ class CustomFieldForm(forms.ModelForm):
 #    class Meta:
 #        model = CustomField
 #        fields = [
-#            'label', 'name', 'crm', 'object_type', 
+#            'label', 'name', 'crm', 'object_type',
 #            'custom_object', 'data_type', 'required', 'lookup_model'
 #        ]
 #
@@ -455,7 +455,7 @@ class DynamicQuoteLineForm(forms.ModelForm):
                 print(f"✅ Added dynamic field: {field_name}")
             except Exception as e:
                 print(f"❌ Error adding {field_name}: {e}")
-                
+
 
     def get_custom_field_value(self, instance, custom_field):
         try:
@@ -489,7 +489,7 @@ class DynamicQuoteLineForm(forms.ModelForm):
                 cfv.save()
 
         return instance
-    
+
 class EmailAlertForm(forms.ModelForm):
     recipients_users = forms.ModelMultipleChoiceField(
         queryset=User.objects.all(),

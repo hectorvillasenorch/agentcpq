@@ -20,14 +20,14 @@
             {% for msg in chat_messages %}
               <div class="chat-message {{ msg.sender }}">
                 {% if msg.sender == 'user' and msg.hiddenMessage == False %}
-                  <div class="chat-text user"> 
+                  <div class="chat-text user">
                     <div class="sender">You: </div>
                     <div class="message">{{ msg.content|safe }}</div>
                   </div>
                 {% endif %}
-                
+
                 {% if msg.sender == 'user' and msg.hiddenMessage == True and 'Update Quote Line' or 'Update Quote' in msg.content %}
-                  <div class="chat-text user"> 
+                  <div class="chat-text user">
                     <div class="sender">You: </div>
                     <div class="message">✅ You have modified the quote through the UI.</div>
                   </div>
@@ -93,7 +93,7 @@
               </div>
               <div class="message">
                 <img src="/static/img/thinking.gif" alt="Agent is thinking..." width="40">
-                
+
               </div>
             </div>
           </div>
@@ -133,7 +133,7 @@
     // Enviar al backend
     sendUserMessage("Update Quote: " + JSON.stringify(updatePayload));
   }
-  
+
   document.addEventListener("DOMContentLoaded", () => {
     window.USER_NAME = "{{ request.user.first_name|default:request.user.username|escapejs }}";
     renderGreeting();
@@ -145,7 +145,7 @@
     console.log("[iframe] Message received:", event.data);
 
     if (!deal_id || !deal_name) return;
-    // TODO: Check if this deal has a primary quote from Agentcpq, if it doesnt, message is: Do you want me to create a quote for this Deal? 
+    // TODO: Check if this deal has a primary quote from Agentcpq, if it doesnt, message is: Do you want me to create a quote for this Deal?
 
     const dealMessage = `Hello!, do you want me to create a quote for ${deal_name} ?`;
 

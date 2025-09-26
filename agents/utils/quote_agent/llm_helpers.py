@@ -5,6 +5,9 @@ import logging
 from dotenv import load_dotenv
 from datetime import date
 
+# System Prompt Helpers
+from ..prompts_helpers.system_prompt_helpers import make_system_prompt
+
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -15,73 +18,12 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 from ..orchestrator.context_handle_helpers import estimate_cost
 
-# FUNCTION TO EXTRACT QUOTE DETAILS (CREATE_QUOTE)
-def extract_quote_details(user_message):
-    """Use GPT to extract details for quote creation."""
-    prompt = f"""
-    **IMPORTANT FOR CONVERSATION CONTEXT:**
-    If the user message is accompanied by previously extracted data entries , you must:
-    - Use that data to preserve the context of each item, assuming the user is continuing an incomplete task.
-    - Only update the items the user refers, and retain the others as incomplete.
-    - Return a list of all items (updated and pending) with the following structure.
-    However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
-    **--FINAL CONVERSATION CONTEXT--**
-    
-    Extract the following details from the user's request for quote creation:
-    - Account Name
-    - Opportunity Name (if applicable)
-    - Products
-    - Discounts (if mentioned)
-    - Subscription Start/End Dates (if applicable)
-    - Term (if mentioned)
-
-    For each product (ONLY if products are mentioned):
-    - "sku" (string or null): The SKU is usually uppercase letters and hyphens, e.g. "SYM-HY-BGI".  
-        If SKU is not mentioned or not found, set it to null (not the string "null").
-    - "name" (string or null): The product name.  
-        If name is not mentioned or not found, set it to null (not the string "null").
-    - "quantity" (integer): Quantity of the product. If quantity is not mentioned but products exist, set quantity to 1 by default (as an integer, not a string).
-    - "discount_type" (string): Discount type, either "percentage" or "amount".
-    - "discount_value" (integer): Discount value without any dollar signs, percent signs, or text; only the numeric value.
-    - "term" (integer or null): If term is mentioned, return it as an integer (not a string). If term is not mentioned, set term to null (not a string).
-
-    For discounts:
-    - If the user specifies a percentage discount (e.g. "15%"), set discount_type to "percentage" and discount_value to the numeric value (e.g. 15).
-    - If the user specifies a discount in dollars, with symbols or the word "dollar(s)" (e.g. "$100" or "100 dollars"), set discount_type to "amount" and discount_value to the numeric amount (e.g. 100).
-    - If no discount is specified, set discount_type to null and discount_value to 0.
-    - If no term is specified, set term to null.
-
-    Return a JSON object with these keys:
-    {{"account": "", "opportunity": "", "products": [{{"sku": "", "name": "", "quantity": 1, "discount_type": "", "discount_value": "", "term": Null}}], "start_date": "", "end_date": ""}}.
-
-    If no products are provided in the request, return a JSON object with these keys:
-    {{"account": "", "opportunity": "", "products": [], "start_date": "", "end_date": ""}}.
-
-    User Request: "{user_message}"
-    """
-    
-    response = client.chat.completions.create(
-        model=OPENAI_MODEL,
-        messages=[{"role": "system", "content": "Extract structured data from the user request."},
-                  {"role": "user", "content": prompt}],
-        response_format={"type": "json_object"}
-    )
-
-    raw_response = response.choices[0].message.content.strip()
-
-    print(f"\n\nEsto responde el LLM: {raw_response}\n\n")
-
-    try:
-        extracted_data = json.loads(raw_response)
-        return extracted_data
-    except json.JSONDecodeError:
-        return None
 
 
 # ------ FUNCTION TO EXTRACT QUOTE DETAILS (CREATE_QUOTE) ------
 def extract_quote_details_with_llm(user_message, current_state, previous_summary=None):
     """Extract multiple product SKUs, quantities, and discounts from user input using GPT."""
-    
+
     # 👉 Si es lista, imprimir con índices
     if isinstance(current_state, list):
         print("\n📦 Current State (indexed):")
@@ -120,9 +62,9 @@ def extract_quote_details_with_llm(user_message, current_state, previous_summary
     }
 
     For each product (ONLY if products are mentioned):
-    - "sku" (string or null): The SKU is usually uppercase letters and hyphens, e.g. "SYM-HY-BGI".  
+    - "sku" (string or null): The SKU is usually uppercase letters and hyphens, e.g. "SYM-HY-BGI".
         If SKU is not mentioned or not found, set it to null (not the string "null").
-    - "name" (string or null): The product name.  
+    - "name" (string or null): The product name.
         If name is not mentioned or not found, set it to null (not the string "null").
     - "quantity" (integer): Quantity of the product. If quantity is not mentioned but products exist, set quantity to 1 by default (as an integer, not a string).
     - "discount_type" (string): Discount type, either "percentage" or "amount".
@@ -249,7 +191,7 @@ def generate_final_create_quote_message(quote, db_results, previous_summary, pro
     #failed = [(r['product'], r['error']) for r in db_results if r['status'] == 'fail']
 
     final_prompt = f"""
-    This is an ongoing conversation about quote creation. 
+    This is an ongoing conversation about quote creation.
     The assistant should return a JSON with two fields only: "message" and "summary".
 
     Context:
@@ -267,7 +209,7 @@ def generate_final_create_quote_message(quote, db_results, previous_summary, pro
     - Mention only which products were successfully added and which are still pending or incomplete.
     - Do NOT include the detailed changes made to each product; those details are already captured in the "summary".
     - For failed products added, mention the quote line and its error, but only if there are any.
-    - For incomplete products, briefly mention them ONLY if there are any. 
+    - For incomplete products, briefly mention them ONLY if there are any.
     If none exist, omit this section entirely (do not mention that there are no incomplete products).
     - Omit entire sections if there are no products in that category.
     - End by asking a short, natural follow-up question about next steps.
@@ -331,7 +273,7 @@ def generate_final_create_quote_message(quote, db_results, previous_summary, pro
 
 
 
-# FUNCTION TO EXTRACT QUOTE LINE UPDATES (UPDATE_QUOTE_LINE)    
+# FUNCTION TO EXTRACT QUOTE LINE UPDATES (UPDATE_QUOTE_LINE)
 def extract_quote_line_updates(user_message):
     """Uses GPT to extract SKU, field, and new value for quote line updates."""
 
@@ -427,126 +369,14 @@ def extract_quote_line_updates(user_message):
     except Exception as e:
         logging.error(f"❌ Error extracting discount details: {str(e)}")
         return None
-    
 
 
-    
-# FUNCTION TO EXTRACT QUOTE UPDATES (UPDATE_QUOTE)    
-def extract_quote_updates(user_message):
-    """Uses GPT to extract quote name, field, and new value for quote updates."""
-
-    current_date = date.today().isoformat()
-
-    print(f"Current Date: {current_date}")
-
-    prompt = f"""
-    **IMPORTANT FOR CONVERSATION CONTEXT:**
-    If the user message is accompanied by previously extracted data entries , you must:
-    - Use that data to preserve the context of each item, assuming the user is continuing an incomplete task.
-    - Only update the items the user refers, and retain the others as incomplete.
-    - Return a list of all items (updated and pending) with the following structure.
-    However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
-    **--FINAL CONVERSATION CONTEXT--**
-
-    Extract structured update details from the following request.
-    Return a JSON array with objects containing:
-    - "quote_name" (string, required)
-    - "field"
-    - "value" (number, string or date)
-
-    **Example Input & Output:**
-    User: "Set the status of quote Q-00023 to approved, then change the status of Q-00047 to "Pending Approval" also mark quote as rejected."
-    Response:
-    [
-        {{"quote_name": "Q-00023", "field": "status", "value": "Approved"}},
-        {{"quote_name": "Q-00047", "field": "status", "value": "Pending Approval"}},
-        {{"quote_name": null, "field": "status", "value": "Rejected"}}
-    ]
-
-    **Example Input & Output:**
-    User: "Apply a 10% discount to quote and set the discount of Q-00056 to 150"
-    Response:
-    [
-        {{"quote_name": null, "field": "discount_percentage", "value": 10}},
-        {{"quote_name": "Q-00056", "field": "discount_amount", "value": 150}}
-    ]
-
-    **Example Input & Output:**
-    User: "Extend the expiration date of quote to July 30, 2025."
-    Response:
-    [
-        {{"quote_name": null, "field": "expiration_date", "value": "2025-07-30"}}
-    ]
-
-    **Example Input & Output:**
-    User: "Add the note "Urgent request from client" to quote Q-00048."
-    Response:
-    [
-        {{"quote_name": "Q-00048", "field": "notes", "value": "Urgent request from client."}}
-    ]
-
-    **Example Input & Output:**
-    User: "update tax to 7% to quote Q-00076"
-    Response:
-    [
-        {{"quote_name": "Q-00076", "field": "tax_percentage", "value": 7.00}}
-    ]
-
-    **Requirements:**
-    - For discounts, if the user specifies a percentage (e.g., "15% discount"), return field: "discount_percentage" and value: 15. If the user specifies a dollar amount (e.g., "$150 off", "150 dollars discount" or just a number like "150"), return field: "discount_amount" and value: 150. Always extract only the numeric value — remove symbols like % or $, and ignore words like "off", "discount", or "dollars".
-    - Always normalize discount values to plain numbers.
-    - If the user specifies a status value, always normalize it to match one of the following exact formats: "Draft", "Pending Approval", "Approved", "Rejected", or "Closed". Use title casing and ensure the value matches exactly (case-sensitive).
-    - If no quote name are found in the message, return null as quote_name
-    - If no field are found in the message, return null as field
-    - If no value are found in the message, return null as value
-    - For expiration dates, always return the value as a string in ISO 8601 format (YYYY-MM-DD), which is compatible with Python and Django. For example, July 30, 2025 → "2025-07-30".
-    - For notes, always ensure the returned value ends with a period (.). If the user’s note doesn’t end with one, automatically add it to the end of the note.
-    - The current date is {current_date}. Use this as the reference point when interpreting relative dates like "next Friday", "tomorrow", or "in two weeks".
-    - The fields that can be modified in a quote are: status, discount, expiration_date, note, and tax.
-    - Provides information on the fields that can be modified in a quote only if the user requests them and in a standard, non-technical format.
-    - For expiration_date, the values ​​can be: Draft, Pending Approval, Approved, Rejected, or Closed.
-    - If the user wants to update/modify the status field and has not provided a value, then remind them of the possible values: Draft, Pending Approval, Approved, Rejected, or Closed.
-
-    **IMPORTANT:** **Return a valid JSON array only of product objects. DO NOT include explanations, and DO NOT format the response as Markdown (NO triple backticks or ```json).**
-
-    User Request: "{user_message}"
-    """
-
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Extract structured updates details for quote."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        # ✅ Extract raw response
-        raw_response = response.choices[0].message.content.strip()
-        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
-
-        # ✅ Ensure valid JSON response
-        try:
-            extracted_updates = json.loads(raw_response)
-            if isinstance(extracted_updates, list) and all("quote_name" in p and "field" in p and "value" in p for p in extracted_updates):
-                return extracted_updates
-            else:
-                logging.warning("⚠️ GPT response is not in expected format.")
-                return None
-        except json.JSONDecodeError:
-            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
-            return None
-
-    except Exception as e:
-        logging.error(f"❌ Error extracting discount details: {str(e)}")
-        return None
-    
 
 
-    
+
 def extract_quote_updates_with_llm(user_message, current_state, previous_summary=None, quote_name=None):
     """Extract multiple product SKUs, quantities, and discounts from user input using GPT."""
-    
+
     # 👉 Si es lista, imprimir con índices
     if isinstance(current_state, list):
         print("\n📦 Current State (indexed):")
@@ -673,7 +503,7 @@ def generate_final_quote_updates_message(completed_quote_updates, db_results, re
     #failed = [(r['product'], r['error']) for r in db_results if r['status'] == 'fail']
 
     final_prompt = f"""
-    This is an ongoing conversation about quote line deletions. 
+    This is an ongoing conversation about quote line deletions.
     The assistant should return a JSON with two fields only: "message" and "summary".
 
     Context:
@@ -692,7 +522,7 @@ def generate_final_quote_updates_message(completed_quote_updates, db_results, re
     - Do not specify if there are no incomplete quote updates.
     - Do not specify that there are no pending updates.
     - For failed quote updates, mention the quote and its error, but only if there are any.
-    - For incomplete quote updated, briefly mention them ONLY if there are any. 
+    - For incomplete quote updated, briefly mention them ONLY if there are any.
     If none exist, omit this section entirely (do not mention that there are no incomplete quote).
     - Omit entire sections if there are no products in that category.
     - End by asking a short, natural follow-up question about next steps.
@@ -750,7 +580,7 @@ def generate_final_quote_updates_message(completed_quote_updates, db_results, re
 
 
 
-# FUNCTION TO EXTRACT QUOTE LINE ITEMS TO DELETE (DELETE_QUOTE_LINE)     
+# FUNCTION TO EXTRACT QUOTE LINE ITEMS TO DELETE (DELETE_QUOTE_LINE)
 def extract_quote_line_items_to_delete(user_message):
     """Uses GPT to extract quote line name."""
 
@@ -762,8 +592,8 @@ def extract_quote_line_items_to_delete(user_message):
     - Return a list of all items (updated and pending) with the following structure.
     However, if there is no prior extracted data provided, treat the message as a new standalone instruction, with no memory of previous items or context.
     **--FINAL CONVERSATION CONTEXT--**
-    
-    Extract the SKU (product code) or name mentioned in the following user request. 
+
+    Extract the SKU (product code) or name mentioned in the following user request.
 
     Return only the SKU and name string inside a JSON object like this:
      [{{"sku": "<SKU_CODE>", "name": "<PRODUCT_NAME>"}}]
@@ -830,18 +660,18 @@ def extract_quote_line_items_to_delete(user_message):
     except Exception as e:
         logging.error(f"❌ Error extracting discount details: {str(e)}")
         return None
-    
 
 
 
 
 
 
-    
+
+
 
 def extract_quote_line_to_delete_with_llm(user_message, current_state, previous_summary=None):
     """Extract multiple product SKUs, quantities, and discounts from user input using GPT."""
-    
+
     # 👉 Si es lista, imprimir con índices
     if isinstance(current_state, list):
         print("\n📦 Current State (indexed):")
@@ -955,7 +785,7 @@ def generate_final_delete_quote_lines_message(completed_quote_lines, db_results,
     #failed = [(r['product'], r['error']) for r in db_results if r['status'] == 'fail']
 
     final_prompt = f"""
-    This is an ongoing conversation about quote line deletions. 
+    This is an ongoing conversation about quote line deletions.
     The assistant should return a JSON with two fields only: "message" and "summary".
 
     Context:
@@ -973,7 +803,7 @@ def generate_final_delete_quote_lines_message(completed_quote_lines, db_results,
     - Do NOT include the detailed changes made to each quote line; those details are already captured in the "summary".
     - Do not specify if there are no incomplete quote lines.
     - For failed quote lines deleted, mention the quote line and its error, but only if there are any.
-    - For incomplete quote lines, briefly mention them ONLY if there are any. 
+    - For incomplete quote lines, briefly mention them ONLY if there are any.
     If none exist, omit this section entirely (do not mention that there are no incomplete quote lines).
     - Omit entire sections if there are no products in that category.
     - End by asking a short, natural follow-up question about next steps.
@@ -1035,7 +865,7 @@ def generate_final_delete_quote_lines_message(completed_quote_lines, db_results,
 
 
 
-    
+
 
 # NUEVOS LLM HELPERS, EVENTUALMENTE BORRAR LOS DE ARRIBA
 
@@ -1046,7 +876,7 @@ def extract_quote_line_updates_with_llm(user_message, current_state, previous_su
     """
 
     allowed_fields_str = '", "'.join(["quantity", "discount_amount", "discount_percentage", "term"])
-    
+
     system_prompt = """
     You are a helpful AI assistant that updates quote line items from user messages.
     Always return JSON with structure:
@@ -1065,7 +895,7 @@ def extract_quote_line_updates_with_llm(user_message, current_state, previous_su
     "agent_message": "string",
     "summary": "string"
     }
-    
+
 
     Rules:
     1. I will provide you with a list of dictionaries containing the line items mentioned by the user in their message under "Current line items mentioned." Your task is to modify only the field the user specifies with the values they provide.
@@ -1082,28 +912,28 @@ def extract_quote_line_updates_with_llm(user_message, current_state, previous_su
     4. If the user attempts to do anything other than update a line item, do not modify any data and indicate in the agent_message that this agent can only update a line item/quote_lines.
 
     5. For discounts, if the user specifies a percentage (e.g., "15% discount"), return field: "discount_percentage" and value: 15. If the user specifies a dollar amount (e.g., "$150 off" or "150 dollars discount"), return field: "discount_amount" and value: 150. Always extract only the numeric value - remove symbols like % or $, and ignore words like "off", "discount" or "dollars".
-    
+
     6. Always normalize discount values to plain numbers.
 
     7. If the user's intention is to delete the value of a field, set that value to 0.
 
 
     9. Mark "completed" as true if a line item receives an update, provided it is within the following parameters:
-    - quantity: integer >= 0  
-    - term: integer between 1 and 12  
-    - discount_percentage: between 0 and 100  
+    - quantity: integer >= 0
+    - term: integer between 1 and 12
+    - discount_percentage: between 0 and 100
     - discount_amount: >= 0 and <= unit_price (if unit_price is provided)
 
     10. Support flexible update actions: add, remove, delete, multiply, duplicate, divide, among others.
 
     11. When the user provides multiple updates (e.g., apply a discount and change a quantity),
-        you MUST return one entry per update in the array `update_quote_line`.  
+        you MUST return one entry per update in the array `update_quote_line`.
 
-    - Only update the fields explicitly mentioned by the user. 
+    - Only update the fields explicitly mentioned by the user.
     - Do not include unchanged information in the agent_message.
     - Only include line items in "update_quote_line" if at least one field is actually modified. Do not include line items where no changes were applied.
     - If a line item has no changes, do not include it in update_quote_line
-    
+
 
     Agent message:
     - Interpret this as an attempt, therefore do not say things like 'has been successfully updated'.
@@ -1116,7 +946,7 @@ def extract_quote_line_updates_with_llm(user_message, current_state, previous_su
     - Include information if the user tried to update a product that does not exist.
     - Do not explain if there are no failed or incomplete quote lines.
     - If the user requests to modify a field but the value would be the same as the existing one, explain naturally that no changes were applied because the value is already the same.
-    
+
     Summary:
     - Create a short summary combining previous summary + this iteration.
     """
@@ -1185,7 +1015,7 @@ def extract_quote_line_updates_with_llm2(user_message, current_state, previous_s
     Uses LLM to extract structured quote line updates from user input.
     Returns JSON, tokens used, and estimated cost.
     """
-    
+
     system_prompt = """
     You are a helpful AI assistant that updates quote line items from user messages.
     Always return JSON with structure:
@@ -1203,7 +1033,7 @@ def extract_quote_line_updates_with_llm2(user_message, current_state, previous_s
                 "term": null,
                 "unit_price": null
             },
-            "value": 
+            "value":
         },
         "completed": false
         }
@@ -1232,13 +1062,13 @@ def extract_quote_line_updates_with_llm2(user_message, current_state, previous_s
     9. Fields quantity, discount_percentage, and discount_amount must not return as null.
 
     10. Mark "completed" as true if a line item receives an update, provided it is within the following parameters:
-    - quantity: integer >= 0  
-    - term: integer between 1 and 12  
-    - discount_percentage: between 0 and 100  
-    - discount_amount: >= 0 and <= unit_price (if unit_price is provided)  
-    - If unit_price is provided:  
-    - discount_percentage → discount_amount = (discount_percentage / 100) * unit_price  
-    - discount_amount → discount_percentage = (discount_amount / unit_price) * 100  
+    - quantity: integer >= 0
+    - term: integer between 1 and 12
+    - discount_percentage: between 0 and 100
+    - discount_amount: >= 0 and <= unit_price (if unit_price is provided)
+    - If unit_price is provided:
+    - discount_percentage → discount_amount = (discount_percentage / 100) * unit_price
+    - discount_amount → discount_percentage = (discount_amount / unit_price) * 100
     - If unit_price is NOT provided, just set the discount as given by the user.
 
     11. Support flexible update actions: add, remove, delete, multiply, duplicate, divide, among others.
@@ -1246,12 +1076,12 @@ def extract_quote_line_updates_with_llm2(user_message, current_state, previous_s
     12. The only fields can be updated are: quantity, discount_type, discount_amount, discount_percentage and term.
     - Do not mention or claim updates on any other fields.
 
-    - Only update the fields explicitly mentioned by the user. 
+    - Only update the fields explicitly mentioned by the user.
     - Do not assume or fill in fields that the user did not specify.
     - Do not include unchanged information in the agent_message.
     - Only include line items in "update_quote_line" if at least one field is actually modified. Do not include line items where no changes were applied.
     - If a line item has no changes, do not include it in update_quote_line
-    
+
 
     Agent message:
     - If no products or quote lines are mentioned in "Current line items mentioned", respond naturally asking the user which products they want to update. Use language that a regular user would understand, without emphasizing technical or internal terms. It's okay to mention 'quote lines' if it helps clarity, but keep the message user-friendly.
@@ -1263,7 +1093,7 @@ def extract_quote_line_updates_with_llm2(user_message, current_state, previous_s
     - Include information if the user tried to update a product that does not exist.
     - Do not explain if there are no failed or incomplete quote lines.
     - If the user requests to modify a field but the value would be the same as the existing one, explain naturally that no changes were applied because the value is already the same.
-    
+
     Summary:
     - Create a short summary combining previous summary + this iteration.
     """
@@ -1335,7 +1165,7 @@ def generate_final_update_line_items_message(completed_updates, db_results, rema
     """
 
     final_prompt = f"""
-    This is an ongoing conversation about quote line update. 
+    This is an ongoing conversation about quote line update.
     The assistant should return a JSON with two fields only: "message" and "summary".
 
     Context:
@@ -1349,7 +1179,7 @@ def generate_final_update_line_items_message(completed_updates, db_results, rema
     - Mention only which quote lines were successfully updated and which are still pending or incomplete.
     - You don’t need to list each change in detail; instead, describe the updates naturally in the message.
     - For failed quote lines updates, mention the quote line and its error, but only if there are any.
-    - For incomplete quote lines updates, briefly mention them ONLY if there are any. 
+    - For incomplete quote lines updates, briefly mention them ONLY if there are any.
     If none exist, omit this section entirely (do not mention that there are no incomplete lines).
     - Omit entire sections if there are no quote lines in that category.
     - End by asking a short, natural follow-up question about next steps.
@@ -1401,10 +1231,10 @@ def generate_final_update_line_items_message(completed_updates, db_results, rema
     return message, updated_summary, tokens_used, cost_est
 
 
-# FUNCTION TO EXTRACT PRODUCT DETAILS (ADD_PRODUCT_TO_QUOTE)  
+# FUNCTION TO EXTRACT PRODUCT DETAILS (ADD_PRODUCT_TO_QUOTE)
 def extract_products_to_add_with_llm(user_message, current_state, previous_summary=None):
     """Extract multiple product SKUs, quantities, and discounts from user input using GPT."""
-    
+
     # 👉 Si es lista, imprimir con índices
     if isinstance(current_state, list):
         print("\n📦 Current State (indexed):")
@@ -1522,7 +1352,7 @@ def generate_final_add_product_to_quote_message(completed_products, db_results, 
     failed = [(r['product'], r['error']) for r in db_results if r['status'] == 'fail']
 
     final_prompt = f"""
-    This is an ongoing conversation about add products to quote. 
+    This is an ongoing conversation about add products to quote.
     The assistant should return a JSON with two fields only: "message" and "summary".
 
     Context:
@@ -1537,14 +1367,14 @@ def generate_final_add_product_to_quote_message(completed_products, db_results, 
     - Mention only which products were successfully added and which are still pending or incomplete.
     - Do NOT include the detailed changes made to each product; those details are already captured in the "summary".
     - For failed products added, mention the quote line and its error, but only if there are any.
-    - For incomplete products, ONLY mention them if they exist. 
-    - If there are none, do not write anything about them at all. 
+    - For incomplete products, ONLY mention them if they exist.
+    - If there are none, do not write anything about them at all.
     - Absolutely never write phrases like "There are no incomplete products" or "There are no pending items".
     - Omit entire sections if there are no products in that category.
     - End by asking a short, natural follow-up question about next steps.
     - The message is user-facing and can use <br> for line breaks.
     - If an add fails, explain it as a short, natural comment for the user, not as a system error. Keep it user-friendly and conversational, not technical or formal.
-    - NEVER start the message with phrases like "Great news!", "Good job!", "Perfect!", or similar interjections. 
+    - NEVER start the message with phrases like "Great news!", "Good job!", "Perfect!", or similar interjections.
     Begin directly with the content.
     - Don't specify that there were no errors when adding products.
     - Don't specify that there are no incomplete items.

@@ -15,9 +15,9 @@
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-  
+
 </head>
-<body class="grey lighten-5">  
+<body class="grey lighten-5 {% block body_class %}{% endblock %}">
   <div class="dashboard-container">
     <!-- Sidebar -->
     <div class="sidebar-toggle" onclick="toggleSidebar()">☰</div>

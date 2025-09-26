@@ -74,10 +74,10 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
                 continue
         except (TypeError, InvalidOperation):
             discount_value = Decimal(0)
-        
+
         ################ FINAL SET UP VARIABLES ################
 
-        # ✅ Check if the product exists and normalize sku and name variables 
+        # ✅ Check if the product exists and normalize sku and name variables
         #    in case the LLM identified the sku as the name and vice versa
         product, sku, name = find_product_and_normalize_variables(sku, name)
 
@@ -240,7 +240,7 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
                             )
 
                             bundle_response_message += f"&emsp;🔧 Added {option.quantity}x {option.product_option.sku}/{option.product_option.name} ({option.parent_product})<br>"
-                        
+
                         elif option.default_selected == False and option.product_option:
                             QuoteLine.objects.create(
                                 quote=quote,
@@ -284,7 +284,7 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
             logging.info(f"=>>>>>>>>>>>>>>>>>>>> Saved Total Price in DB: {quote_line.total_price}")
 
             added_products.append(f"{quantity}x {sku}/{name}.")
-            
+
             if discount_type == "percentage":
                 response_message += f"✅ Added {quantity}x {sku}/{name} to quote {quote.name} with a {discount_value}% discount.<br>"
             elif discount_type == "amount":
@@ -296,7 +296,7 @@ def save_quote_products(products, quote, response_message, allow_updates=False):
         except Exception as e:
             logging.error(f"❌ Error adding product {sku}/{name}: {str(e)}")
             response_message += f"❌ Error adding product {sku}/{name} to quote {quote.name}.<br>"
-    
+
     return quote, response_message, added_products
 
 
@@ -344,7 +344,7 @@ def save_quote_line_update(request, quote):
         new_value = update["value"]
         quote_line_id = update["quote_line_id"]
 
-        
+
         with transaction.atomic():
             try:
                 quote_line = QuoteLine.objects.get(id=quote_line_id, quote=quote, product__sku=sku)
@@ -353,13 +353,13 @@ def save_quote_line_update(request, quote):
                     "message": f"⚠️ Error: No line item found for SKU {sku} in this quote.",
                     "success": False
                 }
-            
+
             if field == "term" and not quote_line.is_subscription:
                 return {
                     "message": "⚠️ Error: A term cannot be assigned to a product that is not a subscription.",
                     "success": False
                 }
-            
+
             # If product has custom fields, then create that custom fields to quote line
             copy_custom_fields_values_from_product_to_quote_line(quote_line)
 
@@ -418,14 +418,14 @@ def save_quote_line_update(request, quote):
             update_opportunity_net_amount(quote.opportunity)
             #########################################################################################################
 
-        
+
             response_message = "✅ Quote line updated successfully."
 
             return {
                 "message": response_message,
                 "success": True
             }
-    
+
     except ValueError as ve:
         return {
             "message": str(ve),
@@ -449,7 +449,7 @@ def handle_quote_update_request(extracted_updates, quote, response_message):
     updated_quotes = []
 
     for index, item in enumerate(extracted_updates, start=1):
-            
+
         quote_name = item.get("name", None)
         field = item.get("field", None)
         value = item.get("value", None)
@@ -573,9 +573,9 @@ def save_quote_update(request):
                 "message": f"Quote with ID {quote.id} was not found in the database.",
                 "success": False
             }
-        
+
         with transaction.atomic():
-            
+
             original_quote = deepcopy(quote)
 
             # ✅ Update based on the field dynamically
@@ -614,14 +614,14 @@ def save_quote_update(request):
             quote.save()
             update_opportunity_net_amount(quote.opportunity)
             #########################################################################################################
-        
+
             response_message = "✅ Quote updated successfully."
 
             return {
                 "message": response_message,
                 "success": True
             }
-    
+
     except ValueError as ve:
         return {
             "message": str(ve),

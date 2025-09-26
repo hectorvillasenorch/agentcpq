@@ -90,7 +90,7 @@ def handle_bundle_components(extracted_components, response_message):
                     product_component_exists.min_quantity = min_quantity
                     logging.info(f"☑️ Min Quantity of {product_component_exists.product_option.name} updated in bundle {bundle.name}")
                     response_message += f"☑️ Min Quantity: {min_quantity}<br>"
-                
+
                 if max_quantity is not None and max_quantity != product_component_exists.max_quantity:
                     product_component_exists.max_quantity = max_quantity
                     logging.info(f"☑️ Max Quantity of {product_component_exists.product_option.name} updated in bundle {bundle.name}")
@@ -172,7 +172,7 @@ def handle_bundle_components(extracted_components, response_message):
                 error_msg = response.get("message", "Unknown error.")
                 response_message += f"Error creating option: {error_msg}<br>"
                 logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
-        
+
         bundle.save()
 
     if components_created:
@@ -228,7 +228,7 @@ def save_option(request):
             "message": response_message,
             "success": True
         }
-    
+
     except ValueError as ve:
         return {
             "message": str(ve),
@@ -241,7 +241,7 @@ def save_option(request):
             "message": f"Error saving option: {str(e)}",
             "success": False
         }
-    
+
 def handle_option_updates(extracted_updates, response_message):
 
     logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🛠️ Updating bundle options 🛠️")
@@ -296,7 +296,7 @@ def handle_option_updates(extracted_updates, response_message):
                 response_message += f"⚠️ Option between {bundle} and {child_product} was not found in the database. <br>"
 
             response_message += f"<b>🔄 <u>Option Update #{index} | {child_product}</u> 🔄</b><br>"
-                
+
             # General validations
 
             quantity = update.get("quantity", None)
@@ -346,7 +346,7 @@ def handle_option_updates(extracted_updates, response_message):
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> Trying to update option: {update_payload}")
 
             response_message += "<br>"
-            
+
             #Convert list to valid JSON
             item_json = json.dumps(update_payload)
 
@@ -361,7 +361,7 @@ def handle_option_updates(extracted_updates, response_message):
                 error_msg = response.get("message", "Unknown error.")
                 response_message += f"{error_msg}<br>"
                 logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
-        
+
 
     return response_message, updated_options
 
@@ -394,14 +394,14 @@ def save_update_option(request, option):
             option.group_name = group_name
 
         option.save()
-        
+
         response_message = "✅ Option updated successfully."
 
         return {
             "message": response_message,
             "success": True
         }
-    
+
     except ValueError as ve:
         return {
             "message": str(ve),
@@ -415,7 +415,7 @@ def save_update_option(request, option):
             "success": False
         }
 
-    
+
 def handle_delete_options_from_quote(extracted_delete_options, response_message, quote):
     logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🗑️ Deleting options from bundle 🗑️")
 

@@ -89,7 +89,7 @@ def handle_custom_object_updates(user, extracted_custom_objects_updates, respons
             continue
 
         # Check if custom object exists
-        try: 
+        try:
             custom_object = CustomObject.objects.get(name=name)
         except CustomObject.DoesNotExist:
             agent_response = f"A custom object with the label '{label}' does not exist."
@@ -180,7 +180,7 @@ def handle_custom_object_deletes(user, extracted_custom_objects_deletes, respons
             continue
 
         # Check if custom object exists
-        try: 
+        try:
             custom_object = CustomObject.objects.get(name=name)
         except CustomObject.DoesNotExist:
             agent_response = f"A custom object with the label '{label}' does not exist."
@@ -301,7 +301,7 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
         if label is None:
             response_message += f"⚠️ Oops! It looks like you didn’t provide a label for the custom field. Could you tell me what you’d like to name this field?<br><br>"
             continue
-        
+
         if not crm:
             crm = "AgentCPQ"
 
@@ -359,7 +359,7 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
     objects_updated = []
 
     for index, custom_field in enumerate(extracted_custom_fields_updates, start=1):
-        
+
         target_field_label = custom_field.get("target_field_label", None)
         target_custom_object = custom_field.get("target_custom_object", None)
         target_default_object = custom_field.get("target_default_object", None)
@@ -473,7 +473,7 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
 
         allowed_crm_values = ["AgentCPQ", "HubSpot", "Salesforce"]
 
-    
+
         if crm_to_update and crm_to_update not in allowed_crm_values:
             agent_response = (
                 f"Invalid CRM value: '{crm_to_update}'. Must be one of: {', '.join(allowed_crm_values)}."
@@ -624,7 +624,7 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
             response_message += f"🔣 Data Type: {data_type_to_update}<br>"
         if options_to_update:
             response_message += f"🧾 Options: {options_to_update}<br>"
-        
+
         response_message += "<br>"
 
         field_payload = {

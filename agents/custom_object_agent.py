@@ -75,8 +75,8 @@ def create_custom_object(user, user_message, session_data):
         return {
             "message": f"No custom objects were created. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -114,8 +114,8 @@ def update_custom_object(user, user_message, session_data):
         return {
             "message": f"No custom objects were updated. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -153,8 +153,8 @@ def delete_custom_object(user, user_message, session_data):
         return {
             "message": f"No custom objects were deleted. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -188,8 +188,8 @@ def create_custom_field(user, user_message, session_data):
         return {
             "message": f"No custom fields were created. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -227,8 +227,8 @@ def update_custom_field(user, user_message, session_data):
         return {
             "message": f"No custom fields were updated. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -267,8 +267,8 @@ def delete_custom_field(user, user_message, session_data):
         return {
             "message": f"No custom fields were deleted. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -325,8 +325,8 @@ def create_custom_record(user, user_message, session_data):
         return {
             "message": f"No custom records were created. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -385,8 +385,8 @@ def update_custom_record(user, user_message, session_data):
         return {
             "message": f"No custom records were updated. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -424,8 +424,8 @@ def delete_custom_record(user, user_message, session_data):
         return {
             "message": f"No custom records were deleted. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
