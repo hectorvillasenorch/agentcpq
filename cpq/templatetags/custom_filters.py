@@ -2,6 +2,7 @@ from django import template
 from django.utils.safestring import mark_safe
 from django.utils.html import escape
 import json
+from django.utils.html import json_script as django_json_script
 
 register = template.Library()
 
@@ -26,19 +27,10 @@ def get_field_value(values, field):
     return ''
 
 @register.filter
-def json_script(values, name):
+def json_script(values, element_id):
     """
-    Converts a list of values to JSON for use in templates.
-
-    WARNING: mark_safe is used here but all values are escaped with escape().
-    This is a false positive for Bandit B703/B308 and is safe.
+    Converts a list of values into safe JSON for the template.
+    Uses django.utils.html.json_script to automatically escape everything.
     """
-    data = {}
-    for v in values:
-        data[v.field.id] = escape(v.value)
-
-    # bandit: disable=B703,B308 - false positive: all values are escaped, mark_safe is safe
-    result = mark_safe(json.dumps(data))
-    # bandit: enable=B703,B308
-
-    return result
+    data = {v.field.id: v.value for v in values}
+    return django_json_script(data, element_id)

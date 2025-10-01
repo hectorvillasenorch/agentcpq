@@ -806,6 +806,11 @@ class ProductRule(models.Model):
         return f"{self.product.name} {self.rule_type} {self.related_product.name}"
 
 class Contract(models.Model):
+    opportunity = models.ForeignKey(
+        Opportunity,
+        on_delete=models.CASCADE,
+        related_name="contracts"
+    )
     subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="contract")
     start_date = models.DateField()
     end_date = models.DateField()

@@ -109,7 +109,7 @@ DESC_PARAGRAPH_STYLE = ParagraphStyle(
 
 def normalize_term_for_product(product, term):
     if product.is_subscription:
-        term = 1 if term is None else int(term)
+        term = 12 if term is None else int(term)
     else:
         term = None
 

@@ -730,7 +730,7 @@ def handle_create_inclusion_rule(user, completed_rules, response_message,):
             rule.save()
             saved_rules.append(rule)
 
-            success = f"✅ Inclusion rule '{rule.name}' ('{rule.description}') saved successfully with ID {rule.id}."
+            success = f"✅ Inclusion rule '{rule.name}' ('{rule.description}') saved successfully with ID {rule.id}.<br>"
 
             response_message += success
             logging.info(success)

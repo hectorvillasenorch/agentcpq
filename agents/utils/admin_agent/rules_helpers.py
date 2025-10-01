@@ -173,7 +173,7 @@ def check_inclusion_rule(user, conditions, quote, product):
     from ..quote_agent.handle_helpers import handle_products_to_add
 
     trigger_product = conditions.get("trigger_product")
-    
+
     if (trigger_product["sku"] == product.sku) or (trigger_product["name"] == product.sku) or (trigger_product["name"] == product.name) or (trigger_product["sku"] == product.name):
         included_products = conditions.get("included_products")
 
@@ -182,7 +182,7 @@ def check_inclusion_rule(user, conditions, quote, product):
         return "success", result
 
     return "failed", None
-            
+
 
 def check_for_rules_quote_level(target_type, rule_type, quote):
     #   Accept one rule type (str) or many types (list)

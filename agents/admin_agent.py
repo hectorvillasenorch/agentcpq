@@ -3,11 +3,12 @@ import openai
 import logging
 import json
 from dotenv import load_dotenv
-from cpq.models import Quote, BusinessRule, CustomObject, EmailAlert
+from cpq.models import Quote, BusinessRule, CustomObject, EmailAlert, Product
 from decimal import Decimal
 from django.db.models import Q
 from django.forms.models import model_to_dict
 from django.contrib.auth.models import User
+from cpq.models import Product
 
 # LLM helpers
 from .utils.admin_agent.llm_helpers import extract_validation_rules, extract_rules_details_to_render, extract_rule_updates, extract_rule_deletes, extract_custom_object_updates, extract_email_alerts_deletes, extract_inclusion_rules
@@ -264,6 +265,7 @@ def create_validation_rule(user, user_message, session_data):
             response_message.append(content_message)
             continue
 
+    print(f"\n\nResponse Message (Validation Rules): {response_message}\n\n")
 
     return {
         "message": "Here are the rules details:",
@@ -305,7 +307,7 @@ def create_inclusion_rule(user, user_message, session_data):
             "message": llm_result["agent_message"],
             "session_summary": llm_result["summary"]
         }
-    
+
     ################################################
 
     response_message = ""
@@ -317,9 +319,22 @@ def create_inclusion_rule(user, user_message, session_data):
     # ✅ Update quote (subtotal, discounts fields and net amount)
     #quote.save()
 
-    return {
-        "message": response_message
-    }
+    rules_details = get_inclusion_rules_details(rules_created)
+
+    #print(f"\n\nRules Details: {rules_details}\n\n")
+
+    if rules_created:
+
+        return {
+            "message": response_message,
+            "inclusion_rules_details": rules_details,
+            "hiddenMessage": "True"
+        }
+    
+    else:
+        return {
+            "message": response_message
+        }
 
     # --- 5️⃣ Generar mensaje final dinámico usando función separada ---
     dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_create_inclusion_rule_message(
@@ -553,3 +568,48 @@ def delete_email_alert(user, user_message, session_data):
         "message": response_message,
         "temporaryMessage": True
         }
+
+
+def get_inclusion_rules_details(inclusion_rules):
+
+    rule_ids = [rule.id for rule in inclusion_rules]
+    rules_qs = BusinessRule.objects.filter(id__in=rule_ids)
+
+    rules_details = []
+    for rule in rules_qs:
+        conditions = rule.conditions or {}
+
+        # 🔎 Procesar trigger_product si existe
+        tp = conditions.get("trigger_product")
+        if tp:
+            query = Q()
+            if tp.get("name"):  # puede ser sku disfrazado
+                query |= Q(name=tp["name"]) | Q(sku=tp["name"])
+            if tp.get("sku"):  # puede ser name disfrazado
+                query |= Q(name=tp["sku"]) | Q(sku=tp["sku"])
+
+            product = Product.objects.filter(query).first()
+            if product:
+                conditions["trigger_product"] = {
+                    "name": product.name,
+                    "sku": product.sku
+                }
+            else:
+                # fallback: se deja lo que vino del LLM
+                conditions["trigger_product"] = {
+                    "name": tp.get("name"),
+                    "sku": tp.get("sku")
+                }
+
+        rules_details.append({
+            "name": rule.name,
+            "description": rule.description,
+            "rule_type": rule.rule_type,
+            "target_type": rule.target_type,
+            "priority": rule.priority,
+            "error_message": rule.error_message,
+            "active": rule.active,
+            "conditions": conditions,  # ya limpio
+        })
+
+    return rules_details

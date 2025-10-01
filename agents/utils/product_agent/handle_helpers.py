@@ -48,8 +48,6 @@ def handle_create_product(user, completed_products):
             result.append(result_payload)
             continue
 
-        print(f"\n\nPrice: {price}\n\n")
-
         if not isinstance(price, (Decimal, float, int, str)):
             try:
                 price = Decimal(str(price))

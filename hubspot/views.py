@@ -142,7 +142,7 @@ def hubspot_callback(request):
     if not code:
         return JsonResponse({"error": "Missing authorization code"}, status=400)
 
-    token_url = "https://api.hubapi.com/oauth/v1/token"
+    token_url = settings.HUBSPOT_TOKEN_URL
 
     data = {
         "grant_type": "authorization_code",

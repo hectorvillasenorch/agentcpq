@@ -15,6 +15,8 @@ from .notifications.notifications import notify_quote_approved, notify_quote_rej
 from .notifications.notifications import notify_lead_created, notify_account_created, notify_opportunity_created, notify_opportunity_closed_won, notify_opportunity_closed_lost, notify_quote_sent_for_approval
 from .notifications.notifications import notify_quote_approved, notify_quote_rejected
 
+from .action_trigger import create_contract_after_closed_won
+
 
 @receiver(post_save, sender=Quote)
 def handle_primary_quote_sync(sender, instance, **kwargs):
@@ -64,11 +66,10 @@ def check_opportunity_stage_change(sender, instance, **kwargs):
     except Opportunity.DoesNotExist:
         return
 
-    # Comparar stage anterior con el nuevo
     if old_instance.stage != instance.stage:
         if instance.stage == "Closed Won":
             print(f"Opportunity {instance.id} moved to Closed Won ✅")
-            # Aquí llamas a tu función
+            run_async(create_contract_after_closed_won, instance)
             run_async(notify_opportunity_closed_won, instance)
 
         elif instance.stage == "Closed Lost":

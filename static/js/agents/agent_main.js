@@ -161,7 +161,8 @@ function enhanceStructuredAgentMessagesHistoryChat() {
       'validation_rules_details:',
       'rules:',
       'email_alerts_details:',
-      'retrieved_records:'
+      'retrieved_records:',
+      'inclusion_rules_details:'
     ];
 
     let jsonPart = null;
@@ -186,9 +187,23 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     try {
       const data = JSON.parse(unescapeUnicode(jsonPart));
 
+      //console.log("This is data: ", data);
+
       // === VALIDATION RULES ===
-      if (data.rules || (Array.isArray(data) && data[0]?.rule_type)) {
+      if (data.rules || (Array.isArray(data) && data[0]?.rule_type == 'validation')) {
         const html = renderValidationRuleDetails(data.rules || data);
+        div.innerHTML = html;
+        return;
+      }
+
+      // === VALIDATION RULES ===
+      if (data.rules || (Array.isArray(data) && data[0]?.rule_type == 'inclusion')) {
+        let fullMessage = unescapeUnicode(raw);
+
+        const html = renderInclusionRuleDetails(
+          fullMessage,               // mensaje completo
+          data.rules || data         // reglas
+        );
         div.innerHTML = html;
         return;
       }
@@ -358,6 +373,11 @@ async function sendMessage() {
           //console.log(data.response.validation_rules_details)
           responseMessage += renderValidationRuleDetails(data.response.validation_rules_details);
         }
+        // ✅ Handle Inclusion Rules Response
+        else if (data.response && data.response.inclusion_rules_details) {
+          console.log("Inclusion Rules Details");
+          responseMessage += renderInclusionRuleDetails(data.response.message, data.response.inclusion_rules_details);
+        }
         // ✅ Show Rules
         else if (data.response && data.response.rules && data.response.read_only) {
           console.log("Show Rules");
@@ -442,7 +462,7 @@ function appendMessage(className, message) {
       }
     }
 
-    // ✅ Detect stored notes as string
+    // ✅ Detect validation rules
     if (className === "agent" && message.includes("validation_rules_details: {")) {
       try {
         // Extract JSON from string
@@ -453,6 +473,20 @@ function appendMessage(className, message) {
         }
       } catch (e) {
         console.warn("Failed to parse validation_rules_details JSON:", e);
+      }
+    }
+
+    // ✅ Detect inclusion rules
+    if (className === "agent" && message.includes("inclusion_rules_details:")) {
+      try {
+        // Extraer el JSON, ya sea objeto {} o lista []
+        const match = message.match(/inclusion_rules_details:\s([\s\S]+)/);
+        if (match && match[1]) {
+          const rules = JSON.parse(match[1].trim());
+          message = renderInclusionRuleDetails(rules); // Usa tu formateador bonito
+        }
+      } catch (e) {
+        console.warn("Failed to parse inclusion_rules_details JSON:", e);
       }
     }
 
@@ -2312,6 +2346,85 @@ function renderValidationRuleDetails(rules, read_only=false) {
           </div>
         </div>`;
     }
+
+  });
+
+  return html;
+}
+
+function renderInclusionRuleDetails(message, rules, read_only=false) {
+  let html = "";
+  console.log(rules);
+
+  // Agregar mensaje si viene
+  if (message) {
+    const idx = message.indexOf("inclusion_rules_details:");
+    if (idx !== -1) {
+      message = message.slice(0, idx).trim(); // cortar antes del JSON
+    }
+
+    if (message) {
+      html += `<p style="margin-bottom:10px;">${message}</p><br>`;
+    }
+  }
+
+  rules.forEach((rule) => {
+    var head_text = `✅ New inclusion rule created successfully | ${rule.name} ✅`;
+    html +=
+      `<div class="rule-container">
+        <div class="rule-header">
+            <h5>${head_text}</h3>
+            <span style="margin-left: 10px; font-weight: bold; color: ${rule.active ? 'green' : 'red'};">
+              ${rule.active ? '🟢 Active' : '🔴 Inactive'}
+            </span>
+        </div>
+        <div class="rule-details">
+            <div class="name">
+              <label for="rule-name"><strong>Description:</strong></label>
+              <input id="rule-name" type="text" value="${rule.description}" readonly/>
+            </div>
+
+            <div class="rule_type">
+              <label for="rule-type"><strong>Rule Type:</strong></label>
+              <input id="rule-type" type="text" value="${rule.rule_type}" readonly/>
+            </div>
+
+            <div class="target_type">
+              <label for="target-type"><strong>Target Type:</strong></label>
+              <input id="target-type" type="text" value="${rule.target_type}" readonly/>
+            </div>
+
+            <div class="priority">
+              <label for="priority"><strong>Priority:</strong></label>
+              <input id="priority" type="number" value="${rule.priority}" readonly/>
+            </div>
+
+            <div class="error_message">
+              <label for="error-message"><strong>Message:</strong></label>
+              <textarea id="error-message" class="materialize-textarea" rows="3" readonly>${rule.error_message}</textarea>
+            </div>
+        </div>
+
+        <div class="conditions-details">
+          <p><h6>Trigger Product:</h6></p>
+          <ul class="conditions-list">
+            <li>${rule.conditions.trigger_product.name} (${rule.conditions.trigger_product.sku})</li>
+          </ul>
+        </div>
+
+        <div class="conditions-details">
+          <p><h6>Included Products:</h6></p>
+          <ul class="conditions-list">
+            ${rule.conditions.included_products
+              .map(prod => {
+                const label = prod.name || prod.sku || "Unknown Product";
+                return `<li>${prod.quantity}x ${label}</li>`;
+              })
+              .join("")}
+          </ul>
+        </div>
+
+      </div>`;
 
   });
 

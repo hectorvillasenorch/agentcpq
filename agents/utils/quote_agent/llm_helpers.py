@@ -1347,7 +1347,7 @@ def generate_final_add_product_to_quote_message(completed_products, db_results, 
     2) An updated short summary that extends the previous summary with changes from this iteration.
     Returns (message_text, updated_summary, tokens_used, cost_est).
     """
-    
+
     successful = [
         {
             'product': r['product'],
@@ -1435,4 +1435,3 @@ def generate_final_add_product_to_quote_message(completed_products, db_results, 
         updated_summary = previous_summary
 
     return message, updated_summary, tokens_used, cost_est
-

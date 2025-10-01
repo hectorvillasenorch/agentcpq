@@ -28,6 +28,7 @@ from django.contrib.auth.models import User, Group
 from django.utils import timezone
 from .models import EmailAlert
 from cpq.models import default_rendered_fields_for_quote_document_settings, default_omitted_fields_for_quote_document_settings
+from django.utils.html import escape
 
 # HubSpot sync
 from hubspot.views import sync_opportunity_to_hubspot
@@ -850,9 +851,9 @@ def create_business_rule(request):
         "form": form,
         "formset": formset,
         "rule_type": rule_type,
-        "QUOTE_FIELDS": mark_safe(json.dumps(QUOTE_FIELDS)),
-        "QUOTE_LINE_FIELDS": mark_safe(json.dumps(QUOTE_LINE_FIELDS)),
-        "PRODUCT_FIELDS": mark_safe(json.dumps(PRODUCT_FIELDS)),
+        "QUOTE_FIELDS": mark_safe(json.dumps(QUOTE_FIELDS)), # nosec B703 B308
+        "QUOTE_LINE_FIELDS": mark_safe(json.dumps(QUOTE_LINE_FIELDS)), # nosec B703 B308
+        "PRODUCT_FIELDS": mark_safe(json.dumps(PRODUCT_FIELDS)), # nosec B703 B308
     })
 
 
@@ -961,18 +962,17 @@ def usage_dashboard(request):
     action_limit = current_tenant.actions_limit or 1000
     overflow = monthly_count - action_limit
 
-
     actions_by_month_serialized = [
-    {
-        "month": entry["month"].strftime("%Y-%m"),  # or "%b %Y" for readable labels
-        "total": entry["total"]
-    }
-    for entry in actions_by_month
+        {
+            "month": entry["month"].strftime("%Y-%m"),
+            "total": entry["total"]
+        }
+        for entry in actions_by_month
     ]
 
     actions_by_user_serialized = [
         {
-            "user": entry.get("user__username") or "Unknown",
+            "user": escape(entry.get("user__username") or "Unknown"),
             "total": entry["count"]
         }
         for entry in actions_by_user
@@ -981,8 +981,8 @@ def usage_dashboard(request):
 
     context = {
         "tenant": current_tenant,
-        "actions_by_month_json": mark_safe(json.dumps(list(actions_by_month_serialized))),
-        "actions_by_user_json": mark_safe(json.dumps(list(actions_by_user_serialized))),
+        "actions_by_month_json": json.dumps(actions_by_month_serialized),
+        "actions_by_user_json": json.dumps(actions_by_user_serialized),
         "top_actions": top_actions,
         "monthly_count": monthly_count,
         "limit": action_limit,
