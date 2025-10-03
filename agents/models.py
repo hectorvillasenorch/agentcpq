@@ -36,6 +36,7 @@ class AgentPrompt(models.Model):
         ("custom_object_agent", "Custom Object Agent"),
         ("product_agent", "Product Agent"),
         ("quote_agent", "Quote Agent"),
+        ("action_trigger_agent", "Action Trigger Agent")
     ]
 
     METHOD_CHOICES = [

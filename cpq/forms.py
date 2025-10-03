@@ -4,6 +4,7 @@ from django.forms import modelformset_factory
 from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
+from django.db import models
 
 from django.contrib.auth.models import User
 from .models import EmailAlert
@@ -275,6 +276,15 @@ def get_dynamic_form(model_class, crm, object_type):
 
             instance = kwargs.get("instance")
 
+            # --- Reemplazar TODOS los DateField por inputs de fecha ---
+            for field in model_class._meta.fields:  # 👈 en lugar de fields_map
+                if isinstance(field, models.DateField):
+                    self.fields[field.name] = forms.DateField(
+                        required=not field.blank,
+                        initial=getattr(instance, field.name, None) if instance else None,
+                        widget=forms.DateInput(attrs={'type': 'date'})
+                    )
+
             # --- Manejo de due_date ---
             if hasattr(self._meta.model, "due_date"):
                 self.fields["due_date"] = forms.DateField(
@@ -356,7 +366,7 @@ def get_dynamic_form(model_class, crm, object_type):
                             widget=widget
                         )
 
-                    # --- Text (por defecto) ---
+                    # --- Text (default) ---
                     else:
                         self.fields[field_name] = field_class(
                             label=field.label or field.name,

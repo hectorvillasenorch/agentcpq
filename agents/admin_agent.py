@@ -299,7 +299,7 @@ def create_inclusion_rule(user, user_message, session_data):
             remaining_rules.append(rule)
 
     # Guardar solo los incompletos en session state
-    session_data["state"]["line_items_updates"] = remaining_rules
+    session_data["state"]["create_inclusion_rule"] = remaining_rules
 
     # Return if not any completed items
     if not completed_rules:

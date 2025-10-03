@@ -10,6 +10,7 @@ from agents.admin_agent import admin_agent
 from agents.approvals_agent import approval_agent
 from agents.custom_object_agent import custom_object_agent
 from agents.analytics_agent import analytics_agent
+from agents.action_trigger_agent import action_trigger_agent
 from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
 from django.contrib.auth.models import User
@@ -197,6 +198,7 @@ def orchestrate_request(user, user_message, session_data):
         - "UpdateEmailAlert"
         - "DeleteEmailAlert"
         - "ShowMetrics" → Use when the user requests listings, catalogs, or filtered searches across objects. (e.g. "show me my product catalog", "list my last 5 quotes", "show me all leads created this month").
+        - "CreateActionTrigger"
         """
     })
 
@@ -489,7 +491,10 @@ def get_action_map():
         "DeleteEmailAlert": admin_agent,
 
         # Metrics Agent
-        "ShowMetrics": analytics_agent
+        "ShowMetrics": analytics_agent,
+
+        # Action Trigger Agent
+        "CreateActionTrigger": action_trigger_agent,
     }
 
 

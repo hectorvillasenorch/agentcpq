@@ -586,23 +586,6 @@ class QuoteLine(models.Model):
     def __str__(self):
         return f"{self.product.name} ({self.quantity}x)"
 
-class Subscription(models.Model):
-    quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="subscriptions")
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="subscriptions")
-    quote_line = models.OneToOneField(QuoteLine, on_delete=models.CASCADE, related_name="subscription")
-    start_date = models.DateField()
-    end_date = models.DateField()
-    billing_cycle = models.CharField(max_length=50, choices=[
-        ('Monthly', 'Monthly'),
-        ('Quarterly', 'Quarterly'),
-        ('Annually', 'Annually'),
-    ])
-    price_per_cycle = models.DecimalField(max_digits=10, decimal_places=2)
-    term = models.IntegerField()
-
-    def __str__(self):
-        return f"{self.product.name} Subscription ({self.term} months)"
-
 class Asset(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="assets")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="assets")
@@ -809,11 +792,10 @@ class Contract(models.Model):
     opportunity = models.ForeignKey(
         Opportunity,
         on_delete=models.CASCADE,
-        related_name="contracts"
+        related_name="contracts",
     )
-    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="contract")
     start_date = models.DateField()
-    end_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)
     contract_status = models.CharField(max_length=50, choices=[
         ('Active', 'Active'),
         ('Expired', 'Expired'),
@@ -821,7 +803,30 @@ class Contract(models.Model):
     ])
 
     def __str__(self):
-        return f"Contract for {self.subscription.product.name} ({self.contract_status})"
+        return f"Contract for {self.opportunity} ({self.contract_status})"
+    
+class Subscription(models.Model):
+    quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="subscriptions")
+    quote_line = models.OneToOneField(QuoteLine, on_delete=models.CASCADE, related_name="subscription")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="subscriptions")
+    contract = models.ForeignKey(Contract, on_delete=models.CASCADE, related_name="subscriptions")
+    start_date = models.DateField()
+    end_date = models.DateField()
+    billing_cycle = models.CharField(
+        max_length=50,
+        choices=[
+            ('monthly', 'monthly'),
+            ('quarterly', 'quarterly'),
+            ('annual', 'annual'),
+            ('one_time', 'one_time')
+        ],
+        default='monthly'
+    )
+    price_per_cycle = models.DecimalField(max_digits=10, decimal_places=2)
+    term = models.IntegerField()
+
+    def __str__(self):
+        return f"{self.product.name} Subscription ({self.term} months)"
 
 class Usage(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="usage_records")
@@ -1374,3 +1379,144 @@ class EmailAlertLog(models.Model):
 
     def __str__(self):
         return f"{self.email_alert} sent to {self.instance_type} {self.instance_id} at {self.sent_at}"
+
+class ActionTrigger(models.Model):
+    """
+    Represents a trigger (event) and the action to execute on a specific object.
+    The combination of action and object will determine the function to call in the backend.
+    """
+
+    # Trigger choices
+    TRIGGER_CHOICES = [
+        ("opportunity_closed_won", "Opportunity Closed Won"),
+        # Add more triggers in the future
+    ]
+
+    # Action choices
+    ACTION_CHOICES = [
+        ("create", "Create"),
+        ("update", "Update"),
+        ("delete", "Delete"),
+    ]
+
+    # Object choices
+    OBJECT_CHOICES = [
+        ("renewal_task", "Renewal Task"),
+        # Add more objects in the future
+    ]
+
+    trigger = models.CharField(
+        max_length=100,
+        choices=TRIGGER_CHOICES,
+        verbose_name="Trigger (event)",
+        help_text="Select the event that will trigger the action."
+    )
+
+    action = models.CharField(
+        max_length=20,
+        choices=ACTION_CHOICES,
+        verbose_name="Action",
+        help_text="Select the action to perform: Create, Update, or Delete."
+    )
+
+    object_name = models.CharField(
+        max_length=50,
+        choices=OBJECT_CHOICES,
+        verbose_name="Object",
+        help_text="Select the object on which the action will be performed."
+    )
+
+    action_params = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Action Parameters",
+        help_text="Optional. JSON with parameters for the action/function."
+    )
+
+    active = models.BooleanField(
+        default=True,
+        verbose_name="Active",
+        help_text="Indicates whether the trigger is active and will execute when the event occurs."
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Created At",
+        help_text="The date and time when this record was created (read-only)."
+    )
+
+    def __str__(self):
+        return f"{self.trigger} -> {self.action} {self.object_name} (id={self.id})"
+
+class RenewalTask(models.Model):
+    """
+    Scheduled renewal task.
+    It is linked to an Opportunity (which already contains relationships with Quote, Contract, Subscription, etc.)
+    """
+
+    opportunity = models.ForeignKey(
+        Opportunity,
+        on_delete=models.CASCADE,
+        related_name="renewal_tasks",
+        verbose_name="Opportunity",
+        help_text="The Opportunity associated with this renewal task."
+    )
+    execute_at = models.DateTimeField(
+        verbose_name="Execution Date",
+        help_text="The date and time when this renewal task should be executed."
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=(
+            ("pending", "Pending"),
+            ("done", "Done"),
+            ("failed", "Failed"),
+        ),
+        default="pending",
+        verbose_name="Status",
+        help_text="Current status of the renewal task: Pending, Done, or Failed."
+    )
+    attempts = models.IntegerField(
+        default=0,
+        verbose_name="Attempts",
+        help_text="Number of times this task has been attempted."
+    )
+    last_error = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Last Error",
+        help_text="If the task failed, this field stores the last error message."
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Created At",
+        help_text="The date and time when this task was created (read-only)."
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Updated At",
+        help_text="The date and time when this task was last updated (read-only)."
+    )
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "execute_at"]),
+        ]
+        verbose_name = "Renewal Task"
+        verbose_name_plural = "Renewal Tasks"
+
+    def __str__(self):
+        return f"RenewalTask(opp={self.opportunity.name}, exec={self.execute_at}, status={self.status})"
+
+    # ---- Convenience Methods ----
+    def mark_done(self):
+        """Marks the task as completed."""
+        self.status = "done"
+        self.save(update_fields=["status", "updated_at"])
+
+    def mark_failed(self, error_text):
+        """Marks the task as failed and saves the error."""
+        self.attempts += 1
+        self.last_error = error_text
+        self.status = "failed"
+        self.save(update_fields=["attempts", "last_error", "status", "updated_at"])

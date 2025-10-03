@@ -15,7 +15,10 @@ from .notifications.notifications import notify_quote_approved, notify_quote_rej
 from .notifications.notifications import notify_lead_created, notify_account_created, notify_opportunity_created, notify_opportunity_closed_won, notify_opportunity_closed_lost, notify_quote_sent_for_approval
 from .notifications.notifications import notify_quote_approved, notify_quote_rejected
 
-from .action_trigger import create_contract_after_closed_won
+from .renewals.renewals import create_contract_after_closed_won
+
+# Action Trigger Helpers
+from .action_trigger.action_trigger import dispatch_trigger
 
 
 @receiver(post_save, sender=Quote)
@@ -67,13 +70,16 @@ def check_opportunity_stage_change(sender, instance, **kwargs):
         return
 
     if old_instance.stage != instance.stage:
-        if instance.stage == "Closed Won":
-            print(f"Opportunity {instance.id} moved to Closed Won ✅")
-            run_async(create_contract_after_closed_won, instance)
+        if instance.stage == "closedwon":
+            print(f"\n{instance.name} moved to Closed Won ✅.\n")
+            create_contract_after_closed_won(instance)
             run_async(notify_opportunity_closed_won, instance)
 
-        elif instance.stage == "Closed Lost":
-            print(f"Opportunity {instance.id} moved to Closed Lost ❌")
+            # Action Trigger
+            dispatch_trigger("opportunity_closed_won", {"opportunity": instance})
+
+        elif instance.stage == "closedlost":
+            print(f"Opportunity {instance.name} moved to Closed Lost ❌")
             run_async(notify_opportunity_closed_lost, instance)
 
 

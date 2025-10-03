@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django import forms
-from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact,Tenant, QuoteDocument, SystemFieldMapping
+from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, ActionTrigger,ActionUsage,Contact,Tenant, QuoteDocument, SystemFieldMapping, Contract, RenewalTask
 from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession, AgentPrompt
 from django.contrib.contenttypes.models import ContentType
@@ -130,6 +130,35 @@ class AccountAdmin(DynamicCustomFieldAdmin):
     def get_fieldsets(self, request, obj=None):
         return [(None, {'fields': list(self.form().fields.keys())})]
 admin.site.register(Account, AccountAdmin)
+
+class ContractAdmin(DynamicCustomFieldAdmin):
+    form = get_dynamic_form(Contract, crm="AgentCPQ", object_type="Contract")
+    list_display = ('opportunity','start_date','end_date', 'contract_status')
+    def get_fieldsets(self, request, obj=None):
+        return [(None, {'fields': list(self.form().fields.keys())})]
+admin.site.register(Contract, ContractAdmin)
+
+class SubscriptionAdmin(DynamicCustomFieldAdmin):
+    form = get_dynamic_form(Subscription, crm="AgentCPQ", object_type="Subscription")
+    list_display = ('start_date','end_date', 'billing_cycle', 'price_per_cycle', 'term', 'contract', 'quote', 'product', 'quote_line')
+    def get_fieldsets(self, request, obj=None):
+        return [(None, {'fields': list(self.form().fields.keys())})]
+admin.site.register(Subscription, SubscriptionAdmin)
+
+
+class ActionTriggerAdmin(DynamicCustomFieldAdmin):
+    form = get_dynamic_form(ActionTrigger, crm="AgentCPQ", object_type="ActionTrigger")
+    list_display = ('trigger','action','object_name', 'action_params', 'active')
+    def get_fieldsets(self, request, obj=None):
+        return [(None, {'fields': list(self.form().fields.keys())})]
+admin.site.register(ActionTrigger, ActionTriggerAdmin)
+
+class RenewalTaskAdmin(DynamicCustomFieldAdmin):
+    form = get_dynamic_form(RenewalTask, crm="AgentCPQ", object_type="RenewalTask")
+    list_display = ('opportunity','status','execute_at', 'attempts', 'last_error', 'created_at', 'updated_at')
+    def get_fieldsets(self, request, obj=None):
+        return [(None, {'fields': list(self.form().fields.keys())})]
+admin.site.register(RenewalTask, RenewalTaskAdmin)
 
 
 class QuoteAdmin(DynamicCustomFieldAdmin):
