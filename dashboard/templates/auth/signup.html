@@ -3,53 +3,70 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Login | AgentCPQ</title>
+  <title>Sign Up | AgentCPQ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- Materialize & Icons -->
   <link rel="stylesheet" href="{% static 'materialize/materialize.min.css' %}" />
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
 
-  <!-- Your custom CSS -->
+  <!-- Shared login/signup styling -->
   <link rel="stylesheet" href="{% static 'css/login.css' %}" />
 
-  <!-- 1️⃣ GSAP core (must come first) -->
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js?plugins=TextPlugin,ScrollTrigger"></script>
-
-  <!-- 3️⃣ Your login logic (deferred so DOM is ready) -->
-  
 </head>
 <body>
   <script src="{% static 'js/agents/login.js' %}" defer></script>
   <div class="login-wrapper">
     <section class="login-left z-depth-1">
-     <img src="{% static 'img/logo-bg-white.png' %}" alt="AgentCPQ Logo" class="login-logo" />
-      <form class="login-form" method="post" action="{% url 'login' %}">
+      <img src="{% static 'img/logo-bg-white.png' %}" alt="AgentCPQ Logo" class="login-logo" />
+      <form class="login-form" method="post" action="{% url 'signup' %}">
         {% csrf_token %}
         {{ form.non_field_errors }}
 
         <div class="input-field">
-          {{ form.username }}               {# this renders <input id="id_username" …> #}
+          {{ form.username }}
           <label for="{{ form.username.id_for_label }}">Username</label>
           {{ form.username.errors }}
         </div>
 
         <div class="input-field">
-          {{ form.password }}
-          <label for="{{ form.password.id_for_label }}">Password</label>
-          {{ form.password.errors }}
+          {{ form.first_name }}
+          <label for="{{ form.first_name.id_for_label }}">First Name</label>
+          {{ form.first_name.errors }}
+        </div>
+
+        <div class="input-field">
+          {{ form.last_name }}
+          <label for="{{ form.last_name.id_for_label }}">Last Name</label>
+          {{ form.last_name.errors }}
+        </div>
+
+        <div class="input-field">
+          {{ form.email }}
+          <label for="{{ form.email.id_for_label }}">Email</label>
+          {{ form.email.errors }}
+        </div>
+
+        <div class="input-field">
+          {{ form.password1 }}
+          <label for="{{ form.password1.id_for_label }}">Password</label>
+          {{ form.password1.errors }}
+        </div>
+
+        <div class="input-field">
+          {{ form.password2 }}
+          <label for="{{ form.password2.id_for_label }}">Confirm Password</label>
+          {{ form.password2.errors }}
         </div>
 
         <div class="center-align">
           <button type="submit" class="btn login-btn waves-effect waves-light">
-            <i class="material-icons left">login</i> Login
+            <i class="material-icons left">person_add</i> Sign Up Now
           </button>
         </div>
         <div class="center-align" style="padding-top: 30px;">
-          <span>Forgot your password? <a href="{% url 'password_reset' %}">Click here to reset it</a></span>
-        </div>
-        <div class="center-align" style="padding-top: 10px;">
-          <span>Need an account? <a href="{% url 'signup' %}">Sign up here</a></span>
+          <span>Already have an account? <a href="{% url 'login' %}">Log in here</a></span>
         </div>
       </form>
     </section>

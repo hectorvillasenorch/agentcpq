@@ -109,8 +109,29 @@ WSGI_APPLICATION = "agentcpq.wsgi.application"
 
 # Database
 DATABASES = {
-    'default': dj_database_url.config(default=config('DATABASE_URL'))
+    'default': dj_database_url.config(
+        default=config('DATABASE_URL'),
+        conn_max_age=config('CONN_MAX_AGE', cast=int, default=600),
+    )
 }
+
+default_db = DATABASES.get('default', {})
+engine = default_db.get('ENGINE', '')
+if engine.endswith('mysql'):
+    mysql_options = default_db.setdefault('OPTIONS', {})
+    mysql_options.setdefault('charset', 'utf8mb4')
+    mysql_options.setdefault('use_unicode', True)
+
+    init_command = "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'"
+    existing_init = mysql_options.get('init_command')
+    if existing_init and existing_init.strip() != init_command:
+        mysql_options['init_command'] = existing_init
+    else:
+        mysql_options['init_command'] = init_command
+
+    default_db.setdefault('TEST', {})
+    default_db['TEST'].setdefault('CHARSET', 'utf8mb4')
+    default_db['TEST'].setdefault('COLLATION', 'utf8mb4_unicode_ci')
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
@@ -247,10 +268,19 @@ SALESFORCE_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # For reset password
+
+def _clean_mail_credential(value):
+    if value is None:
+        return None
+    value = value.replace('\xa0', ' ').strip()
+    return value or None
+
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.getenv("GMAIL_USER")
-EMAIL_HOST_PASSWORD = os.getenv("GMAIL_APP_PW")
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+EMAIL_HOST_USER = _clean_mail_credential(os.getenv("GMAIL_USER"))
+EMAIL_HOST_PASSWORD = _clean_mail_credential(os.getenv("GMAIL_APP_PW"))
+_default_reply_address = _clean_mail_credential(os.getenv("DEFAULT_FROM_EMAIL")) or "noreply@sympletechsolutions.com"
+DEFAULT_FROM_EMAIL = f"Symple Tech Solutions <{_default_reply_address}>"
+DEFAULT_REPLY_TO = _default_reply_address

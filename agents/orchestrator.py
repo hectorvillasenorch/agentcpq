@@ -12,6 +12,19 @@ from agents.custom_object_agent import custom_object_agent
 from agents.analytics_agent import analytics_agent
 from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
+
+
+def _decode_chat_text(text: str) -> str:
+    if not text:
+        return ""
+
+    decoded = text
+    if "\\u" in decoded or "\\U" in decoded:
+        try:
+            decoded = decoded.encode("utf-8").decode("unicode_escape")
+        except UnicodeDecodeError:
+            pass
+    return decoded
 from django.contrib.auth.models import User
 from uuid import uuid4
 logger = logging.getLogger(__name__)
@@ -108,10 +121,11 @@ def orchestrate_request(user, user_message, session_data):
             session_data["session_id"] = chat_session.session_id
 
     # Save user message
+    decoded_initial_user_message = _decode_chat_text(user_message)
     ChatMessage.objects.create(
         session=chat_session,
         sender="user",
-        content=user_message
+        content=decoded_initial_user_message
     )
 
 
@@ -229,9 +243,6 @@ def orchestrate_request(user, user_message, session_data):
         agent_message = result.get("message", "")
         hiddenMessage = result.get("hiddenMessage", False)
 
-        if session_data and user_message and agent_message:
-            update_message_history(session_data, user_message, agent_message)
-
         session_summary = result.get("session_summary", None)
 
         if session_data and session_summary:
@@ -243,16 +254,21 @@ def orchestrate_request(user, user_message, session_data):
                 "message", "session_id", "hiddenMessage", "temporaryMessage",
                 "update_details", "iterations", "success", "quote_id", "notes", "tokens", "cost", "session_summary"
             ):
-                agent_message += f"\n\n{key}:\n{json.dumps(value, indent=2)}"
+                agent_message += f"\n\n{key}:\n{json.dumps(value, indent=2, ensure_ascii=False)}"
+
+        decoded_agent_message = _decode_chat_text(agent_message)
+
+        if session_data and decoded_initial_user_message and decoded_agent_message:
+            update_message_history(session_data, decoded_initial_user_message, decoded_agent_message)
 
         ChatMessage.objects.create(
             session=chat_session,
             sender="agent",
-            content=agent_message,
+            content=decoded_agent_message,
             hiddenMessage=hiddenMessage
         )
 
-        result["message"] = agent_message
+        result["message"] = decoded_agent_message
         result["session_id"] = session_data["session_id"]
 
         return result
@@ -291,10 +307,11 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
             json_str = user_message.replace("Update Quote Line:", "")
             update_data = json.loads(json_str)
             hiddenMessage = update_data.get("hiddenMessage", False)
+            decoded_message = _decode_chat_text(user_message)
             ChatMessage.objects.create(
                 session=chat_session,
                 sender="user",
-                content=user_message,
+                content=decoded_message,
                 hiddenMessage = hiddenMessage
             )
         except json.JSONDecodeError as e:
@@ -304,19 +321,21 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
             json_str = user_message.replace("Update Quote:", "")
             update_data = json.loads(json_str)
             hiddenMessage = update_data.get("hiddenMessage", False)
+            decoded_message = _decode_chat_text(user_message)
             ChatMessage.objects.create(
                 session=chat_session,
                 sender="user",
-                content=user_message,
+                content=decoded_message,
                 hiddenMessage = hiddenMessage
             )
         except json.JSONDecodeError as e:
             logging.error(f" Error decoding JSON: {e}")
     else:
+        decoded_message = _decode_chat_text(user_message)
         ChatMessage.objects.create(
             session=chat_session,
             sender="user",
-            content=user_message
+            content=decoded_message
         )
 
     action_map = get_action_map()
@@ -330,7 +349,9 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
 
         for key, value in result.items():
             if key not in ("message", "session_id", "hiddenMessage", "original_value"):
-                agent_message += f"\n\n📦 {key}:\n{json.dumps(value, indent=2)}"
+                agent_message += f"\n\n📦 {key}:\n{json.dumps(value, indent=2, ensure_ascii=False)}"
+
+        agent_message = _decode_chat_text(agent_message)
 
         ChatMessage.objects.create(
             session=chat_session,
@@ -497,4 +518,3 @@ def get_trigger_phrases():
         "generate pdf",
         "create quote pdf",
     ]
-

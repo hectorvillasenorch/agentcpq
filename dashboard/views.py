@@ -1,5 +1,7 @@
 from django.apps import apps
 from django.shortcuts import render, get_object_or_404, redirect
+from django.urls import reverse
+from django.utils.safestring import mark_safe
 from cpq.models import Product, Quote,QuoteLine, CustomObject, CustomField, CustomFieldValue, CustomRecord,Account, ActionUsage, Tenant, TenantUsageLog, Option
 from cpq.views import set_primary_quote
 from salesforce.models import SalesforceToken
@@ -11,6 +13,7 @@ import requests
 from cpq.forms import  generate_dynamic_form
 from django.db.models import Prefetch
 from django.contrib.contenttypes.models import ContentType
+from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponseForbidden, HttpResponseBadRequest
 from django.db.models import Count
@@ -21,6 +24,7 @@ import hmac
 import hashlib
 from datetime import date
 from django.views.decorators.http import require_GET
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.utils.dateparse import parse_date
 from django.utils import timezone
 from django.db.models import Sum
@@ -30,9 +34,30 @@ import logging
 logger = logging.getLogger(__name__)
 from datetime import datetime, timezone as dt_timezone
 from django.contrib.auth.views import PasswordResetView
-from django.core.mail import EmailMultiAlternatives
+from django.conf import settings
+from django.core.mail import EmailMessage, EmailMultiAlternatives
+import smtplib
 from django.template.loader import render_to_string
 import re
+from .forms import SignupForm
+
+
+def _decode_message_content(raw: str) -> str:
+    if not raw:
+        return ""
+
+    decoded = raw
+    if "\\u" in decoded:
+        try:
+            decoded = decoded.encode("utf-8").decode("unicode_escape")
+        except UnicodeDecodeError:
+            pass
+
+    decoded = decoded.replace("\r\n", "\n")
+    if "\n" in decoded:
+        decoded = decoded.replace("\n", "<br>")
+
+    return decoded
 
 @login_required
 def dashboard(request):
@@ -70,13 +95,32 @@ def dashboard(request):
     if view == "setup" and not user.is_staff:
         return HttpResponseForbidden("You do not have access to the setup view.")
     
-    products = Product.objects.all() if view == "products" else None
-    options = Option.objects.all() if view == "products" else None
-    bundles = Product.objects.filter(is_bundle=True) 
+    products = None
+    options = None
+    bundles = None
 
-    if products:
+    if view == "products":
+        product_queryset = Product.objects.all()
+        if not user.is_superuser:
+            product_queryset = product_queryset.filter(created_by=user)
+
+        products = list(product_queryset)
+        product_ids = [product.id for product in products]
+
+        if product_ids:
+            options = list(
+                Option.objects.filter(parent_product_id__in=product_ids)
+                .select_related("product_option", "parent_product")
+            )
+        else:
+            options = []
+
         for product in products:
-            product.bundle_options = [opt for opt in options if opt.parent_product == product]
+            product.bundle_options = [
+                opt for opt in options if opt.parent_product_id == product.id
+            ]
+
+        bundles = [product for product in products if product.is_bundle]
 
     custom_objects = CustomObject.objects.all()
 
@@ -93,7 +137,11 @@ def dashboard(request):
     if session_id:
         try:
             chat_session = ChatSession.objects.get(session_id=session_id, user=user)
-            chat_messages = ChatMessage.objects.filter(session=chat_session).order_by("timestamp")
+            chat_messages = list(
+                ChatMessage.objects.filter(session=chat_session).order_by("timestamp")
+            )
+            for message in chat_messages:
+                message.rendered_content = mark_safe(_decode_message_content(message.content))
         except ChatSession.DoesNotExist:
             pass
 
@@ -321,6 +369,81 @@ def get_tenant_usage(request):
         "overflow_actions": overflow,
     })
 
+
+@xframe_options_exempt
+def signup(request):
+    def _send_welcome_email(new_user):
+        if not new_user.email:
+            logger.debug("Signup welcome email skipped: no email for user %s", new_user.pk)
+            return
+
+        from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or getattr(settings, 'EMAIL_HOST_USER', None)
+        if not from_email:
+            logger.debug(
+                "Signup welcome email skipped: no from_email configured (user=%s)",
+                new_user.pk,
+            )
+            return
+
+        first_name = (new_user.first_name or new_user.username).replace('\xa0', ' ').strip()
+        last_name = (new_user.last_name or '').replace('\xa0', ' ').strip()
+        subject = "Welcome to AgentCPQ"
+        dashboard_url = request.build_absolute_uri(reverse('dashboard'))
+        message = render_to_string(
+            'auth/welcome_email.html',
+            {
+                'first_name': first_name,
+                'last_name': last_name,
+                'username': new_user.username,
+                'dashboard_url': dashboard_url,
+                'current_year': datetime.now().year,
+            },
+        )
+
+        reply_to = getattr(settings, 'DEFAULT_REPLY_TO', None) or from_email
+        email = EmailMessage(subject, message, from_email, [new_user.email], reply_to=[reply_to])
+        email.encoding = 'utf-8'
+        email.content_subtype = 'html'
+        email.extra_headers = email.extra_headers or {}
+        email.extra_headers.setdefault('Content-Transfer-Encoding', '8bit')
+
+        try:
+            sent_count = email.send(fail_silently=True)
+            logger.debug(
+                "Signup welcome email attempted: user=%s email=%s sent=%s",
+                new_user.pk,
+                new_user.email,
+                bool(sent_count),
+            )
+        except UnicodeEncodeError:
+            logger.exception(
+                "Signup welcome email failed due to Unicode error (user=%s, email=%s)",
+                new_user.pk,
+                new_user.email,
+            )
+        except smtplib.SMTPException:
+            logger.exception(
+                "Signup welcome email SMTP failure (user=%s, email=%s)",
+                new_user.pk,
+                new_user.email,
+            )
+
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+
+    if request.method == 'POST':
+        form = SignupForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            _send_welcome_email(user)
+            login(request, user)
+            return redirect('dashboard')
+    else:
+        form = SignupForm()
+
+    return render(request, 'auth/signup.html', {'form': form})
+
+
 class CustomPasswordResetView(PasswordResetView):
     def send_mail(self, subject_template_name, email_template_name,
                   context, from_email, to_email, html_email_template_name=None):
@@ -360,4 +483,3 @@ def get_next_custom_identifier(last_identifier):
     next_number_str = str(next_number).zfill(5)
     
     return f"{prefix}-{next_number_str}"
-

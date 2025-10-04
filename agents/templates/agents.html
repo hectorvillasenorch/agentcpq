@@ -22,7 +22,7 @@
                 {% if msg.sender == 'user' and msg.hiddenMessage == False %}
                   <div class="chat-text user"> 
                     <div class="sender">You: </div>
-                    <div class="message">{{ msg.content|safe }}</div>
+                    <div class="message">{{ msg.rendered_content|default:msg.content|safe }}</div>
                   </div>
                 {% endif %}
                 
@@ -38,7 +38,7 @@
                     <div class="senderagent">
                       <img width="115px" src="{% static 'img/agentcpq-chat-icon.png' %}" alt="AgentCPQ Logo">
                     </div>
-                    <div class="message">{{ msg.content|safe }}</div>
+                    <div class="message">{{ msg.rendered_content|default:msg.content|safe }}</div>
                   </div>
                 {% endif %}
 

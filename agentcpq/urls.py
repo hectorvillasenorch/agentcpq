@@ -7,7 +7,7 @@ from django.shortcuts import redirect
 from django.contrib.auth.decorators import login_required
 from cpq.views import root_redirect
 from dashboard.views import get_tenant_usage
-from dashboard.views import CustomPasswordResetView
+from dashboard.views import CustomPasswordResetView, signup
 from django.views.decorators.clickjacking import xframe_options_exempt
 
 urlpatterns = [
@@ -26,6 +26,7 @@ urlpatterns = [
         xframe_options_exempt(auth_views.LoginView.as_view(template_name='auth/login.html')),
         name='login'
     ),
+    path('signup/', signup, name='signup'),
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
     ### API Endpoints
     path('api/usage/', get_tenant_usage, name='get_tenant_usage'),
@@ -44,5 +45,4 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-
 
