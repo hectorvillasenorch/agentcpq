@@ -2,7 +2,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from django.utils import timezone
-from cpq.models import RenewalTask, Opportunity
+from cpq.models import ScheduledTask, Opportunity
 from cpq.renewals.renewals import make_opportunity_renewal
 import logging
 
@@ -19,11 +19,11 @@ def should_create_renewal(opportunity):
 
 def run_renewal_tasks():
     """
-    Revisa todos los RenewalTask pendientes para el día actual y ejecuta
+    Revisa todos los ScheduledTask pendientes para el día actual y ejecuta
     make_opportunity_renewal si no existe todavía la renovación.
     """
     today = timezone.localtime().date()  # zona horaria de settings
-    tasks = RenewalTask.objects.filter(status="pending", execute_at__date__lte=timezone.localtime().date())
+    tasks = ScheduledTask.objects.filter(status="pending", execute_at__date__lte=timezone.localtime().date())
     
     for task in tasks:
         opp = task.opportunity
@@ -41,7 +41,7 @@ def run_renewal_tasks():
             task.updated_at = timezone.now()
             task.save()
         else:
-            logger.info(f"⚠️ RenewalTask for Opportunity {opp.id} already exists, skipping task.")
+            logger.info(f"⚠️ ScheduledTask for Opportunity {opp.id} already exists, skipping task.")
             task.status = "done"
             task.updated_at = timezone.now()
             task.save()

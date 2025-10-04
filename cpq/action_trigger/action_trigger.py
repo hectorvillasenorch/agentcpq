@@ -1,6 +1,6 @@
 import logging
 from ..utils import run_async
-from ..models import ActionTrigger, RenewalTask
+from ..models import ActionTrigger, ScheduledTask
 from ..renewals.renewals import make_opportunity_renewal, create_renewal_task_for_opportunity
 from django.utils.timezone import now
 
@@ -40,7 +40,7 @@ def fire_triggers(trigger_name: str, context: dict):
                             status = "failed"
                             last_error = result[1]  # mensaje de error
 
-                        RenewalTask.objects.create(
+                        ScheduledTask.objects.create(
                             opportunity=opp,
                             execute_at=now(),
                             status=status,

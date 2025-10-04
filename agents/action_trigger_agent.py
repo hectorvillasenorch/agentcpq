@@ -14,6 +14,9 @@ from .utils.action_trigger.llm_helpers import extract_action_triggers_with_llm
 
 from .utils.action_trigger.handle_helpers import handle_create_action_trigger
 
+# General Helpers
+from .utils.action_trigger.general_helpers import get_action_triggers_details
+
 def action_trigger_agent(user, action, user_message, session_data):
 
     action_map = {
@@ -70,16 +73,14 @@ def create_action_trigger(user, user_message, session_data):
     # ✅ Update quote (subtotal, discounts fields and net amount)
     #quote.save()
 
-    #action_triggers_details = get_action_triggers_details(action_triggers_created)
-
-    #print(f"\n\nRules Details: {rules_details}\n\n")
+    action_triggers_details = get_action_triggers_details(action_triggers_created)
 
     if action_triggers_created:
 
         return {
             "message": response_message,
-            #"action_triggers_details": action_triggers_details,
-            #"hiddenMessage": "True"
+            "action_triggers_details": action_triggers_details,
+            "hiddenMessage": "True"
         }
     
     else:

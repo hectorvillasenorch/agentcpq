@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django import forms
-from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, ActionTrigger,ActionUsage,Contact,Tenant, QuoteDocument, SystemFieldMapping, Contract, RenewalTask
+from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, ActionTrigger,ActionUsage,Contact,Tenant, QuoteDocument, SystemFieldMapping, Contract, ScheduledTask
 from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession, AgentPrompt
 from django.contrib.contenttypes.models import ContentType
@@ -153,12 +153,12 @@ class ActionTriggerAdmin(DynamicCustomFieldAdmin):
         return [(None, {'fields': list(self.form().fields.keys())})]
 admin.site.register(ActionTrigger, ActionTriggerAdmin)
 
-class RenewalTaskAdmin(DynamicCustomFieldAdmin):
-    form = get_dynamic_form(RenewalTask, crm="AgentCPQ", object_type="RenewalTask")
+class ScheduledTaskAdmin(DynamicCustomFieldAdmin):
+    form = get_dynamic_form(ScheduledTask, crm="AgentCPQ", object_type="ScheduledTask")
     list_display = ('opportunity','status','execute_at', 'attempts', 'last_error', 'created_at', 'updated_at')
     def get_fieldsets(self, request, obj=None):
         return [(None, {'fields': list(self.form().fields.keys())})]
-admin.site.register(RenewalTask, RenewalTaskAdmin)
+admin.site.register(ScheduledTask, ScheduledTaskAdmin)
 
 
 class QuoteAdmin(DynamicCustomFieldAdmin):

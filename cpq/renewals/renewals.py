@@ -2,7 +2,7 @@ import logging, re
 from datetime import date, timedelta, datetime
 from django.utils.timezone import now
 from dateutil.relativedelta import relativedelta
-from ..models import Contract, Subscription, Quote, QuoteLine, Opportunity, RenewalTask
+from ..models import Contract, Subscription, Quote, QuoteLine, Opportunity, ScheduledTask
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -168,7 +168,7 @@ def make_opportunity_renewal(opportunity):
     
 def create_renewal_task_for_opportunity(opportunity, months_before: int):
     """
-    Creates a record in RenewalTask for the specified opportunity,
+    Creates a record in ScheduledTask for the specified opportunity,
     scheduling the execution a number of months before the first contract's expiration.
     
     Args:
@@ -188,8 +188,8 @@ def create_renewal_task_for_opportunity(opportunity, months_before: int):
             datetime.combine(naive_execute_at, datetime.min.time())
         )
 
-        # Create RenewalTask
-        renewal_task = RenewalTask.objects.create(
+        # Create ScheduledTask
+        renewal_task = ScheduledTask.objects.create(
             opportunity=opportunity,
             execute_at=execute_at,
             status="pending",
@@ -199,7 +199,7 @@ def create_renewal_task_for_opportunity(opportunity, months_before: int):
             updated_at=now()
         )
 
-        logger.info(f"✅ RenewalTask created for Opportunity {opportunity.id} scheduled at {execute_at}")
+        logger.info(f"✅ ScheduledTask created for Opportunity {opportunity.id} scheduled at {execute_at}")
         return renewal_task
 
     except Exception as e:

@@ -70,6 +70,13 @@
                   </div>
                 {% endif %}
 
+                {% if msg.sender == 'agent' and 'action_triggers_details' in msg.content %}
+                <div class="chat-text agent">
+                    <img width="115px" src="{% static 'img/agentcpq-chat-icon.png' %}" alt="AgentCPQ Logo">
+                    <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
+                {% endif %}
+
                 {% if msg.sender == 'agent' and 'rules' and 'read_only' in msg.content %}
                   <div class="chat-text agent">
                     <img width="115px" src="/media/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">

@@ -1448,9 +1448,9 @@ class ActionTrigger(models.Model):
     def __str__(self):
         return f"{self.trigger} -> {self.action} {self.object_name} (id={self.id})"
 
-class RenewalTask(models.Model):
+class ScheduledTask(models.Model):
     """
-    Scheduled renewal task.
+    Scheduled task.
     It is linked to an Opportunity (which already contains relationships with Quote, Contract, Subscription, etc.)
     """
 
@@ -1506,7 +1506,7 @@ class RenewalTask(models.Model):
         verbose_name_plural = "Renewal Tasks"
 
     def __str__(self):
-        return f"RenewalTask(opp={self.opportunity.name}, exec={self.execute_at}, status={self.status})"
+        return f"ScheduledTask (opp={self.opportunity.name}, exec={self.execute_at}, status={self.status})"
 
     # ---- Convenience Methods ----
     def mark_done(self):

@@ -162,7 +162,8 @@ function enhanceStructuredAgentMessagesHistoryChat() {
       'rules:',
       'email_alerts_details:',
       'retrieved_records:',
-      'inclusion_rules_details:'
+      'inclusion_rules_details:',
+      'action_triggers_details:'
     ];
 
     let jsonPart = null;
@@ -187,7 +188,7 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     try {
       const data = JSON.parse(unescapeUnicode(jsonPart));
 
-      //console.log("This is data: ", data);
+      console.log("This is data: ", data);
 
       // === VALIDATION RULES ===
       if (data.rules || (Array.isArray(data) && data[0]?.rule_type == 'validation')) {
@@ -196,14 +197,26 @@ function enhanceStructuredAgentMessagesHistoryChat() {
         return;
       }
 
-      // === VALIDATION RULES ===
+      // === INCLUSION RULES ===
       if (data.rules || (Array.isArray(data) && data[0]?.rule_type == 'inclusion')) {
         let fullMessage = unescapeUnicode(raw);
 
         const html = renderInclusionRuleDetails(
-          fullMessage,               // mensaje completo
-          data.rules || data         // reglas
+          fullMessage,
+          data.rules || data
         );
+        div.innerHTML = html;
+        return;
+      }
+
+      // === ACTION TRIGGERS ===
+      if (matchedKey === 'action_triggers_details:') {
+        const fullMessage = unescapeUnicode(raw);
+        // Normalizar a array: el LLM puede devolver directamente un array o un objeto con la key
+        const triggers = Array.isArray(data)
+          ? data
+          : (data.action_triggers || data.action_triggers_details || data.triggers || data.rules || []);
+        const html = renderActionTriggersDetails(fullMessage, triggers);
         div.innerHTML = html;
         return;
       }
@@ -377,6 +390,11 @@ async function sendMessage() {
         else if (data.response && data.response.inclusion_rules_details) {
           console.log("Inclusion Rules Details");
           responseMessage += renderInclusionRuleDetails(data.response.message, data.response.inclusion_rules_details);
+        }
+        // ✅ Handle Action Triggers Response
+        else if (data.response && data.response.action_triggers_details) {
+          console.log("Entra a action trigger");
+          responseMessage += renderActionTriggersDetails(data.response.message, data.response.action_triggers_details);
         }
         // ✅ Show Rules
         else if (data.response && data.response.rules && data.response.read_only) {
@@ -2422,6 +2440,61 @@ function renderInclusionRuleDetails(message, rules, read_only=false) {
               })
               .join("")}
           </ul>
+        </div>
+
+      </div>`;
+
+  });
+
+  return html;
+}
+
+function renderActionTriggersDetails(message, action_triggers, read_only=false) {
+  let html = "";
+  console.log(action_triggers);
+
+  // Agregar mensaje si viene
+  if (message) {
+    const idx = message.indexOf("action_triggers_details:");
+    if (idx !== -1) {
+      message = message.slice(0, idx).trim(); // cortar antes del JSON
+    }
+
+    if (message) {
+      html += `<p style="margin-bottom:10px;">${message}</p><br>`;
+    }
+  }
+
+  action_triggers.forEach((action_trigger) => {
+    var head_text = `✅ New action trigger created ✅`;
+    html +=
+      `<div class="rule-container">
+        <div class="rule-header">
+            <h5>${head_text}</h3>
+            <span style="margin-left: 10px; font-weight: bold; color: ${action_trigger.active ? 'green' : 'red'};">
+              ${action_trigger.active ? '🟢 Active' : '🔴 Inactive'}
+            </span>
+        </div>
+        <div class="rule-details">
+            <div class="name">
+              <label for="rule-name"><strong>Opportunity:</strong></label>
+              <input id="rule-name" type="text" value="${action_trigger.trigger}" readonly/>
+            </div>
+
+            <div class="rule_type">
+              <label for="rule-type"><strong>Action:</strong></label>
+              <input id="rule-type" type="text" value="${action_trigger.action}" readonly/>
+            </div>
+
+            <div class="target_type">
+              <label for="target-type"><strong>Object Name:</strong></label>
+              <input id="target-type" type="text" value="${action_trigger.object_name}" readonly/>
+            </div>
+
+            <div class="error_message">
+              <label for="error-message"><strong>Action Parameters:</strong></label>
+              <textarea id="error-message" class="materialize-textarea" rows="3" readonly>${JSON.stringify(action_trigger.action_params, null, 2)}</textarea>
+            </div>
         </div>
 
       </div>`;
