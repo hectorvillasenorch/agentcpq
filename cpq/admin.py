@@ -1,6 +1,28 @@
 from django.contrib import admin
 from django import forms
-from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, CustomRecord,ActionUsage,Contact,Tenant, QuoteDocument, SystemFieldMapping
+from .models import (
+    Quote,
+    QuoteLine,
+    Subscription,
+    Asset,
+    Product,
+    Lead,
+    Opportunity,
+    Account,
+    Activity,
+    CustomObject,
+    CustomField,
+    Option,
+    BusinessRule,
+    CustomFieldValue,
+    CustomRecord,
+    ActionUsage,
+    Contact,
+    Tenant,
+    QuoteDocument,
+    SystemFieldMapping,
+    Knowledge,
+)
 from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession
 from django.contrib.contenttypes.models import ContentType
@@ -182,6 +204,14 @@ class OpportunityAdmin(DynamicCustomFieldAdmin):
         return [(None, {'fields': fields})]
 
 admin.site.register(Opportunity, OpportunityAdmin)
+
+
+@admin.register(Knowledge)
+class KnowledgeAdmin(admin.ModelAdmin):
+    list_display = ('title', 'language', 'has_video', 'is_active', 'created_at')
+    list_filter = ('language', 'has_video', 'is_active', 'created_at')
+    search_fields = ('title', 'content_text', 'tags')
+    readonly_fields = ('created_at', 'updated_at')
 
 class OptionInline(admin.TabularInline):
     model = Option

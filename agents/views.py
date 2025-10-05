@@ -12,6 +12,7 @@ from django.views.decorators.clickjacking import xframe_options_exempt
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from agents.models import ChatSession
+from agents.knowledge_agent import resolve_knowledge_video_request
 
 
 from .orchestrator import handle_user_request  # or orchestrate_request if needed
@@ -68,6 +69,9 @@ def _handle_pending_action(pending_action, user_message, session_data):
                 "message": "❌ Quote deletion process cancelled. Reason: The user did not respond with a valid answer (expected: 'yes' or 'no')"
             }
 
+    if pending_action == "knowledge_video_follow_up":
+        return resolve_knowledge_video_request(user_message, session_data)
+
 
     return None  # Unrecognized or no pending action to handle
 
@@ -115,7 +119,7 @@ def chat_with_gpt(request):
         result = _handle_pending_action(pending_action, user_message, session_data)
         if result:
             #If user confirmed deletion quote
-            if session_data["pending_action"] == "delete_quote_confirmed":
+            if session_data.get("pending_action") == "delete_quote_confirmed":
                 user_message = result["message"]
             else:
                 # If the pending action was fulfilled, update session and return immediately

@@ -1366,3 +1366,28 @@ class EmailAlertLog(models.Model):
 
     def __str__(self):
         return f"{self.email_alert} sent to {self.instance_type} {self.instance_id} at {self.sent_at}"
+
+
+class Knowledge(models.Model):
+    title = models.CharField(max_length=255)
+    content_text = models.TextField()
+    video_url = models.URLField(null=True, blank=True)
+    image_url = models.URLField(null=True, blank=True)
+    has_video = models.BooleanField(default=False)
+    tags = models.CharField(max_length=255, blank=True)
+    language = models.CharField(max_length=10, default='en')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='knowledge_created')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='knowledge_updated')
+    updated_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['-updated_at', 'title']
+
+    def save(self, *args, **kwargs):
+        self.has_video = bool(self.video_url)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.title

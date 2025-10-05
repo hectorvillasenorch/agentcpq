@@ -69,12 +69,20 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
                 "owner", "created_by"
             ],
             "sort": ["name", "subtotal", "net_amount", "status", "created_at", "updated_at", "expiration_date"]
+        },
+        "Knowledge": {
+            "filters": [
+                "title", "content_text", "video_url", "image_url", "has_video",
+                "tags", "language", "created_by", "created_at",
+                "updated_by", "updated_at", "is_active"
+            ],
+            "sort": []
         }
     }
     
     system_prompt = """
     You are an AI assistant that helps extract user requests into a standardized JSON format called 'show_metrics'.
-    The user can ask to 'show', 'list', or 'get' records from the following objects: Product, Lead, Account, Contact, Opportunity, Quote.
+    The user can ask to 'show me', 'teach me', 'list', or 'get' records from the following objects: Product, Lead, Account, Contact, Opportunity, Quote, Knowledge.
     Rules:
     1. Only use the fields in 'filters' for conditions.
     2. Only use the fields in 'sort' for sorting.

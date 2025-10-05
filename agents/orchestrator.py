@@ -10,6 +10,7 @@ from agents.admin_agent import admin_agent
 from agents.approvals_agent import approval_agent
 from agents.custom_object_agent import custom_object_agent
 from agents.analytics_agent import analytics_agent
+from agents.knowledge_agent import knowledge_agent
 from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
 
@@ -209,7 +210,8 @@ def orchestrate_request(user, user_message, session_data):
         - "CreateEmailAlert"
         - "UpdateEmailAlert"
         - "DeleteEmailAlert"
-        - "ShowMetrics" → Use when the user requests listings, catalogs, or filtered searches across objects. (e.g. "show me my product catalog", "list my last 5 quotes", "show me all leads created this month").
+        - "ShowMetrics" → Use when the user requests listings, catalogs, reports, or filtered searches across objects. (e.g. "show me my product catalog", "list my last 5 quotes", "show me all leads created this month").
+        - "KnowledgeLookup" → Use when the user asks for how-to instructions, FAQs, or training guidance (e.g. "how do I create a quote", "teach me about approvals").
         """
     })
 
@@ -507,7 +509,10 @@ def get_action_map():
         "DeleteEmailAlert": admin_agent,
 
         # Metrics Agent
-        "ShowMetrics": analytics_agent
+        "ShowMetrics": analytics_agent,
+
+        # Knowledge Agent
+        "KnowledgeLookup": knowledge_agent,
     }
 
 
