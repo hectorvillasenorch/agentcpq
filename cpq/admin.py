@@ -211,7 +211,31 @@ class KnowledgeAdmin(admin.ModelAdmin):
     list_display = ('title', 'language', 'has_video', 'is_active', 'created_at')
     list_filter = ('language', 'has_video', 'is_active', 'created_at')
     search_fields = ('title', 'content_text', 'tags')
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at', 'image_preview', 'embedding')
+    fieldsets = (
+        ('Basic Info', {
+            'fields': ('title', 'language', 'tags', 'is_active')
+        }),
+        ('Content', {
+            'fields': ('content_text',)
+        }),
+        ('Media', {
+            'fields': ('image_file', 'image_url', 'image_preview', 'video_url', 'embedding')
+        }),
+        ('Ownership & Timestamps', {
+            'fields': ('created_by', 'updated_by', 'created_at', 'updated_at')
+        }),
+    )
+
+    def image_preview(self, obj):
+        if obj and obj.image_url:
+            return format_html(
+                "<img src='{}' style='max-width:320px;height:auto;border-radius:6px;' alt='Knowledge image preview'>",
+                obj.image_url,
+            )
+        return "No image uploaded"
+
+    image_preview.short_description = "Image preview"
 
 class OptionInline(admin.TabularInline):
     model = Option

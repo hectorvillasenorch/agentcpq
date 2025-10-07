@@ -137,6 +137,11 @@ def orchestrate_request(user, user_message, session_data):
     # 🔹 Get or create message history on session_data
     session_data.setdefault("message_history", [])
 
+    # 🔹 Shortcut for clear how-to requests before hitting the LLM
+    if _should_shortcut_to_knowledge(user_message):
+        logging.info("🔀 Shortcutting to KnowledgeLookup based on heuristic match")
+        return orchestrate_request_trigger(user, user_message, session_data, decision="KnowledgeLookup")
+
     # 🔹 Build message history
     message_history = session_data.get("message_history", [])
 
@@ -282,7 +287,7 @@ def orchestrate_request(user, user_message, session_data):
 def orchestrate_request_trigger(user, user_message, session_data, decision):
     logging.info(f"\n🟢 AI Decision Trigger: {decision} \n")
     session_id = session_data.get("session_id")
-    # ⚠️ Use a real user later; hardcode for now
+    
     user = User.objects.get(username=user)
 
     if not session_id:
@@ -370,6 +375,28 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
     logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
     return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
 
+
+def _should_shortcut_to_knowledge(user_message: str) -> bool:
+    if not user_message:
+        return False
+
+    lowered = user_message.lower()
+
+    knowledge_phrases = (
+        "teach me",
+        "how do i",
+        "how to",
+        "show me how",
+        "guide me",
+        "explain",
+        "what is",
+        "walk me through",
+        "steps to",
+        "instructions",
+        "training on",
+    )
+
+    return any(phrase in lowered for phrase in knowledge_phrases)
 
 
 def handle_general_query(user,decision, user_message, session_data):

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Tuple
+from urllib.parse import parse_qs, urlencode, urlparse
 
-from django.db.models import Q
+import numpy as np
 from django.utils.html import escape
 
 from cpq.models import Knowledge
+from agents.utils.knowledge_agent.embedding_helpers import generate_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -62,19 +64,13 @@ def _handle_knowledge_lookup(user_message: str, session_data: dict) -> dict:
     ]
 
     if entry.image_url:
-        image_url = escape(entry.image_url)
-        message_parts.append(
-            f"<br><br>🖼️ I also have a related diagram here: "
-            f"<a href='{image_url}' target='_blank'>{image_url}</a>"
-        )
+        message_parts.append(_render_image_preview(entry.image_url))
 
     if entry.has_video and entry.video_url:
-        message_parts.append(
-            "<br><br>🎥 I can share a quick video walkthrough if you'd like."
-            " Would you like the link?"
-        )
-        session_data["pending_action"] = "knowledge_video_follow_up"
-        session_data["pending_knowledge_id"] = entry.id
+        message_parts.append(_render_video_embed(entry.video_url))
+        session_data.pop("pending_knowledge_id", None)
+        if session_data.get("pending_action") == "knowledge_video_follow_up":
+            session_data.pop("pending_action", None)
     else:
         session_data.pop("pending_knowledge_id", None)
         if session_data.get("pending_action") == "knowledge_video_follow_up":
@@ -132,6 +128,14 @@ def _find_best_match(queryset, user_message: str) -> Optional[Knowledge]:
     if not text:
         return None
 
+    entries = list(queryset.all())
+    if not entries:
+        return None
+
+    semantic_entry = _find_semantic_match(entries, text)
+    if semantic_entry is not None:
+        return semantic_entry
+
     candidates = list(_generate_candidate_phrases(text))
     keywords = list({
         word
@@ -139,10 +143,6 @@ def _find_best_match(queryset, user_message: str) -> Optional[Knowledge]:
         for word in re.split(r"\W+", phrase.lower())
         if len(word) > 2
     })
-
-    entries = list(queryset.all())
-    if not entries:
-        return None
 
     best_entry = None
     best_score = 0
@@ -215,3 +215,188 @@ def _score_entry(entry: Knowledge, phrases: Iterable[str], keywords: Iterable[st
         score += 2
 
     return score
+
+
+def _find_semantic_match(entries: Iterable[Knowledge], text: str) -> Optional[Knowledge]:
+    """Return the best semantic match if embeddings are available."""
+
+    embedding = generate_embedding(text)
+    if not embedding:
+        return None
+
+    try:
+        query_vec = np.asarray(embedding, dtype=float)
+    except (TypeError, ValueError):
+        logger.debug("Query embedding contained invalid values; falling back to keyword match")
+        return None
+
+    query_norm = np.linalg.norm(query_vec)
+    if query_norm == 0:
+        return None
+
+    best_entry: Optional[Knowledge] = None
+    best_similarity = -1.0
+
+    for entry in entries:
+        entry_embedding = getattr(entry, "embedding", None)
+        if not entry_embedding:
+            continue
+
+        try:
+            entry_vec = np.asarray(entry_embedding, dtype=float)
+        except (TypeError, ValueError):
+            continue
+
+        entry_norm = np.linalg.norm(entry_vec)
+        if entry_norm == 0:
+            continue
+
+        similarity = float(np.dot(query_vec, entry_vec) / (query_norm * entry_norm))
+        if similarity > best_similarity:
+            best_similarity = similarity
+            best_entry = entry
+
+    if best_entry is not None and best_similarity >= 0.7:
+        logger.debug(
+            "Semantic match selected entry %s with similarity %.3f",
+            best_entry.id,
+            best_similarity,
+        )
+        return best_entry
+
+    return None
+
+
+def _render_image_preview(image_url: str) -> str:
+    """Return inline HTML to preview an image while keeping a link fallback."""
+
+    embed_url, fallback_url = _make_image_embed_url(image_url)
+    safe_fallback = escape(fallback_url)
+
+    if not embed_url:
+        return (
+            "<br><br>🖼️ Related visual: "
+            f"<a href='{safe_fallback}' target='_blank' rel='noopener'>{safe_fallback}</a>"
+        )
+
+    safe_embed = escape(embed_url)
+    return (
+        "<br><br>🖼️ Related visual:<br>"
+        f"<a href='{safe_fallback}' target='_blank' rel='noopener'>"
+        f"<img src='{safe_embed}' alt='Knowledge diagram' "
+        "style='max-width:100%;height:auto;border-radius:8px;margin-top:8px;'/>"
+        "</a>"
+    )
+
+
+def _render_video_embed(video_url: str) -> str:
+    """Return inline HTML to embed a video with a fallback link."""
+
+    embed_url, fallback_url = _make_video_embed_url(video_url)
+    safe_fallback = escape(fallback_url)
+
+    if not embed_url:
+        return (
+            "<br><br>🎥 Video walkthrough: "
+            f"<a href='{safe_fallback}' target='_blank' rel='noopener'>{safe_fallback}</a>"
+        )
+
+    safe_embed = escape(embed_url)
+    return (
+        "<br><br>🎥 Video walkthrough:<br>"
+        "<div style='position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:12px;margin-top:8px;'>"
+        f"<iframe src='{safe_embed}' allowfullscreen "
+        "style='position:absolute;top:0;left:0;width:100%;height:100%;border:0;'"
+        " title='Knowledge video'></iframe>"
+        "</div>"
+        f"<br><a href='{safe_fallback}' target='_blank' rel='noopener'>Open video in a new tab</a>"
+    )
+
+
+def _make_image_embed_url(original_url: str) -> Tuple[Optional[str], str]:
+    """Return an embeddable image URL when possible and the fallback link."""
+
+    fallback = original_url
+    parsed = urlparse(original_url)
+    host = parsed.netloc.lower()
+
+    if parsed.scheme in {"http", "https"}:
+        path_lower = parsed.path.lower()
+        for suffix in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"):
+            if path_lower.endswith(suffix):
+                return original_url, fallback
+
+    if "drive.google.com" in host:
+        qs = parse_qs(parsed.query)
+        image_id = None
+        if parsed.path.startswith("/file/d/"):
+            parts = parsed.path.split("/")
+            if len(parts) >= 4:
+                image_id = parts[3]
+        elif parsed.path == "/uc" and "id" in qs:
+            image_id = qs["id"][0]
+
+        if image_id:
+            params = {"export": "view", "id": image_id}
+            resource_key = qs.get("resourcekey", [None])[0]
+            if resource_key:
+                params["resourcekey"] = resource_key
+            return f"https://drive.google.com/uc?{urlencode(params)}", fallback
+
+    return None, fallback
+
+
+def _make_video_embed_url(original_url: str) -> Tuple[Optional[str], str]:
+    """Return an embeddable video URL when possible and the fallback link."""
+
+    fallback = original_url
+    parsed = urlparse(original_url)
+    host = parsed.netloc.lower()
+    path = parsed.path
+    query = parse_qs(parsed.query)
+
+    if host in {"youtu.be", "www.youtu.be"}:
+        video_id = path.lstrip("/")
+        if video_id:
+            start = query.get("t") or query.get("start")
+            start_param = f"?start={_extract_seconds(start[0])}" if start else ""
+            return f"https://www.youtube.com/embed/{video_id}{start_param}", fallback
+
+    if "youtube.com" in host:
+        if path == "/watch":
+            video_id = query.get("v", [None])[0]
+            if video_id:
+                start = query.get("t") or query.get("start")
+                start_param = f"?start={_extract_seconds(start[0])}" if start else ""
+                return f"https://www.youtube.com/embed/{video_id}{start_param}", fallback
+        elif path.startswith("/embed/"):
+            return original_url, fallback
+
+    if "drive.google.com" in host:
+        if parsed.path.startswith("/file/d/"):
+            parts = parsed.path.split("/")
+            if len(parts) >= 4:
+                file_id = parts[3]
+                resource_key = query.get("resourcekey", [None])[0]
+                preview_params = f"?resourcekey={resource_key}" if resource_key else ""
+                return (
+                    f"https://drive.google.com/file/d/{file_id}/preview{preview_params}",
+                    fallback,
+                )
+
+    return None, fallback
+
+
+def _extract_seconds(raw_value: str) -> int:
+    """Convert common YouTube time formats to seconds for embed start."""
+
+    if not raw_value:
+        return 0
+    if raw_value.isdigit():
+        return int(raw_value)
+
+    match = re.match(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", raw_value)
+    if not match:
+        return 0
+    hours, minutes, seconds = match.groups(default="0")
+    return int(hours) * 3600 + int(minutes) * 60 + int(seconds)

@@ -4,6 +4,16 @@
 {% block content %}
 <script src="{% static 'js/agents/agent_main.js' %}" defer></script>
 <style>
+  .main-content {
+    height: auto !important;
+    min-height: 100vh;
+    overflow: auto !important;
+  }
+
+  #content-area {
+    width: 78%;
+  }
+
  #monthlyChart {
   aspect-ratio: 2 / 1;
   width: 100%;

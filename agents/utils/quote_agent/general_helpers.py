@@ -776,33 +776,29 @@ def get_document_pdf(quote):
                         sku = line.sku or ""
                         product = line.product_name or ""
 
-                        max_width = column_spacing - 6 # Definimos el tamaño maximo que puede ocupar el texto
-                        sku_font_size = 9 # Tamaño de fuente del texto SKU
-                        product_font_size = 11 # Tamaño de fuente del texto Product Name
+                        max_width = column_spacing - 6
+                        sku_font_size = 9
+                        product_font_size = 10
 
-                        # Comparamos que el valor del texto SKU no sea mas grande que el tamaño maximo de la columna
                         sku_text_width = pdf.stringWidth(sku, "Helvetica-Bold", sku_font_size)
                         if sku_text_width > max_width:
                             sku_font_size = max(6, int(sku_font_size * max_width / sku_text_width))
                             sku_text_width = pdf.stringWidth(sku, "Helvetica-Bold", sku_font_size)
 
-                        # Comparamos que el valor del texto Product Name no sea mas grande que el tamaño maximo de la columna
                         product_text_width = pdf.stringWidth(product, "Helvetica", product_font_size)
                         if product_text_width > max_width:
                             product_font_size = max(6, int(product_font_size * max_width / product_text_width))
                             product_text_width = pdf.stringWidth(product, "Helvetica", product_font_size)
 
-                        # Si Product And SKU está al inicio
                         if index == 0:
                             aligned_x = column_x
                             pdf.setFont("Helvetica-Bold", sku_font_size)
                             pdf.setFillColor(HexColor("#000000"))
                             pdf.drawString(aligned_x, y_position, sku)
                             pdf.setFont("Helvetica", product_font_size)
-                            pdf.setFillColor(HexColor("#666666"))  
-                            pdf.drawString(aligned_x, y_position - 10, product)
+                            pdf.setFillColor(HexColor("#666666"))
+                            pdf.drawString(aligned_x, y_position - 12, product)
 
-                        # Si Product And SKU está al final
                         elif index == last_index:
                             sku_aligned_x = column_x + column_spacing - sku_text_width
                             pdf.setFont("Helvetica-Bold", sku_font_size)
@@ -811,19 +807,22 @@ def get_document_pdf(quote):
 
                             name_aligned_x = column_x + column_spacing - product_text_width
                             pdf.setFont("Helvetica", product_font_size)
-                            pdf.setFillColor(HexColor("#666666"))  
-                            pdf.drawString(name_aligned_x, y_position - 10, product)
-                        
-                        # Si Product And SKU está en medio
+                            pdf.setFillColor(HexColor("#666666"))
+                            pdf.drawString(name_aligned_x, y_position - 12, product)
+
                         else:
                             sku_aligned_x = column_x + (column_spacing - sku_text_width) / 2
                             pdf.setFont("Helvetica-Bold", sku_font_size)
                             pdf.setFillColor(HexColor("#000000"))
                             pdf.drawString(sku_aligned_x, y_position, sku)
+
                             name_aligned_x = column_x + (column_spacing - product_text_width) / 2
                             pdf.setFont("Helvetica", product_font_size)
-                            pdf.setFillColor(HexColor("#666666"))  
-                            pdf.drawString(name_aligned_x, y_position - 10, product)
+                            pdf.setFillColor(HexColor("#666666"))
+                            pdf.drawString(name_aligned_x, y_position - 12, product)
+
+                        max_text_height = max(max_text_height, 18)
+                        continue
 
                     # === Description column: render inline HTML with ReportLab Paragraph ===
                     if field_title == "Description":
