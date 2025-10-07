@@ -9,5 +9,5 @@ class CpqConfig(AppConfig):
         import cpq.signals
 
         from .tasks.renewals_scheduler import start_renewal_scheduler
-        t = threading.Thread(target=start_renewal_scheduler, daemon=True)
-        t.start()
+        # t = threading.Thread(target=start_renewal_scheduler, daemon=True)
+        # t.start()

@@ -94,7 +94,6 @@ def dashboard(request):
 
     if view == "setup" and not user.is_staff:
         return HttpResponseForbidden("You do not have access to the setup view.")
-<<<<<<< HEAD
     
     products = None
     options = None
@@ -115,12 +114,6 @@ def dashboard(request):
             )
         else:
             options = []
-=======
-
-    products = Product.objects.all() if view == "products" else None
-    options = Option.objects.all() if view == "products" else None
-    bundles = Product.objects.filter(is_bundle=True)
->>>>>>> 2567fb9f3bf31eaa55fbce01ab1d4733f0b46e6d
 
         for product in products:
             product.bundle_options = [
@@ -488,9 +481,5 @@ def get_next_custom_identifier(last_identifier):
 
     next_number = number + 1
     next_number_str = str(next_number).zfill(5)
-<<<<<<< HEAD
     
-=======
-
->>>>>>> 2567fb9f3bf31eaa55fbce01ab1d4733f0b46e6d
     return f"{prefix}-{next_number_str}"

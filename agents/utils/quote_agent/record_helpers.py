@@ -8,6 +8,7 @@ from django.db import transaction
 from django.contrib.contenttypes.models import ContentType
 from copy import deepcopy
 from datetime import datetime
+from .date_utils import parse_user_date
 
 # DB Helpers
 from .db_helpers import find_product_and_normalize_variables, update_opportunity_net_amount
@@ -588,6 +589,8 @@ def save_quote_update(request):
             fields = ["status", "expiration_date", "notes"]
 
             if field in fields:
+                if field == "expiration_date" and isinstance(new_value, str):
+                    new_value = parse_user_date(new_value)
                 setattr(quote, field, new_value)
             elif field == "tax_percentage":
                 quote.tax_percentage = Decimal(str(new_value))

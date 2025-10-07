@@ -11,7 +11,7 @@ def run_async(func, *args, **kwargs):
         except Exception as e:
             logging.error(f"❌ Error in async signal: {e}", exc_info=True)
 
-    threading.Thread(target=wrapper, daemon=True).start()
+    # threading.Thread(target=wrapper, daemon=True).start()
 
 # def save_custom_object_values(object_name, post_data):
 #     """

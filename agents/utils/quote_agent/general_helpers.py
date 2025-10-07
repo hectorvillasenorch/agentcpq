@@ -294,18 +294,27 @@ def get_backup_value_from_quote_line(json_payload, quote):
     return float(value)
 
 def get_backup_value_from_quote(json_payload, quote):
-    # Transform to valid JSON
-    update_quote = json.loads(json_payload)
+    """Return the persisted value for the field being edited so the UI can revert if needed."""
 
-    # Get quote line item from db
+    update_quote = json.loads(json_payload)
     quote = Quote.objects.get(id=quote.id)
 
     field = update_quote["field"]
+    value = getattr(quote, field, None)
+
+    if value is None:
+        return None
 
     if field in {"discount_percentage", "discount_amount"}:
-        value = getattr(quote, field)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
 
-    return float(value)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+
+    return value
 
 def format_currency(value):
     """Formats a Decimal value into currency format with commas and two decimal places."""

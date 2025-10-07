@@ -60,6 +60,15 @@
           {{ form.password2.errors }}
         </div>
 
+        <div class="input-field" style="margin-top: 20px;">
+          <p>
+            <label>
+              {{ form.email_consent }}
+              <span>{{ form.email_consent.label }}</span>
+            </label>
+          </p>
+          {{ form.email_consent.errors }}
+        </div>
         <div class="center-align">
           <button type="submit" class="btn login-btn waves-effect waves-light">
             <i class="material-icons left">person_add</i> Sign Up Now

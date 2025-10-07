@@ -209,6 +209,25 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)  # Suppress low-level HT
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
+# Cloudflare R2 ENV Vars
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET")
+R2_STORAGE_BUCKET_NAME = os.getenv("R2_BUCKET_NAME")
+R2_S3_ENDPOINT_URL = os.getenv("R2_END_POINT")
+
+# AWS Settings Required by django-storages
+AWS_ACCESS_KEY_ID = R2_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY = R2_SECRET_ACCESS_KEY
+AWS_STORAGE_BUCKET_NAME = R2_STORAGE_BUCKET_NAME
+AWS_S3_ENDPOINT_URL = R2_S3_ENDPOINT_URL
+AWS_S3_REGION_NAME = "auto"
+AWS_S3_ADDRESSING_STYLE = "virtual"
+AWS_QUERYSTRING_AUTH = False
+AWS_S3_CUSTOM_DOMAIN = "media.agentcpq.com"
+
+# ⚠️ Must come after AWS_* settings
+DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+
 
 # Salesforce OAuth settings for your connected app
 SALESFORCE_CLIENT_ID = os.getenv("SF_CID")
