@@ -3,118 +3,209 @@
 
 {% block content %}
 <style>
-   h4 {
-    font-family: 'Euclid Circular A', sans-serif;
-    font-weight: bold;
-    font-size: 24px;
-    text-align: center;
+  .main-content.enable-scroll {
+    overflow-y: auto;
+    height: auto;
+    min-height: 100vh;
   }
-  .full-page-layout {
+
+  .custom-fields-layout {
     display: flex;
-    height: calc(100vh - 64px); /* Adjust for navbar/header if needed */
+    gap: 24px;
+    align-items: flex-start;
+    margin-top: 16px;
   }
 
-  .sidebar {
-    position: relative;
-    width: 250px;
-    background-color: #FFFFFF;
-    border-right: 1px solid #e0e0e0;
+  .custom-fields-nav {
+    width: 260px;
+    background: #ffffff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 16px 38px rgba(15, 23, 42, 0.1);
+    position: sticky;
+    top: 24px;
+    max-height: calc(100vh - 64px);
     overflow-y: auto;
-    padding-top: 20px;
   }
 
-  .sidebar a {
-    display: block;
-    padding: 12px 20px;
+  .custom-fields-nav h2 {
+    font-family: 'Euclid Circular A', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0 0 18px;
+    color: #111827;
+  }
+
+  .custom-fields-nav button {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 12px;
+    height: 42px;
+    background: #182740;
+    color: #ffffff;
+    font-weight: 600;
+    margin-bottom: 20px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+
+  .custom-fields-nav button:hover {
+    background: #101a2d;
+  }
+
+  .custom-fields-nav button.is-cancel {
+    background: #9ca3af;
+    color: #1f2937;
+  }
+
+  .custom-fields-nav button.is-cancel:hover {
+    background: #6b7280;
+  }
+
+  .object-tab {
+    display: flex;
+    align-items: center;
+    padding: 10px 14px;
+    border-radius: 12px;
+    color: #1f2937;
+    font-weight: 500;
     text-decoration: none;
-    color: #333;
-    transition: background 0.2s ease;
+    transition: background 0.2s ease, color 0.2s ease;
+    margin-bottom: 6px;
   }
 
-  .sidebar a.active{
-    background-color: #313133;
-    color: white;
-    font-weight: bold;
-  }
-  .sidebar a:hover {
-    background-color: #cacaca;
-    color: white;
-    font-weight: bold;
+  .object-tab.active {
+    background: rgba(24, 39, 64, 0.12);
+    color: #182740;
+    font-weight: 600;
   }
 
-  .content-area {
+  .object-tab:hover {
+    background: rgba(15, 23, 42, 0.08);
+  }
+
+  .custom-fields-content {
     flex: 1;
-    padding: 30px;
-    overflow-y: auto;
-    background-color: #fff;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    min-height: 68vh;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
   }
-  .card .card-content{
-      padding: 0px;
-      border-radius: 0 0 2px 2px;
+
+  .custom-fields-content h3 {
+    font-family: 'Euclid Circular A', sans-serif;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #0f172a;
+    margin-bottom: 16px;
+  }
+
+  .custom-fields-divider {
+    height: 1px;
+    background: #e5e7eb;
+    margin: 24px 0;
+  }
+
+  #create-object-form {
+    display: none;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 18px;
+    padding: 26px 30px;
+    margin-bottom: 28px;
+    background: linear-gradient(135deg, #fff, #f8fafc);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+  }
+
+  #create-object-form h5 {
+    font-family: 'Euclid Circular A', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 16px;
+  }
+
+  #create-object-form button[type="submit"] {
+    background: #fc6a3d;
+    border-radius: 12px;
+    padding: 0 22px;
+    font-weight: 600;
+  }
+
+  @media (max-width: 992px) {
+    .custom-fields-layout {
+      flex-direction: column;
     }
-  .z-depth-1, nav, .card-panel, .card, .toast, .btn, .btn-large, .btn-small, .btn-floating, .dropdown-content, .collapsible, .sidenav {
-    -webkit-box-shadow: none;
-  }
-  .section{
-    padding-top: 0rem;
-    padding-bottom: 1rem;
-  }
-  #toggle-create-form{
-    background-color: #fc6a3d;
+
+    .custom-fields-nav {
+      width: 100%;
+      position: static;
+      max-height: none;
+    }
   }
 </style>
 
-<div class="full-page-layout">
-
-  <!-- Left Sidebar -->
-  <div class="sidebar">
-    <h4>System Objects</h4>
-    <br>
-    <div style="width: 100%; margin-bottom: 20px;">
-      <button id="toggle-create-form" 
-        class="btn btn-small tooltipped" 
-        data-tooltip="Create New Custom Object"
-        style="background-color: #fc6a3d; display: flex; align-items: center; color:white; justify-content: center; width: 100%;">
-        <i class="material-icons left">add</i> New Object
+<div class="custom-fields-page container" style="max-width: 1280px;">
+  <div class="custom-fields-layout">
+    <aside class="custom-fields-nav">
+      <h2>Custom Objects</h2>
+      <button id="toggle-create-form" class="btn btn-small tooltipped" data-tooltip="Create New Custom Object">
+        <i class="material-icons left">add</i>New Object
       </button>
-    </div>
-    {% for object_type in models %}
-      <a href="#tab-{{ object_type }}" class="object-tab {% if forloop.first %}active{% endif %}">
-        {{ object_type }}
-      </a>
-    {% endfor %}
+      {% for object_type in models %}
+        <a href="#tab-{{ object_type }}" class="object-tab {% if forloop.first %}active{% endif %}">
+          {{ object_type }}
+        </a>
+      {% empty %}
+        <p class="grey-text text-darken-1" style="margin-top: 12px;">No objects available.</p>
+      {% endfor %}
+    </aside>
 
-  </div>
-
-  <!-- Right Content Area -->
-  <div class="content-area">
-    <div id="create-object-form" style="display: none; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px; margin-bottom: 30px;">
-      <h5 style="color: #fc6a3d;">Create New Custom Object</h5>
-      <form method="post">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <div class="right-align">
-          <button class="btn waves-effect waves-light" type="submit" style="background-color: #fc6a3d;">
-            Save
-          </button>
-        </div>
-      </form>
-    </div>
-    {% for object_type in models %}
-      <div id="tab-{{ object_type }}" class="object-content" style="{% if not forloop.first %}display: none;{% endif %}">
-        {% with fields_by_object_type|dict_get:object_type as obj_fields %}
-          {% if object_type_kinds|dict_get:object_type == "standard" %}
-            {% include "partials/custom_fields_section_for_standard_objects.html" with object_name=object_type standard_fields=obj_fields.standard custom_fields=obj_fields.custom %}
-          {% else %}
-            {% include "partials/custom_fields_section_for_custom_objects.html" with object_name=object_type custom_fields=obj_fields.custom obj_type=object_type records=custom_object_records|dict_get:object_type %}
-          {% endif %}
-        {% endwith %}
+    <section class="custom-fields-content">
+      <div id="create-object-form">
+        <h5>Create New Custom Object</h5>
+        <form method="post">
+          {% csrf_token %}
+          {{ form.as_p }}
+          <div class="right-align">
+            <button class="btn waves-effect waves-light" type="submit">Save</button>
+          </div>
+        </form>
       </div>
-    {% endfor %}
-    
-  </div>
 
+      {% for object_type in models %}
+        <div id="tab-{{ object_type }}" class="object-content" style="{% if not forloop.first %}display: none;{% endif %}">
+          {% with fields_by_object_type|dict_get:object_type as obj_fields %}
+            {% if object_type_kinds|dict_get:object_type == "standard" %}
+              {% include "partials/custom_fields_section_for_standard_objects.html" with object_name=object_type standard_fields=obj_fields.standard custom_fields=obj_fields.custom %}
+            {% else %}
+              {% include "partials/custom_fields_section_for_custom_objects.html" with object_name=object_type custom_fields=obj_fields.custom obj_type=object_type records=custom_object_records|dict_get:object_type %}
+            {% endif %}
+          {% endwith %}
+          {% if not forloop.last %}
+            <div class="custom-fields-divider"></div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </section>
+  </div>
 </div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const mainContent = document.querySelector('main.main-content');
+    if (mainContent) {
+      mainContent.classList.add('enable-scroll');
+    }
+  });
+</script>
 
 <script>
   document.addEventListener('DOMContentLoaded', function () {
@@ -147,14 +238,16 @@
     const formDiv = document.getElementById("create-object-form");
 
     toggleBtn.addEventListener("click", function () {
-      if (formDiv.style.display === "none") {
+      const isHidden = formDiv.style.display === "none";
+
+      if (isHidden) {
         formDiv.style.display = "block";
-        toggleBtn.innerHTML = '<i class="material-icons left">close</i> Cancel';
-        toggleBtn.style.backgroundColor = "#888";
+        toggleBtn.innerHTML = '<i class="material-icons left">close</i>Cancel';
+        toggleBtn.classList.add("is-cancel");
       } else {
         formDiv.style.display = "none";
-        toggleBtn.innerHTML = '<i class="material-icons left">add</i> New Object';
-        toggleBtn.style.backgroundColor = "#ef5d84";
+        toggleBtn.innerHTML = '<i class="material-icons left">add</i>New Object';
+        toggleBtn.classList.remove("is-cancel");
       }
     });
   });

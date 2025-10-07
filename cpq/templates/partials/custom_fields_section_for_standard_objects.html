@@ -1,94 +1,92 @@
 <div class="section">
 
   <!-- 🔹 STANDARD FIELDS -->
-  <div class="card z-depth-1">
-    <div class="card-content" style="padding-bottom:0;">
-      <span class="card-title grey-text text-darken-3" style="font-size:1.2rem;font-family:'Euclid Circular A',sans-serif;">
-        {{ object_name }} Standard Fields
-      </span>
-
-      {% if standard_fields %}
-      <table class="striped highlight responsive-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Type</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for field in standard_fields %}
-          <tr>
-            <td>{{ field.name }}</td>
-            <td>{{ field.data_type }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <p class="grey-text">No standard fields for {{ object_name }}.</p>
-      {% endif %}
+  <div class="fields-panel">
+    <div class="fields-panel__header">
+      <div>
+        <h3>{{ object_name }} Standard Fields</h3>
+        <p class="muted">Out-of-the-box attributes available for this object.</p>
+      </div>
     </div>
+
+    {% if standard_fields %}
+      <div class="fields-grid">
+        <div class="fields-grid__row fields-grid__row--head">
+          <span>Field Name</span>
+          <span>Data Type</span>
+        </div>
+        {% for field in standard_fields %}
+          <div class="fields-grid__row">
+            <span>{{ field.name }}</span>
+            <span class="muted">{{ field.data_type }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="fields-panel__empty">No standard fields for {{ object_name }}.</div>
+    {% endif %}
   </div>
 
   <!-- 🔸 CUSTOM FIELDS -->
-  <div class="card z-depth-1">
-    <div class="card-content" style="padding-bottom:0; position:relative;">
-      <span class="card-title grey-text text-darken-3" style="font-size:1.2rem;font-family:'Euclid Circular A',sans-serif;">
-        {{ object_name }} Custom Fields
-      </span>
-
-      <!-- floating “add” button -->
-      <a href="{% url 'cpq:create_custom_field' object_name %}"
-         class="btn-floating halfway-fab waves-effect waves-light deep-orange accent-4 tooltipped"
-         data-tooltip="Add Custom Field">
-        <i class="material-icons">add</i>
+  <div class="fields-panel">
+    <div class="fields-panel__header">
+      <div>
+        <h3>{{ object_name }} Custom Fields</h3>
+        <p class="muted">Set up additional attributes tailored to your process.</p>
+      </div>
+      <a href="{% url 'cpq:create_custom_field' object_name %}" class="btn waves-effect waves-light add-field-btn">
+        <i class="material-icons left">add</i>New Field
       </a>
-
-      {% if custom_fields %}
-      <table class="striped highlight responsive-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Label</th>
-            <th>Type</th>
-            <th>Required</th>
-            <th>Values</th>
-            <th>Last Modified By</th>
-            <th>Created By</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for field in custom_fields %}
-            <tr>
-              <td>{{ field.name }}</td>
-              <td>{{ field.label }}</td>
-              <td>{{ field.data_type }}</td>
-              <td>{{ field.required|yesno:"Yes,No" }}</td>
-              {% if field.data_type in "dropdown,multiselect,radio" and field.values %}
-                <td>{{ field.values }}</td>
-              {% else %}
-                <td class="grey-text">—</td>
-              {% endif %}
-              {% if field.updated_by %}
-                <td class="datetime-custom-fields" data-datetime-field="{{ field.updated_at|date:'c' }}">{{ field.updated_by }}</td>
-              {% else %}
-                <td>No updates yet.</td>
-              {% endif %}
-              <td class="datetime-custom-fields" data-datetime-field="{{ field.created_at|date:'c' }}">{{ field.created_by }}</td>
-              <td>
-                <a href="{% url 'cpq:edit_custom_field' field.id %}" class="btn-flat">
-                  <i class="material-icons">edit</i>
-                </a>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <p class="grey-text">No custom fields for {{ object_name }}.</p>
-      {% endif %}
     </div>
+
+    {% if custom_fields %}
+      <div class="fields-grid fields-grid--wide">
+        <div class="fields-grid__row fields-grid__row--head">
+          <span>Label</span>
+          <span>API Name</span>
+          <span>Type</span>
+          <span>Required</span>
+          <span>Values</span>
+          <span>Updated</span>
+          <span>Created</span>
+          <span class="align-right">Actions</span>
+        </div>
+        {% for field in custom_fields %}
+          <div class="fields-grid__row">
+            <span>{{ field.label }}</span>
+            <span class="muted">{{ field.name }}</span>
+            <span>{{ field.data_type }}</span>
+            <span>
+              <span class="status-chip {{ field.required|yesno:'chip-active,chip-inactive' }}">
+                {{ field.required|yesno:"Required,Optional" }}
+              </span>
+            </span>
+            <span>
+              {% if field.data_type in "dropdown,multiselect,radio" and field.values %}
+                <span class="muted">{{ field.values }}</span>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </span>
+            <span>
+              {% if field.updated_by %}
+                <span class="timeline-text">{{ field.updated_by }} · {{ field.updated_at|date:"M d, Y" }}</span>
+              {% else %}
+                <span class="muted">No updates yet</span>
+              {% endif %}
+            </span>
+            <span class="muted">{{ field.created_by }} · {{ field.created_at|date:"M d, Y" }}</span>
+            <span class="align-right">
+              <a href="{% url 'cpq:edit_custom_field' field.id %}" class="btn-flat edit-link">
+                <i class="material-icons">edit</i>
+              </a>
+            </span>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="fields-panel__empty">No custom fields for {{ object_name }} yet.</div>
+    {% endif %}
   </div>
 
 
