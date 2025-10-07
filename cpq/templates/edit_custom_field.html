@@ -4,7 +4,7 @@
 {% block content %}
   <h2 class="text-2xl font-semibold mb-4">Custom Fields</h2>
 <div class="card-panel white" style="border:1px solid #e0e0e0;border-radius:10px;">
-  
+
 
 <div class="max-w-4xl mx-auto py-10">
   <h4 class="text-center text-xl font-semibold text-orange-600 mb-6">
@@ -41,8 +41,7 @@
         {{ form.object_type }}
       </div>
 
-      <!-- 
-      ject (optional) -->
+      <!-- Custom Object (optional) -->
       <div>
         {{ form.custom_object.label_tag }}
         {{ form.custom_object }}
@@ -52,25 +51,40 @@
       <div>
         <label for="id_data_type" class="block text-sm font-medium text-gray-700">Data Type</label>
         <select id="id_data_type" name="data_type" class="w-full mt-1 border rounded-lg p-2">
-          <option value="text">Text</option>
-          <option value="number">Number</option>
-          <option value="date">Date</option>
-          <option value="boolean">Boolean</option>
-          <option value="dropdown">Dropdown</option>
-          <option value="textarea">Text Area</option>
-          <option value="lookup">Look Up</option>
+          <option value="text" {% if form.instance.data_type == 'text' %}selected{% endif %}>Text</option>
+          <option value="number" {% if form.instance.data_type == 'number' %}selected{% endif %}>Number</option>
+          <option value="date" {% if form.instance.data_type == 'date' %}selected{% endif %}>Date</option>
+          <option value="boolean" {% if form.instance.data_type == 'boolean' %}selected{% endif %}>Boolean</option>
+          <option value="dropdown" {% if form.instance.data_type == 'dropdown' %}selected{% endif %}>Dropdown</option>
+          <option value="textarea" {% if form.instance.data_type == 'textarea' %}selected{% endif %}>Text Area</option>
+          <option value="lookup" {% if form.instance.data_type == 'lookup' %}selected{% endif %}>Look Up</option>
         </select>
       </div>
-     <div id="lookup-model-field" style="display: none;">
-      <label for="id_lookup_model" class="block text-sm font-medium text-gray-700">Lookup Model</label>
+
+      <!-- Dropdown Options (hidden by default) -->
+      <div id="dropdown-options-field" style="display:none;" class="mt-4">
+        <label class="block text-sm font-medium text-gray-700">Dropdown Options</label>
+        <div id="options-container" class="space-y-2 mt-2">
+          <!-- Aquí se insertarán inputs dinámicamente -->
+        </div>
+        <button type="button" id="add-option" class="btn-small orange darken-2 white-text mt-2">
+          + Add Option
+        </button>
+      </div>
+
+      <div id="lookup-model-field" style="display: none;">
+        <label for="id_lookup_model" class="block text-sm font-medium text-gray-700">Lookup Model</label>
         {{ form.lookup_model }}
       </div>
 
       <!-- Required -->
       <div class="flex items-center space-x-2">
-        {{ form.required }}
-        <span class="text-sm">Required</span>
+        <label>
+          {{ form.required }}
+          <span class="text-sm">Required</span>
+        </label>
       </div>
+
     </div>
 
     <div class="divider"></div>
@@ -80,7 +94,7 @@
 
     <div class="flex justify-end space-x-4 pt-6">
       <a href="{% url 'cpq:custom_fields' %}" class="px-4 py-2 text-gray-600">Cancel</a>
-      <button type="submit" class="px-6 py-2 bg-orange-600 text-white rounded-lg">
+      <button class="btn orange darken-2 white-text" type="submit">
         Save
       </button>
     </div>
@@ -99,7 +113,7 @@
     // Removes labels from being on the field.
     const labels = document.querySelectorAll('label');
     labels.forEach(label => label.classList.add('active'));
-    
+
 
     // Auto-generate API name from label
     const labelInput = document.getElementById("id_label");
@@ -135,6 +149,58 @@
   document.addEventListener('DOMContentLoaded', function () {
     const modals = document.querySelectorAll('.modal');
     M.Modal.init(modals);
+  });
+
+  // Dropdown options
+  document.addEventListener('DOMContentLoaded', function () {
+    const dataTypeSelect = document.getElementById('id_data_type');
+    const dropdownField = document.getElementById('dropdown-options-field');
+    const optionsContainer = document.getElementById('options-container');
+    const addOptionBtn = document.getElementById('add-option');
+
+    function toggleDropdownField() {
+      if (dataTypeSelect.value === 'dropdown') {
+        dropdownField.style.display = 'block';
+      } else {
+        dropdownField.style.display = 'none';
+        optionsContainer.innerHTML = ''; // limpiar si cambia de tipo
+      }
+    }
+
+    function addOptionInput(value = '') {
+      const wrapper = document.createElement('div');
+      wrapper.classList.add('flex', 'items-center', 'space-x-2');
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.name = 'options[]';  // Django recibirá lista con request.POST.getlist("options[]")
+      input.value = value;
+      input.classList.add('border', 'rounded-lg', 'p-2', 'flex-1');
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.textContent = 'x';
+      removeBtn.classList.add('btn-small', 'red', 'white-text');
+      removeBtn.onclick = () => wrapper.remove();
+
+      wrapper.appendChild(input);
+      wrapper.appendChild(removeBtn);
+      optionsContainer.appendChild(wrapper);
+    }
+
+    // Inicializar con opciones existentes si las hay
+    {% if form.instance.data_type == 'dropdown' and form.instance.options %}
+        dropdownField.style.display = 'block';
+        const existingOptions = {{ form.instance.options|safe }};
+        existingOptions.forEach(function(opt) {
+            addOptionInput(opt);
+        });
+    {% endif %}
+
+    addOptionBtn.addEventListener('click', () => addOptionInput());
+
+    dataTypeSelect.addEventListener('change', toggleDropdownField);
+    toggleDropdownField(); // ejecutar al cargar la página
   });
 </script>
 

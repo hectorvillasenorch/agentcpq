@@ -355,7 +355,7 @@ input[type="checkbox"]:checked + span:before{
         </div>
 
         <!-- Description Detail Level -->
-        
+
           <div class="col s12">
             <h6 class="option-title">Description Detail Level</h6>
 
@@ -371,7 +371,7 @@ input[type="checkbox"]:checked + span:before{
               </label>
             </div>
           </div>
-        
+
 
         <!--  Responsive grid: Show Discount / Term / Sign  -->
         <div class="row line-display-options">
@@ -423,7 +423,7 @@ input[type="checkbox"]:checked + span:before{
           </div>
         </div>
       </div>
-  
+
       <!-- ✅ Contenedor que se muestra/oculta -->
       <div id="tax_info_section" style="display: none;">
 
@@ -439,7 +439,7 @@ input[type="checkbox"]:checked + span:before{
         <div class="row line-display-options">
           <div class="col s12 m6 l4">
             <label class="checkbox-label">
-              <input type="checkbox" name="show_quote_tax_percentage" 
+              <input type="checkbox" name="show_quote_tax_percentage"
                 {% if settings.show_quote_tax_percentage %} checked {% endif %}/>
               <span>Show Tax as Percentage</span>
             </label>
@@ -534,7 +534,7 @@ input[type="checkbox"]:checked + span:before{
 
       <input type="hidden" name="rendered_fields" id="rendered_fields_input" />
       <input type="hidden" name="omitted_fields" id="omitted_fields_input" />
-    
+
       <div class="right-align">
         <button type="submit" id="save-button" class="btn orange darken-2">
           <i class="material-icons left">save</i> Save
@@ -547,7 +547,7 @@ input[type="checkbox"]:checked + span:before{
       Tenant information is missing. Please complete the "Company Information" section.
     </p>
     {% endif %}
-    
+
   </div>
 
   {% if company %}

@@ -1,5 +1,5 @@
 from django.shortcuts import render, get_object_or_404
-from .models import CustomObject, CustomField, CustomRecord, CustomFieldValue
+from .models import CustomObject, CustomField, CustomRecord, CustomFieldValue, Contract
 from django.contrib.contenttypes.models import ContentType
 import threading
 import logging

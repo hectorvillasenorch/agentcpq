@@ -19,11 +19,16 @@ def handle_create_product(user, completed_products):
         sku = product_data.get("sku", None)
         name = product_data.get("name", None)
         price = product_data.get("price", None)
+        is_bundle = product_data.get("is_bundle", False)
+
+        print(f"Product data: {product_data}")
 
         # ✅ Validate required fields if product is not a bundle
-        if product_data.get("is_bundle") == True:
+        if is_bundle:
             required_fields = ["sku", "name"]
             missing_fields = [field for field in required_fields if not product_data.get(field)]
+            product_data["price"] = 0
+            price = 0
         else:
             required_fields = ["sku", "name", "price"]
             missing_fields = [field for field in required_fields if not product_data.get(field)]
@@ -32,7 +37,7 @@ def handle_create_product(user, completed_products):
             result_payload["error"] = f"Error: Missing required fields: {', '.join(missing_fields)}."
             result.append(result_payload)
             continue
-        
+
         if not isinstance(sku, str):
             result_payload["error"] = "Error: SKU must be a string."
             result.append(result_payload)

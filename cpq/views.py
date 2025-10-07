@@ -1,7 +1,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage, Option, TenantUsageReport, Account
 from django.http import JsonResponse, HttpResponseForbidden
-from django.views.decorators.csrf import csrf_exempt 
+from django.views.decorators.csrf import csrf_exempt
 from django.apps import apps
 from salesforce.models import SalesforceToken
 from django.core.serializers.json import DjangoJSONEncoder
@@ -27,6 +27,8 @@ from collections import defaultdict
 from django.contrib.auth.models import User, Group
 from django.utils import timezone
 from .models import EmailAlert
+from cpq.models import default_rendered_fields_for_quote_document_settings, default_omitted_fields_for_quote_document_settings
+from django.utils.html import escape
 
 # HubSpot sync
 from hubspot.views import sync_opportunity_to_hubspot
@@ -53,13 +55,13 @@ def product_detail(request, product_id):
     return render(request, "product_detail.html", {"product": product})
 
 def settings_view(request):
-    return render(request, "cpq/settings.html") 
+    return render(request, "cpq/settings.html")
 
 def quotes_view(request):
     """Render the list of Quotes."""
-    
+
     quotes = Quote.objects.select_related("opportunity__account").all()
-    
+
     is_authenticated = SalesforceToken.objects.exists()
 
     return render(request, "quotes.html", {
@@ -80,12 +82,12 @@ def field_mapping_view(request):
     """Dynamically fetch schema fields for the selected CRM and object type."""
 
     # ✅ Get the selected CRM and Object Type from request
-    selected_crm = request.GET.get("crm", "AgentCPQ")  
+    selected_crm = request.GET.get("crm", "AgentCPQ")
     selected_model = request.GET.get("object_type", "Opportunity")
 
     if selected_model not in MODEL_CHOICES:
         return JsonResponse({"error": "Invalid object type"}, status=400)
-    
+
     print("🔍 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> selected_model =", selected_model)
 
     # ✅ Get the correct model class dynamically
@@ -134,8 +136,8 @@ def save_field_mappings(request):
             crm_field = value.strip()
             if crm_field:  # ✅ Ensure it's not empty
                 mapping, created = SystemFieldMapping.objects.update_or_create(
-                    crm=crm,  
-                    local_field=key,  
+                    crm=crm,
+                    local_field=key,
                     field_type=object_type,  # ✅ Ensure object type is saved correctly
                     defaults={"crm_field": crm_field}
                 )
@@ -184,41 +186,43 @@ def set_primary_quote(request, quote_id):
 
 
 # Maybe it is not used
-def create_custom_field(request):
-    if request.method == "POST":
-        crm = request.POST["crm"]
-        object_type = request.POST["object_type"]
-        name = request.POST["name"]
-        label = request.POST["label"]
-        data_type = request.POST["data_type"]
-        required = "required" in request.POST
+#def create_custom_field(request):
+#    if request.method == "POST":
+#        crm = request.POST["crm"]
+#        object_type = request.POST["object_type"]
+#        name = request.POST["name"]
+#        label = request.POST["label"]
+#        data_type = request.POST["data_type"]
+#        required = "required" in request.POST
+#        options = request.POST.getlist("options[]")
 
         # ✅ Save to DB
-        field = CustomField.objects.create(
-            crm=crm,
-            object_type=object_type,
-            name=name,
-            label=label,
-            data_type=data_type,
-            required=required,
-            created_by=request.user
-        )
-
-        if field:
-            quote_document_settings = QuoteDocumentSettings.objects.first()
-            if quote_document_settings:
-                # Add label at the end of omitted_fields
-                omitted = quote_document_settings.omitted_fields or []
-                
-                if label not in omitted:  # Avoid duplicated
-                    omitted.append(label)
-                    quote_document_settings.omitted_fields = omitted
-                    quote_document_settings.save()
-
-        return redirect("custom_fields")
-
-    fields = CustomField.objects.all().order_by("-created_at")
-    return render(request, "custom_fields.html", {"fields": fields})
+#        field = CustomField.objects.create(
+#            crm=crm,
+#            object_type=object_type,
+#            name=name,
+#            label=label,
+#            data_type=data_type,
+#            required=required,
+#            options=options if options else None,
+#            created_by=request.user
+#        )
+#
+#        if field:
+#            quote_document_settings = QuoteDocumentSettings.objects.first()
+#            if quote_document_settings:
+#                # Add label at the end of omitted_fields
+#                omitted = quote_document_settings.omitted_fields or []
+#
+#                if label not in omitted:  # Avoid duplicated
+#                    omitted.append(label)
+#                    quote_document_settings.omitted_fields = omitted
+#                    quote_document_settings.save()
+#
+#        return redirect("custom_fields")
+#
+#    fields = CustomField.objects.all().order_by("-created_at")
+#    return render(request, "custom_fields.html", {"fields": fields})
 
 def get_standard_fields(model_name):
     mapping = {
@@ -336,7 +340,7 @@ def edit_custom_object(request, object_name):
         for custom_field in related_customfields:
             related_values = custom_field.values.all()
             related_data[custom_field.label].extend(related_values)
-        
+
         related_data = dict(related_data)
 
     return render(request, 'edit_custom_object.html', {
@@ -365,6 +369,11 @@ def create_custom_field(request, object_name):
             field = form.save(commit=False)
             field.created_by = request.user
             field.updated_by = request.user
+
+            # Get options if exists
+            options = request.POST.getlist("options[]")
+            field.options = options if options else None
+
             field.save()
 
             # 🔧 Lógica personalizada aquí
@@ -377,7 +386,7 @@ def create_custom_field(request, object_name):
             #        omitted.append(full_label)
             #        quote_document_settings.omitted_fields = omitted
             #        quote_document_settings.save()
-            
+
             return redirect('cpq:custom_fields')  # or wherever you want to go after save
         else:
             print("Form errors:", form.errors)
@@ -400,20 +409,28 @@ def edit_custom_field(request, field_id):
         if form.is_valid():
             updated_field = form.save(commit=False)
             updated_field.updated_by = request.user
+
+            # Guardar las opciones del dropdown si el tipo es 'dropdown'
+            if form.cleaned_data['data_type'] == 'dropdown':
+                # request.POST.getlist('options[]') obtiene todos los inputs de opciones
+                options = request.POST.getlist('options[]')
+                # Filtrar valores vacíos
+                updated_field.options = [opt for opt in options if opt.strip()]
+            else:
+                updated_field.options = []  # Limpiar si ya no es dropdown
+
             updated_field.save()
             return redirect('cpq:custom_fields')
     else:
         form = CustomFieldForm(instance=custom_field)
-        # Get related values
         related_values = custom_field.values.all()
-
-        print(f"\n\nRelated Values: {related_values}\n\n")
 
     return render(request, 'edit_custom_field.html', {
         'form': form,
         'field_id': field_id,
         'related_values': related_values
     })
+
 
 @require_POST
 def delete_custom_field(request, field_id):
@@ -422,8 +439,8 @@ def delete_custom_field(request, field_id):
     # Only admins can delete custom fields
     if not request.user.is_superuser and not request.user.is_staff:
         return HttpResponseForbidden("You do not have permission to delete this custom field.")
-    
-    
+
+
     custom_field.delete()
     return redirect('cpq:custom_fields')
 
@@ -444,7 +461,7 @@ def get_company_information(request):
         company.street_address = request.POST.get('street_address', '')
         company.city = request.POST.get('city', '')
         company.state = request.POST.get('state', '')
-        
+
         # company.plan = request.POST.get('plan', '')
 
         # actions_limit_raw = request.POST.get('actions_limit', '')
@@ -483,7 +500,7 @@ def create_custom_object(request):
             return redirect('cpq:custom_object_list')  # or some success view
     else:
         form = CustomObjectForm()
-    
+
     return render(request, 'create_custom_object.html', {'form': form})
 
 @login_required
@@ -551,10 +568,10 @@ def get_document_template(request):
             'rendered_fields': [],
             'ommited_fields': [],
         })
-    
+
     try:
         document_settings = QuoteDocumentSettings.objects.first()
-        
+
     except ObjectDoesNotExist:
         document_settings = None
 
@@ -578,7 +595,7 @@ def get_document_template(request):
             'show_quote_expires_at', 'show_quote_notes',
             'show_line_discount', 'show_subscription_term', 'show_sign', 'show_quote_tax_percentage', 'show_quote_tax_amount'
         ]
-        
+
         for field in boolean_fields:
             setattr(settings, field, field in request.POST)
 
@@ -598,7 +615,7 @@ def get_document_template(request):
 
         # Tax Rate
         settings.quote_tax = request.POST.get("tax_rate", "")
-        
+
         # Terms and conditions
         settings.terms_and_conditions = request.POST.get("terms_conditions", "")
 
@@ -609,13 +626,13 @@ def get_document_template(request):
             quote.update_tax()
             quote.save()
         return redirect('cpq:get_document_template')
-    
+
     if document_settings is None:
         document_settings = QuoteDocumentSettings.objects.create(
-            rendered_fields=QuoteDocumentSettings.default_rendered_fields(),
-            omitted_fields=QuoteDocumentSettings.default_omitted_fields()
+            rendered_fields=default_rendered_fields_for_quote_document_settings(),
+            omitted_fields=default_omitted_fields_for_quote_document_settings()
         )
-    
+
     # Hardcore for now
     set_custom_fields_into_quote_document_settings(["Product", "Quote"])
     document_settings.refresh_from_db()
@@ -834,9 +851,9 @@ def create_business_rule(request):
         "form": form,
         "formset": formset,
         "rule_type": rule_type,
-        "QUOTE_FIELDS": mark_safe(json.dumps(QUOTE_FIELDS)),
-        "QUOTE_LINE_FIELDS": mark_safe(json.dumps(QUOTE_LINE_FIELDS)),
-        "PRODUCT_FIELDS": mark_safe(json.dumps(PRODUCT_FIELDS)),
+        "QUOTE_FIELDS": mark_safe(json.dumps(QUOTE_FIELDS)), # nosec B703 B308
+        "QUOTE_LINE_FIELDS": mark_safe(json.dumps(QUOTE_LINE_FIELDS)), # nosec B703 B308
+        "PRODUCT_FIELDS": mark_safe(json.dumps(PRODUCT_FIELDS)), # nosec B703 B308
     })
 
 
@@ -844,7 +861,7 @@ def create_custom_record(request, object_name, user_id):
 
     custom_object = get_object_or_404(CustomObject, name=object_name)
     DynamicForm = generate_dynamic_form(custom_object)
-    
+
     if request.method == 'POST':
         form = DynamicForm(request.POST)
         if form.is_valid():
@@ -870,7 +887,7 @@ def create_custom_record(request, object_name, user_id):
                         content_type=content_type,
                         object_id=record.id
                     )
-                
+
                 except CustomField.DoesNotExist:
                     print(f"Field not found: {field_name}")
             messages.success(request, f"{custom_object.label} record created successfully.")
@@ -912,7 +929,7 @@ def usage_dashboard(request):
     usage_logs = ActionUsage.objects.all()
 
     tenants_usage = TenantUsageReport.objects.select_related('tenant')
- 
+
 
     # ---- Total Actions by Month ----
     actions_by_month = (
@@ -945,18 +962,17 @@ def usage_dashboard(request):
     action_limit = current_tenant.actions_limit or 1000
     overflow = monthly_count - action_limit
 
-
     actions_by_month_serialized = [
-    {
-        "month": entry["month"].strftime("%Y-%m"),  # or "%b %Y" for readable labels
-        "total": entry["total"]
-    }
-    for entry in actions_by_month
+        {
+            "month": entry["month"].strftime("%Y-%m"),
+            "total": entry["total"]
+        }
+        for entry in actions_by_month
     ]
 
     actions_by_user_serialized = [
         {
-            "user": entry.get("user__username") or "Unknown",
+            "user": escape(entry.get("user__username") or "Unknown"),
             "total": entry["count"]
         }
         for entry in actions_by_user
@@ -965,8 +981,8 @@ def usage_dashboard(request):
 
     context = {
         "tenant": current_tenant,
-        "actions_by_month_json": mark_safe(json.dumps(list(actions_by_month_serialized))),
-        "actions_by_user_json": mark_safe(json.dumps(list(actions_by_user_serialized))),
+        "actions_by_month_json": json.dumps(actions_by_month_serialized),
+        "actions_by_user_json": json.dumps(actions_by_user_serialized),
         "top_actions": top_actions,
         "monthly_count": monthly_count,
         "limit": action_limit,

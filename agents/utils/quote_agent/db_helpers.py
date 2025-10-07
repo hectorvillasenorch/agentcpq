@@ -137,5 +137,5 @@ def get_or_create_quote_ui_render():
         quote_render_settings.rendered_fields = rendered_fields
         quote_render_settings.omitted_fields = omitted_fields
         quote_render_settings.save()
-    
+
     return quote_render_settings, quote_document_settings

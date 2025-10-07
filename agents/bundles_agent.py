@@ -1,4 +1,4 @@
-from cpq.models import Product 
+from cpq.models import Product
 import openai
 from dotenv import load_dotenv
 import json
@@ -41,7 +41,7 @@ def bundles_agent(user, action, user_message, session_data):
 
     return {"message": "🤖 Sorry, I couldn’t understand your request. From Bundles Agent"}
 
-    
+
 
 def create_bundle_components(user, user_message, session_data): #Using Option model
     """Handle bundle components."""
@@ -53,7 +53,7 @@ def create_bundle_components(user, user_message, session_data): #Using Option mo
         return {
             "message": "⚠️ Could not parse the bundle structure. Please include a bundle SKU, name, and a list of components with fields like product SKU, quantity, and required status."
         }
-    
+
     components_created = []
     response_message = ""
 
@@ -67,7 +67,7 @@ def create_bundle_components(user, user_message, session_data): #Using Option mo
         return {
             "message": f"⚠️ Error: Something went wrong — no product(s) was added to the bundle. Please try again or verify your input.<br><br>{response_message}"
         }
-    
+
 def delete_bundle_option_from_quote(user, user_message, session_data):
     """Delete Bundle Option From Quote."""
     logging.info("🔄 Deleting bundle components...")
@@ -85,7 +85,7 @@ def delete_bundle_option_from_quote(user, user_message, session_data):
         return {
             "message": "⚠️ Failed to extract bundle options correctly. Please try again."
         }
-    
+
     options_deleted = []
     response_message = ""
 
@@ -99,7 +99,7 @@ def delete_bundle_option_from_quote(user, user_message, session_data):
         return {
             "message": f"⚠️ Error: Something went wrong — no bundle component(s) quote line was deleted from the quote. Please try again or verify your input.<br><br>{response_message}"
         }
-    
+
 def update_bundle_option(user, user_message, session_data):
     """Updatins Bundle Option"""
     logging.info("🔄 Updating bundle option...")
@@ -107,11 +107,11 @@ def update_bundle_option(user, user_message, session_data):
     extracted_option_updates = extract_option_updates(user_message)
 
     if not extracted_option_updates:
-        
+
         return {
         "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
         }
-    
+
     response_message = ""
 
     # ✅ Handle updates option
@@ -122,10 +122,10 @@ def update_bundle_option(user, user_message, session_data):
         return {
             "message": f"No options were updated. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
-        
+
         }

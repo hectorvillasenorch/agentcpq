@@ -39,7 +39,7 @@ def save_custom_object(request, user=None):
             "message": f"❌ Error creating custom object: {str(e)}",
             "success": False
         }
-    
+
 def update_custom_object(request, user=None):
     try:
         data = json.loads(request)
@@ -55,14 +55,14 @@ def update_custom_object(request, user=None):
 
             fields = custom_object.custom_fields.all()
 
-            
+
             if label_to_update:
                 custom_object.label = label_to_update
             if name_to_update:
                 custom_object.name = name_to_update
             if description_to_update:
                 custom_object.description = description_to_update
-        
+
             custom_object.updated_by = user
 
             custom_object.save()
@@ -71,8 +71,8 @@ def update_custom_object(request, user=None):
                 field.custom_object = custom_object
                 field.object_type = custom_object.name
                 field.save()
-                
- 
+
+
         return {
             "message": f"✅ Custom object '{custom_object.label}' updated successfully. 🛠️",
             "success": True
@@ -84,7 +84,7 @@ def update_custom_object(request, user=None):
             "message": f"❌ Error updating custom object: {str(e)}",
             "success": False
         }
-    
+
 def delete_custom_object(request):
     try:
         data = json.loads(request)
@@ -96,8 +96,8 @@ def delete_custom_object(request):
             custom_object = CustomObject.objects.get(name=name)
 
             custom_object.delete()
-                
- 
+
+
         return {
             "message": f"✅ Custom object '{custom_object.label}' was successfully deleted. 🗑️",
             "success": True
@@ -109,7 +109,7 @@ def delete_custom_object(request):
             "message": f"❌ Error deleting custom object: {str(e)}",
             "success": False
         }
-    
+
 def save_custom_field(request, user=None):
     try:
         data = json.loads(request)
@@ -157,7 +157,7 @@ def save_custom_field(request, user=None):
             "message": f"❌ Error creating custom field: {str(e)}",
             "success": False
         }
-    
+
 
 def update_custom_field(request, user=None):
     try:
@@ -184,7 +184,7 @@ def update_custom_field(request, user=None):
             else:
                 custom_field = CustomField.objects.get(name=target_field_label, object_type=target_default_object)
 
-            
+
             if label_to_update:
                 custom_field.label = label_to_update
 
@@ -205,12 +205,12 @@ def update_custom_field(request, user=None):
             if options_to_update is not None:  # Por si la lista está vacía a propósito
                 custom_field.options = options_to_update
 
-        
+
             custom_field.updated_by = user
 
             custom_field.save()
-                
- 
+
+
         return {
             "message": f"✅ Custom field '{custom_field.label}' updated successfully. 🛠️",
             "success": True
@@ -222,7 +222,7 @@ def update_custom_field(request, user=None):
             "message": f"❌ Error updating custom field: {str(e)}",
             "success": False
         }
-    
+
 def delete_custom_field(request):
     try:
         data = json.loads(request)
@@ -241,8 +241,8 @@ def delete_custom_field(request):
                 custom_field = CustomField.objects.get(name=name, object_type=default_object_name)
 
             custom_field.delete()
-                
- 
+
+
         return {
             "message": f"✅ Custom object '{custom_field.label}' was successfully deleted. 🗑️",
             "success": True
@@ -501,8 +501,8 @@ def delete_custom_record(request):
             custom_record = CustomRecord.objects.get(custom_identifier=record_identifier)
 
             custom_record.delete()
-                
- 
+
+
         return {
             "message": f"✅ Custom record '{record_identifier}' was successfully deleted. 🗑️",
             "success": True

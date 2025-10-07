@@ -1,6 +1,6 @@
 document.addEventListener("DOMContentLoaded", function () {
   setupChatListeners();
-  setupSessionSwitching(); 
+  setupSessionSwitching();
   enhanceStructuredAgentMessagesHistoryChat(); // 🔥
 });
 
@@ -109,7 +109,7 @@ function unescapeUnicode(str) {
 function enhanceStructuredAgentMessages() {
     document.querySelectorAll(".agent-json").forEach(div => {
       const raw = div.dataset.raw;
-      
+
       const jsonStr = extractJson(raw);
       if (!jsonStr) {
         console.log("enhanceStructuredAgentMessages")
@@ -161,7 +161,9 @@ function enhanceStructuredAgentMessagesHistoryChat() {
       'validation_rules_details:',
       'rules:',
       'email_alerts_details:',
-      'retrieved_records:'
+      'retrieved_records:',
+      'inclusion_rules_details:',
+      'action_triggers_details:'
     ];
 
     let jsonPart = null;
@@ -186,9 +188,35 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     try {
       const data = JSON.parse(unescapeUnicode(jsonPart));
 
+      console.log("This is data: ", data);
+
       // === VALIDATION RULES ===
-      if (data.rules || (Array.isArray(data) && data[0]?.rule_type)) {
+      if (data.rules || (Array.isArray(data) && data[0]?.rule_type == 'validation')) {
         const html = renderValidationRuleDetails(data.rules || data);
+        div.innerHTML = html;
+        return;
+      }
+
+      // === INCLUSION RULES ===
+      if (data.rules || (Array.isArray(data) && data[0]?.rule_type == 'inclusion')) {
+        let fullMessage = unescapeUnicode(raw);
+
+        const html = renderInclusionRuleDetails(
+          fullMessage,
+          data.rules || data
+        );
+        div.innerHTML = html;
+        return;
+      }
+
+      // === ACTION TRIGGERS ===
+      if (matchedKey === 'action_triggers_details:') {
+        const fullMessage = unescapeUnicode(raw);
+        // Normalizar a array: el LLM puede devolver directamente un array o un objeto con la key
+        const triggers = Array.isArray(data)
+          ? data
+          : (data.action_triggers || data.action_triggers_details || data.triggers || data.rules || []);
+        const html = renderActionTriggersDetails(fullMessage, triggers);
         div.innerHTML = html;
         return;
       }
@@ -298,7 +326,7 @@ async function sendMessage() {
         const sessionId = urlParams.get("session_id");  // 👈 Obtén el session_id desde la URL
 
         showAgentFeedback();
-        const response = await fetch("/agents/chat/", {   
+        const response = await fetch("/agents/chat/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message: userMessage, session_id: sessionId})
@@ -335,7 +363,7 @@ async function sendMessage() {
         // ✅ Handle Approval History Response
         if (data.response && data.response.history) {
             responseMessage += renderApprovalHistory(data.response);
-        } 
+        }
         // ✅ Handle Quote Details Response
         else if (data.response && data.response.quote_details && !data.response.quote_notes) {
           //console.log("Quote Details");
@@ -350,13 +378,23 @@ async function sendMessage() {
         else if (data.response.download_url) {
             console.log(data.response);
             responseMessage += `📄 Quote PDF (v${data.response.document_version}) generated successfully! <a href="${data.response.download_url}" target="_blank">Download Here</a>`;
-        } 
+        }
         // ✅ Handle Validation Rules Response
         else if (data.response && data.response.validation_rules_details) {
           console.log("Validation Rules Details");
           //console.log(data.response);
           //console.log(data.response.validation_rules_details)
           responseMessage += renderValidationRuleDetails(data.response.validation_rules_details);
+        }
+        // ✅ Handle Inclusion Rules Response
+        else if (data.response && data.response.inclusion_rules_details) {
+          console.log("Inclusion Rules Details");
+          responseMessage += renderInclusionRuleDetails(data.response.message, data.response.inclusion_rules_details);
+        }
+        // ✅ Handle Action Triggers Response
+        else if (data.response && data.response.action_triggers_details) {
+          console.log("Entra a action trigger");
+          responseMessage += renderActionTriggersDetails(data.response.message, data.response.action_triggers_details);
         }
         // ✅ Show Rules
         else if (data.response && data.response.rules && data.response.read_only) {
@@ -381,7 +419,7 @@ async function sendMessage() {
         // ✅ Default Response (Handle General Messages)
         else if (data.response && data.response.message) {
             responseMessage += `<div class="general-message">${data.response.message}</div>`;
-        } 
+        }
         // ✅ Handle Unexpected Empty Response
         else {
             responseMessage += `<div class="error-message">🤖 No response received. Please try again.</div>`;
@@ -413,7 +451,7 @@ function appendMessage(className, message) {
     const chatBox = document.getElementById("chat-box");
     let messageBubble = document.createElement("div");
     messageBubble.classList.add("chat-message", className);
-  
+
     // ✅ Detect stored quote_details as string
     if (className === "agent" && message.includes("quote_details: {")) {
       try {
@@ -442,7 +480,7 @@ function appendMessage(className, message) {
       }
     }
 
-    // ✅ Detect stored notes as string
+    // ✅ Detect validation rules
     if (className === "agent" && message.includes("validation_rules_details: {")) {
       try {
         // Extract JSON from string
@@ -453,6 +491,20 @@ function appendMessage(className, message) {
         }
       } catch (e) {
         console.warn("Failed to parse validation_rules_details JSON:", e);
+      }
+    }
+
+    // ✅ Detect inclusion rules
+    if (className === "agent" && message.includes("inclusion_rules_details:")) {
+      try {
+        // Extraer el JSON, ya sea objeto {} o lista []
+        const match = message.match(/inclusion_rules_details:\s([\s\S]+)/);
+        if (match && match[1]) {
+          const rules = JSON.parse(match[1].trim());
+          message = renderInclusionRuleDetails(rules); // Usa tu formateador bonito
+        }
+      } catch (e) {
+        console.warn("Failed to parse inclusion_rules_details JSON:", e);
       }
     }
 
@@ -484,7 +536,7 @@ function appendMessage(className, message) {
         console.warn("Failed to parse retrieved_records JSON:", e);
       }
     }
-  
+
     messageBubble.innerHTML = message;
     chatBox.appendChild(messageBubble);
 
@@ -574,7 +626,7 @@ function renderQuoteDetails(quote) {
                   ` : "*****"}
                   </p>
                 </div>
-                
+
                 <div class="discount">
                   <p><strong>Discount: </strong>
                     ${(quote.discount_type && quote.discount_percentage && quote.discount_amount) ? `
@@ -612,7 +664,7 @@ function renderQuoteDetails(quote) {
           if (cleaned.toLowerCase() === "discount") {
             headers.push(`<th>Discount (%)</th>`);
             headers.push(`<th>Discount (USD)</th>`);
-          } 
+          }
           else if (cleaned === "Total Price") {
             headers.push(`<th>Subscription</th>`);
             headers.push(`<th>Term</th>`);
@@ -697,10 +749,10 @@ function renderQuoteDetails(quote) {
                 type="number"
                 min="1"
                 class="editable-field"
-                value="${item.quantity}" 
+                value="${item.quantity}"
                 data-quote="${quote.quote_name}"
                 data-quoteline-id="${item.id}"
-                data-sku="${item.sku}" 
+                data-sku="${item.sku}"
                 data-field="quantity"
                 onchange="updateQuoteLine(this)">
             </td>`;
@@ -727,14 +779,14 @@ function renderQuoteDetails(quote) {
                   const val = parseFloat(item.discount_percentage.replace('%', ''));
                   return Number.isInteger(val) ? val : val.toFixed(2);
                 })()}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)">
             </td>`;
             html += `
             <td class="centered-td">
               <input name="discountAmount" type="number" min="0" max="100"
                 value="${item.discount_amount.replace('$', '')}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)">
             </td>`;
         } else if (field === "Total Price") {
@@ -757,7 +809,7 @@ function renderQuoteDetails(quote) {
                   onchange="updateQuoteLine(this)"
                   style="text-align: center;">
               </td>`;
-          
+
           html += `
             <td class="total-price" data-sku="${item.sku}">
               ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
@@ -905,8 +957,8 @@ function renderQuoteDetails(quote) {
         } else if (field === "Quantity") {
           html += `
             <td>
-              <input type="number" min="1" value="${item.quantity}" 
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+              <input type="number" min="1" value="${item.quantity}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)">
             </td>`;
         } else if (field === "Description") {
@@ -930,14 +982,14 @@ function renderQuoteDetails(quote) {
                   const val = parseFloat(item.discount_percentage.replace('%', ''));
                   return Number.isInteger(val) ? val : val.toFixed(2);
                 })()}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)">
             </td>`;
             html += `
             <td class="centered-td">
               <input name="discountAmount" type="number" min="0" max="100"
                 value="${item.discount_amount.replace('$', '')}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)">
             </td>`;
         } else if (field === "Total Price") {
@@ -973,7 +1025,7 @@ function renderQuoteDetails(quote) {
   if(quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)){
     html += `
       <p class="subtotal-amount">
-        Tax: 
+        Tax:
         ${
           quote.show_quote_tax_percentage && quote.show_quote_tax_amount
             ? `(${parseFloat(quote.tax_percentage)}%) `
@@ -1049,7 +1101,7 @@ function renderQuoteDetailsMobile(quote) {
       ${
         quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)
           ? `<p>
-              <b>Tax:</b> 
+              <b>Tax:</b>
               ${
                 quote.show_quote_tax_percentage && quote.show_quote_tax_amount
                   ? `(${parseFloat(quote.tax_percentage)}%) `
@@ -1116,7 +1168,7 @@ function renderReadOnlyQuoteDetails(quote) {
                 <div class="expiration">
                   <p><strong>Expiration Date:</strong> ${quote.expiration_date ? formattedDate : "---"}</p>
                 </div>
-                
+
                 <div class="discount">
                   <p style="color: red;"><strong>Discount: </strong>
                     ${quote.discount_percentage}% ( - $${quote.discount_amount} )
@@ -1139,7 +1191,7 @@ function renderReadOnlyQuoteDetails(quote) {
           if (cleaned.toLowerCase() === "discount") {
             headers.push(`<th>Discount (%)</th>`);
             headers.push(`<th>Discount (USD)</th>`);
-          } 
+          }
           else if (cleaned === "Total Price") {
             headers.push(`<th>Subscription</th>`);
             headers.push(`<th>Term</th>`);
@@ -1222,10 +1274,10 @@ function renderReadOnlyQuoteDetails(quote) {
                 type="number"
                 min="1"
                 class="editable-field"
-                value="${item.quantity}" 
+                value="${item.quantity}"
                 data-quote="${quote.quote_name}"
                 data-quoteline-id="${item.id}"
-                data-sku="${item.sku}" 
+                data-sku="${item.sku}"
                 data-field="quantity"
                 onchange="updateQuoteLine(this)"
                 disabled>
@@ -1251,7 +1303,7 @@ function renderReadOnlyQuoteDetails(quote) {
                   const val = parseFloat(item.discount_percentage.replace('%', ''));
                   return Number.isInteger(val) ? val : val.toFixed(2);
                 })()}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)"
                 disabled>
             </td>`;
@@ -1259,7 +1311,7 @@ function renderReadOnlyQuoteDetails(quote) {
             <td class="centered-td">
               <input name="discountAmount" type="number" min="0" max="100"
                 value="${item.discount_amount.replace('$', '')}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)"
                 disabled>
             </td>`;
@@ -1284,7 +1336,7 @@ function renderReadOnlyQuoteDetails(quote) {
                   style="text-align: center;"
                   disabled>
               </td>`;
-          
+
           html += `
             <td class="total-price" data-sku="${item.sku}">
               ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
@@ -1394,8 +1446,8 @@ function renderReadOnlyQuoteDetails(quote) {
         } else if (field === "Quantity") {
           html += `
             <td>
-              <input type="number" min="1" value="${item.quantity}" 
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+              <input type="number" min="1" value="${item.quantity}"
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="quantity" onchange="updateQuoteLine(this)"
                 disabled>
             </td>`;
@@ -1420,7 +1472,7 @@ function renderReadOnlyQuoteDetails(quote) {
                   const val = parseFloat(item.discount_percentage.replace('%', ''));
                   return Number.isInteger(val) ? val : val.toFixed(2);
                 })()}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_percentage" onchange="updateQuoteLine(this)"
                 disabled>
             </td>`;
@@ -1428,7 +1480,7 @@ function renderReadOnlyQuoteDetails(quote) {
             <td class="centered-td">
               <input name="discountAmount" type="number" min="0" max="100"
                 value="${item.discount_amount.replace('$', '')}"
-                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}" 
+                data-quote="${quote.quote_name}" data-quoteline-id="${item.id}" data-sku="${item.sku}"
                 class="editable-field" data-field="discount_amount" onchange="updateQuoteLine(this)"
                 disabled>
             </td>`;
@@ -1463,7 +1515,7 @@ function renderReadOnlyQuoteDetails(quote) {
   if(quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)){
     html += `
       <p class="subtotal-amount">
-        Tax: 
+        Tax:
         ${
           quote.show_quote_tax_percentage && quote.show_quote_tax_amount
             ? `(${parseFloat(quote.tax_percentage)}%) `
@@ -1508,7 +1560,7 @@ function renderQuoteNotes(quote, notes) {
   html += `
           <div class="row">
             <div class="input-field">
-              <textarea id="quote-notes" class="materialize-textarea" 
+              <textarea id="quote-notes" class="materialize-textarea"
                         oninput="autoResize(this); updateQuoteNotes(this)">
                 ${notes || ''}
               </textarea>
@@ -1602,7 +1654,7 @@ async function updateQuoteLine(input) {
     const field = input.dataset.field;
     let newValue = input.value.trim();
     //console.log("Entra a updateQuoteLine");
-  
+
     if (["quantity", "discount_amount", "discount_percentage", "term"].includes(field)) {
       newValue = parseFloat(newValue);
     }
@@ -1684,7 +1736,7 @@ async function updateQuoteLine(input) {
                 }
             });
 
-            
+
             // ✅ Update subtotal
             const subtotalElement = quoteContainer.querySelector(".subtotal-amount");
 
@@ -1910,7 +1962,7 @@ function showTemporaryQuoteDetails(quote) {
                 <div class="expiration">
                   <p><strong>Expiration Date:</strong> ${quote.expiration_date ? formattedDate : "---"}</p>
                 </div>
-                
+
                 <div class="discount">
                   <p style="color: red;"><strong>Discount: </strong>
                     ${quote.discount_percentage}% ( - $${quote.discount_amount} )
@@ -1933,7 +1985,7 @@ function showTemporaryQuoteDetails(quote) {
           if (cleaned.toLowerCase() === "discount") {
             headers.push(`<th>Discount (%)</th>`);
             headers.push(`<th>Discount (USD)</th>`);
-          } 
+          }
           else if (cleaned === "Total Price") {
             headers.push(`<th>Subscription</th>`);
             headers.push(`<th>Term</th>`);
@@ -2046,7 +2098,7 @@ function showTemporaryQuoteDetails(quote) {
               <td class="centered-td">
                   <div class="centered-td">${item.term}</div>
               </td>`;
-          
+
           html += `
             <td class="total-price" data-sku="${item.sku}">
               ${parseFloat(item.total_price.replace('$', '')).toLocaleString('en-US', {
@@ -2211,7 +2263,7 @@ function showTemporaryQuoteDetails(quote) {
   if(quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)){
     html += `
       <p class="subtotal-amount">
-        Tax: 
+        Tax:
         ${
           quote.show_quote_tax_percentage && quote.show_quote_tax_amount
             ? `(${parseFloat(quote.tax_percentage)}%) `
@@ -2250,7 +2302,7 @@ function renderValidationRuleDetails(rules, read_only=false) {
   rules.forEach((rule) => {
     if (rule.success){
       var head_text = `✅ New validation rule created successfully | ${rule.name} ✅`;
-      html += 
+      html +=
         `<div class="rule-container">
           <div class="rule-header">
               <h5>${head_text}</h3>
@@ -2294,7 +2346,7 @@ function renderValidationRuleDetails(rules, read_only=false) {
         </div>`;
     }
     else if (rule.error){
-      html += 
+      html +=
         `<div class="rule-container">
           <div class="rule-header">
               <h5>⚠️ Error creating validation rule ⚠️</h3>
@@ -2312,7 +2364,141 @@ function renderValidationRuleDetails(rules, read_only=false) {
           </div>
         </div>`;
     }
-    
+
+  });
+
+  return html;
+}
+
+function renderInclusionRuleDetails(message, rules, read_only=false) {
+  let html = "";
+  console.log(rules);
+
+  // Agregar mensaje si viene
+  if (message) {
+    const idx = message.indexOf("inclusion_rules_details:");
+    if (idx !== -1) {
+      message = message.slice(0, idx).trim(); // cortar antes del JSON
+    }
+
+    if (message) {
+      html += `<p style="margin-bottom:10px;">${message}</p><br>`;
+    }
+  }
+
+  rules.forEach((rule) => {
+    var head_text = `✅ New inclusion rule created successfully | ${rule.name} ✅`;
+    html +=
+      `<div class="rule-container">
+        <div class="rule-header">
+            <h5>${head_text}</h3>
+            <span style="margin-left: 10px; font-weight: bold; color: ${rule.active ? 'green' : 'red'};">
+              ${rule.active ? '🟢 Active' : '🔴 Inactive'}
+            </span>
+        </div>
+        <div class="rule-details">
+            <div class="name">
+              <label for="rule-name"><strong>Description:</strong></label>
+              <input id="rule-name" type="text" value="${rule.description}" readonly/>
+            </div>
+
+            <div class="rule_type">
+              <label for="rule-type"><strong>Rule Type:</strong></label>
+              <input id="rule-type" type="text" value="${rule.rule_type}" readonly/>
+            </div>
+
+            <div class="target_type">
+              <label for="target-type"><strong>Target Type:</strong></label>
+              <input id="target-type" type="text" value="${rule.target_type}" readonly/>
+            </div>
+
+            <div class="priority">
+              <label for="priority"><strong>Priority:</strong></label>
+              <input id="priority" type="number" value="${rule.priority}" readonly/>
+            </div>
+
+            <div class="error_message">
+              <label for="error-message"><strong>Message:</strong></label>
+              <textarea id="error-message" class="materialize-textarea" rows="3" readonly>${rule.error_message}</textarea>
+            </div>
+        </div>
+
+        <div class="conditions-details">
+          <p><h6>Trigger Product:</h6></p>
+          <ul class="conditions-list">
+            <li>${rule.conditions.trigger_product.name} (${rule.conditions.trigger_product.sku})</li>
+          </ul>
+        </div>
+
+        <div class="conditions-details">
+          <p><h6>Included Products:</h6></p>
+          <ul class="conditions-list">
+            ${rule.conditions.included_products
+              .map(prod => {
+                const label = prod.name || prod.sku || "Unknown Product";
+                return `<li>${prod.quantity}x ${label}</li>`;
+              })
+              .join("")}
+          </ul>
+        </div>
+
+      </div>`;
+
+  });
+
+  return html;
+}
+
+function renderActionTriggersDetails(message, action_triggers, read_only=false) {
+  let html = "";
+  console.log(action_triggers);
+
+  // Agregar mensaje si viene
+  if (message) {
+    const idx = message.indexOf("action_triggers_details:");
+    if (idx !== -1) {
+      message = message.slice(0, idx).trim(); // cortar antes del JSON
+    }
+
+    if (message) {
+      html += `<p style="margin-bottom:10px;">${message}</p><br>`;
+    }
+  }
+
+  action_triggers.forEach((action_trigger) => {
+    var head_text = `✅ New action trigger created ✅`;
+    html +=
+      `<div class="rule-container">
+        <div class="rule-header">
+            <h5>${head_text}</h3>
+            <span style="margin-left: 10px; font-weight: bold; color: ${action_trigger.active ? 'green' : 'red'};">
+              ${action_trigger.active ? '🟢 Active' : '🔴 Inactive'}
+            </span>
+        </div>
+        <div class="rule-details">
+            <div class="name">
+              <label for="rule-name"><strong>Opportunity:</strong></label>
+              <input id="rule-name" type="text" value="${action_trigger.trigger}" readonly/>
+            </div>
+
+            <div class="rule_type">
+              <label for="rule-type"><strong>Action:</strong></label>
+              <input id="rule-type" type="text" value="${action_trigger.action}" readonly/>
+            </div>
+
+            <div class="target_type">
+              <label for="target-type"><strong>Object Name:</strong></label>
+              <input id="target-type" type="text" value="${action_trigger.object_name}" readonly/>
+            </div>
+
+            <div class="error_message">
+              <label for="error-message"><strong>Action Parameters:</strong></label>
+              <textarea id="error-message" class="materialize-textarea" rows="3" readonly>${JSON.stringify(action_trigger.action_params, null, 2)}</textarea>
+            </div>
+        </div>
+
+      </div>`;
+
   });
 
   return html;
@@ -2323,23 +2509,23 @@ function renderRules(group_rules) {
   //console.log(rules);
 
   group_rules.forEach((group) => {
-    html += 
+    html +=
         `<span>
             ${group.rules_request_description}
           </span>`;
-    
+
     if (group.rules.length === 0){
-      html += 
+      html +=
         `<br>
         <span>
             ⚠️ No rules found matching these specifications ⚠️
           </span>`;
     }
-    
+
     group.rules.forEach((rule) => {
 
       var head_text = `📖 Rule | ${rule.name}`;
-      html += 
+      html +=
         `<div class="rule-container">
           <div class="rule-header">
               <h5>${head_text}</h3>
@@ -2562,7 +2748,7 @@ function renderEmailAlerstDetails(alerts) {
         return items.map(item => `<span class="chip ${colorClass} white-text">${item}</span>`).join(" ");
       }
 
-      html += 
+      html +=
         `<div class="email-alert-container">
           <div class="email-alert-header">
               <h5>${head_text}</h3>
@@ -2571,7 +2757,7 @@ function renderEmailAlerstDetails(alerts) {
               </span>
           </div>
           <div class="email-alert-details">
-          
+
               <div class="email-alert-name">
                 <label><strong>Name:</strong></label>
                 <input type="text" value="${alert.name}" readonly/>
@@ -2659,58 +2845,58 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
     html += `
       <div class="email-alert-container" style="margin-bottom:10px; position:relative;">
         <div class="email-alert-header" style="
-          display:flex; 
-          justify-content:space-between; 
+          display:flex;
+          justify-content:space-between;
           align-items:center;
         ">
           <h5 style="margin:0;">${objectName} records.</h5>
           <button onclick="makeDraggable(this)" style="
-            background:#2563eb; 
-            color:white; 
-            border:none; 
-            border-radius:4px; 
-            padding:2px 6px; 
-            cursor:pointer; 
+            background:#2563eb;
+            color:white;
+            border:none;
+            border-radius:4px;
+            padding:2px 6px;
+            cursor:pointer;
             font-size:0.8rem;
           ">Pop Out</button>
         </div>
 
         <div class="email-alert-details" style="
-          overflow-x:auto; 
-          overflow-y:auto; 
-          max-height:300px; 
-          border:1px solid #e5e7eb; 
-          border-radius:0.75rem; 
-          box-shadow:0 2px 6px rgba(0,0,0,0.08); 
+          overflow-x:auto;
+          overflow-y:auto;
+          max-height:300px;
+          border:1px solid #e5e7eb;
+          border-radius:0.75rem;
+          box-shadow:0 2px 6px rgba(0,0,0,0.08);
           margin-top:0.5rem;
         ">
           <table style="
-            width:max-content; 
-            border-collapse:collapse; 
-            border-radius:0.5rem; 
-            overflow:hidden; 
-            background-color:white; 
-            font-family:'Inter',sans-serif; 
-            color:#111827; 
-            font-size:0.95rem; 
+            width:max-content;
+            border-collapse:collapse;
+            border-radius:0.5rem;
+            overflow:hidden;
+            background-color:white;
+            font-family:'Inter',sans-serif;
+            color:#111827;
+            font-size:0.95rem;
             display:block;
           ">
             <thead>
               <tr>
                 ${allFields.map(f => `
                   <th style="
-                    padding:0.75rem 1rem; 
-                    text-align:left; 
-                    border-bottom:1px solid #e5e7eb; 
-                    background-color:#f3f4f6; 
-                    font-weight:600; 
-                    color:#374151; 
-                    text-transform:uppercase; 
-                    font-size:0.85rem; 
-                    position:sticky; 
-                    top:0; 
-                    z-index:2; 
-                    box-shadow:0 2px 3px rgba(0,0,0,0.05); 
+                    padding:0.75rem 1rem;
+                    text-align:left;
+                    border-bottom:1px solid #e5e7eb;
+                    background-color:#f3f4f6;
+                    font-weight:600;
+                    color:#374151;
+                    text-transform:uppercase;
+                    font-size:0.85rem;
+                    position:sticky;
+                    top:0;
+                    z-index:2;
+                    box-shadow:0 2px 3px rgba(0,0,0,0.05);
                     white-space:nowrap;
                   ">${normalizeFieldName(f)}</th>`).join("")}
               </tr>
@@ -2721,7 +2907,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
                 <tr style="hover:background-color:#f9fafb;">
                   ${allFields.map(field => {
                     let value = record[field];
-                    if (value === null || value === undefined || value === "") 
+                    if (value === null || value === undefined || value === "")
                       return `<td style="padding:0.75rem 1rem; white-space:nowrap; border-bottom:1px solid #e5e7eb;">---</td>`;
                     if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) {
                       const dateObj = new Date(value);

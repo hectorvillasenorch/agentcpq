@@ -79,7 +79,7 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
             "sort": []
         }
     }
-    
+
     system_prompt = """
     You are an AI assistant that helps extract user requests into a standardized JSON format called 'show_metrics'.
     The user can ask to 'show me', 'teach me', 'list', or 'get' records from the following objects: Product, Lead, Account, Contact, Opportunity, Quote, Knowledge.
@@ -180,7 +180,7 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
     - For each condition, simply include the field, operator, and value if present.
     - If any field, operator, or value is missing, set "completed": false and list which parts are missing.
     - The agent_message should only reflect the extraction status and any missing information.
-    
+
     Summary:
     - Create a short summary combining previous summary + this iteration.
     - The "summary" field should only combine previous summary with this extraction iteration. Do not include any information about actual records retrieved.
@@ -245,7 +245,7 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
                 ],
                 "sort": {
                     "field": sort_data.get("field"),
-                    "order": sort_data.get("order", "asc")
+                    "order": sort_data.get("order", "desc")
                 }
             },
             "completed": item.get("completed", False)
@@ -265,7 +265,7 @@ def generate_final_metrics_message(completed_metrics, db_results, remaining_metr
     """
 
     final_prompt = f"""
-    This is an ongoing conversation about quote line update. 
+    This is an ongoing conversation about quote line update.
     The assistant should return a JSON with two fields only: "message" and "summary".
 
     Context:
@@ -281,7 +281,7 @@ def generate_final_metrics_message(completed_metrics, db_results, remaining_metr
     - Mention only which objects were successfully showed and which are still pending or incomplete.
     - You don’t need to list each change in detail; instead, describe the metrics naturally in the message.
     - For failed metrics, mention the object and its error, but only if there are any.
-    - For incomplete metrics, briefly mention them ONLY if there are any. 
+    - For incomplete metrics, briefly mention them ONLY if there are any.
       If none exist, omit this section entirely (do not mention that there are no incomplete metrics).
     - Omit entire sections if there are no metrics in that category.
     - End by asking a short, natural follow-up question about next steps.
@@ -292,7 +292,7 @@ def generate_final_metrics_message(completed_metrics, db_results, remaining_metr
     - Don’t say phrases like “Great news!”; if records matching the user’s request are found, just respond: here they are (the records the user requested).
     - Use this emoji "✅" for records successfully getted.
     - Do NOT mention incomplete or failed metrics.
-    - No utilices 
+    - No utilices
 
     Instructions for "summary":
     - Write a short but detailed summary that continues the previous summary with the new changes.

@@ -30,7 +30,7 @@ def get_session_context(action, session_data):
                 },
                 "summary": None
             }
-            
+
         if action == "create_product":
             context_data = {
                 "create_product": [
@@ -143,6 +143,52 @@ def get_session_context(action, session_data):
                                 "field": None,
                                 "order": None
                             }
+                        },
+                        "completed": False
+                    }
+                ],
+                "summary": None
+            }
+
+        if action == "create_inclusion_rule":
+            context_data = {
+                "create_inclusion_rule": [
+                    {
+                        "data": {
+                            "description": None,
+                            "rule_type": "inclusion",
+                            "target_type": None,
+                            "priority": 10,
+                            "message": None,
+                            "active": True,
+                            "conditions": {
+                                "trigger_product": {
+                                    "sku": None,
+                                    "name": None
+                                },
+                                "included_products": [],
+                                "options": [],
+                                "applies_to": None
+                            }
+
+                        },
+                        "completed": False
+                    }
+                ],
+                "summary": None
+            }
+
+        if action == "create_action_trigger":
+            context_data = {
+                "create_action_trigger": [
+                    {
+                        "data": {
+                            "trigger": None,
+                            "action": None,
+                            "object_name": None,
+                            "action_params": {},
+                            "active": None,
+
                         },
                         "completed": False
                     }

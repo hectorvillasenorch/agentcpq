@@ -1,5 +1,5 @@
 def add_product_to_quote(user, user_message, session_data):
-    
+
 
     added_products = []
     response_message = ""
@@ -25,14 +25,14 @@ def add_product_to_quote(user, user_message, session_data):
         return {
             "message": "⚠️ Error: Something went wrong — no product was added to the quote. Please try again or verify your input."
         }
-    
+
     # If an approval suggestion exists, append it to the message
     if "message" in approval_suggestion:
         response_message += f"{approval_suggestion['message']}"
     else:
         response_message += "⚠️ No approval suggestion."
-    
-        
+
+
     return {
         "message": response_message,
         "update_details": get_quote_details(quote),

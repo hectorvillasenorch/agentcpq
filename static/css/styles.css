@@ -171,6 +171,12 @@ h4{
   text-align: center;
   height: 50px;
 }
+/* === Edit Email Alert === */
+body.email-alert-page .main-content {
+    overflow-y: auto;  /* Permite scroll vertical */
+    height: calc(100vh - 0px); /* Altura completa de la ventana */
+    padding: 20px;     /* Opcional: margen interno */
+}
 
 /* === Main Content (Responsive) === */
 .main-content {
@@ -383,14 +389,14 @@ tr:hover {
   }
   .chat-box {
     padding: 5px !important;
-    
-  } 
+
+  }
   .quote-header h3{
     color: #fc6a3e;
     margin: 0;
     font-size: 1.2rem !important;
   }
-  
+
 }
 
 @media screen and (max-width: 768px) {
@@ -421,8 +427,8 @@ tr:hover {
 }
 /* ≥480 px → 33 % */
 @media (max-width:480px){
-  .quote-details > div{ 
-    flex:1 1 calc(33.333% - .5rem); 
+  .quote-details > div{
+    flex:1 1 calc(33.333% - .5rem);
     font-size: 0.8rem !important;
   }
 }
@@ -512,7 +518,7 @@ tr:hover {
   .total-amount{
     font-size: 1.2rem !important;
   }
- 
+
 
 }
 

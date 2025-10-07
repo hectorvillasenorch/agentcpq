@@ -44,10 +44,12 @@ def extract_product_data_with_llm(user_message, current_state, previous_summary=
     - Optional: description, is_subscription, term, family.
     - Assume that the product will not be a subscription or a bundle unless the user indicates otherwise.
     - If product is bundle (is_bundle = True, the required fields would now be name and sku, price is not necessary and you can mark completed as True if they are already configured.)
+    - If product is bundle (is_bundle =  True) set price as 0, and if name and sku are provided by the user, mark completed as true.
     - completed=true only if required fields are present.
     - agent_message should be short, friendly, professional, emoji-rich, ask follow-ups.
     - This message is a continuation of an ongoing conversation. Do NOT start with greetings like 'Hello' or 'Hi'. Just continue naturally.
     - The message is sensitive to HTML tags, so if you want to make line breaks use the <br> tag.
+    - Do NOT use emojis for message.
     - Create a short, detailed summary with the previous summary + the changes you made in this iteration.
     """
 
@@ -119,7 +121,7 @@ def generate_final_product_message(completed_products, db_results, remaining_pro
     failed = [(r['product'], r['error']) for r in db_results if r['status'] == 'fail']
 
     final_prompt = f"""
-    This is an ongoing conversation about product creation. 
+    This is an ongoing conversation about product creation.
     The assistant should return a JSON with two fields only: "message" and "summary".
 
     Context:

@@ -11,6 +11,7 @@ from agents.approvals_agent import approval_agent
 from agents.custom_object_agent import custom_object_agent
 from agents.analytics_agent import analytics_agent
 from agents.knowledge_agent import knowledge_agent
+from agents.action_trigger_agent import action_trigger_agent
 from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
 
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 from cpq.models import CustomObject
 
-# TDOO STOP Call to GPT 
+# TDOO STOP Call to GPT
 # Pything to understand request, and catch before hitting LLM
 
 # Context Session Helpers
@@ -60,7 +61,7 @@ def handle_user_request(user,user_message, session_data):
             "session_reset": True,
             "chat_sessions": list(ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at"))
         }
-    
+
     # 🧠 Shortcut manual
     message = user_message.lower()
 
@@ -155,7 +156,7 @@ def orchestrate_request(user, user_message, session_data):
             "role": "system",
             "content": """
             You are an AI assistant that classifies user requests into predefined actions.
-            Only answer with ONE label from the list provided, no explanations, no emojis.
+            Only answer with ONE label from the list provided, no explanations, no emojis, do not use this emoji: ✅.
             """
         }
     ]
@@ -196,6 +197,7 @@ def orchestrate_request(user, user_message, session_data):
         - "ShowAccountDetails"
         - "GeneralQuery"
         - "CreateValidationRule"
+        - "CreateInclusionRule"
         - "ShowRules"
         - "UpdateRule"
         - "DeleteRule"
@@ -217,6 +219,7 @@ def orchestrate_request(user, user_message, session_data):
         - "DeleteEmailAlert"
         - "ShowMetrics" → Use when the user requests listings, catalogs, reports, or filtered searches across objects. (e.g. "show me my product catalog", "list my last 5 quotes", "show me all leads created this month").
         - "KnowledgeLookup" → Use when the user asks for how-to instructions, FAQs, or training guidance (e.g. "how do I create a quote", "teach me about approvals").
+        - "CreateActionTrigger"
         """
     })
 
@@ -259,7 +262,8 @@ def orchestrate_request(user, user_message, session_data):
         for key, value in result.items():
             if key not in (
                 "message", "session_id", "hiddenMessage", "temporaryMessage",
-                "update_details", "iterations", "success", "quote_id", "notes", "tokens", "cost", "session_summary"
+                "update_details", "iterations", "success", "quote_id", "notes",
+                "tokens", "cost", "session_summary", "rules_created"
             ):
                 agent_message += f"\n\n{key}:\n{json.dumps(value, indent=2, ensure_ascii=False)}"
 
@@ -349,7 +353,7 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
 
     if decision in action_map:
         result = action_map[decision](user,decision, user_message, session_data)
-        
+
         agent_message = result.get("message", "")
 
         hiddenMessage = result.get("hiddenMessage", False)
@@ -371,7 +375,7 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
         result["session_id"] = session_data["session_id"]
 
         return result
-    
+
     logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
     return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
 
@@ -436,7 +440,7 @@ def handle_general_query(user,decision, user_message, session_data):
         # ✅ Return as a structured JSON response
         return {
             "success": True,
-            "message": ai_response  
+            "message": ai_response
         }
 
 
@@ -448,7 +452,7 @@ def handle_general_query(user,decision, user_message, session_data):
                 "message": "⚠️ Error processing your request. Please try again later."
             }
         }
-    
+
 def should_reset_session(user_message):
     """Use GPT to determine if the user intends to reset the session."""
     prompt = f"""
@@ -515,6 +519,7 @@ def get_action_map():
 
         # Rules
         "CreateValidationRule": admin_agent,
+        "CreateInclusionRule": admin_agent,
         "ShowRules": admin_agent,
         "UpdateRule": admin_agent,
         "DeleteRule": admin_agent,
@@ -529,17 +534,16 @@ def get_action_map():
         "CreateCustomRecord": custom_object_agent,
         "UpdateCustomRecord": custom_object_agent,
         "DeleteCustomRecord": custom_object_agent,
-
         # EmailAlerts
         "CreateEmailAlert": admin_agent,
         "UpdateEmailAlert": admin_agent,
         "DeleteEmailAlert": admin_agent,
-
         # Metrics Agent
         "ShowMetrics": analytics_agent,
-
         # Knowledge Agent
         "KnowledgeLookup": knowledge_agent,
+        # Action Trigger Agent
+        "CreateActionTrigger": action_trigger_agent,
     }
 
 

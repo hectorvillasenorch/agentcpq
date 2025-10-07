@@ -86,7 +86,7 @@ input:not([type]):focus:not([readonly])+label, input[type=text]:not(.browser-def
 
 /* keep hover state consistent */
 .login-form .login-btn:hover {
-  background-color: #fc6a3d; 
+  background-color: #fc6a3d;
 }
 
 
@@ -105,7 +105,7 @@ input:not([type]):focus:not([readonly])+label, input[type=text]:not(.browser-def
   overflow: hidden;             /* hides the “backspacing” effect if you want */
   /* border-right: 2px solid #fff; */
   width: 2px;
-  font-size: 1.5rem;  
+  font-size: 1.5rem;
   text-shadow: 1px 1px 1.5px #1f1f1f;
 }
 

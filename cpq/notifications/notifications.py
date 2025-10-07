@@ -73,7 +73,7 @@ def notify_account_created(account):
         }
     )
 
-        
+
 # OPPORTUNITY CREATED
 def notify_opportunity_created(opportunity):
     email_alerts = EmailAlert.objects.filter(trigger="opportunity_created")
@@ -165,7 +165,7 @@ def notify_quote_rejected(quote):
     )
 
 
-    
+
 
 
 def get_users_for_alert(instance, alert):

@@ -40,7 +40,7 @@ input[type="number"] {
   font-size: 2.2rem;
 }
 
-/* 
+/*
 /* ✅ Quote Details */
 /* .quote-details {
   display: grid;
@@ -136,7 +136,7 @@ input[type="number"] {
   .quote-table-read-only td {
     padding: 12px;
     font-size: 16px;
-    border-bottom: 1px solid #e0e0e0;  
+    border-bottom: 1px solid #e0e0e0;
   }
 
   .quote-table-read-only input[type="number"],
@@ -411,8 +411,8 @@ input[type=text]:not(.browser-default){
 
 /* ✅ Remove Autofill Styling */
 .chat-input:-webkit-autofill,
-.chat-input:-webkit-autofill:hover, 
-.chat-input:-webkit-autofill:focus, 
+.chat-input:-webkit-autofill:hover,
+.chat-input:-webkit-autofill:focus,
 .chat-input:-webkit-autofill:active {
   box-shadow: 0 0 0px 1000px white inset !important;
   -webkit-box-shadow: 0 0 0px 1000px white inset !important;

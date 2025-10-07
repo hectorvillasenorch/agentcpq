@@ -1,6 +1,8 @@
 from django import template
-import json
 from django.utils.safestring import mark_safe
+from django.utils.html import escape
+import json
+from django.utils.html import json_script as django_json_script
 
 register = template.Library()
 
@@ -8,7 +10,7 @@ register = template.Library()
 def get_item(dictionary, key):
     if isinstance(dictionary, dict):
         return dictionary.get(key)
-    return None 
+    return None
 
 @register.filter
 def dict_get(d, key):
@@ -25,8 +27,10 @@ def get_field_value(values, field):
     return ''
 
 @register.filter
-def json_script(values, name):
-    data = {}
-    for v in values:
-        data[v.field.id] = v.value
-    return mark_safe(json.dumps(data))
+def json_script(values, element_id):
+    """
+    Converts a list of values into safe JSON for the template.
+    Uses django.utils.html.json_script to automatically escape everything.
+    """
+    data = {v.field.id: v.value for v in values}
+    return django_json_script(data, element_id)

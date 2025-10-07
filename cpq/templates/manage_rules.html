@@ -62,7 +62,7 @@
       </div>
       {% for rule_type, rules in rules_by_type.items %}
         <div id="tab-{{ rule_type }}" class="col s12" style="{% if not forloop.first %}display: none;{% endif %}; position: relative;">
-          
+
           <!-- ➕ BOTÓN FLOTANTE para agregar regla -->
           <a href="{% url 'cpq:create_business_rule' %}?type={{ rule_type }}"
             class="btn-floating halfway-fab waves-effect waves-light tooltipped"
