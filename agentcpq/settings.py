@@ -120,9 +120,11 @@ WSGI_APPLICATION = "agentcpq.wsgi.application"
 DATABASES = {
     'default': dj_database_url.config(
         default=config('DATABASE_URL'),
-        conn_max_age=config('CONN_MAX_AGE', cast=int, default=600),
+        conn_max_age=config('CONN_MAX_AGE', cast=int, default=60),
     )
 }
+
+
 
 default_db = DATABASES.get('default', {})
 engine = default_db.get('ENGINE', '')

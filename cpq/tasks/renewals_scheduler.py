@@ -2,6 +2,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from django.utils import timezone
+from django.db import close_old_connections
 from cpq.models import ScheduledTask, Opportunity
 from cpq.renewals.renewals import make_opportunity_renewal
 import logging
@@ -26,25 +27,32 @@ def run_renewal_tasks():
     tasks = ScheduledTask.objects.filter(status="pending", execute_at__date__lte=timezone.localtime().date())
     
     for task in tasks:
-        opp = task.opportunity
-        if should_create_renewal(opp):
-            result = make_opportunity_renewal(opp)
-            if result is True:
-                task.status = "done"
-                task.last_error = ""
-                logger.info(f"✅ Renewal executed for Opportunity {opp.id} via scheduler")
+        try:
+            opp = task.opportunity
+            if should_create_renewal(opp):
+                result = make_opportunity_renewal(opp)
+                if result is True:
+                    task.status = "done"
+                    task.last_error = ""
+                    logger.info(f"✅ Renewal executed for Opportunity {opp.id} via scheduler")
+                else:
+                    task.status = "failed"
+                    task.last_error = result[1] if isinstance(result, tuple) else "Unknown error"
+                    logger.error(f"❌ Renewal failed for Opportunity {opp.id}: {task.last_error}")
+                task.attempts += 1
+                task.updated_at = timezone.now()
+                task.save()
             else:
-                task.status = "failed"
-                task.last_error = result[1] if isinstance(result, tuple) else "Unknown error"
-                logger.error(f"❌ Renewal failed for Opportunity {opp.id}: {task.last_error}")
-            task.attempts += 1
-            task.updated_at = timezone.now()
-            task.save()
-        else:
-            logger.info(f"⚠️ ScheduledTask for Opportunity {opp.id} already exists, skipping task.")
-            task.status = "done"
-            task.updated_at = timezone.now()
-            task.save()
+                logger.info(f"⚠️ ScheduledTask for Opportunity {opp.id} already exists, skipping task.")
+                task.status = "done"
+                task.updated_at = timezone.now()
+                task.save()
+        finally:
+            # Prevent connection leaks in long-lived scheduler threads
+            close_old_connections()
+
+    # Ensure no stale connections remain once all tasks have finished
+    close_old_connections()
 
 def seconds_until_next_12pm():
     """

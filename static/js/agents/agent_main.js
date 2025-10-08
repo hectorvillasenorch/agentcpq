@@ -69,7 +69,7 @@ function renderGreeting() {
 👋 <b>Hello ${userName} and welcome to AgentCPQ!</b><br><br>
 I’m here to make quoting simpler than ever.<br><br>
 You’ll notice there’s no traditional UI full of forms, buttons, or menus — that’s intentional. Everything happens right here, in one place. No clutter. No wiki. Just ask, and I’ll handle it for you.<br><br>
-
+If you want to see this message in the future, just ask: "Show me the initial instructions in AgentCPQ".<br><br>
 <b>Before you start:</b><br>
 Like any quoting system, we’ll begin with your products.<br>
 Try saying:<br>

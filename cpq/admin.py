@@ -243,7 +243,7 @@ admin.site.register(Opportunity, OpportunityAdmin)
 
 @admin.register(Knowledge)
 class KnowledgeAdmin(admin.ModelAdmin):
-    list_display = ('title', 'language', 'has_video', 'is_active', 'created_at')
+    list_display = ('image_preview_list', 'title', 'language', 'has_video', 'is_active', 'created_at')
     list_filter = ('language', 'has_video', 'is_active', 'created_at')
     search_fields = ('title', 'content_text', 'tags')
     readonly_fields = ('created_at', 'updated_at', 'image_preview', 'embedding')
@@ -262,15 +262,40 @@ class KnowledgeAdmin(admin.ModelAdmin):
         }),
     )
 
+    def _resolve_image_url(self, obj):
+        if not obj:
+            return ""
+
+        try:
+            if obj.image_file:
+                return obj.image_file.url
+        except (ValueError, AttributeError):
+            # File exists but storage cannot resolve, fall back to URL field
+            pass
+
+        return getattr(obj, 'image_url', '') or ""
+
     def image_preview(self, obj):
-        if obj and obj.image_url:
+        image_url = self._resolve_image_url(obj)
+        if image_url:
             return format_html(
                 "<img src='{}' style='max-width:320px;height:auto;border-radius:6px;' alt='Knowledge image preview'>",
-                obj.image_url,
+                image_url,
             )
         return "No image uploaded"
 
     image_preview.short_description = "Image preview"
+
+    def image_preview_list(self, obj):
+        image_url = self._resolve_image_url(obj)
+        if image_url:
+            return format_html(
+                "<img src='{}' style='width:75px;height:75px;object-fit:cover;border-radius:4px;' alt='Knowledge thumbnail'>",
+                image_url,
+            )
+        return "—"
+
+    image_preview_list.short_description = "Preview"
 
 class OptionInline(admin.TabularInline):
     model = Option

@@ -8,7 +8,8 @@ from typing import Iterable, Optional, Tuple
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import numpy as np
-from django.utils.html import escape
+from django.conf import settings
+from django.utils.html import escape, mark_safe
 
 from cpq.models import Knowledge
 from agents.utils.knowledge_agent.embedding_helpers import generate_embedding
@@ -59,12 +60,24 @@ def _handle_knowledge_lookup(user_message: str, session_data: dict) -> dict:
             )
         }
 
-    message_parts = [
-        escape(entry.content_text).replace("\n", "<br>")
-    ]
+    content_body = entry.content_text or ""
+    if re.search(r"<[a-zA-Z][^>]*>", content_body):
+        message_parts = [mark_safe(content_body)]
+    else:
+        message_parts = [escape(content_body).replace("\n", "<br>")]
 
-    if entry.image_url:
-        message_parts.append(_render_image_preview(entry.image_url))
+    image_source = ""
+    if entry.image_file:
+        try:
+            image_source = entry.image_file.url
+        except ValueError:
+            # File exists but storage cannot resolve (possible during fixtures); fall back to explicit URL
+            image_source = entry.image_url or ""
+    elif entry.image_url:
+        image_source = entry.image_url
+
+    if image_source:
+        message_parts.append(_render_image_preview(image_source))
 
     if entry.has_video and entry.video_url:
         message_parts.append(_render_video_embed(entry.video_url))
@@ -316,8 +329,31 @@ def _render_video_embed(video_url: str) -> str:
 def _make_image_embed_url(original_url: str) -> Tuple[Optional[str], str]:
     """Return an embeddable image URL when possible and the fallback link."""
 
-    fallback = original_url
-    parsed = urlparse(original_url)
+    normalized = (original_url or "").strip()
+    if not normalized:
+        return None, ""
+
+    parsed = urlparse(normalized)
+
+    # Support protocol-relative URLs (e.g. //cdn.example.com/asset.png)
+    if not parsed.scheme and parsed.netloc:
+        normalized = f"https:{normalized}" if normalized.startswith("//") else normalized
+        return normalized, normalized
+
+    # Support media files stored locally (relative URL or path)
+    if not parsed.scheme and not parsed.netloc:
+        media_prefix = getattr(settings, "MEDIA_URL", "/media/") or "/media/"
+        if not media_prefix.endswith("/"):
+            media_prefix = f"{media_prefix}/"
+
+        if normalized.startswith("/"):
+            normalized_path = normalized
+        else:
+            normalized_path = f"{media_prefix}{normalized.lstrip('/')}"
+
+        return normalized_path, normalized_path
+
+    fallback = normalized
     host = parsed.netloc.lower()
 
     if parsed.scheme in {"http", "https"}:
