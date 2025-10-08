@@ -63,7 +63,70 @@ function renderGreeting() {
   // Check if chat box exists and is empty
   if (!chatBox || chatBox.children.length > 0) return;
 
-  const greetingText = `👋 Hello <b>${userName}</b>, how can I help you today?`;
+const greetingText = `
+👋 <b>Hello and welcome to AgentCPQ!</b><br><br>
+I’m here to make quoting simpler than ever.<br><br>
+You’ll notice there’s no traditional UI full of forms, buttons, or menus — that’s intentional. Everything happens right here, in one place. No clutter. No wiki. Just ask, and I’ll handle it for you.<br><br>
+
+<b>Before you start:</b><br>
+Like any quoting system, we’ll begin with your products.<br>
+Try saying:<br>
+<i>“Create a product called AgentCPQ-Solo, SKU ACPQ-SOLO, priced at $250, and mark it as a subscription.”</i><br><br>
+That’s all you need to start using AgentCPQ.<br><br>
+
+<span style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+  <img src="/static/img/agentcpq-6.png" width="70" style="vertical-align:middle;">
+  <span style="font-weight:bold; color:#fc6a3d; font-size:1.2rem;">Quoting Agent</span>
+</span><br>
+Next, you can create a quote for a specific account.<br>
+If the account or opportunity doesn’t exist, I’ll create them automatically.<br>
+Once a quote exists, say:<br>
+<i>“Add product ACPQ-SOLO, quantity 5.”</i><br><br>
+You can also apply discounts, remove or edit line items, and add more products.<br>
+Prefer visuals? Just say <b>“Show quote details.”</b><br>
+You’ll get an inline editor where every change auto-saves — no buttons required.<br>
+When you’re ready, simply ask <b>“Generate PDF.”</b><br><br>
+
+<span style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+  <img src="/static/img/agentcpq-6.png" width="70" style="vertical-align:middle;">
+  <span style="font-weight:bold; color:#fc6a3d; font-size:1.2rem;">Bundles (Admin Agent)</span>
+</span><br>
+To create a bundle:<br>
+<i>“Create a new product called Enterprise Suite — it’s a bundle.”</i><br>
+Then link products together:<br>
+<i>“Add Product B as an option to Bundle Product A.”</i><br>
+You can then add your new bundle to an existing or new quote.<br>
+💡 <i>Tip: To reset your session anytime, say “Start fresh.”</i><br><br>
+
+<span style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+  <img src="/static/img/agentcpq-6.png" width="70" style="vertical-align:middle;">
+  <span style="font-weight:bold; color:#fc6a3d; font-size:1.2rem;">Analytics Agent</span>
+</span><br>
+You can also explore insights and reporting. Try:<br>
+<i>“Show my quotes where net amount is greater than $30,000.”</i><br>
+<i>“Show my last three opportunities.”</i><br>
+<i>“List my bundle products.”</i><br><br>
+You can view your products on the left panel — or, if you prefer fewer clicks, just ask me.<br><br>
+
+<span style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+  <img src="/static/img/agentcpq-6.png" width="70" style="vertical-align:middle;">
+  <span style="font-weight:bold; color:#fc6a3d; font-size:1.2rem;">Rules & Validations (Admin Agent)</span>
+</span><br>
+Want to enforce business logic? Just ask:<br>
+<i>“Create a validation rule for product ACPQ-SOLO to prevent discounts greater than 70%.”</i><br>
+Then test it by applying a 75% discount — I’ll show the error automatically.<br>
+You can create similar rules for price, quantity, or other attributes.<br><br>
+
+<b>Thank you for joining AgentCPQ!</b><br>
+Keep things simple, ask naturally, and let me do the work.<br><br>
+If you’ve already tried AgentCPQ, we’d love your feedback ❤️<br>
+<a href="https://docs.google.com/forms/d/e/1FAIpQLSeNtxmgcXjyeOoraXgeLqtY05nC6a6prJcec_YXnkrS8zLydw/viewform" 
+   target="_blank" 
+   style="color:#fc6a3d; font-weight:bold; text-decoration:none;">
+   👉 Click here to complete our quick survey
+</a><br><br>
+Your input helps us make AgentCPQ even better!
+`;
 
   const greeting = document.createElement("div");
   greeting.classList.add("chat-text", "agent");
