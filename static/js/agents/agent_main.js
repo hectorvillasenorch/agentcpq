@@ -60,10 +60,12 @@ function setupChatListeners() {
 function renderGreeting() {
   const chatBox = document.getElementById("chat-box");
   const userName = window.USER_NAME || "User";
+  const greetingKey = `agentcpqGreetingShown:${encodeURIComponent(userName)}`;
+  if (localStorage.getItem(greetingKey) === "true") return;
   // Check if chat box exists and is empty
   if (!chatBox || chatBox.children.length > 0) return;
 
-const greetingText = `
+  const greetingText = `
 👋 <b>Hello ${userName} and welcome to AgentCPQ!</b><br><br>
 I’m here to make quoting simpler than ever.<br><br>
 You’ll notice there’s no traditional UI full of forms, buttons, or menus — that’s intentional. Everything happens right here, in one place. No clutter. No wiki. Just ask, and I’ll handle it for you.<br><br>
@@ -139,6 +141,7 @@ Your input helps us make AgentCPQ even better!
 
   chatBox.appendChild(greeting);
   chatBox.scrollTop = chatBox.scrollHeight;
+  localStorage.setItem(greetingKey, "true");
 }
 
 function toggleSidebar() {
