@@ -127,7 +127,7 @@ select:focus + label {
         {% if company.logo %}
           <div class="col s6">
             <label>Current Logo:</label><br>
-            <img src="{{ company.logo.url }}" alt="Company Logo" style="max-height: 80px; margin-top: 10px;">
+            <img src="{{ logo_url|default:company.logo.url }}" alt="Company Logo" style="max-height: 80px; margin-top: 10px;">
           </div>
         {% endif %}
       </div>

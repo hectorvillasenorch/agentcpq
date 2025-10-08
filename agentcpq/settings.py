@@ -32,7 +32,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-bub3zw@!0=_wdp43tnesi*7!j5&yw3n4ejp(q5fni87n_2lc5%"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 # ALLOWED_HOSTS = []
 ALLOWED_HOSTS = [
@@ -200,8 +200,18 @@ STATICFILES_DIRS = [
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 CSP_DEFAULT_SRC = ("'self'",)
-CSP_SCRIPT_SRC = ("'self'", "https://cdnjs.cloudflare.com")  # Allow scripts only from trusted sources
-CSP_STYLE_SRC = ("'self'", "https://fonts.googleapis.com")  # Allow Google Fonts
+CSP_SCRIPT_SRC = (
+    "'self'",
+    "https://cdnjs.cloudflare.com",
+    "https://code.jquery.com",
+    "https://cdn.jsdelivr.net"
+)
+CSP_STYLE_SRC = (
+    "'self'",
+    "https://fonts.googleapis.com",
+    "https://cdnjs.cloudflare.com",
+    "https://cdn.jsdelivr.net"
+)
 CSP_FONT_SRC = ("'self'", "https://fonts.gstatic.com")  # Allow Google Fonts
 CSP_IMG_SRC = ("'self'", "data:")  # Allow local images and data URIs
 CSP_CONNECT_SRC = ("'self'",)  # Restrict API calls to your own server
@@ -239,6 +249,16 @@ AWS_S3_CUSTOM_DOMAIN = "media.agentcpq.com"
 
 # ⚠️ Must come after AWS_* settings
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+
+_extra_csp_img = []
+if AWS_S3_CUSTOM_DOMAIN:
+    _extra_csp_img.append(f"https://{AWS_S3_CUSTOM_DOMAIN}")
+if AWS_S3_ENDPOINT_URL:
+    _extra_csp_img.append(AWS_S3_ENDPOINT_URL)
+if NGROK_FULL_URL:
+    _extra_csp_img.append(NGROK_FULL_URL)
+if _extra_csp_img:
+    CSP_IMG_SRC = tuple(dict.fromkeys(list(CSP_IMG_SRC) + _extra_csp_img))
 
 
 # Salesforce OAuth settings for your connected app

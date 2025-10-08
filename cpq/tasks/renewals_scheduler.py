@@ -1,4 +1,3 @@
-import threading
 import time
 from datetime import datetime, timedelta
 from django.utils import timezone
@@ -23,8 +22,10 @@ def run_renewal_tasks():
     Revisa todos los ScheduledTask pendientes para el día actual y ejecuta
     make_opportunity_renewal si no existe todavía la renovación.
     """
-    today = timezone.localtime().date()  # zona horaria de settings
-    tasks = ScheduledTask.objects.filter(status="pending", execute_at__date__lte=timezone.localtime().date())
+    # Refresh DB connections before running, so long-lived threads don't reuse closed ones
+    close_old_connections()
+    now = timezone.now()
+    tasks = ScheduledTask.objects.filter(status="pending", execute_at__lte=now)
     
     for task in tasks:
         try:
@@ -64,7 +65,7 @@ def seconds_until_next_12pm():
         next_run += timedelta(days=1)
     return (next_run - now_tz).total_seconds()
 
-def start_renewal_scheduler():
+def start_renewal_scheduler(stop_event=None):
     """
     Scheduler que corre una primera vez al iniciar y luego cada 24h a las 12 PM.
     """
@@ -75,5 +76,13 @@ def start_renewal_scheduler():
     while True:
         sleep_seconds = seconds_until_next_12pm()
         logger.info(f"⏱ Sleeping {sleep_seconds/3600:.2f} hours until next run at 12 PM")
-        time.sleep(sleep_seconds)
+
+        if stop_event:
+            was_stopped = stop_event.wait(timeout=sleep_seconds)
+            if was_stopped:
+                logger.info("🛑 Renewal scheduler stop signal received; shutting down")
+                break
+        else:
+            time.sleep(sleep_seconds)
+
         run_renewal_tasks()
