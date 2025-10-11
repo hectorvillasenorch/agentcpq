@@ -405,6 +405,9 @@ class Quote(models.Model):
             self.update_net_amount()
             super().save(*args, **kwargs)
 
+    def __str__(self):
+        return f"{self.name}"
+
 class QuoteLine(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="quote_lines")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="quote_lines")

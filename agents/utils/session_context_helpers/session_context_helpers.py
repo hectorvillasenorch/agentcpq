@@ -196,9 +196,68 @@ def get_session_context(action, session_data):
                 "summary": None
             }
 
-        session_data["state"] = context_data
+        if action == "create_exclusion_rule":
+            context_data = {
+                "create_exclusion_rule": [
+                    {
+                        "data": {
+                            "description": None,
+                            "rule_type": "exclusion",
+                            "target_type": None,
+                            "priority": 10,
+                            "error_message": None,
+                            "active": True,
+                            "conditions": {
+                                "trigger_product": {
+                                    "sku": None,
+                                    "name": None
+                                },
+                                "excluded_products": [],
+                                "options": [],
+                            }
+
+                        },
+                        "completed": False
+                    }
+                ],
+                "summary": None
+            }
+
+        if action == "create_custom_object":
+            context_data = {
+                "create_custom_object": [
+                    {
+                        "data": {
+                            "description": None,
+                            "rule_type": "exclusion",
+                            "target_type": None,
+                            "priority": 10,
+                            "error_message": None,
+                            "active": True,
+                            "conditions": {
+                                "trigger_product": {
+                                    "sku": None,
+                                    "name": None
+                                },
+                                "excluded_products": [],
+                                "options": [],
+                            }
+
+                        },
+                        "completed": False
+                    }
+                ],
+                "summary": None
+            }
+
+        session_data["state"].update(context_data)
 
     current_state = session_data["state"][action]
     previous_summary = session_data["state"].get("summary")
 
     return current_state, previous_summary
+
+
+def clear_session_state(state, session_data):
+    if "state" in session_data and state in session_data["state"]:
+        del session_data["state"][state]

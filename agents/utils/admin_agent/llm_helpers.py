@@ -10,7 +10,7 @@ from ..prompts_helpers.system_prompt_helpers import make_system_prompt
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-3.5-turbo"
+OPENAI_MODEL = "gpt-4o-mini"
 #OPENAI_MODEL = "gpt-4"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
@@ -275,13 +275,139 @@ def extract_inclusion_rules(user_message, current_state, previous_summary=None):
     return result_json
 
 
+def extract_exclusion_rules(user_message, current_state, previous_summary=None):
+    """
+    Uses LLM to extract structured data for creating exclusion rules.
+    Returns JSON and agent message.
+    """
+
+    system_prompt = """
+    You are a helpful AI assistant that create exclusion rules from user message.
+    An exclusion rule prevents two products from coexisting in a quotation; these products are called excluded_products.
+    Always return JSON with structure:
+    {
+        "create_exclusion_rule": [
+            {
+                "data": {
+                    "description": null,
+                    "rule_type": "exclusion",
+                    "target_type": null,
+                    "priority": 10,
+                    "error_message": null,
+                    "active": true,
+                    "conditions": {
+                        "excluded_products": []
+                    }
+                },
+                "completed": False
+            }
+        ],
+        "agent_message": "string",
+        "summary": "string"
+    }
+
+    The excluded products must have this structure inside the "excluded_products" key: 
+    {
+        ["product1", "product2", "product3"]
+    }
+
+    Rules:
+    1. If the user does not specify a description, then create a short description for the rule.  
+    2. The `rule_type` must ALWAYS be `"exclusion"`.
+    3. The `target_type` must ALWAYS be `"quote_line"`.
+    4. If the user does not specify a priority value, set it to `10`.
+    5. If the user does not specify an error_message, then create a short error_message to indicate to the user what is happening with the exclusion rule.
+    6. If the user does not specify `active`, then set it to `true`.
+
+    ---
+
+    Rules for conditions:
+    1. There must be at least two products in "excluded_products" within "conditions" for a rule to be considered completed (True).
+
+    Agent message:
+    - Interpret this as an attempt, therefore do not say things like "created successfully".
+    - If a trigger_product is not mentioned, respond naturally by asking the user which product should be the trigger. Use language that a regular user can understand, without emphasizing technical or internal terms. You may mention "trigger product" if it helps with clarity, but keep the message intuitive.
+    - Generate a natural response for the user explaining what happened: updates, errors, missing information, questions for the user, data requests, etc.
+    - Be brief, professional, and natural.
+    - Do not be technical.
+    - Continue naturally (DO NOT start with "Hello").
+    - Use <br> for line breaks.
+    - Include information if the user attempted to create an inclusion rule.
+
+    Summary:
+    - Create a short summary combining previous summary + this iteration.
+    """
+
+    user_prompt = f"""
+    User message: "{user_message}"
+
+    Current state:
+    {json.dumps(current_state, indent=2)}
+
+    Previous summary:
+    {previous_summary if previous_summary else "None"}
+
+    Return JSON as described above.
+    """
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=messages,
+        temperature=1
+    )
+
+    raw_response = response.choices[0].message.content.strip()
+    logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+
+    try:
+        result_json = json.loads(raw_response)
+    except json.JSONDecodeError as e:
+        logging.error(f"❌ JSON decode error: {str(e)}")
+        return None
+
+    # ✅ Normalize structure for exclusion rules (nuevo esquema)
+    normalized_rules = []
+
+    for rule in result_json.get("create_exclusion_rule", []):
+        data = rule.get("data", {})
+
+        normalized_data = {
+            "description": data.get("description") or "Auto-generated exclusion rule",
+            "rule_type": "exclusion",
+            "target_type": data.get("target_type") or "quote_line",
+            "priority": data.get("priority", 10),
+            "error_message": data.get("error_message") or "This product cannot be added because another conflicting product is present in the quote.",
+            "active": data.get("active", True),
+            "conditions": {
+                "excluded_products": data.get("conditions", {}).get("excluded_products", []),
+                "options": data.get("conditions", {}).get("options", []),
+            }
+        }
+
+        # --- Determine completion ---
+        has_excluded = len(normalized_data["conditions"]["excluded_products"]) > 0
+        completed = has_excluded  # Solo revisamos si hay productos excluidos
+
+        normalized_rules.append({
+            "data": normalized_data,
+            "completed": completed
+        })
+
+    result_json["create_exclusion_rule"] = normalized_rules
+
+    return result_json
 
 
 
 def extract_rules_details_to_render(user_message):
     """Extracts name, rule_type, target_type, priority, and active fields from rules using GPT to display them to the user."""
 
-    system_prompt = make_system_prompt("admin_agent", "create", "extract_rules_details_to_render")
+    system_prompt, temperature = make_system_prompt("admin_agent", "create", "extract_rules_details_to_render")
 
     user_prompt = user_message
 
@@ -326,7 +452,7 @@ def extract_rules_details_to_render(user_message):
 def extract_rule_updates(user_message):
     """Uses GPT to extract rule name, field, and new value for rules updates."""
 
-    system_prompt = make_system_prompt("admin_agent", "update", "extract_rule_updates")
+    system_prompt, temperature = make_system_prompt("admin_agent", "update", "extract_rule_updates")
 
     user_prompt = user_message
 
@@ -363,7 +489,7 @@ def extract_rule_updates(user_message):
 def extract_rule_deletes(user_message):
     """Uses GPT to extract rule name for rules delete."""
 
-    system_prompt = make_system_prompt("admin_agent", "delete", "extract_rule_deletes")
+    system_prompt, temperature = make_system_prompt("admin_agent", "delete", "extract_rule_deletes")
 
     user_prompt = user_message
 
@@ -401,7 +527,7 @@ def extract_custom_object_updates(user_message):
     """Uses GPT to extract custom object name, label, and new values for custom object updates."""
 
 
-    system_prompt = make_system_prompt("admin_agent", "update", "extract_custom_object_updates")
+    system_prompt, temperature = make_system_prompt("admin_agent", "update", "extract_custom_object_updates")
 
     user_prompt = user_message
 
@@ -588,7 +714,7 @@ def extract_email_alert_details(user, user_message, custom_objects, users):
 def extract_email_alert_updates(user, user_message, custom_objects, users):
     """Use GPT to extract the details of email alerts updates from the user’s message"""
 
-    system_prompt = make_system_prompt("admin_agent", "update", "extract_email_alert_updates")
+    system_prompt, temperature = make_system_prompt("admin_agent", "update", "extract_email_alert_updates")
 
     system_prompt += "The list of custom objects is: " + custom_objects
     system_prompt += "The list of users is: " + users

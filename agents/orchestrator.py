@@ -199,6 +199,7 @@ def orchestrate_request(user, user_message, session_data):
         - "DeleteEmailAlert"
         - "ShowMetrics" → Use when the user requests listings, catalogs, or filtered searches across objects. (e.g. "show me my product catalog", "list my last 5 quotes", "show me all leads created this month").
         - "CreateActionTrigger"
+        - "CreateExclusionRule"
         """
     })
 
@@ -415,7 +416,7 @@ def should_reset_session(user_message):
     """
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "Determine if the user wants to reset the session."},
                 {"role": "user", "content": prompt}
@@ -487,6 +488,7 @@ def get_action_map():
 
         # EmailAlerts
         "CreateEmailAlert": admin_agent,
+        "CreateExclusionRule": admin_agent,
         "UpdateEmailAlert": admin_agent,
         "DeleteEmailAlert": admin_agent,
 
