@@ -13,14 +13,15 @@ NGROK_URI = "0d0e3e34c51c.ngrok-free.app"
 
 load_dotenv()
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(_file_).resolve().parent.parent
 SECRET_KEY = config('SECRET_KEY')
-DEBUG = False
+DEBUG = True
 
 
 ALLOWED_HOSTS = [
     '.herokuapp.com',
-    'sympletech.agentcpq.ai'
+    'sympletech.agentcpq.ai',
+    '127.0.0.1'
     ]
 
 # Allow Django to be embedded in an IFrame (required for Salesforce)
@@ -224,7 +225,7 @@ AWS_S3_ADDRESSING_STYLE = "virtual"
 AWS_QUERYSTRING_AUTH = False
 AWS_S3_CUSTOM_DOMAIN = "media.agentcpq.com"
 
-# ⚠️ Must come after AWS_* settings
+# ⚠ Must come after AWS_* settings
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
 
@@ -235,14 +236,22 @@ SALESFORCE_REDIRECT_URI = "https://b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.n
 SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/authorize"
 SALESFORCE_TOKEN_URL = os.getenv("SALESFORCE_TOKEN_URL", "https://login.salesforce.com/services/oauth2/token")
 
+def _clean_mail_credential(value):
+    if value is None:
+        return None
+    value = value.replace('\xa0', ' ').strip()
+    return value or None
+
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # For reset password
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.getenv("GMAIL_USER")
-EMAIL_HOST_PASSWORD = os.getenv("GMAIL_APP_PW")
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+EMAIL_HOST_USER = _clean_mail_credential(os.getenv("GMAIL_USER"))
+EMAIL_HOST_PASSWORD = _clean_mail_credential(os.getenv("GMAIL_APP_PW"))
+_default_reply_address = _clean_mail_credential(os.getenv("DEFAULT_FROM_EMAIL")) or "noreply@sympletechsolutions.com"
+DEFAULT_FROM_EMAIL = f"Symple Tech Solutions <{_default_reply_address}>"
+DEFAULT_REPLY_TO = _default_reply_address
 
 HUBSPOT_TOKEN_URL = os.getenv("HUBSPOT_TOKEN_URL", "https://api.hubapi.com/oauth/v1/token")

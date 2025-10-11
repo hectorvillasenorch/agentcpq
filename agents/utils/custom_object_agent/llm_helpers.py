@@ -17,10 +17,10 @@ OPENAI_MODEL = "gpt-3.5-turbo"
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # FUNCTION TO EXTRACT CUSTOM OBJECTS DETAILS (CREATE_CUSTOM_OBJECT)
-def extract_custom_objects(user_message):
+def extract_custom_objects(user_message, previous_summary):
     """Uses GPT to extract custom object name, label, and new values to create custom objects."""
 
-    system_prompt = make_system_prompt("custom_object_agent", "create", "extract_custom_objects")
+    system_prompt, temperature = make_system_prompt("custom_object_agent", "create", "extract_custom_objects", previous_summary)
 
     user_prompt = user_message
 
@@ -57,7 +57,7 @@ def extract_custom_objects(user_message):
 def extract_custom_objects_updates(user_message, custom_objects):
     """Uses GPT to extract custom object name, label, and new values to update custom objects."""
 
-    system_prompt = make_system_prompt("custom_object_agent", "update", "extract_custom_objects_updates")
+    system_prompt, temperature = make_system_prompt("custom_object_agent", "update", "extract_custom_objects_updates")
 
     system_prompt += "Here are the current custom objects: " + custom_objects
 
@@ -300,7 +300,7 @@ def extract_custom_fields(user_message, custom_objects):
 def extract_custom_fields_updates(user_message, custom_objects, custom_fields):
     """Uses GPT to extract custom field name, label, and new values to update custom fields."""
 
-    system_prompt = make_system_prompt("custom_object_agent", "update", "")
+    system_prompt, temperature = make_system_prompt("custom_object_agent", "update", "")
 
     system_prompt += "Here are the current custom fields: " + custom_fields
     system_prompt += "One of the current custom objects: " + custom_objects
@@ -589,7 +589,7 @@ def extract_custom_object_data(user_message, custom_objects_data, custom_objects
 def extract_custom_records_updates(user_message, record_identifiers, custom_objects_data, custom_objects_names):
     """Uses GPT to extract custom object records details"""
 
-    system_prompt = make_system_prompt("custom_object_agent", "update", "extract_custom_records_updates")
+    system_prompt, temperature = make_system_prompt("custom_object_agent", "update", "extract_custom_records_updates")
 
     system_prompt += "The list of available custom objects and their fields is the following:" + json.dumps(custom_objects_data, indent=2)
     system_prompt += "List of object names you can use:" + custom_objects_names

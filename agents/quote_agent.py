@@ -42,7 +42,7 @@ from .utils.quote_agent.general_helpers import get_document_pdf, get_backup_valu
 from .utils.orchestrator.context_handle_helpers import save_or_update_conversation_context, make_session_context
 
 # Session Context Helpers
-from .utils.session_context_helpers.session_context_helpers import get_session_context
+from .utils.session_context_helpers.session_context_helpers import get_session_context, clear_session_state
 
 # Notification Email Functions
 from cpq.notifications.notifications import notify_opportunity_created
@@ -92,7 +92,7 @@ def create_quote(user,user_message, session_data):
     # 🧠 Make the session context
     #session_context = make_session_context(user, "CreateQuote", "quote_agent", session_data, user_message)
 
-    current_state, previous_summary = get_session_context("create_product", session_data)
+    current_state, previous_summary = get_session_context("create_quote", session_data)
 
 
     # --- 1️⃣ Llamada inicial al LLM para extraer quote details ---
@@ -102,10 +102,12 @@ def create_quote(user,user_message, session_data):
         previous_summary=previous_summary
     )
 
+    session_summary = llm_result["summary"]
+
     if llm_result["create_quote"]["completed"] == False:
         return {
             "message": llm_result["agent_message"],
-            "session_summary": llm_result["summary"]
+            "session_summary": session_summary
         }
 
     if llm_result:
@@ -118,10 +120,21 @@ def create_quote(user,user_message, session_data):
     if isinstance(result_account_and_opportunity, dict) and "message" in result_account_and_opportunity:
         return result_account_and_opportunity
 
-    result = []
-
     # - If not, get account and opportunity
-    account, opportunity = result_account_and_opportunity
+    account, opportunity, opportunity_message = result_account_and_opportunity
+
+    if opportunity_message:
+        # Save the quote information on current state
+        session_data["state"]["create_quote"] = llm_result["create_quote"]
+
+        session_summary += f"The user was asked to specify the Opportunity. The suggested name for the opportunity is {opportunity}."
+
+        return {
+            "message": opportunity_message,
+            "session_summary": session_summary
+        }
+
+    result = []
 
     # ✅ Create Quote
     quote = Quote.objects.create(
@@ -133,10 +146,16 @@ def create_quote(user,user_message, session_data):
         created_by=user
     )
 
+    clear_session_state("create_quote", session_data)
+
     # ✅ Assign formatted name after creation using quote.id
     quote.name = f"Q-{quote.id:05d}"
     quote.save()
     log_action_usage("CreateQuote", user, "Quote", quote.name)
+
+    if opportunity and hasattr(opportunity, "primary_quote"):
+        opportunity.primary_quote = quote
+        opportunity.save()
 
     logging.info(f"✅ Quote {quote.name} created for {account.name} under opportunity {opportunity.name}. Would you like to add more products now?")
 
@@ -175,6 +194,8 @@ def create_quote(user,user_message, session_data):
     # ✅ Save quote products
     quote, response_message, added_products = save_quote_products(user, extracted_products, quote, response_message)
 
+    print(f"Esto es response message de quote: {response_message}\n\n")
+
     # ✅ Update quote (subtotal, discounts fields and net amount)
     quote.save()
 
@@ -211,13 +232,15 @@ def create_quote(user,user_message, session_data):
 
     result.append(response_message)
 
-    print(f"\n\nEsto es result: {result}\n\n")
-
     dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_create_quote_message(
         quote=extracted_details,
         db_results=result,
         previous_summary=llm_result["summary"]
     )
+
+    if added_products:
+        dynamic_message += f"<br>💰 Net amount updated to ${quote.net_amount:,.2f}."
+
 
     return {
         "message": dynamic_message,
@@ -273,6 +296,8 @@ def add_product_to_quote(user, user_message, session_data):
 
     # --- 4️⃣ Persistir productos completados y capturar errores ---
     result = handle_products_to_add(user, completed_products, quote, allow_updates=True)
+
+    quote.save()
 
     print(f"Esto es result: {result}")
 

@@ -163,7 +163,8 @@ function enhanceStructuredAgentMessagesHistoryChat() {
       'email_alerts_details:',
       'retrieved_records:',
       'inclusion_rules_details:',
-      'action_triggers_details:'
+      'action_triggers_details:',
+      'exclusion_rules_details'
     ];
 
     let jsonPart = null;
@@ -202,6 +203,18 @@ function enhanceStructuredAgentMessagesHistoryChat() {
         let fullMessage = unescapeUnicode(raw);
 
         const html = renderInclusionRuleDetails(
+          fullMessage,
+          data.rules || data
+        );
+        div.innerHTML = html;
+        return;
+      }
+
+      // === EXCLUSION RULES ===
+      if (data.rules || (Array.isArray(data) && data[0]?.rule_type == 'exclusion')) {
+        let fullMessage = unescapeUnicode(raw);
+
+        const html = renderExclusionRuleDetails(
           fullMessage,
           data.rules || data
         );
@@ -390,6 +403,11 @@ async function sendMessage() {
         else if (data.response && data.response.inclusion_rules_details) {
           console.log("Inclusion Rules Details");
           responseMessage += renderInclusionRuleDetails(data.response.message, data.response.inclusion_rules_details);
+        }
+        // ✅ Handle Exclusion Rules Response
+        else if (data.response && data.response.exclusion_rules_details) {
+          console.log("Exclusion Rules Details");
+          responseMessage += renderExclusionRuleDetails(data.response.message, data.response.exclusion_rules_details);
         }
         // ✅ Handle Action Triggers Response
         else if (data.response && data.response.action_triggers_details) {
@@ -2438,6 +2456,75 @@ function renderInclusionRuleDetails(message, rules, read_only=false) {
                 const label = prod.name || prod.sku || "Unknown Product";
                 return `<li>${prod.quantity}x ${label}</li>`;
               })
+              .join("")}
+          </ul>
+        </div>
+
+      </div>`;
+
+  });
+
+  return html;
+}
+
+function renderExclusionRuleDetails(message, rules, read_only=false) {
+  let html = "";
+  console.log(rules);
+
+  // Agregar mensaje si viene
+  if (message) {
+    const idx = message.indexOf("exclusion_rules_details:");
+    if (idx !== -1) {
+      message = message.slice(0, idx).trim(); // cortar antes del JSON
+    }
+
+    if (message) {
+      html += `<p style="margin-bottom:10px;">${message}</p><br>`;
+    }
+  }
+
+  rules.forEach((rule) => {
+    var head_text = `✅ New exclusion rule created successfully | ${rule.name} ✅`;
+    html +=
+      `<div class="rule-container">
+        <div class="rule-header">
+            <h5>${head_text}</h3>
+            <span style="margin-left: 10px; font-weight: bold; color: ${rule.active ? 'green' : 'red'};">
+              ${rule.active ? '🟢 Active' : '🔴 Inactive'}
+            </span>
+        </div>
+        <div class="rule-details">
+            <div class="name">
+              <label for="rule-name"><strong>Description:</strong></label>
+              <input id="rule-name" type="text" value="${rule.description}" readonly/>
+            </div>
+
+            <div class="rule_type">
+              <label for="rule-type"><strong>Rule Type:</strong></label>
+              <input id="rule-type" type="text" value="${rule.rule_type}" readonly/>
+            </div>
+
+            <div class="target_type">
+              <label for="target-type"><strong>Target Type:</strong></label>
+              <input id="target-type" type="text" value="${rule.target_type}" readonly/>
+            </div>
+
+            <div class="priority">
+              <label for="priority"><strong>Priority:</strong></label>
+              <input id="priority" type="number" value="${rule.priority}" readonly/>
+            </div>
+
+            <div class="error_message">
+              <label for="error-message"><strong>Error Message:</strong></label>
+              <textarea id="error-message" class="materialize-textarea" rows="3" readonly>${rule.error_message}</textarea>
+            </div>
+        </div>
+
+        <div class="conditions-details">
+          <p><h6>Excluded Products:</h6></p>
+          <ul class="conditions-list">
+            ${rule.conditions.excluded_products
+              .map(prod => `<li>${prod}</li>`)
               .join("")}
           </ul>
         </div>

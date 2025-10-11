@@ -2,9 +2,10 @@ import re, json, logging
 from django.contrib.auth.models import User
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
-from cpq.models import CustomObject, EmailAlert
+from cpq.models import CustomObject, EmailAlert, Product
 from django.utils.html import escape
 from cpq.models import BusinessRule
+from django.db.models import Q
 
 # Record Helpers
 from agents.utils.admin_agent.record_helpers import save_email_alert, update_email_alert_record, delete_email_alert_record
@@ -626,7 +627,7 @@ def is_valid_cron(cron_str):
     return re.match(cron_regex, cron_str)
 
 
-def handle_create_inclusion_rule(user, completed_rules, response_message,):
+def handle_create_inclusion_rule(user, completed_rules, response_message):
 
     saved_rules = []
 
@@ -731,6 +732,153 @@ def handle_create_inclusion_rule(user, completed_rules, response_message,):
             saved_rules.append(rule)
 
             success = f"✅ Inclusion rule '{rule.name}' ('{rule.description}') saved successfully with ID {rule.id}.<br>"
+
+            response_message += success
+            logging.info(success)
+
+        except Exception as e:
+            error = f"❌ Error saving rule to database: {str(e)}"
+            response_message += error
+            logging.error(error)
+
+            continue
+
+
+    return response_message, saved_rules
+
+
+def handle_create_exclusion_rule(user, completed_rules, response_message):
+
+    saved_rules = []
+
+    for index, item in enumerate(completed_rules, start=1):
+        try:
+            description = item["description"]
+            rule_type = item["rule_type"]
+            target_type = item["target_type"]
+            priority = item["priority"]
+            error_message = item["error_message"]
+            active = item["active"]
+            conditions = item["conditions"]
+        except Exception as e:
+            return {
+                "message": f"🚫 Error: {e}"
+            }
+
+        # DESCRIPTION: must be a string
+        if not description:
+            error = "⚠️ Missing rule description: No description was provided for this rule. Please include a descriptive description to identify it clearly."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        # RULE_TYPE: must be a string and one of the allowed values
+        if not rule_type:
+            error = "⚠️ Missing rule type: Please specify whether this rule is validation, inclusion, or exclusion."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        if rule_type != "exclusion":
+            error = "⚠️ Invalid rule type: the rule type must be 'exclusion'."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        # TARGET_TYPE: must be a string and one of the allowed values
+        valid_target_types = {"quote", "quote_line", "product", "multiple"}
+        if not target_type:
+            error = "⚠️ Missing target type: Please define the level where this rule applies (quote, quote_line, product, or multiple)."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        target_type_lower = target_type.lower()
+
+        if target_type_lower not in valid_target_types:
+            error = f"⚠️ Invalid value for target_type: expected one of {valid_target_types}, but got '{target_type}'."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        target_type = target_type_lower
+
+        # PRIORITY: must be an integer
+        if priority is None:
+            error = "⚠️ Missing priority: No priority value was provided. Please assign a priority number."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        # ERROR_MESSAGE: must be a string
+        if not error_message:
+            error = "⚠️ Missing error message: Please include an error message that describes what should happen when the rule is triggered."
+            response_message += error
+            logging.warning(error)
+
+            continue
+
+        # CONDITIONS: must be a dict (object)
+        if not conditions:
+            error = "⚠️ Missing conditions: Please provide the logic and fields that define when this rule is triggered."
+            response_message += error
+            logging.warning(error)
+            continue
+
+
+        logging.info(f"\n✅ LLM returned a valid rule JSON. Ready to save the rule {description} to the database.")
+
+        excluded_products = conditions.get("excluded_products")
+
+        valid_excluded_products = []
+
+        for excluded_product in excluded_products:
+            product_query = Product.objects.filter(
+                Q(name=excluded_product) | Q(sku=excluded_product)
+            ).first()
+
+            if not product_query:
+                error = f"⚠️ Excluded product '{excluded_product}' not found in the catalog. It was removed from the list.<br>"
+                response_message = (response_message or "") + error
+                logging.warning(error)
+            else:
+                valid_excluded_products.append(excluded_product)
+
+
+        # Reasignar la lista limpia a conditions
+        conditions["excluded_products"] = valid_excluded_products
+
+        # Si la lista quedó vacía después de validar, cancelar toda la regla
+        if not valid_excluded_products:
+            error = "⚠️ Exclusion rule creation cancelled: No valid excluded products remain.<br>"
+            response_message = (response_message or "") + error
+            logging.warning(error)
+            continue  # Saltar a la siguiente regla
+
+        try:
+            rule = BusinessRule.objects.create(
+                description=description,
+                rule_type=rule_type,
+                target_type=target_type,
+                priority=priority,
+                error_message=error_message,
+                active=active,
+                conditions=conditions,  # conditions JSON
+                created_by=user
+            )
+
+            # Set rule's name
+            rule.name = f"ER-{rule.id:05d}"
+            rule.save()
+            saved_rules.append(rule)
+
+            success = f"✅ Exclusion rule '{rule.name}' ('{rule.description}') saved successfully.<br>"
 
             response_message += success
             logging.info(success)
