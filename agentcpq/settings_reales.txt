@@ -13,9 +13,9 @@ NGROK_URI = "0d0e3e34c51c.ngrok-free.app"
 
 load_dotenv()
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(_file_).resolve().parent.parent
 SECRET_KEY = config('SECRET_KEY')
-DEBUG = False
+DEBUG = True
 
 
 ALLOWED_HOSTS = [
@@ -225,7 +225,7 @@ AWS_S3_ADDRESSING_STYLE = "virtual"
 AWS_QUERYSTRING_AUTH = False
 AWS_S3_CUSTOM_DOMAIN = "media.agentcpq.com"
 
-# ⚠️ Must come after AWS_* settings
+# ⚠ Must come after AWS_* settings
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
 

@@ -15,6 +15,7 @@ from .utils.orchestrator.context_handle_helpers import save_or_update_conversati
 # Handle Helpers
 from .utils.custom_object_agent.handle_helpers import handle_custom_object_creation, handle_custom_object_updates, handle_custom_object_deletes, handle_custom_fields_creation, handle_custom_fields_updates, handle_custom_field_deletes, handle_custom_object_records, handle_custom_records_updates, handle_custom_record_deletes
 
+from .utils.session_context_helpers.session_context_helpers import get_session_context
 
 # ✅ Load environment variables
 load_dotenv()
@@ -50,9 +51,11 @@ def create_custom_object(user, user_message, session_data):
 
     logging.info("🔧 Creating custom object...\n\n")
 
+    current_state, previous_summary = get_session_context("create_custom_object", session_data)
+
 
     # ✅ Extract custom object details with LLM
-    extracted_custom_objects = extract_custom_objects(user_message)
+    extracted_custom_objects = extract_custom_objects(user_message, previous_summary)
 
     if not extracted_custom_objects:
         session_context["item_index"] = 1

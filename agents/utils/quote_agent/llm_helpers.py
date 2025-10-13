@@ -1,4 +1,5 @@
 import json
+import re
 import os
 import openai
 import logging
@@ -7,6 +8,9 @@ from datetime import date
 
 # System Prompt Helpers
 from ..prompts_helpers.system_prompt_helpers import make_system_prompt
+
+# Models
+from cpq.models import Opportunity
 
 # ✅ Load environment variables
 load_dotenv()
@@ -107,6 +111,7 @@ def extract_quote_details_with_llm(user_message, current_state, previous_summary
     - The summary must always explain the current state + why completed is false (if false) OR confirm completeness (if true).
     - Products are optional, if the user does not specify any it is not an indicator that completed has to be false.
     - Opportunity is optional, only account is required, if account is provided by the user, mark completed as true.
+    - Return the response as strict JSON. Do not include comments, explanations, or trailing commas.
     """
 
     user_prompt = f"""
@@ -136,13 +141,23 @@ def extract_quote_details_with_llm(user_message, current_state, previous_summary
     )
 
     raw_response = response.choices[0].message.content.strip()
-    logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+    logging.info(f"\n\n🔍 Raw GPT Response (original):\n{raw_response}\n")
+
+    # 🧹 Limpieza de bloques Markdown (```json ... ```)
+    if raw_response.startswith("```"):
+        raw_response = re.sub(r"^```(json)?", "", raw_response.strip())
+        raw_response = re.sub(r"```$", "", raw_response.strip())
+        raw_response = raw_response.strip()
+
+    # 🪶 Mostrar la respuesta después de limpiar
+    #logging.info(f"\n🧼 Cleaned JSON Response (ready for parsing):\n{raw_response}\n")
 
     try:
         result_json = json.loads(raw_response)
     except json.JSONDecodeError as e:
         logging.error(f"❌ JSON decode error: {str(e)}")
-        return None, tokens_used, cost_est
+        logging.error(f"🪶 Raw response that failed to decode:\n{raw_response}")
+        return None
 
     # --- Normalizar structure ahora que create_quote es un dict ---
     create_quote_raw = result_json.get("create_quote", {})
@@ -217,6 +232,8 @@ def generate_final_create_quote_message(quote, db_results, previous_summary, pro
     - If an add fails, explain it as a short, natural comment for the user, not as a system error. Keep it user-friendly and conversational, not technical or formal.
     - NEVER start the message with phrases like "Great news!", "Good job!", "Perfect!", or similar interjections.
     - Use this emoji: ✅ to indicate that a quote has been successfully created.
+    - Do not put information about net amount.
+    - Show the information of the triggered rules.
     Begin directly with the content.
 
     Instructions for "summary":

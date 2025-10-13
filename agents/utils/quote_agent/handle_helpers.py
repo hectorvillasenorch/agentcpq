@@ -10,7 +10,7 @@ from .record_helpers import update_quote_line_record, save_quote_line_update
 from .general_helpers import normalize_term_for_product, copy_custom_fields_values_from_product_to_quote_line
 
 #Rules Helpers
-from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules_quote_line_level, check_inclusion_rules_for_quote_level, check_for_rules_quote_level
+from ..admin_agent.rules_helpers import check_exclusion_rules_for_quote_level, build_temp_quote_line, check_for_rules_quote_line_level, check_inclusion_rules_for_quote_level, check_for_rules_quote_level
 
 # ----------- UPDATE QUOTE LINE ----------- #
 
@@ -31,7 +31,7 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
     - The updated quote instance
     - A message string summarizing the result
     """
-    logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🛠️ Adding products to quote 🛠️")
+    logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🛠️ Adding products to quote 🛠️ (Esta es la function)")
 
     # ✅ Add products to the quote if provided
     result = []
@@ -80,6 +80,8 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
 
         ################ FINAL SET UP VARIABLES ################
 
+        #print(f"\n\nEsto es sku: {sku} y name: {name}\n\n")
+
         # ✅ Check if the product exists and normalize sku and name variables
         #    in case the LLM identified the sku as the name and vice versa
         product, sku, name = find_product_and_normalize_variables(sku, name)
@@ -112,6 +114,16 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
 
         if inclusions:
             result_payload["inclusion_message"] = inclusions
+
+        # Validate exclusion rules
+        exclusions = check_exclusion_rules_for_quote_level(user, quote, product)
+
+        if exclusions:
+            # 🚫 Exclusion rule triggered — do NOT add the product
+            logging.warning(f"🚫 Exclusion rule triggered for product {product.sku or product.name}. Skipping addition.")
+            result_payload["error"] = f"🛑 Exclusion rule triggered for product {product.sku}/{product.name}:<br>{exclusions}<br>"
+            result.append(result_payload)
+            continue  # ⛔ Skip this product and move to the next one
 
         #################################################
 

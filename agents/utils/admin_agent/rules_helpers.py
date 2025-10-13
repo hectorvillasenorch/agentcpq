@@ -161,7 +161,7 @@ def check_inclusion_rules_for_quote_level(user, target_type, rule_type, quote, p
             success, result = check_inclusion_rule(user, conditions, quote, product)
 
             if success:
-                logging.warning(f"La rule {rule.name} se ha triggereado")
+                logging.warning(f"Rule {rule.name} has been triggered.")
                 triggered_rules += f"Rule: {rule.name} has been triggered -> {rule.error_message}."
             else:
                 logging.warning("La regla no aplica.")
@@ -182,6 +182,90 @@ def check_inclusion_rule(user, conditions, quote, product):
         return "success", result
 
     return "failed", None
+
+def check_exclusion_rules_for_quote_level(user,quote, product):
+
+
+    rules = BusinessRule.objects.filter(
+        active=True,
+        rule_type="exclusion"
+        ).filter(
+        Q(target_type="quote_line") | Q(target_type="multiple")
+    ).order_by('-priority')
+
+
+    triggered_rules = ""
+
+
+    for rule in rules:
+        try:
+            conditions = rule.conditions
+        except Exception as e:
+            logging.warning(f"Error in rule {rule.name} with conditions: {e}")
+            continue # Skip the rules with conditions bad formed
+
+        logging.info(f"\n📜 Evaluating exclusion rule: {rule.name} ('{rule.description}')")
+
+        result = check_exclusion_rule(user, conditions, quote, product)
+
+        # ✅ Si la función devolvió None o no hubo conflicto, continuar
+        if not result or result.get("valid", True):
+            continue
+
+        # 🚫 Si se encontró conflicto
+        error_msg = (
+            f"❌ Exclusion rule triggered: {rule.name}<br>"
+            f"Details: {result.get('error')}<br>"
+            f"Rule message: {rule.error_message}<br>"
+        )
+
+        logging.warning(error_msg)
+        triggered_rules += error_msg
+
+        # 💡 Puedes decidir si detener en el primer conflicto o seguir evaluando
+        # return triggered_rules  # <-- descomenta esto si quieres detener en el primer conflicto
+
+    # Si no se violó ninguna regla
+    if not triggered_rules:
+        return None
+
+    return triggered_rules
+
+def check_exclusion_rule(user, conditions, quote, product):
+    excluded_products = conditions.get("excluded_products", [])
+
+    # Si no hay productos de exclusión, salir
+    if not excluded_products:
+        return None
+
+    # 1️⃣ Verificar si el producto que se intenta agregar está en la lista de exclusión
+    product_names_or_skus = [p.lower() for p in excluded_products]
+    if product.name.lower() not in product_names_or_skus and product.sku.lower() not in product_names_or_skus:
+        # No forma parte de la regla, entonces no aplica esta validación
+        return None
+
+    # 2️⃣ Buscar si algún otro producto de exclusión ya está presente en la cotización
+    for line in quote.quote_lines.all():
+        line_product = line.product
+        if not line_product:
+            continue
+
+        # Si el producto en la línea coincide con otro de los excluidos
+        if (
+            line_product.name.lower() in product_names_or_skus
+            or line_product.sku.lower() in product_names_or_skus
+        ):
+            # Y no es el mismo que el producto actual
+            if line_product.id != product.id:
+                # 🚫 Regla violada: ambos productos no pueden coexistir
+                return {
+                    "valid": False,
+                    "error": f"❌ The products '{product.name}' and '{line_product.name}' cannot coexist in the quote.",
+                    "conflicting_product": line_product.name,
+                }
+
+    # ✅ Si no hay conflicto, entonces todo bien
+    return {"valid": True}
 
 
 def check_for_rules_quote_level(target_type, rule_type, quote):

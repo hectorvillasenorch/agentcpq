@@ -220,6 +220,7 @@ def orchestrate_request(user, user_message, session_data):
         - "ShowMetrics" → Use when the user requests listings, catalogs, reports, or filtered searches across objects. (e.g. "show me my product catalog", "list my last 5 quotes", "show me all leads created this month").
         - "KnowledgeLookup" → Use when the user asks for how-to instructions, FAQs, or training guidance (e.g. "how do I create a quote", "teach me about approvals").
         - "CreateActionTrigger"
+        - "CreateExclusionRule"
         """
     })
 
@@ -465,7 +466,7 @@ def should_reset_session(user_message):
     """
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "Determine if the user wants to reset the session."},
                 {"role": "user", "content": prompt}
@@ -536,6 +537,7 @@ def get_action_map():
         "DeleteCustomRecord": custom_object_agent,
         # EmailAlerts
         "CreateEmailAlert": admin_agent,
+        "CreateExclusionRule": admin_agent,
         "UpdateEmailAlert": admin_agent,
         "DeleteEmailAlert": admin_agent,
         # Metrics Agent

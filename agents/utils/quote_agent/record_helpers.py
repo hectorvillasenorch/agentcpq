@@ -17,7 +17,7 @@ from .db_helpers import find_product_and_normalize_variables, update_opportunity
 from .general_helpers import normalize_term_for_product, get_quote_details, set_active_quote_to_session_data, copy_custom_fields_values_from_product_to_quote_line
 
 #Rules Helpers
-from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules_quote_line_level, check_inclusion_rules_for_quote_level, check_for_rules_quote_level
+from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules_quote_line_level, check_inclusion_rules_for_quote_level, check_exclusion_rules_for_quote_level, check_for_rules_quote_level
 
 # Session Context Helpers
 from ..orchestrator.context_handle_helpers import save_or_update_conversation_context
@@ -104,11 +104,20 @@ def save_quote_products(user, products, quote, response_message, allow_updates=F
             print(f"\n\nValidation rule was triggered by product {product.name}/{product.sku}. Request omitted.\n\n")
             continue
 
-        print(f"\n\nA punto de entrar en inclusion check rules, esto es product: {product}\n\n")
         inclusions = check_inclusion_rules_for_quote_level(user, "quote_line", "inclusion", quote, product)
 
         if inclusions:
             response_message += inclusions
+
+        # Validate exclusion rules
+        exclusions = check_exclusion_rules_for_quote_level(user, quote, product)
+
+        if exclusions:
+            # 🚫 Exclusion rule triggered — do NOT add the product
+            logging.warning(f"🚫 Exclusion rule triggered for product {product.sku or product.name}. Skipping addition.")
+            response_message += f"🛑 Exclusion rule triggered for product {product.sku}/{product.name}:<br>{exclusions}<br>"
+            added_products.append(f"🛑 {product.sku}/{product.name} excluded due to rule conflict.")
+            continue  # ⛔ Skip this product and move to the next one
 
         #################################################
 
