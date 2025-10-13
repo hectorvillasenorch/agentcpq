@@ -2239,7 +2239,7 @@ class Migration(migrations.Migration):
             },
         ),
         migrations.CreateModel(
-            name="ScheduledTask",
+            name="RenewalTask",
             fields=[
                 (
                     "id",
@@ -2321,7 +2321,7 @@ class Migration(migrations.Migration):
                 "indexes": [
                     models.Index(
                         fields=["status", "execute_at"],
-                        name="cpq_schedul_status_91de7c_idx",
+                        name="cpq_renewal_status_8219f7_idx",
                     )
                 ],
             },
