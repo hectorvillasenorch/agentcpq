@@ -57,7 +57,7 @@ def create_contract_after_closed_won(opportunity):
 def make_opportunity_renewal(opportunity):
     try:
         account = opportunity.account
-        original_quote = opportunity.quotes.first()
+        original_quote = opportunity.primary_quote
         user = opportunity.created_by
 
         if not original_quote:

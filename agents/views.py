@@ -163,6 +163,11 @@ def chat_with_gpt(request):
 
     # --- 7. Save updated session data ---
     request.session["session_data"] = session_data
+
+    #print("\n\nEsto es session_data:\n")
+    #print(json.dumps(session_data["state"], indent=2, ensure_ascii=False))
+    #print("\n\n")
+
     logger.info(f"\n\n > > > [Orchestrator] AI Response: {ai_response}\n\n")
 
     return JsonResponse({"response": ai_response})
