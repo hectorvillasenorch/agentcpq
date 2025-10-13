@@ -222,9 +222,15 @@ class OpportunityEditableForm(BaseOpportunityForm): # type: ignore
         if getattr(self, 'instance', None) is not None:
             self.fields['hs_deal_id'].initial = getattr(self.instance, 'hs_deal_id', None)
 
+    def clean_hs_deal_id(self):
+        value = self.cleaned_data.get('hs_deal_id')
+        if not value:
+            return None
+        return value
+
     def save(self, commit=True):
         obj = super().save(commit=False)
-        obj.hs_deal_id = self.cleaned_data.get('hs_deal_id')
+        obj.hs_deal_id = self.cleaned_data.get('hs_deal_id') or None
         if commit:
             obj.save()
         return obj

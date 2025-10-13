@@ -3,6 +3,7 @@ from datetime import date, timedelta, datetime
 from django.utils.timezone import now
 from dateutil.relativedelta import relativedelta
 from ..models import Contract, Subscription, Quote, QuoteLine, Opportunity, ScheduledTask
+from django.db import transaction
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -54,11 +55,6 @@ def create_contract_after_closed_won(opportunity):
     return
 
 def make_opportunity_renewal(opportunity):
-    """
-    Creates a new renewal Opportunity with a copy of the first Quote and its QuoteLines,
-    assigns a new sequential name to the quote, and sets expiration_date 1 month after
-    the first contract's end_date.
-    """
     try:
         account = opportunity.account
         original_quote = opportunity.quotes.first()
@@ -68,15 +64,67 @@ def make_opportunity_renewal(opportunity):
             logger.warning(f"⚠️ Opportunity {opportunity.id} has no quotes to renew.")
             return None
 
-        # 1. Create a new opportunity
-        renewal_opp = Opportunity.objects.create(
-            name=f"Opportunity renewal for {account.name}",
-            account=account,
-            amount=original_quote.net_amount,
-            stage="appointmentscheduled",
-            owner=opportunity.owner,
-            created_by=user,
-        )
+        # Determine the renewal contract window
+        subscription_terms = []
+        for line in original_quote.quote_lines.all():
+            if line.is_subscription:
+                subscription_terms.append(line.term if line.term and line.term > 0 else 12)
+
+        term_months = max(subscription_terms) if subscription_terms else 12
+
+        current_contract = opportunity.contracts.order_by("start_date").first()
+
+        def _normalize_date(value):
+            if isinstance(value, datetime):
+                return value.date()
+            return value
+
+        contract_end_date = _normalize_date(current_contract.end_date) if current_contract and current_contract.end_date else None
+        contract_start_date = _normalize_date(current_contract.start_date) if current_contract and current_contract.start_date else None
+
+        if contract_end_date:
+            renewal_start_date = contract_end_date + timedelta(days=1)
+        elif contract_start_date:
+            renewal_start_date = contract_start_date + relativedelta(months=term_months)
+        else:
+            renewal_start_date = date.today() + timedelta(days=1)
+
+        renewal_end_date = renewal_start_date + relativedelta(months=term_months)
+        expected_close_date = renewal_start_date + timedelta(days=30)
+
+        start_str = renewal_start_date.strftime("%m-%d-%Y")
+        end_str = renewal_end_date.strftime("%m-%d-%Y")
+
+        # 1. Create a new opportunity (guard against duplicates for the same account/opportunity)
+        renewal_name = f"Renewal Opportunity - {account.name} - ({start_str} - {end_str})"
+
+        with transaction.atomic():
+            # Lock the base opportunity row so concurrent triggers serialize
+            Opportunity.objects.select_for_update().filter(pk=opportunity.pk).exists()
+
+            existing_renewal = Opportunity.objects.filter(name=renewal_name, account=account).first()
+            if existing_renewal:
+                if existing_renewal.expected_close_date != expected_close_date:
+                    existing_renewal.expected_close_date = expected_close_date
+                    existing_renewal.save(update_fields=["expected_close_date"])
+                logger.info(
+                    "ℹ️ Renewal opportunity %s already exists for opportunity %s (id=%s). Skipping creation.",
+                    existing_renewal.name,
+                    opportunity.name,
+                    opportunity.id,
+                )
+                return True
+
+            renewal_opp = Opportunity.objects.create(
+                name=renewal_name,
+                account=account,
+                amount=original_quote.net_amount,
+                stage="appointmentscheduled",
+                owner=opportunity.owner,
+                expected_close_date=expected_close_date,
+                created_by=user,
+                hs_deal_id=None,
+            )
 
         # 2. Determine the new quote name
         last_quote = Quote.objects.filter(name__startswith="Q-").order_by("-name").first()

@@ -579,47 +579,45 @@ tr:hover {
 
 .playground-banner {
   position: fixed;
-  top: 1px;
-  right: 1px;
+  top: 50%;
+  right: 24px;
+  transform: translateY(-50%);
   z-index: 1200;
   background: #2fd1a6;
   color: #ffffff;
-  padding: 8px 14px;
-  display: flex;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  letter-spacing: 0.35rem;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 2.5rem;
+  text-transform: uppercase;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  border-radius: 999px 0 0 999px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  gap: 1.5rem;
 }
 
 .banner-icon {
-  font-size: 1.4rem;
-  color: #ffffff;
+  display: none;
 }
 
 .banner-text {
-  display: flex;
+  display: inline-flex;
   flex-direction: column;
   align-items: center;
-  text-align: left;
-  gap: 2px;
+  gap: 1.5rem;
 }
 
 .banner-title {
-  font-family: "Euclid Circular A", "Space Grotesk", sans-serif;
-  font-weight: 700;
-  font-size: 1rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-size: 2.5rem;
   line-height: 1;
 }
 
 .banner-subtitle {
-  font-family: "Euclid Circular A", "Space Grotesk", sans-serif;
-  font-size: 0.8rem;
-  opacity: 0.9;
-  text-align: center;
+  font-size: 1.4rem;
+  font-weight: 500;
+  letter-spacing: 0.25rem;
 }
 
 
@@ -636,16 +634,34 @@ tr:hover {
 
 @media (max-width: 768px) {
   .playground-banner {
-    width: calc(100% - 16px);
-    left: 8px;
-    right: 8px;
-    top: 8px;
-    border-radius: 12px;
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    transform: none;
+    padding: 10px 14px;
+    writing-mode: horizontal-tb;
+    letter-spacing: 0.12rem;
+    font-size: 1.4rem;
+    border-radius: 999px;
+    background: #2fd1a6;
+    color: #ffffff;
   }
 
   .banner-text {
+    flex-direction: row;
+    justify-content: center;
     align-items: center;
-    text-align: center;
+    gap: 0.5rem;
+  }
+
+  .banner-title {
+    font-size: 1.4rem;
+  }
+
+  .banner-subtitle {
+    font-size: 0.9rem;
+    letter-spacing: 0.16rem;
   }
 }
 

@@ -3,15 +3,27 @@ from .models import CustomObject, CustomField, CustomRecord, CustomFieldValue, C
 from django.contrib.contenttypes.models import ContentType
 import threading
 import logging
+from django.db import close_old_connections, connections
 
 def run_async(func, *args, **kwargs):
     def wrapper():
         try:
+            close_old_connections()
             func(*args, **kwargs)
         except Exception as e:
             logging.error(f"❌ Error in async signal: {e}", exc_info=True)
+        finally:
+            try:
+                connections.close_all()
+            except Exception as cleanup_error:
+                logging.warning(
+                    f"⚠️ Failed to close DB connections in async wrapper: {cleanup_error}",
+                    exc_info=True,
+                )
 
-    # threading.Thread(target=wrapper, daemon=True).start()
+    thread = threading.Thread(target=wrapper, daemon=True)
+    thread.start()
+    return thread
 
 # def save_custom_object_values(object_name, post_data):
 #     """

@@ -2,20 +2,11 @@ import time
 from datetime import datetime, timedelta
 from django.utils import timezone
 from django.db import close_old_connections
-from cpq.models import ScheduledTask, Opportunity
+from cpq.models import ScheduledTask
 from cpq.renewals.renewals import make_opportunity_renewal
 import logging
 
 logger = logging.getLogger(__name__)
-
-def should_create_renewal(opportunity):
-    """
-    Verifica si ya existe un Opportunity renewal para esta oportunidad.
-    """
-    account_name = opportunity.account.name
-    renewal_name = f"Opportunity renewal for {account_name}"
-    exists = Opportunity.objects.filter(name=renewal_name).exists()
-    return not exists
 
 def run_renewal_tasks():
     """
@@ -30,24 +21,18 @@ def run_renewal_tasks():
     for task in tasks:
         try:
             opp = task.opportunity
-            if should_create_renewal(opp):
-                result = make_opportunity_renewal(opp)
-                if result is True:
-                    task.status = "done"
-                    task.last_error = ""
-                    logger.info(f"✅ Renewal executed for Opportunity {opp.id} via scheduler")
-                else:
-                    task.status = "failed"
-                    task.last_error = result[1] if isinstance(result, tuple) else "Unknown error"
-                    logger.error(f"❌ Renewal failed for Opportunity {opp.id}: {task.last_error}")
-                task.attempts += 1
-                task.updated_at = timezone.now()
-                task.save()
-            else:
-                logger.info(f"⚠️ ScheduledTask for Opportunity {opp.id} already exists, skipping task.")
+            result = make_opportunity_renewal(opp)
+            if result is True:
                 task.status = "done"
-                task.updated_at = timezone.now()
-                task.save()
+                task.last_error = ""
+                logger.info(f"✅ Renewal executed for Opportunity {opp.id} via scheduler")
+            else:
+                task.status = "failed"
+                task.last_error = result[1] if isinstance(result, tuple) else "Unknown error"
+                logger.error(f"❌ Renewal failed for Opportunity {opp.id}: {task.last_error}")
+            task.attempts += 1
+            task.updated_at = timezone.now()
+            task.save()
         finally:
             # Prevent connection leaks in long-lived scheduler threads
             close_old_connections()
