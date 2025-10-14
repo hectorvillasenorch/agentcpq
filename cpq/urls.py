@@ -1,6 +1,6 @@
 from django.http import HttpResponse
 from django.urls import path
-from .views import quotes_view, settings_view, product_list, product_detail,field_mapping_view,save_field_mappings,set_primary_quote, custom_fields_view,create_custom_field, get_company_information, create_custom_object, get_document_template, business_rules_view,create_business_rule
+from .views import accounts_view, settings_view, product_list, product_detail,field_mapping_view,save_field_mappings,set_primary_quote, custom_fields_view,create_custom_field, get_company_information, create_custom_object, get_document_template, business_rules_view,create_business_rule
 from .views import create_notification, create_custom_record, search_accounts,create_custom_field, usage_dashboard, edit_custom_object, edit_custom_field, delete_custom_field, delete_custom_object, manage_notifications_view, edit_notification, delete_email_alert
 from hubspot.views import get_hubspot_schema
 from django.conf import settings
@@ -12,7 +12,7 @@ app_name = "cpq"  # ✅ Namespacing the app
 
 urlpatterns = [
     path('', RedirectView.as_view(url='dashboard/')),  # <--- redirige '/' a '/dashboard/'
-    path('quotes/', quotes_view, name='quotes'),
+    path('accounts/', accounts_view, name='accounts'),
     path('settings/', settings_view, name='settings'),
     path("products/", product_list, name="product_list"),
     path("products/<int:product_id>/", product_detail, name="product_detail"),

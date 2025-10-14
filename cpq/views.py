@@ -1,5 +1,21 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage, Option, TenantUsageReport, Account
+from .models import (
+    Product,
+    SystemFieldMapping,
+    Quote,
+    QuoteLine,
+    CustomField,
+    Tenant,
+    QuoteDocumentSettings,
+    CustomObject,
+    BusinessRule,
+    CustomRecord,
+    CustomFieldValue,
+    ActionUsage,
+    Option,
+    TenantUsageReport,
+    Account,
+)
 from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
 from django.apps import apps
@@ -12,7 +28,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.contenttypes.models import ContentType
 from django.contrib import messages
 import logging
-from django.db.models import Count
+from django.db.models import Count, Prefetch
 from django.utils.timezone import now
 from django.db.models.functions import TruncMonth
 from datetime import datetime
@@ -23,7 +39,7 @@ from django.utils.safestring import mark_safe
 import uuid, os
 from django.views.decorators.http import require_POST
 from decimal import Decimal, InvalidOperation
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from django.contrib.auth.models import User, Group
 from django.utils import timezone
 from .models import EmailAlert
@@ -57,17 +73,61 @@ def product_detail(request, product_id):
 def settings_view(request):
     return render(request, "cpq/settings.html")
 
-def quotes_view(request):
-    """Render the list of Quotes."""
+def build_account_quote_hierarchy_for_user(user):
+    """Return Account → Opportunity → Quote hierarchy for the given user."""
 
-    quotes = Quote.objects.select_related("opportunity__account").all()
+    if user.is_superuser:
+        base_qs = Quote.objects.all()
+    else:
+        base_qs = Quote.objects.filter(owner=user)
 
+    quotes = (
+        base_qs.select_related("account", "opportunity__account")
+        .prefetch_related(
+            Prefetch(
+                "quote_lines",
+                queryset=QuoteLine.objects.select_related("product"),
+                to_attr="lines",
+            )
+        )
+        .order_by("account__name", "opportunity__name", "name")
+    )
+
+    hierarchy = OrderedDict()
+    for quote in quotes:
+        account_entry = hierarchy.setdefault(
+            quote.account_id,
+            {"account": quote.account, "opportunities": OrderedDict()},
+        )
+        opportunity_entry = account_entry["opportunities"].setdefault(
+            quote.opportunity_id,
+            {"opportunity": quote.opportunity, "quotes": []},
+        )
+        opportunity_entry["quotes"].append(quote)
+
+    return [
+        {
+            "account": data["account"],
+            "opportunities": list(data["opportunities"].values()),
+        }
+        for data in hierarchy.values()
+    ]
+
+
+def accounts_view(request):
+    """Render the account-organized hierarchy for the current user."""
+
+    account_groups = build_account_quote_hierarchy_for_user(request.user)
     is_authenticated = SalesforceToken.objects.exists()
 
-    return render(request, "quotes.html", {
-        "quotes": quotes,
-        "is_authenticated": is_authenticated,  # ✅ Used to show Sync button conditionally
-    })
+    return render(
+        request,
+        "accounts.html",
+        {
+            "account_groups": account_groups,
+            "is_authenticated": is_authenticated,  # ✅ Used to show Sync button conditionally
+        },
+    )
 
 MODEL_CHOICES = {
     "Opportunity": "Opportunity",  # ✅ Use class name, not table name

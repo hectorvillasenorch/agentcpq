@@ -40,9 +40,9 @@
             <span class="nav-label">Products</span>
         </a>
 
-        <a href="{% url 'dashboard' %}?view=quotes">
-            <i class="material-icons">request_quote</i>
-            <span class="nav-label">Quotes</span>
+        <a href="{% url 'dashboard' %}?view=accounts">
+            <i class="material-icons">business</i>
+            <span class="nav-label">Accounts</span>
         </a>
 
         {% if custom_objects %}
@@ -100,8 +100,8 @@
                     {% include "agents.html" %}
                 {% elif request.GET.view == "products" %}
                     {% include "products.html" %}
-                {% elif request.GET.view == "quotes" %}
-                    {% include "quotes.html" %}
+                {% elif request.GET.view == "accounts" %}
+                    {% include "accounts.html" %}
                 {% elif request.GET.view == "setup" %}
                     {% include "setup.html" %}
                 {% elif request.GET.view == "payment__c" %}

@@ -2,8 +2,8 @@ from django.apps import apps
 from django.shortcuts import render, get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-from cpq.models import Product, Quote,QuoteLine, CustomObject, CustomField, CustomFieldValue, CustomRecord,Account, ActionUsage, Tenant, TenantUsageLog, Option
-from cpq.views import set_primary_quote
+from cpq.models import Product, Quote, CustomObject, CustomField, CustomFieldValue, CustomRecord, Account, ActionUsage, Tenant, TenantUsageLog, Option
+from cpq.views import set_primary_quote, build_account_quote_hierarchy_for_user
 from salesforce.models import SalesforceToken
 from hubspot.models import HubspotToken
 from quickbooks.models import QuickbooksToken
@@ -12,7 +12,6 @@ from agents.models import ChatSession, ChatMessage
 from django.utils.timezone import now
 import requests
 from cpq.forms import  generate_dynamic_form
-from django.db.models import Prefetch
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
@@ -20,7 +19,6 @@ from django.http import JsonResponse, HttpResponseForbidden, HttpResponseBadRequ
 from django.db.models import Count
 from django.utils.timezone import now
 from django.db.models.functions import TruncMonth
-from django.db.models import Prefetch
 import hmac
 import hashlib
 from datetime import date
@@ -125,9 +123,9 @@ def dashboard(request):
 
     custom_objects = CustomObject.objects.all()
 
-    # Fetch only this user's quotes, grouped by opportunity
-    grouped_quotes = get_grouped_user_quotes(user)
-    print("📦 Grouped quotes:", grouped_quotes)
+    # Fetch only this user's account/opportunity/quote hierarchy
+    account_groups = get_grouped_user_quotes(user)
+    print("📦 Account groups:", account_groups)
 
     is_authenticated = SalesforceToken.objects.exists()
     is_setup = view == "setup"
@@ -169,7 +167,7 @@ def dashboard(request):
         "products": products,
         "options": options,
         "bundles": bundles,
-        "grouped_quotes": grouped_quotes.items(),
+        "account_groups": account_groups,
         "is_setup": is_setup,
         "is_authenticated": is_authenticated,
         "hubspot_connected": hubspot_connected,
@@ -219,34 +217,7 @@ def get_lookup_data_for_form(custom_object):
 
 
 def get_grouped_user_quotes(user):
-
-    # Base queryset: if superuser, all quotes; otherwise only quotes
-    # whose opportunity.account.owner is this user
-    if user.is_superuser:
-        base_qs = Quote.objects.all()
-    else:
-        base_qs = Quote.objects.filter(
-            owner=user
-        )
-
-    # Eager-load opportunity → account and quote_lines → product,
-    # and stash lines in a .lines attribute
-    quotes = base_qs.select_related(
-        "opportunity__account"
-    ).prefetch_related(
-        Prefetch(
-            "quote_lines",
-            queryset=QuoteLine.objects.select_related("product"),
-            to_attr="lines"
-        )
-    )
-
-    # Group by opportunity
-    grouped_quotes = {}
-    for quote in quotes:
-        grouped_quotes.setdefault(quote.opportunity, []).append(quote)
-
-    return grouped_quotes
+    return build_account_quote_hierarchy_for_user(user)
 
 @require_GET
 def get_tenant_usage(request):

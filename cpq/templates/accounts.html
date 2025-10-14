@@ -1,0 +1,899 @@
+{% load static %}
+<script src="{% static 'js/agents/agent_main.js' %}" defer></script>
+<style>
+    body {
+        background-color: #ffffff;
+        font-family: 'Inter', sans-serif;
+        color: #0f172a;
+    }
+    .container {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 16px 48px;
+    }
+    .header-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        flex-wrap: wrap;
+    }
+    .search-wrapper {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 16px;
+        height: 38px;
+        border: 1px solid #d1d5db;
+        border-radius: 10px;
+        background: #ffffff;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .search-wrapper:focus-within {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+    }
+    .search-wrapper .material-icons {
+        color: #475569;
+        font-size: 20px;
+    }
+    .search-input {
+        border: none !important;
+        border-bottom: none !important;
+        background: transparent !important;
+        min-width: 260px;
+        font-size: 0.95rem;
+        color: #0f172a;
+        padding: 0;
+        height: 100%;
+        box-shadow: none !important;
+        -webkit-box-shadow: none !important;
+    }
+    .search-input:focus {
+        outline: none;
+        box-shadow: none;
+    }
+    .search-input::placeholder {
+        color: #94a3b8;
+    }
+    h4 {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 700;
+        font-size: 1.6rem;
+        color: #0f172a;
+        margin: 24px 0;
+    }
+    h4 i {
+        color: #0f172a;
+    }
+    .collapsible {
+        border: none;
+        box-shadow: none;
+        margin: 0;
+    }
+    .account-collapsible > li {
+        margin-bottom: 20px;
+        border-radius: 20px;
+        overflow: hidden;
+        background: #fff;
+    }
+    .account-header {
+        background: #f5f7fb;
+        color: #0f172a;
+        padding: 26px 32px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+    }
+    .account-title {
+        display: inline-flex;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    .account-title i {
+        font-size: 24px;
+        color: #0f172a;
+        line-height: 1;
+        margin-top: 2px;
+    }
+    .account-title-text {
+        display: inline-flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .account-name {
+        font-size: 1.45rem;
+        font-weight: 700;
+        color: #0f172a;
+    }
+    .account-address {
+        font-size: 0.95rem;
+        font-weight: 500;
+        color: #0f172a;
+        line-height: 1.3;
+    }
+    .account-industry {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        background: #f1f5f9;
+        color: #0f172a;
+        border-radius: 999px;
+        padding: 4px 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    .account-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px 20px;
+        font-size: 0.92rem;
+    }
+    .account-meta .meta-item {
+        display: inline-flex;
+        align-items: flex-start;
+        gap: 10px;
+        color: #0f172a;
+    }
+    .account-meta .meta-item i,
+    .opportunity-meta .meta-item i {
+        font-size: 20px;
+        margin-top: 2px;
+        color: #0f172a;
+    }
+    .meta-label {
+        color: #111827;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-weight: 600;
+    }
+    .meta-value {
+        color: #111827;
+        font-size: 0.95rem;
+        font-weight: 600;
+        line-height: 1.4;
+    }
+    .account-meta a {
+        color: #2563eb;
+        text-decoration: none;
+    }
+    .no-results {
+        margin-top: 24px;
+        text-align: center;
+        color: #64748b;
+        font-size: 1rem;
+        font-weight: 500;
+    }
+    .opportunity-collapsible {
+        background: #fff;
+    }
+    .opportunity-collapsible > li {
+        border-top: 1px solid #e2e8f0;
+    }
+    .opportunity-header {
+        padding: 22px 32px 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        background: #f8fafc;
+        color: #1f2937;
+        flex-wrap: wrap;
+    }
+    .opportunity-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #1e293b;
+        max-width: 320px;
+        word-break: break-word;
+        flex: 1 1 320px;
+    }
+    .stage-label {
+        font-size: 0.9rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .stage-green {
+        color: #15803d;
+    }
+    .stage-red {
+        color: #dc2626;
+    }
+    .stage-yellow {
+        color: #b45309;
+    }
+    .opportunity-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        font-size: 0.9rem;
+        color: #475569;
+        flex: 2 1 240px;
+    }
+    .opportunity-meta .meta-item {
+        display: inline-flex;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    .quote-collapsible > li {
+        border-top: 1px solid #e2e8f0;
+    }
+    .quote-header {
+        padding: 6px 32px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+        background: #fff;
+    }
+    .quote-title {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        font-weight: 600;
+        color: #1e3a8a;
+    }
+    .quote-amount {
+        color: #16a34a;
+        font-weight: 700;
+    }
+    .quote-meta {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        font-size: 1rem;
+        color: #475569;
+    }
+    .quote-meta .quote-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .quote-attributes {
+        display: inline-flex;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+        font-size: 1rem;
+        color: #475569;
+    }
+    .quote-attributes label {
+        margin: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: #1f2937;
+    }
+    .quote-attributes label span {
+        display: inline-flex;
+        align-items: center;
+        line-height: 1;
+    }
+    .quote-attributes .meta-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: #475569;
+    }
+    .quote-attributes .meta-item i {
+        font-size: 18px;
+        line-height: 1;
+        color: #475569;
+    }
+    .quote-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-left: auto;
+        flex-wrap: wrap;
+    }
+    .quote-action-button {
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        background-color: #e5e7eb;
+        color: #1f2937;
+        border: none;
+        border-radius: 12px;
+        text-decoration: none;
+        transition: background-color 0.2s ease, transform 0.2s ease;
+        box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+        cursor: pointer;
+    }
+    .quote-action-button:hover,
+    .quote-action-button:focus {
+        background-color: #d1d5db;
+        transform: translateY(-1px);
+        outline: none;
+    }
+    .quote-action-button[disabled] {
+        cursor: not-allowed;
+        opacity: 0.6;
+        transform: none;
+    }
+    .quote-action-button--loading {
+        background-color: #d1d5db;
+        box-shadow: none;
+        cursor: progress;
+    }
+    .quote-action-button--success {
+        background-color: #ecfdf5;
+        color: #047857;
+        font-weight: 600;
+    }
+    .quote-action-button--success:hover,
+    .quote-action-button--success:focus {
+        background-color: #d1fae5;
+        transform: none;
+    }
+    .quote-action-button i {
+        font-size: 20px;
+    }
+    .invoice-label {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .invoice-link-text {
+        color: #047857;
+        font-weight: 600;
+        text-decoration: none;
+        font-size: 0.9rem;
+    }
+    .invoice-link-text:hover,
+    .invoice-link-text:focus {
+        text-decoration: underline;
+    }
+    .quote-body {
+        padding: 12px 32px 24px;
+        background: #f8fafc;
+    }
+    label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 1rem;
+        color: #1f2937;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        border-radius: 0.5rem;
+        overflow: hidden;
+        background-color: white;
+        color: #111827;
+        font-size: 0.95rem;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+    th, td {
+        padding: 0.85rem 1.2rem;
+        text-align: left;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    th {
+        background-color: #ffffff;
+        font-weight: 600;
+        color: #0f172a;
+        text-transform: uppercase;
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+    }
+    tbody td {
+        color: #0f172a;
+    }
+    tr:hover {
+        background-color: #f8fafc;
+    }
+    .empty-message {
+        padding: 28px;
+        text-align: center;
+        color: #64748b;
+        font-style: italic;
+    }
+    .chip {
+        background-color: #2563eb;
+        color: white;
+        padding: 0.35rem 0.9rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+    input[type="checkbox"].filled-in:checked + span:after {
+        border-right: 2px solid #0ea5e9 !important;
+        border-bottom: 2px solid #0ea5e9 !important;
+    }
+    .quote-meta i {
+        font-size: 18px;
+    }
+    @media (max-width: 960px) {
+        .quote-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .quote-actions {
+            margin-left: 0;
+        }
+    }
+    @media (max-width: 768px) {
+        table, thead, tbody, th, td, tr {
+            display: block;
+        }
+        tr {
+            margin-bottom: 1rem;
+        }
+        th {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            border: 0;
+        }
+        td {
+            padding-left: 50%;
+            position: relative;
+        }
+        td::before {
+            position: absolute;
+            top: 0.85rem;
+            left: 1.2rem;
+            white-space: nowrap;
+            color: #6b7280;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+        }
+        td:nth-of-type(1)::before { content: "Product"; }
+        td:nth-of-type(2)::before { content: "SKU"; }
+        td:nth-of-type(3)::before { content: "Quantity"; }
+        td:nth-of-type(4)::before { content: "Net Amount"; }
+    }
+</style>
+
+<div class="container" style="width: 100%;">
+    <div class="header-row">
+        <h4>
+            <i class="material-icons">business</i> My Accounts
+        </h4>
+        <div class="search-wrapper">
+            <i class="material-icons">search</i>
+            <input id="account-search" class="search-input" type="search" placeholder="Search accounts or opportunities" autocomplete="off">
+        </div>
+    </div>
+    <ul class="collapsible account-collapsible">
+        {% for account_group in account_groups %}
+            {% with account=account_group.account opportunities=account_group.opportunities %}
+                <li class="account-item {% if forloop.first %}active{% endif %}"
+                    data-search-corpus="{{ account.name|default_if_none:''|lower }}{% for opportunity_group in opportunities %} {{ opportunity_group.opportunity.name|default_if_none:''|lower }}{% for quote in opportunity_group.quotes %} {{ quote.name|default_if_none:''|lower }}{% endfor %}{% endfor %}">
+                    <div class="collapsible-header account-header">
+                        <div class="account-title">
+                            <i class="material-icons">business</i>
+                            <div class="account-title-text">
+                                <span class="account-name">{{ account.name }}</span>
+                                {% if account.industry %}
+                                    <span class="account-industry">{{ account.industry }}</span>
+                                {% endif %}
+                                {% if account.street or account.city or account.state or account.zip_code %}
+                                    <span class="account-address">
+                                        {% if account.street %}{{ account.street }}<br>{% endif %}
+                                        {{ account.city }}{% if account.city and account.state %}, {% endif %}{{ account.state }}{% if account.zip_code %} {{ account.zip_code }}{% endif %}
+                                    </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="account-meta">
+                            {% if account.website %}
+                                <span class="meta-item">
+                                    <i class="material-icons">public</i>
+                                    <span>
+                                        <span class="meta-label">Website</span><br>
+                                        <span class="meta-value">{{ account.website }}</span>
+                                    </span>
+                                </span>
+                            {% endif %}
+                            {% if account.phone %}
+                                <span class="meta-item">
+                                    <i class="material-icons">call</i>
+                                    <span>
+                                        <span class="meta-label">Phone</span><br>
+                                        <span class="meta-value">{{ account.phone }}</span>
+                                    </span>
+                                </span>
+                            {% endif %}
+                            {% if account.street or account.city or account.state or account.zip_code %}
+                                <span class="meta-item">
+                                    <i class="material-icons">place</i>
+                                    <span>
+                                        <span class="meta-label">Address</span><br>
+                                        <span class="meta-value">
+                                            {% if account.street %}{{ account.street }}<br>{% endif %}
+                                            {{ account.city }}{% if account.city and account.state %}, {% endif %}{{ account.state }}{% if account.zip_code %} {{ account.zip_code }}{% endif %}
+                                        </span>
+                                    </span>
+                                </span>
+                            {% endif %}
+                            {% if account.created_at %}
+                                <span class="meta-item">
+                                    <i class="material-icons">schedule</i>
+                                    <span>
+                                        <span class="meta-label">Customer since</span><br>
+                                        <span class="meta-value">{{ account.created_at|date:"M j, Y" }}</span>
+                                    </span>
+                                </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="collapsible-body">
+                        <ul class="collapsible opportunity-collapsible">
+                            {% for opportunity_group in opportunities %}
+                                {% with opportunity=opportunity_group.opportunity quotes=opportunity_group.quotes %}
+                                    <li class="opportunity-item {% if forloop.first and forloop.parentloop.first %}active{% endif %}"
+                                        data-search-corpus="{{ opportunity.name|default_if_none:''|lower }}{% for quote in quotes %} {{ quote.name|default_if_none:''|lower }}{% endfor %}">
+                                        <div class="collapsible-header opportunity-header">
+                                            <div class="opportunity-title">
+                                                <i class="material-icons">folder</i>
+                                                <span>{{ opportunity.name }}</span>
+                                            </div>
+                                            <div class="opportunity-meta">
+                                                {% with stage_value=opportunity.stage %}
+                                                    <span class="stage-label {% if stage_value == 'closedwon' %}stage-green{% elif stage_value == 'closedlost' %}stage-red{% else %}stage-yellow{% endif %}">
+                                                        {{ opportunity.get_stage_display|default:stage_value }}
+                                                    </span>
+                                                {% endwith %}
+                                                {% if opportunity.amount %}
+                                                    <span class="meta-item">
+                                                        <i class="material-icons">attach_money</i>
+                                                        <span>
+                                                            <span class="meta-label">Amount</span><br>
+                                                            <span class="meta-value">${{ opportunity.amount|floatformat:2 }}</span>
+                                                        </span>
+                                                    </span>
+                                                {% endif %}
+                                                {% if opportunity.expected_close_date %}
+                                                    <span class="meta-item">
+                                                        <i class="material-icons">event</i>
+                                                        <span>
+                                                            <span class="meta-label">Expected Close</span><br>
+                                                            <span class="meta-value">{{ opportunity.expected_close_date|date:"M j, Y" }}</span>
+                                                        </span>
+                                                    </span>
+                                                {% endif %}
+                                                {% if opportunity.created_at %}
+                                                    <span class="meta-item">
+                                                        <i class="material-icons">history</i>
+                                                        <span>
+                                                            <span class="meta-label">Created</span><br>
+                                                            <span class="meta-value">{{ opportunity.created_at|date:"M j, Y" }}</span>
+                                                        </span>
+                                                    </span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="collapsible-body">
+                                            <ul class="collapsible quote-collapsible">
+                                                {% for quote in quotes %}
+                                                    <li>
+                                                        <div class="collapsible-header quote-header">
+                                                            <div class="quote-title">
+                                                                <i class="material-icons">description</i>
+                                                                <span>{{ quote.name }}</span>
+                                                                <span class="quote-amount">${{ quote.net_amount|floatformat:2 }}</span>
+                                                            </div>
+                                                            <div class="quote-meta">
+                                                                <span class="quote-status">
+                                                                    <i class="material-icons">flag</i>
+                                                                    {{ quote.status }}
+                                                                </span>
+                                                            </div>
+                                                            <div class="quote-attributes">
+                                                                <label>
+                                                                    <input type="checkbox"
+                                                                           class="filled-in quote-checkbox"
+                                                                           data-opportunity-id="{{ quote.opportunity.id }}"
+                                                                           value="{{ quote.id }}"
+                                                                           {% if quote.hs_primary %}checked{% endif %}
+                                                                           onchange="setPrimaryQuote(this)">
+                                                                    <span>Primary Quote</span>
+                                                                </label>
+                                                                {% if quote.expiration_date %}
+                                                                    <span class="meta-item">
+                                                                        <i class="material-icons">hourglass_bottom</i>
+                                                                        Expires {{ quote.expiration_date|date:"M j, Y" }}
+                                                                    </span>
+                                                                {% endif %}
+                                                            </div>
+                                                            <div class="quote-actions">
+                                                                {% if quote.hs_deal_id %}
+                                                                    <button type="button"
+                                                                            class="quote-action-button quote-action-button--success"
+                                                                            title="Synced to HubSpot"
+                                                                            aria-label="Synced to HubSpot"
+                                                                            disabled>
+                                                                        <i class="material-icons" aria-hidden="true">check_circle</i>
+                                                                    </button>
+                                                                {% else %}
+                                                                    <button type="button"
+                                                                            class="quote-action-button"
+                                                                            title="Sync quote to HubSpot"
+                                                                            aria-label="Sync quote to HubSpot"
+                                                                            onclick="syncQuote({{ quote.id }}, this)">
+                                                                        <i class="material-icons" aria-hidden="true">sync</i>
+                                                                    </button>
+                                                                {% endif %}
+                                                                {% if quote.quickbooks_invoice_id %}
+                                                                    {% with invoice_value=quote.quickbooks_invoice_number|default:quote.quickbooks_invoice_id %}
+                                                                    {% with invoice_link="https://app.sandbox.qbo.intuit.com/app/invoice?txnId="|add:quote.quickbooks_invoice_id %}
+                                                                        <a href="{{ invoice_link }}"
+                                                                           target="_blank"
+                                                                           rel="noopener noreferrer"
+                                                                           class="invoice-link-text"
+                                                                           title="Open QuickBooks invoice INV-{{ invoice_value }}"
+                                                                           aria-label="Open QuickBooks invoice INV-{{ invoice_value }}">
+                                                                            INV-{{ invoice_value }}
+                                                                        </a>
+                                                                    {% endwith %}
+                                                                    {% endwith %}
+                                                                {% else %}
+                                                                    <button type="button"
+                                                                            class="quote-action-button"
+                                                                            title="Create QuickBooks Invoice"
+                                                                            aria-label="Create QuickBooks Invoice"
+                                                                            onclick="createQuickbooksInvoice({{ quote.id }}, this)">
+                                                                        <i class="material-icons" aria-hidden="true">receipt_long</i>
+                                                                    </button>
+                                                                {% endif %}
+                                                            </div>
+                                                        </div>
+                                                        <div class="collapsible-body quote-body">
+                                                            <table class="striped highlight responsive-table">
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th>Product</th>
+                                                                        <th>SKU</th>
+                                                                        <th>Quantity</th>
+                                                                        <th>Net Amount</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {% for line in quote.lines %}
+                                                                        <tr>
+                                                                            <td>{{ line.product.name }}</td>
+                                                                            <td>{{ line.product.sku }}</td>
+                                                                            <td>{{ line.quantity }}</td>
+                                                                            <td>${{ line.total_price }}</td>
+                                                                        </tr>
+                                                                    {% empty %}
+                                                                        <tr><td colspan="4">No line items.</td></tr>
+                                                                    {% endfor %}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </li>
+                                                {% empty %}
+                                                    <li class="empty-state">
+                                                        <div class="empty-message">No quotes for this opportunity yet.</div>
+                                                    </li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                    </li>
+                                {% endwith %}
+                            {% empty %}
+                                <li class="empty-state">
+                                    <div class="empty-message">No opportunities linked to this account.</div>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </li>
+            {% endwith %}
+        {% empty %}
+            <li class="empty-state">
+                <div class="empty-message">No quotes available yet.</div>
+            </li>
+        {% endfor %}
+    </ul>
+    <div id="no-results-message" class="no-results" style="display: none;">No accounts or opportunities match your search.</div>
+</div>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const collapsibles = document.querySelectorAll('.collapsible');
+      M.Collapsible.init(collapsibles, {
+        accordion: false
+      });
+      initAccountSearch();
+    });
+
+    function initAccountSearch() {
+      const searchInput = document.getElementById('account-search');
+      if (!searchInput) return;
+
+      const accountItems = Array.from(document.querySelectorAll('.account-item'));
+      const noResultsMessage = document.getElementById('no-results-message');
+
+      const performFilter = () => {
+        const term = (searchInput.value || '').trim().toLowerCase();
+        const hasTerm = term.length > 0;
+        let visibleAccounts = 0;
+
+        accountItems.forEach((accountItem) => {
+          const accountCorpus = (accountItem.dataset.searchCorpus || '').toLowerCase();
+          const opportunityItems = Array.from(accountItem.querySelectorAll('.opportunity-item'));
+          const accountMatches = hasTerm && accountCorpus.includes(term);
+
+          let visibleOpportunities = 0;
+
+          opportunityItems.forEach((opportunityItem) => {
+            const opportunityCorpus = (opportunityItem.dataset.searchCorpus || '').toLowerCase();
+            const matches = !hasTerm || accountMatches || opportunityCorpus.includes(term);
+            opportunityItem.style.display = matches ? '' : 'none';
+            if (matches) {
+              visibleOpportunities += 1;
+            }
+          });
+
+          const shouldShowAccount = !hasTerm || accountMatches || visibleOpportunities > 0;
+          accountItem.style.display = shouldShowAccount ? '' : 'none';
+
+          if (!hasTerm) {
+            opportunityItems.forEach((item) => {
+              item.style.display = '';
+            });
+          }
+
+          if (shouldShowAccount) {
+            visibleAccounts += 1;
+          }
+        });
+
+        if (noResultsMessage) {
+          noResultsMessage.style.display = visibleAccounts ? 'none' : '';
+        }
+      };
+
+      searchInput.addEventListener('input', performFilter);
+      searchInput.addEventListener('search', performFilter);
+      performFilter();
+    }
+
+    async function syncQuote(quoteId, button = null) {
+        const csrfToken = document.querySelector("input[name='csrfmiddlewaretoken']")?.value;
+
+        if (button) {
+            button.disabled = true;
+            button.classList.add('quote-action-button--loading');
+            button.innerHTML = '<span class="material-icons" aria-hidden="true">autorenew</span>';
+        }
+
+        let replacedWithSuccess = false;
+
+        try {
+            const response = await fetch(`/salesforce/sync-quote/${quoteId}/`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": csrfToken
+                }
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.message) {
+                alert("✅ " + data.message);
+                if (button) {
+                    button.classList.remove('quote-action-button--loading');
+                    button.outerHTML = `<button type="button" class="quote-action-button quote-action-button--success" title="Synced to HubSpot" aria-label="Synced to HubSpot" disabled>
+                        <i class=\"material-icons\" aria-hidden=\"true\">check_circle</i>
+                    </button>`;
+                    replacedWithSuccess = true;
+                }
+            } else {
+                throw new Error(data.message || JSON.stringify(data));
+            }
+        } catch (error) {
+            alert("❌ Sync Failed: " + error.message);
+        } finally {
+            if (button && !replacedWithSuccess) {
+                button.disabled = false;
+                button.classList.remove('quote-action-button--loading');
+                button.innerHTML = '<span class="material-icons" aria-hidden="true">sync</span>';
+            }
+        }
+    }
+
+    async function createQuickbooksInvoice(quoteId, button) {
+        const originalMarkup = button.innerHTML;
+        button.classList.add('quote-action-button--loading');
+        button.disabled = true;
+        button.innerHTML = '<span class="material-icons" aria-hidden="true">autorenew</span>';
+
+        try {
+            const response = await fetch(`/quickbooks/internal/invoices/${quoteId}/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken'),
+                },
+                body: JSON.stringify({})
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Unknown error');
+            }
+
+            const rawInvoiceValue = data.docNumber || data.invoiceId;
+            alert(`✅ ${data.message}\nInvoice Number: ${rawInvoiceValue}`);
+            const invoiceId = data.invoiceId || data.docNumber;
+            const invoiceLink = invoiceId ? `https://app.sandbox.qbo.intuit.com/app/invoice?txnId=${invoiceId}` : '#';
+            const invoiceLabel = rawInvoiceValue ? `INV-${rawInvoiceValue}` : 'Invoice';
+            button.classList.remove('quote-action-button--loading');
+            button.outerHTML = `<a href="${invoiceLink}"
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   class="invoice-link-text"
+                                   title="Open QuickBooks invoice ${invoiceLabel}"
+                                   aria-label="Open QuickBooks invoice ${invoiceLabel}">
+                                   ${invoiceLabel}
+                               </a>`;
+        } catch (error) {
+            alert(`❌ QuickBooks sync failed: ${error.message}`);
+            button.disabled = false;
+            button.classList.remove('quote-action-button--loading');
+            button.innerHTML = originalMarkup;
+        }
+    }
+
+    function getCookie(name) {
+        const cookies = document.cookie.split(';');
+        for (let cookie of cookies) {
+            let [key, value] = cookie.trim().split('=');
+            if (key === name) return decodeURIComponent(value);
+        }
+        return null;
+    }
+
+    function setPrimaryQuote(checkbox) {
+        const quoteId = checkbox.value;
+        const oppId = checkbox.dataset.opportunityId;
+
+        fetch(`/cpq/quotes/${quoteId}/set-primary/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken'),
+            },
+            body: JSON.stringify({})
+        }).then(response => {
+            if (!response.ok) {
+                alert('Error updating primary quote.');
+                checkbox.checked = false;
+            } else {
+                document.querySelectorAll(`.quote-checkbox[data-opportunity-id="${oppId}"]`).forEach(cb => {
+                    if (cb !== checkbox) cb.checked = false;
+                });
+            }
+        });
+    }
+</script>
