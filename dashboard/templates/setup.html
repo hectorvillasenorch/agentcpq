@@ -93,7 +93,7 @@
       </a>
       {% endif %}
     </div>
-  </div>
+    </div>
 
     <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; background: #fafafa;">
         <div style="display: flex; align-items: center; gap: 14px;">
@@ -125,6 +125,39 @@
               </a>
             {% endif %}
           </div>
+    </div>
+
+    <div class="admin-status" style="display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; background: #fafafa;">
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/8/80/Intuit_QuickBooks_logo.svg"
+             alt="QuickBooks Logo"
+             style="height: 32px; filter: {% if quickbooks_connected %}none{% else %}grayscale(100%) opacity(50%){% endif %}; transition: filter 0.3s;">
+
+        <div>
+          {% if quickbooks_connected %}
+            <p class="status-success">✅ QuickBooks Connected</p>
+          {% else %}
+            <p class="status-fail">❌ Not Connected</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px;">
+        {% if quickbooks_connected %}
+          <a href="{% url 'quickbooks:create_invoice_from_quote_internal' 0 %}"
+             onclick="event.preventDefault(); alert('QuickBooks sandbox connection active. Use the Quotes tab to push invoices.');"
+             class="btn grey lighten-3 black-text btn-standard">
+            <i class="material-icons left">check_circle</i>
+            Connected
+          </a>
+        {% else %}
+          <a href="{% url 'quickbooks:quickbooks_connect' %}"
+             class="btn green darken-2 white-text btn-standard">
+            <i class="material-icons left">vpn_key</i>
+            Connect
+          </a>
+        {% endif %}
+      </div>
     </div>
 
 <!-- DocuSign -->

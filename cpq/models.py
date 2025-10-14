@@ -87,6 +87,12 @@ class Account(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     accid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    quickbooks_customer_id = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        help_text="Identifier of the Customer in QuickBooks"
+    )
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='accounts')
      # Address fields
     street = models.CharField(max_length=255, blank=True, null=True)
@@ -300,6 +306,18 @@ class Quote(models.Model):
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="quotes")
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, related_name="quotes")
     sf_opportunity_id = models.CharField(max_length=18, blank=True, null=True)
+    quickbooks_invoice_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Identifier of the Invoice created in QuickBooks"
+    )
+    quickbooks_invoice_number = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="QuickBooks customer-facing invoice number (DocNumber)"
+    )
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
     net_amount = models.DecimalField(max_digits=10, decimal_places=2)
     tax_percentage = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)

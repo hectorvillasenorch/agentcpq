@@ -6,6 +6,7 @@ from cpq.models import Product, Quote,QuoteLine, CustomObject, CustomField, Cust
 from cpq.views import set_primary_quote
 from salesforce.models import SalesforceToken
 from hubspot.models import HubspotToken
+from quickbooks.models import QuickbooksToken
 from django.contrib.auth.models import User
 from agents.models import ChatSession, ChatMessage
 from django.utils.timezone import now
@@ -158,6 +159,8 @@ def dashboard(request):
     except HubspotToken.DoesNotExist:
         pass
 
+    quickbooks_connected = QuickbooksToken.objects.exists()
+
     records_custom_object, field_values_by_record = get_values_by_record(custom_object)
     lookup_options = get_lookup_data_for_form(custom_object)
 
@@ -170,6 +173,7 @@ def dashboard(request):
         "is_setup": is_setup,
         "is_authenticated": is_authenticated,
         "hubspot_connected": hubspot_connected,
+        "quickbooks_connected": quickbooks_connected,
         "chat_sessions": chat_sessions,
         "chat_messages": chat_messages,
         "selected_session_id": session_id,

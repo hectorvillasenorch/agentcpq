@@ -175,19 +175,42 @@
               <ul class="collapsible quote-collapsible">
                 {% for quote in quotes %}
                 <li>
-                  <div class="collapsible-header" style="font-size: 1.1rem; font-weight: 500;">
-                    <i class="material-icons">description</i>
-                    {{ quote.name }} — ${{ quote.net_amount }}
+                  <div class="collapsible-header" style="font-size: 1.1rem; font-weight: 500; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                    <div style="display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                      <i class="material-icons">description</i>
+                      <span>{{ quote.name }} — ${{ quote.net_amount }}</span>
 
-                    {% if quote.hs_deal_id %}
-                      <i class="material-icons green-text" title="Synced to HubSpot">check_circle</i>
-                    {% else %}
-                      <i class="material-icons grey-text" title="Not Synced">sync_disabled</i>
-                    {% endif %}
+                      {% if quote.hs_deal_id %}
+                        <i class="material-icons green-text" title="Synced to HubSpot">check_circle</i>
+                      {% else %}
+                        <i class="material-icons grey-text" title="Not Synced">sync_disabled</i>
+                      {% endif %}
+                    </div>
+
+                    <div style="display: inline-flex; align-items: center;">
+                      {% if quote.quickbooks_invoice_id %}
+                        {% with invoice_link="https://app.sandbox.qbo.intuit.com/app/invoice?txnId="|add:quote.quickbooks_invoice_id %}
+                        <a href="{{ invoice_link }}"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           style="display: inline-flex; align-items: center; gap: 6px; color: #10b981; font-weight: 600; text-decoration: none;">
+                          <i class="material-icons" style="font-size: 20px;">receipt_long</i>
+                          <span>INVOICE: {{ quote.quickbooks_invoice_number|default:quote.quickbooks_invoice_id }}</span>
+                        </a>
+                        {% endwith %}
+                      {% else %}
+                        <button type="button"
+                                class="sync-button"
+                                onclick="createQuickbooksInvoice({{ quote.id }}, this)">
+                          <i class="material-icons" style="margin-right: 6px;">request_quote</i>
+                          Create QuickBooks Invoice
+                        </button>
+                      {% endif %}
+                    </div>
                   </div>
 
                   <div class="collapsible-body">
-                    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;">
                       <span><strong>Status:</strong> {{ quote.status }}</span>
 
                       <label>
@@ -261,6 +284,39 @@
             alert("❌ Sync Failed: " + JSON.stringify(data));
         }
     }
+
+    async function createQuickbooksInvoice(quoteId, button) {
+      const originalText = button.innerHTML;
+      button.disabled = true;
+      button.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;"><span class="material-icons">autorenew</span>Creating...</span>';
+
+      try {
+        const response = await fetch(`/quickbooks/internal/invoices/${quoteId}/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken'),
+          },
+          body: JSON.stringify({})
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Unknown error');
+        }
+
+        const displayNumber = data.docNumber || data.invoiceId;
+        alert(`✅ ${data.message}\nInvoice Number: ${displayNumber}`);
+        const docLabel = data.docNumber ? `QuickBooks Invoice: ${data.docNumber}` : `QuickBooks Invoice ID: ${data.invoiceId}`;
+        button.outerHTML = `<span class="chip green lighten-1 white-text">${docLabel}</span>`;
+      } catch (error) {
+        alert(`❌ QuickBooks sync failed: ${error.message}`);
+        button.disabled = false;
+        button.innerHTML = originalText;
+      }
+    }
+
     function getCookie(name) {
       const cookies = document.cookie.split(';');
       for (let cookie of cookies) {
