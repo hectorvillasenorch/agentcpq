@@ -13,8 +13,8 @@ db.sqlite3
 *.log
 
 # 📌 Ignore Django migrations
- */migrations/*
- !*/migrations/__init__.py
+**/migrations/**
+!**/migrations/__init__.py
 
 # 📌 Ignore IDE/editor files
 .vscode/

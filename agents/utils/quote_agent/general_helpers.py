@@ -9,9 +9,19 @@ from reportlab.lib.colors import HexColor, red
 from io import BytesIO
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
-from cpq.models import CustomFieldValue, CustomField, QuoteDocumentSettings, Tenant, Quote, QuoteLine, QuoteDocument
+from cpq.models import (
+    CustomFieldValue,
+    CustomField,
+    QuoteDocumentSettings,
+    Tenant,
+    Quote,
+    QuoteLine,
+    QuoteDocument,
+    QuotePendingAttachment,
+)
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.db.utils import OperationalError, ProgrammingError
 # ReportLab imports
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Paragraph
@@ -412,7 +422,7 @@ def set_custom_fields_into_quote_document_settings(object_types: list):
 
 
 
-def get_document_pdf(quote):
+def get_document_pdf(quote, session_data=None):
     try:
         # ✅ Fetch related quote lines
         quote_lines = QuoteLine.objects.filter(quote=quote)
@@ -425,6 +435,27 @@ def get_document_pdf(quote):
 
         # ✅ Fetch related account
         account = quote.account
+
+        # ✅ Pending attachments to merge after main content
+        try:
+            pending_attachments_db = list(
+                quote.pending_attachments.filter(consumed=False).order_by("uploaded_at")
+            )
+        except (ProgrammingError, OperationalError) as exc:
+            logger.warning(
+                "QuotePendingAttachment table unavailable while generating PDF for quote %s: %s",
+                quote.id,
+                exc,
+            )
+            pending_attachments_db = []
+
+        session_pending_entries = []
+        if session_data:
+            session_map = session_data.get("session_pending_attachments", {})
+            session_pending_entries = list(session_map.get(str(quote.id), []))
+
+        embedded_attachment_ids: list[int] = []
+        session_consumed_ids: list[str] = []
 
         # ✅ Generate file name
         last_doc = QuoteDocument.objects.filter(quote=quote).order_by('-version').first()
@@ -1239,8 +1270,85 @@ def get_document_pdf(quote):
             pdf.drawString(x_position, y_position, "Name")
 
 
+        # ✅ Append attachments as additional pages (if any)
+        attachment_sources = []
+
+        for attachment in pending_attachments_db:
+            attachment_sources.append(
+                {
+                    "source": "db",
+                    "id": attachment.id,
+                    "path": attachment.file.name,
+                    "label": attachment.original_name or os.path.basename(attachment.file.name),
+                }
+            )
+
+        for entry in session_pending_entries:
+            path = entry.get("stored_path")
+            if not path:
+                continue
+            attachment_sources.append(
+                {
+                    "source": "session",
+                    "id": entry.get("id"),
+                    "path": path,
+                    "label": entry.get("original_name") or os.path.basename(path),
+                }
+            )
+
+        if attachment_sources:
+            pdf.showPage()
+            page_width, page_height = letter
+            margin = 36
+
+            for index, attachment in enumerate(attachment_sources):
+                try:
+                    with default_storage.open(attachment["path"], "rb") as attachment_file:
+                        img = ImageReader(attachment_file)
+                        img_width, img_height = img.getSize()
+
+                    scale = min(
+                        (page_width - margin * 2) / img_width,
+                        (page_height - margin * 2) / img_height,
+                    )
+                    scale = min(scale, 1)  # Never upscale above 100%
+                    render_width = img_width * scale
+                    render_height = img_height * scale
+                    x_position = (page_width - render_width) / 2
+                    y_position = (page_height - render_height) / 2
+
+                    pdf.drawImage(
+                        img,
+                        x_position,
+                        y_position,
+                        width=render_width,
+                        height=render_height,
+                        preserveAspectRatio=True,
+                        mask='auto'
+                    )
+
+                    pdf.setFont("Helvetica", 10)
+                    pdf.setFillColor(HexColor("#555555"))
+                    label = attachment.get("label") or "Attachment"
+                    pdf.drawString(margin, margin - 6, f"Attachment: {label}")
+                    pdf.setFillColor(HexColor(CBLACK))
+
+                    if attachment["source"] == "db" and attachment.get("id") is not None:
+                        embedded_attachment_ids.append(attachment["id"])
+                    elif attachment["source"] == "session" and attachment.get("id"):
+                        session_consumed_ids.append(str(attachment["id"]))
+
+                    if index < len(attachment_sources) - 1:
+                        pdf.showPage()
+                except Exception as attachment_error:
+                    logger.warning(
+                        "Failed to embed attachment for quote %s: %s",
+                        quote.id,
+                        attachment_error,
+                        exc_info=True,
+                    )
+
         # ✅ Save PDF to buffer
-        pdf.showPage()
         pdf.save()
 
         # 2. Create ContentFile
@@ -1278,13 +1386,32 @@ def get_document_pdf(quote):
             file=saved_path,
             generated_by="system"
         )
+
+        if embedded_attachment_ids:
+            try:
+                QuotePendingAttachment.objects.filter(id__in=embedded_attachment_ids).update(consumed=True)
+            except (ProgrammingError, OperationalError) as exc:
+                logger.warning(
+                    "Failed to mark attachments consumed for quote %s: %s",
+                    quote.id,
+                    exc,
+                )
+
         logger.debug(f"Saved to R2: {saved_path}")
         logger.debug(f"File size: {file_content.size} bytes")
+
+        total_embedded = len(embedded_attachment_ids) + len(session_consumed_ids)
+        attachment_suffix = ""
+        if total_embedded:
+            plural = "s" if total_embedded != 1 else ""
+            attachment_suffix = f" Added {total_embedded} attachment{plural}."
+
         return {
-            "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
+            "message": f"📄 Quote PDF (v{next_version}) generated successfully!{attachment_suffix}",
             "download_url": download_url,
             "document_version": next_version,
             "success": True,
+            "session_consumed_ids": session_consumed_ids,
             }
     except Exception as e:
         return {

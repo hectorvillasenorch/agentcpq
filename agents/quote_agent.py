@@ -838,7 +838,7 @@ def generate_quote_pdf(user,user_message, session_data):
         return quote
 
     try:
-        result = get_document_pdf(quote)
+        result = get_document_pdf(quote, session_data=session_data)
 
 
         # ✅ Save quote in session data
@@ -847,6 +847,18 @@ def generate_quote_pdf(user,user_message, session_data):
         if result.get("success"):
             # Guardamos la quote en la sesión
             set_active_quote_to_session_data(session_data, quote)
+
+            session_consumed_ids = result.pop("session_consumed_ids", [])
+            if session_consumed_ids:
+                session_pending = session_data.get("session_pending_attachments", {})
+                quote_key = str(quote.id)
+                if quote_key in session_pending:
+                    session_pending[quote_key] = [
+                        entry for entry in session_pending[quote_key]
+                        if str(entry.get("id")) not in session_consumed_ids
+                    ]
+                    if not session_pending[quote_key]:
+                        session_pending.pop(quote_key, None)
 
             log_action_usage("GenerateQuoteDocument", user, "Quote", quote.name)
 
