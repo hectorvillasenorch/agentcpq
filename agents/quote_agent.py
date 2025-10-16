@@ -204,6 +204,8 @@ def create_quote(user,user_message, session_data):
 
     print(f"\n\nEsto es result de quote products: {result}\n\n")
 
+    print(f"Esto es response message de quote: {response_message}\n\n")
+
     # ✅ Update quote (subtotal, discounts fields and net amount)
     quote.save()
 
