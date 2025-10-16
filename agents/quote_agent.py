@@ -1,3 +1,4 @@
+import logging
 from django.db.models import Sum, F
 import json
 import os
@@ -23,8 +24,7 @@ from django.db.models import Q
 from django.forms.models import model_to_dict
 from django.db.models import ForeignKey
 from datetime import datetime
-import logging
-logger = logging.getLogger(__name__)
+
 # LLM Utils
 from .utils.quote_agent.llm_helpers import extract_quote_details_with_llm, generate_final_create_quote_message, extract_quote_line_items_to_delete, generate_final_delete_quote_lines_message, generate_final_quote_updates_message, extract_quote_line_to_delete_with_llm
 from .utils.quote_agent.llm_helpers import extract_quote_updates_with_llm
@@ -61,6 +61,8 @@ OPENAI_MODEL = "gpt-3.5-turbo"
 # OPENAI_MODEL = "gpt-4"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+logger = logging.getLogger(__name__)
 
 def quote_agent(user, action, user_message, session_data):
 
@@ -110,8 +112,13 @@ def create_quote(user,user_message, session_data):
             "session_summary": session_summary
         }
 
-    if llm_result:
-        extracted_details = llm_result["create_quote"]["data"]
+    if not llm_result["create_quote"].get("completed"):
+        return {
+            "message": llm_result.get("agent_message", "Could you share the account name to proceed?"),
+            "session_summary": llm_result.get("summary"),
+        }
+
+    extracted_details = llm_result["create_quote"].get("data") or {}
 
     # ✅ Get or create account and opportunity
     result_account_and_opportunity = get_or_create_account_and_opportunity(user, extracted_details, session_data)

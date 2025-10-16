@@ -17,7 +17,12 @@
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 
 </head>
-<body class="grey lighten-5 {% block body_class %}{% endblock %}">
+<body class="grey lighten-5">  
+  <div class="playground-banner" role="region" aria-label="Playground announcement">
+    <div class="banner-text">
+      <span class="banner-title">Playground</span>
+    </div>
+  </div>
   <div class="dashboard-container">
     <!-- Sidebar -->
     <div class="sidebar-toggle" onclick="toggleSidebar()">☰</div>
@@ -138,5 +143,7 @@
       }
     });
   </script>
+
+
 </body>
 </html>

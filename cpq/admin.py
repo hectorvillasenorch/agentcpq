@@ -1,6 +1,31 @@
 from django.contrib import admin
 from django import forms
-from .models import Quote, QuoteLine, Subscription, Asset, Product, Lead, Opportunity, Account, Activity, CustomObject, CustomField, Option, BusinessRule, CustomFieldValue, ActionTrigger,ActionUsage,Contact,Tenant, QuoteDocument, SystemFieldMapping, Contract, ScheduledTask
+from .models import (
+    Quote,
+    QuoteLine,
+    Subscription,
+    Asset,
+    Product,
+    Lead,
+    Opportunity,
+    Account,
+    Activity,
+    CustomObject,
+    CustomField,
+    Option,
+    BusinessRule,
+    CustomFieldValue,
+    CustomRecord,
+    ActionUsage,
+    Contact,
+    Tenant,
+    QuoteDocument,
+    SystemFieldMapping,
+    Knowledge,
+    Contract, 
+    ScheduledTask,
+    ActionTrigger
+)
 from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession, AgentPrompt
 from django.contrib.contenttypes.models import ContentType
@@ -163,7 +188,17 @@ admin.site.register(ScheduledTask, ScheduledTaskAdmin)
 
 class QuoteAdmin(DynamicCustomFieldAdmin):
     form = get_dynamic_form(Quote, crm="AgentCPQ", object_type="Quote")
-    list_display = ('name','account', 'opportunity', 'net_amount', 'status', 'expiration_date', 'created_at', 'updated_at')
+    list_display = (
+        'name',
+        'account',
+        'opportunity',
+        'net_amount',
+        'status',
+        'expiration_date',
+        'quickbooks_invoice_id',
+        'created_at',
+        'updated_at',
+    )
     # Required because QuoteDocumentAdmin uses autocomplete_fields=("quote",)
     search_fields = ('name', 'qteid', 'account__name', 'opportunity__name')
 
@@ -197,9 +232,15 @@ class OpportunityEditableForm(BaseOpportunityForm): # type: ignore
         if getattr(self, 'instance', None) is not None:
             self.fields['hs_deal_id'].initial = getattr(self.instance, 'hs_deal_id', None)
 
+    def clean_hs_deal_id(self):
+        value = self.cleaned_data.get('hs_deal_id')
+        if not value:
+            return None
+        return value
+
     def save(self, commit=True):
         obj = super().save(commit=False)
-        obj.hs_deal_id = self.cleaned_data.get('hs_deal_id')
+        obj.hs_deal_id = self.cleaned_data.get('hs_deal_id') or None
         if commit:
             obj.save()
         return obj
@@ -214,6 +255,63 @@ class OpportunityAdmin(DynamicCustomFieldAdmin):
         return [(None, {'fields': fields})]
 
 admin.site.register(Opportunity, OpportunityAdmin)
+
+
+@admin.register(Knowledge)
+class KnowledgeAdmin(admin.ModelAdmin):
+    list_display = ('image_preview_list', 'title', 'language', 'has_video', 'is_active', 'created_at')
+    list_filter = ('language', 'has_video', 'is_active', 'created_at')
+    search_fields = ('title', 'content_text', 'tags')
+    readonly_fields = ('created_at', 'updated_at', 'image_preview', 'embedding')
+    fieldsets = (
+        ('Basic Info', {
+            'fields': ('title', 'language', 'tags', 'is_active')
+        }),
+        ('Content', {
+            'fields': ('content_text',)
+        }),
+        ('Media', {
+            'fields': ('image_file', 'image_url', 'image_preview', 'video_url', 'embedding')
+        }),
+        ('Ownership & Timestamps', {
+            'fields': ('created_by', 'updated_by', 'created_at', 'updated_at')
+        }),
+    )
+
+    def _resolve_image_url(self, obj):
+        if not obj:
+            return ""
+
+        try:
+            if obj.image_file:
+                return obj.image_file.url
+        except (ValueError, AttributeError):
+            # File exists but storage cannot resolve, fall back to URL field
+            pass
+
+        return getattr(obj, 'image_url', '') or ""
+
+    def image_preview(self, obj):
+        image_url = self._resolve_image_url(obj)
+        if image_url:
+            return format_html(
+                "<img src='{}' style='max-width:320px;height:auto;border-radius:6px;' alt='Knowledge image preview'>",
+                image_url,
+            )
+        return "No image uploaded"
+
+    image_preview.short_description = "Image preview"
+
+    def image_preview_list(self, obj):
+        image_url = self._resolve_image_url(obj)
+        if image_url:
+            return format_html(
+                "<img src='{}' style='width:75px;height:75px;object-fit:cover;border-radius:4px;' alt='Knowledge thumbnail'>",
+                image_url,
+            )
+        return "—"
+
+    image_preview_list.short_description = "Preview"
 
 class OptionInline(admin.TabularInline):
     model = Option

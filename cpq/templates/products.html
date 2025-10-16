@@ -127,14 +127,24 @@
     Product Catalog
   </h4>
 
-  <form action="{% url 'sync_hubspot_products' %}" method="post" style="margin: 0;">
-    {% csrf_token %}
-    <input type="hidden" name="user_id" value="default">
-    <input type="hidden" name="next" value="{{ request.get_full_path }}">
-    <button type="submit" class="custom-sync-btn">
-     <i class="material-icons" style="font-size: 22px; margin-right: 1px;">sync</i>
-    </button>
-  </form>
+  <div style="display: flex; gap: 8px;">
+    <form action="{% url 'sync_hubspot_products' %}" method="post" style="margin: 0;">
+      {% csrf_token %}
+      <input type="hidden" name="user_id" value="default">
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <button type="submit" class="custom-sync-btn" title="Sync HubSpot Products">
+        <i class="material-icons" style="font-size: 22px; margin-right: 1px;">sync</i>
+      </button>
+    </form>
+
+    <form action="{% url 'quickbooks:sync_quickbooks_products' %}" method="post" style="margin: 0;">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <button type="submit" class="custom-sync-btn" title="Sync QuickBooks Items by SKU">
+        <i class="material-icons" style="font-size: 22px; margin-right: 1px;">sync_alt</i>
+      </button>
+    </form>
+  </div>
 </div>
   <table class="product-table">
   <thead>

@@ -13,7 +13,7 @@ NGROK_URI = "0d0e3e34c51c.ngrok-free.app"
 
 load_dotenv()
 
-BASE_DIR = Path(_file_).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = True
 
@@ -21,7 +21,8 @@ DEBUG = True
 ALLOWED_HOSTS = [
     '.herokuapp.com',
     'sympletech.agentcpq.ai',
-    '127.0.0.1'
+    '127.0.0.1',
+    'localhost'
     ]
 
 # Allow Django to be embedded in an IFrame (required for Salesforce)
@@ -60,6 +61,7 @@ INSTALLED_APPS = [
     "dashboard",
     "salesforce",
     "hubspot",
+    "quickbooks",
     'django.contrib.humanize',
     'storages',
     'api',
@@ -225,7 +227,7 @@ AWS_S3_ADDRESSING_STYLE = "virtual"
 AWS_QUERYSTRING_AUTH = False
 AWS_S3_CUSTOM_DOMAIN = "media.agentcpq.com"
 
-# ⚠ Must come after AWS_* settings
+# ⚠️ Must come after AWS_* settings
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
 
@@ -255,3 +257,25 @@ DEFAULT_FROM_EMAIL = f"Symple Tech Solutions <{_default_reply_address}>"
 DEFAULT_REPLY_TO = _default_reply_address
 
 HUBSPOT_TOKEN_URL = os.getenv("HUBSPOT_TOKEN_URL", "https://api.hubapi.com/oauth/v1/token")
+
+# QuickBooks Online OAuth/client settings
+QUICKBOOKS_CLIENT_ID = os.getenv("QUICKBOOKS_CLIENT_ID", "")
+QUICKBOOKS_CLIENT_SECRET = os.getenv("QUICKBOOKS_CLIENT_SECRET", "")
+QUICKBOOKS_BASE_URL = os.getenv(
+    "QUICKBOOKS_BASE_URL",
+    "https://sandbox-quickbooks.api.intuit.com/v3/company",
+)
+QUICKBOOKS_TOKEN_URL = os.getenv(
+    "QUICKBOOKS_TOKEN_URL",
+    "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
+)
+QUICKBOOKS_AUTH_URL = os.getenv(
+    "QUICKBOOKS_AUTH_URL",
+    "https://appcenter.intuit.com/connect/oauth2",
+)
+QUICKBOOKS_REDIRECT_URI = os.getenv(
+    "QUICKBOOKS_REDIRECT_URI",
+    "http://localhost:8000/quickbooks/callback/",
+)
+QUICKBOOKS_MINOR_VERSION = os.getenv("QUICKBOOKS_MINOR_VERSION", "70")
+QUICKBOOKS_DEFAULT_ITEM_ID = os.getenv("QUICKBOOKS_DEFAULT_ITEM_ID", "")

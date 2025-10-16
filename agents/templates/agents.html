@@ -22,7 +22,7 @@
                 {% if msg.sender == 'user' and msg.hiddenMessage == False %}
                   <div class="chat-text user">
                     <div class="sender">You: </div>
-                    <div class="message">{{ msg.content|safe }}</div>
+                    <div class="message">{{ msg.rendered_content|default:msg.content|safe }}</div>
                   </div>
                 {% endif %}
 
@@ -38,7 +38,7 @@
                     <div class="senderagent">
                       <img width="115px" src="{% static 'img/agentcpq-chat-icon.png' %}" alt="AgentCPQ Logo">
                     </div>
-                    <div class="message">{{ msg.content|safe }}</div>
+                    <div class="message">{{ msg.rendered_content|default:msg.content|safe }}</div>
                   </div>
                 {% endif %}
 
@@ -86,14 +86,14 @@
 
                 {% if msg.sender == 'agent' and 'rules' and 'read_only' in msg.content %}
                   <div class="chat-text agent">
-                    <img width="115px" src="/media/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
+                    <img width="115px" src="{% static 'img/agentcpq-chat-icon.png' %}" alt="AgentCPQ Logo">
                     <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
                   </div>
                 {% endif %}
 
                 {% if msg.sender == 'agent' and 'email_alerts_details' in msg.content %}
                   <div class="chat-text agent">
-                      <img width="115px" src="/media/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
+                      <img width="115px" src="{% static 'img/agentcpq-chat-icon.png' %}" alt="AgentCPQ Logo">
                       <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
                   </div>
                 {% endif %}

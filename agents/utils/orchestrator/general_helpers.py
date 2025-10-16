@@ -1,4 +1,4 @@
-import threading, logging
+import logging
 
 def run_agent_async(agent_func, *args, **kwargs):
     """
@@ -25,7 +25,11 @@ def run_agent_async(agent_func, *args, **kwargs):
                            "If the issue persists, contact AgentCPQ support."
             }
 
-    thread = threading.Thread(target=wrapper)
-    thread.start()
-    thread.join()  # Wait for completion (optional, can remove if realmente quieres async)
-    return result_container["result"]
+    wrapper()
+    return result_container.get(
+        "result",
+        {
+            "message": "⚠️ Something went wrong inside AgentCPQ, please try again. "
+                       "If the issue persists, contact AgentCPQ support."
+        },
+    )

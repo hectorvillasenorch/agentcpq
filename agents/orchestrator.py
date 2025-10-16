@@ -10,9 +10,23 @@ from agents.admin_agent import admin_agent
 from agents.approvals_agent import approval_agent
 from agents.custom_object_agent import custom_object_agent
 from agents.analytics_agent import analytics_agent
+from agents.knowledge_agent import knowledge_agent
 from agents.action_trigger_agent import action_trigger_agent
 from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
+
+
+def _decode_chat_text(text: str) -> str:
+    if not text:
+        return ""
+
+    decoded = text
+    if "\\u" in decoded or "\\U" in decoded:
+        try:
+            decoded = decoded.encode("utf-8").decode("unicode_escape")
+        except UnicodeDecodeError:
+            pass
+    return decoded
 from django.contrib.auth.models import User
 from uuid import uuid4
 logger = logging.getLogger(__name__)
@@ -109,10 +123,11 @@ def orchestrate_request(user, user_message, session_data):
             session_data["session_id"] = chat_session.session_id
 
     # Save user message
+    decoded_initial_user_message = _decode_chat_text(user_message)
     ChatMessage.objects.create(
         session=chat_session,
         sender="user",
-        content=user_message
+        content=decoded_initial_user_message
     )
 
 
@@ -122,6 +137,11 @@ def orchestrate_request(user, user_message, session_data):
 
     # 🔹 Get or create message history on session_data
     session_data.setdefault("message_history", [])
+
+    # 🔹 Shortcut for clear how-to requests before hitting the LLM
+    if _should_shortcut_to_knowledge(user_message):
+        logging.info("🔀 Shortcutting to KnowledgeLookup based on heuristic match")
+        return orchestrate_request_trigger(user, user_message, session_data, decision="KnowledgeLookup")
 
     # 🔹 Build message history
     message_history = session_data.get("message_history", [])
@@ -214,6 +234,7 @@ def orchestrate_request(user, user_message, session_data):
                     - "List all quotes pending approval"
                     - "Show my last 5 quotes"
                     - "Display all products in the catalog"
+        - "KnowledgeLookup" → Use when the user asks for how-to instructions, FAQs, or training guidance (e.g. "how do I create a quote", "teach me about approvals").
         - "CreateActionTrigger"
         - "CreateExclusionRule"
         """
@@ -249,9 +270,6 @@ def orchestrate_request(user, user_message, session_data):
         agent_message = result.get("message", "")
         hiddenMessage = result.get("hiddenMessage", False)
 
-        if session_data and user_message and agent_message:
-            update_message_history(session_data, user_message, agent_message)
-
         session_summary = result.get("session_summary", None)
 
         if session_data and session_summary:
@@ -264,16 +282,21 @@ def orchestrate_request(user, user_message, session_data):
                 "update_details", "iterations", "success", "quote_id", "notes",
                 "tokens", "cost", "session_summary", "rules_created"
             ):
-                agent_message += f"\n\n{key}:\n{json.dumps(value, indent=2)}"
+                agent_message += f"\n\n{key}:\n{json.dumps(value, indent=2, ensure_ascii=False)}"
+
+        decoded_agent_message = _decode_chat_text(agent_message)
+
+        if session_data and decoded_initial_user_message and decoded_agent_message:
+            update_message_history(session_data, decoded_initial_user_message, decoded_agent_message)
 
         ChatMessage.objects.create(
             session=chat_session,
             sender="agent",
-            content=agent_message,
+            content=decoded_agent_message,
             hiddenMessage=hiddenMessage
         )
 
-        result["message"] = agent_message
+        result["message"] = decoded_agent_message
         result["session_id"] = session_data["session_id"]
 
         return result
@@ -285,7 +308,7 @@ def orchestrate_request(user, user_message, session_data):
 def orchestrate_request_trigger(user, user_message, session_data, decision):
     logging.info(f"\n🟢 AI Decision Trigger: {decision} \n")
     session_id = session_data.get("session_id")
-    # ⚠️ Use a real user later; hardcode for now
+    
     user = User.objects.get(username=user)
 
     if not session_id:
@@ -312,10 +335,11 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
             json_str = user_message.replace("Update Quote Line:", "")
             update_data = json.loads(json_str)
             hiddenMessage = update_data.get("hiddenMessage", False)
+            decoded_message = _decode_chat_text(user_message)
             ChatMessage.objects.create(
                 session=chat_session,
                 sender="user",
-                content=user_message,
+                content=decoded_message,
                 hiddenMessage = hiddenMessage
             )
         except json.JSONDecodeError as e:
@@ -325,19 +349,21 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
             json_str = user_message.replace("Update Quote:", "")
             update_data = json.loads(json_str)
             hiddenMessage = update_data.get("hiddenMessage", False)
+            decoded_message = _decode_chat_text(user_message)
             ChatMessage.objects.create(
                 session=chat_session,
                 sender="user",
-                content=user_message,
+                content=decoded_message,
                 hiddenMessage = hiddenMessage
             )
         except json.JSONDecodeError as e:
             logging.error(f" Error decoding JSON: {e}")
     else:
+        decoded_message = _decode_chat_text(user_message)
         ChatMessage.objects.create(
             session=chat_session,
             sender="user",
-            content=user_message
+            content=decoded_message
         )
 
     action_map = get_action_map()
@@ -351,7 +377,9 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
 
         for key, value in result.items():
             if key not in ("message", "session_id", "hiddenMessage", "original_value"):
-                agent_message += f"\n\n📦 {key}:\n{json.dumps(value, indent=2)}"
+                agent_message += f"\n\n📦 {key}:\n{json.dumps(value, indent=2, ensure_ascii=False)}"
+
+        agent_message = _decode_chat_text(agent_message)
 
         ChatMessage.objects.create(
             session=chat_session,
@@ -368,6 +396,28 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
     logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
     return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
 
+
+def _should_shortcut_to_knowledge(user_message: str) -> bool:
+    if not user_message:
+        return False
+
+    lowered = user_message.lower()
+
+    knowledge_phrases = (
+        "teach me",
+        "how do i",
+        "how to",
+        "show me how",
+        "guide me",
+        "explain",
+        "what is",
+        "walk me through",
+        "steps to",
+        "instructions",
+        "training on",
+    )
+
+    return any(phrase in lowered for phrase in knowledge_phrases)
 
 
 def handle_general_query(user,decision, user_message, session_data):
@@ -501,16 +551,15 @@ def get_action_map():
         "CreateCustomRecord": custom_object_agent,
         "UpdateCustomRecord": custom_object_agent,
         "DeleteCustomRecord": custom_object_agent,
-
         # EmailAlerts
         "CreateEmailAlert": admin_agent,
         "CreateExclusionRule": admin_agent,
         "UpdateEmailAlert": admin_agent,
         "DeleteEmailAlert": admin_agent,
-
         # Metrics Agent
         "ShowMetrics": analytics_agent,
-
+        # Knowledge Agent
+        "KnowledgeLookup": knowledge_agent,
         # Action Trigger Agent
         "CreateActionTrigger": action_trigger_agent,
     }

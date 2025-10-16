@@ -14,7 +14,14 @@
     <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}">
 </head>
 <body>
-    <div class="dashboard-container">
+
+<div class="playground-banner" role="region" aria-label="Playground announcement">
+  <span class="banner-icon material-icons" aria-hidden="true">science</span>
+  <div class="banner-text">
+    <span class="banner-title">Playground</span>
+  </div>
+</div>
+<div class="dashboard-container">
         <!-- Sidebar -->
 <div class="sidebar-toggle" onclick="toggleSidebar()">☰</div>
 <div class="sidenav sidenav-fixed" style="display: flex; flex-direction: column; height: 100vh;">
@@ -33,9 +40,9 @@
             <span class="nav-label">Products</span>
         </a>
 
-        <a href="{% url 'dashboard' %}?view=quotes">
-            <i class="material-icons">request_quote</i>
-            <span class="nav-label">Quotes</span>
+        <a href="{% url 'dashboard' %}?view=accounts">
+            <i class="material-icons">business</i>
+            <span class="nav-label">Accounts</span>
         </a>
 
         {% if custom_objects %}
@@ -93,8 +100,8 @@
                     {% include "agents.html" %}
                 {% elif request.GET.view == "products" %}
                     {% include "products.html" %}
-                {% elif request.GET.view == "quotes" %}
-                    {% include "quotes.html" %}
+                {% elif request.GET.view == "accounts" %}
+                    {% include "accounts.html" %}
                 {% elif request.GET.view == "setup" %}
                     {% include "setup.html" %}
                 {% elif request.GET.view == "payment__c" %}

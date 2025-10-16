@@ -15,6 +15,8 @@ import os , uuid
 import secrets
 from django.utils.timezone import now
 
+from agents.utils.knowledge_agent.embedding_helpers import generate_embedding as generate_knowledge_embedding
+
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -85,6 +87,12 @@ class Account(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     accid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    quickbooks_customer_id = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        help_text="Identifier of the Customer in QuickBooks"
+    )
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='accounts')
      # Address fields
     street = models.CharField(max_length=255, blank=True, null=True)
@@ -298,6 +306,18 @@ class Quote(models.Model):
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="quotes")
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, related_name="quotes")
     sf_opportunity_id = models.CharField(max_length=18, blank=True, null=True)
+    quickbooks_invoice_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Identifier of the Invoice created in QuickBooks"
+    )
+    quickbooks_invoice_number = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="QuickBooks customer-facing invoice number (DocNumber)"
+    )
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
     net_amount = models.DecimalField(max_digits=10, decimal_places=2)
     tax_percentage = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -1383,6 +1403,73 @@ class EmailAlertLog(models.Model):
     def __str__(self):
         return f"{self.email_alert} sent to {self.instance_type} {self.instance_id} at {self.sent_at}"
 
+
+class Knowledge(models.Model):
+    title = models.CharField(max_length=255)
+    content_text = models.TextField()
+    video_url = models.URLField(null=True, blank=True)
+    image_url = models.URLField(null=True, blank=True)
+    image_file = models.ImageField(upload_to="sympletech/knowledge/images/", null=True, blank=True)
+    embedding = models.JSONField(null=True, blank=True)
+    has_video = models.BooleanField(default=False)
+    tags = models.CharField(max_length=255, blank=True)
+    language = models.CharField(max_length=10, default='en')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='knowledge_created')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='knowledge_updated')
+    updated_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['-updated_at', 'title']
+
+    def save(self, *args, **kwargs):
+        self.has_video = bool(self.video_url)
+
+        update_fields = kwargs.get("update_fields")
+        update_field_set = set(update_fields) if update_fields is not None else None
+
+        content_for_embedding = " \n".join(
+            filter(None, [self.title, self.tags, self.content_text])
+        ).strip()
+
+        refresh_embedding = bool(content_for_embedding)
+        previous = None
+        if self.pk:
+            previous = type(self).objects.filter(pk=self.pk).values(
+                "title", "content_text", "tags", "embedding"
+            ).first()
+            if previous:
+                refresh_embedding = (
+                    refresh_embedding
+                    and (
+                        previous.get("embedding") is None
+                        or previous.get("title") != self.title
+                        or previous.get("content_text") != self.content_text
+                        or previous.get("tags") != self.tags
+                    )
+                )
+
+        if refresh_embedding and content_for_embedding:
+            embedding = generate_knowledge_embedding(content_for_embedding)
+            if embedding:
+                self.embedding = embedding
+                if update_field_set is not None:
+                    update_field_set.add("embedding")
+
+        if update_field_set is not None:
+            kwargs["update_fields"] = list(update_field_set)
+
+        super().save(*args, **kwargs)
+
+        if self.image_file:
+            image_url = getattr(self.image_file, "url", None)
+            if image_url and image_url != self.image_url:
+                type(self).objects.filter(pk=self.pk).update(image_url=image_url)
+                self.image_url = image_url
+
+    def __str__(self):
+        return self.title
 class ActionTrigger(models.Model):
     """
     Represents a trigger (event) and the action to execute on a specific object.

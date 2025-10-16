@@ -5,7 +5,7 @@ from django.conf.urls.static import static
 from django.contrib.auth import views as auth_views
 from cpq.views import root_redirect
 from dashboard.views import get_tenant_usage
-from dashboard.views import CustomPasswordResetView
+from dashboard.views import CustomPasswordResetView, signup
 from django.views.decorators.clickjacking import xframe_options_exempt
 
 urlpatterns = [
@@ -14,6 +14,7 @@ urlpatterns = [
     path('agents/', include('agents.urls')),
     path('cpq/', include('cpq.urls')),
     path("salesforce/", include("salesforce.urls")),
+    path("quickbooks/", include("quickbooks.urls")),
     path('admin/', admin.site.urls),
     path('hubspot/', include('hubspot.urls')),
 
@@ -24,6 +25,7 @@ urlpatterns = [
         xframe_options_exempt(auth_views.LoginView.as_view(template_name='auth/login.html')),
         name='login'
     ),
+    path('signup/', signup, name='signup'),
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
     # API Endpoints
     path('api/usage/', get_tenant_usage, name='get_tenant_usage'),
