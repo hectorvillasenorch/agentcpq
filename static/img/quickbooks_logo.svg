@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <style>
+      .bg { fill: #2ca01c; }
+      .letter { fill: #ffffff; font-family: 'Arial', sans-serif; font-weight: bold; font-size: 26px; }
+    </style>
+  </defs>
+  <circle class="bg" cx="32" cy="32" r="32" />
+  <text class="letter" x="21" y="38">qb</text>
+</svg>

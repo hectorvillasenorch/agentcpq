@@ -636,7 +636,7 @@ async function sendMessage() {
     inputField.value = ""; // Clear input field
 
     // Auto-scroll chat
-    chatBox.scrollTop = chatBox.scrollHeight;
+    scrollToBottom()
 
     try {
 
@@ -644,6 +644,9 @@ async function sendMessage() {
         const sessionId = urlParams.get("session_id");  // 👈 Obtén el session_id desde la URL
 
         showAgentFeedback();
+
+        requestAnimationFrame(scrollToBottom);
+
         const response = await fetch("/agents/chat/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -752,6 +755,7 @@ async function sendMessage() {
         appendMessage("agent", `<div class="senderagent"><img width="110px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
         loadPendingAttachments();
         hideAgentFeedback();
+        scrollToBottom();
 
         // ✅ Handle Temporary Quote Details After Update Quote Line, Add Product And Delete Quote Line Item
         if (data.response && data.response.update_details && data.response.temporaryMessage){
@@ -765,6 +769,13 @@ async function sendMessage() {
         console.error("Error:", error);
         appendMessage("agent-message", `<strong>Error:</strong> ${error.message}`);
         hideAgentFeedback();
+    }
+}
+
+function scrollToBottom() {
+    const chatBox = document.getElementById("chat-box");
+    if (chatBox) {
+        chatBox.scrollTop = chatBox.scrollHeight;
     }
 }
 
@@ -2970,15 +2981,54 @@ function renderRules(group_rules) {
 function renderConditions(condition, depth = 0) {
   if (!condition) return "<p>No conditions found.</p>";
 
+  if (condition.excluded_products && Array.isArray(condition.excluded_products)) {
+    return `
+      <div class="conditions-details depth-${depth}">
+        <h6>Excluded Products:</h6>
+        <ul class="conditions-list">
+          ${condition.excluded_products.map(prod => `<li>${prod}</li>`).join("")}
+        </ul>
+      </div>
+    `;
+  }
+
+  if (condition.included_products && Array.isArray(condition.included_products)) {
+    const triggerLabel = condition.trigger_product
+      ? condition.trigger_product.name || condition.trigger_product.sku || "Unknown Trigger Product"
+      : "Unknown Trigger Product";
+
+    return `
+      <div class="conditions-details depth-${depth}">
+        <h6>Trigger Product:</h6>
+        <ul class="conditions-list">
+          <li>${triggerLabel}</li>
+        </ul>
+
+        <h6>Included Products:</h6>
+        <ul class="conditions-list">
+          ${condition.included_products
+            .map(prod => {
+              const label = prod.name || prod.sku || "Unknown Product";
+              return `<li>${prod.quantity || 1}x ${label}</li>`;
+            })
+            .join("")}
+        </ul>
+      </div>
+    `;
+  }
+
   const fieldLabelMap = {
     // Quote fields
     "quote.net_amount": "Net Amount",
     "quote.tax_amount": "Tax Amount",
     "quote.status": "Status",
-    "quote.discount_percentage": "Quote Discount %",
+    "quote.discount_percentage": "Quote Discount Percentage",
     "quote.discount_amount": "Quote Discount Amount",
     "quote.discount_type": "Quote Discount Type",
     "quote.subtotal": "Quote Subtotal",
+
+    // Account field
+    "quote.account.name": "Account named",
 
     // Quote Line fields
     "quote_line.quantity": "Quantity",
@@ -3046,7 +3096,13 @@ function renderConditions(condition, depth = 0) {
     `;
   }
 
-  return `<li class="depth-${depth}">⚠️ Unknown condition format</li>`;
+  return `
+    <li class="depth-${depth}">
+      <label class="json-label">
+        <pre>${escapeHtml(JSON.stringify(condition, null, 2))}</pre>
+      </label>
+    </li>
+  `;
 }
 
 function extractJson(raw) {
