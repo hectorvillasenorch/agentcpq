@@ -22,6 +22,60 @@ def extract_validation_rules(user_message):
 
     You are an expert assistant for a CPQ (Configure, Price, Quote) system. Your task is to extract structured business rule definitions from a natural language request written by a user.
 
+    Always use the real Django model field paths, following these definitions:
+
+    - Quote:
+        - name (string)
+        - account (FK → Account)
+        - opportunity (FK → Opportunity)
+        - discount_percentage (decimal)
+        - discount_amount (decimal)
+        - subtotal (decimal)
+        - net_amount (decimal)
+        - tax_percentage (decimal)
+        - tax_amount (decimal)
+        - status (string)
+        - owner (FK → User)
+
+    - QuoteLine:
+        - quote (FK → Quote)
+        - product (FK → Product)
+        - quantity (int)
+        - unit_price (decimal)
+        - discount_percentage (decimal)
+        - discount_amount (decimal)
+        - total_price (decimal)
+
+    - Account:
+        - name (string)
+        - industry (string)
+        - city (string)
+        - state (string)
+
+    - Opportunity:
+        - name (string)
+        - account (FK → Account)
+        - amount (decimal)
+        - stage (string)
+
+    Rules:
+    - When referring to a foreign key field, always traverse it with dot notation.
+    Correct example:
+        quote.account.name
+    
+    Incorrect example:
+        quote.account_name
+
+    - Always use model field names exactly as defined above.
+    - When comparing values for an Account name, use:
+        "fieldName": "quote.account.name"
+    - When comparing values for an Opportunity stage, use:
+        "fieldName": "quote.opportunity.stage"
+    - When comparing Quote numeric fields, use:
+        "fieldName": "quote.discount_percentage", etc.
+
+    Output format must remain the same.
+
     The output must be a single JSON array, where each object represents one rule. Each rule object must include the following keys:
 
     - description (string): The description of the rule. If the user specifies a description, use it. If not, generate a concise description that summarizes the rule purpose.
@@ -384,8 +438,7 @@ def extract_exclusion_rules(user_message, current_state, previous_summary=None):
             "error_message": data.get("error_message") or "This product cannot be added because another conflicting product is present in the quote.",
             "active": data.get("active", True),
             "conditions": {
-                "excluded_products": data.get("conditions", {}).get("excluded_products", []),
-                "options": data.get("conditions", {}).get("options", []),
+                "excluded_products": data.get("conditions", {}).get("excluded_products", [])
             }
         }
 
@@ -404,10 +457,10 @@ def extract_exclusion_rules(user_message, current_state, previous_summary=None):
 
 
 
-def extract_rules_details_to_render(user_message):
+def extract_rules_details_to_render(user_message, current_state, previous_summary=None):
     """Extracts name, rule_type, target_type, priority, and active fields from rules using GPT to display them to the user."""
 
-    system_prompt, temperature = make_system_prompt("admin_agent", "create", "extract_rules_details_to_render")
+    system_prompt, temperature = make_system_prompt("admin_agent", "create", "extract_rules_details_to_render", previous_summary)
 
     user_prompt = user_message
 
@@ -449,10 +502,10 @@ def extract_rules_details_to_render(user_message):
         return None
 
 # FUNCTION TO EXTRACT RULE UPDATES (UPDATE_RULES)
-def extract_rule_updates(user_message):
+def extract_rule_updates(user_message, current_state, previous_summary=None):
     """Uses GPT to extract rule name, field, and new value for rules updates."""
 
-    system_prompt, temperature = make_system_prompt("admin_agent", "update", "extract_rule_updates")
+    system_prompt, temperature = make_system_prompt("admin_agent", "update", "extract_rule_updates", previous_summary)
 
     user_prompt = user_message
 

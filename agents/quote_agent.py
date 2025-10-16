@@ -192,9 +192,17 @@ def create_quote(user,user_message, session_data):
     result.append("🟢 Products provided in initial quote creation.")
 
     # ✅ Save quote products
-    quote, response_message, added_products = save_quote_products(user, extracted_products, quote, response_message)
+    #quote, response_message, added_products = save_quote_products(user, extracted_products, quote, response_message)
+    result = handle_products_to_add(user, extracted_products, quote, allow_updates=True)
 
-    print(f"Esto es response message de quote: {response_message}\n\n")
+    added_products = []
+
+    if result:
+        for prod in result:
+            if prod["status"] is "success":
+                added_products.append(prod)
+
+    print(f"\n\nEsto es result de quote products: {result}\n\n")
 
     # ✅ Update quote (subtotal, discounts fields and net amount)
     quote.save()
@@ -221,7 +229,7 @@ def create_quote(user,user_message, session_data):
         # No products were added (e.g., unknown SKUs)
         session_data["pending_action"] = "add_product"
         return {
-            "message": f"✅ Quote `{quote.name}` created for {account.name} under opportunity `{opportunity.name}`.<br>Would you like to add more products now?"
+            "message": f"✅ Quote `{quote.name}` created for {account.name} under opportunity `{opportunity.name}`.<br>Would you like to add products now?"
         }
 
     # Append approval message or default notice
@@ -298,8 +306,6 @@ def add_product_to_quote(user, user_message, session_data):
     result = handle_products_to_add(user, completed_products, quote, allow_updates=True)
 
     quote.save()
-
-    print(f"Esto es result: {result}")
 
     # --- 5️⃣ Generar mensaje final dinámico usando función separada ---
     dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_add_product_to_quote_message(
@@ -728,8 +734,10 @@ def delete_quote(user, user_message, session_data):
 
 def show_quote_details(user, user_message, session_data):
     """Fetches and formats quote details, including quote lines, based on user input or session data."""
+
     # 🧠 Make the session context
-    session_context = make_session_context(user, "ShowQuoteDetails", "quote_agent", session_data, user_message)
+    current_state, previous_summary = get_session_context("show_quote_details", session_data)
+    
     try:
         logging.info("🔄 Showing quote details...")
 
@@ -738,10 +746,6 @@ def show_quote_details(user, user_message, session_data):
 
         # ⚠️ Verify if function return an error
         if isinstance(quote, dict) and "message" in quote:
-            session_context["item_index"] = 1
-            session_context["extracted"] = "No extracted data, user just wants to show quote details."
-            agent_response = f"No active quote was found, just save data and retry."
-            save_or_update_conversation_context(session_context, agent_response)
             return quote
 
         # ✅ Format the response
@@ -760,10 +764,6 @@ def show_quote_details(user, user_message, session_data):
         return {"message": "Here are the quote details:", "quote_details": quote_details, "hiddenMessage": "True"}
 
     except Exception as e:
-        session_context["item_index"] = 1
-        session_context["extracted"] = "No extracted data, user just wants to show quote details."
-        agent_response = f"Error: Something went wrong when trying to show quote details: {str(e)}."
-        save_or_update_conversation_context(session_context, agent_response)
         return {"message": f"⚠️ Error: Something went wrong when trying to show quote details: {str(e)}."}
 
 #< ----------------- SHOW QUOTE DETAILS -------------------- >

@@ -1124,7 +1124,7 @@ class QuoteDocumentSettings(models.Model):
     show_quote_tax_percentage = models.BooleanField(default=True)
     show_quote_tax_amount = models.BooleanField(default=True)
 
-    quote_tax = models.DecimalField(max_digits=10, decimal_places=2, default=7.25)
+    quote_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     # Quote Line Items
     show_line_discount_percentage = models.BooleanField(default=False)

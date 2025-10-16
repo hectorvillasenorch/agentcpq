@@ -161,7 +161,6 @@ def orchestrate_request(user, user_message, session_data):
         - "AddProductToQuote"
         - "GenerateQuoteDocument"
         - "ProvideDates"
-        - "ShowQuoteDetails" → Use when the user requests details of one specific quote (e.g. "show me the details of quote Q-123", "open the quote for ACPQ-TEAM").
         - "UpdateQuoteLine"
         - "UpdateQuote"
         - "ShowQuoteNotes"
@@ -197,7 +196,24 @@ def orchestrate_request(user, user_message, session_data):
         - "CreateEmailAlert"
         - "UpdateEmailAlert"
         - "DeleteEmailAlert"
-        - "ShowMetrics" → Use when the user requests listings, catalogs, or filtered searches across objects. (e.g. "show me my product catalog", "list my last 5 quotes", "show me all leads created this month").
+        - "ShowQuoteDetails" → Use when the user requests to view or open a single quote — 
+                either a specific one (by ID or name) **or the active quote in the current session**.  
+                This label should also be used for messages like:
+                    - "Show quote"
+                    - "Show details"
+                    - "Display the current quote"
+                    - "Open quote Q-2024-001"
+                    - "Show the quote for ACPQ-TEAM"
+                Do NOT use this label when the user requests multiple quotes, lists, or filtered results.
+        - "ShowMetrics" → Use when the user requests listings, summaries, or filtered searches 
+                involving multiple records (quotes, products, accounts, etc.).  
+                This includes plural forms ("quotes", "products"), date filters ("last 3 days", "this month"),
+                or numerical filters ("top 5", "all", "recent").  
+                Examples:
+                    - "Show me my quotes created in the last 3 days"
+                    - "List all quotes pending approval"
+                    - "Show my last 5 quotes"
+                    - "Display all products in the catalog"
         - "CreateActionTrigger"
         - "CreateExclusionRule"
         """

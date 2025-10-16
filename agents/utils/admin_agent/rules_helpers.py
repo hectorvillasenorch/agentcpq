@@ -4,6 +4,7 @@ from django.db.models import Q
 from cpq.models import Product
 from django.forms.models import model_to_dict
 from cpq.models import BusinessRule, QuoteLine, Quote
+from decimal import Decimal
 
 # Validation Helpers
 from .validation_helpers import validate_rule_update_request
@@ -306,13 +307,57 @@ def check_for_rules_quote_level(target_type, rule_type, quote):
 
     return triggered_rules
 
+def _normalize_for_compare(actual_value, rule_value):
+    """Devuelve (actual_normalized, rule_normalized, type_tag)"""
+    # None handling
+    if actual_value is None:
+        return None, rule_value, "none"
+
+    # If actual_value is a Django model instance or any object with attributes,
+    # try to extract a sensible primitive (name, title, value, id) before comparing.
+    # Avoid importing Django here to keep lazo débil.
+    if hasattr(actual_value, "__dict__") and not isinstance(actual_value, (str, bytes, int, float, Decimal, bool)):
+        # prefer common "name" or "title" attributes
+        for candidate in ("name", "title", "label"):
+            candidate_val = getattr(actual_value, candidate, None)
+            if candidate_val is not None:
+                actual_value = candidate_val
+                break
+        else:
+            # Fallback to str()
+            actual_value = str(actual_value)
+
+    # Numbers: normalize to Decimal for safe comparisons
+    if isinstance(actual_value, Decimal):
+        try:
+            return actual_value, Decimal(str(rule_value)), "number"
+        except Exception:
+            return actual_value, rule_value, "mixed"
+    if isinstance(actual_value, (int, float)):
+        try:
+            return Decimal(str(actual_value)), Decimal(str(rule_value)), "number"
+        except Exception:
+            return actual_value, rule_value, "mixed"
+
+    # Strings: strip whitespace and compare as strings
+    if isinstance(actual_value, (str, bytes)):
+        actual_s = actual_value.decode() if isinstance(actual_value, bytes) else actual_value
+        rule_s = rule_value.decode() if isinstance(rule_value, bytes) else str(rule_value)
+        return actual_s.strip(), rule_s.strip(), "string"
+
+    # Booleans
+    if isinstance(actual_value, bool):
+        return actual_value, bool(rule_value), "bool"
+
+    # Fallback: compare their string forms
+    return str(actual_value), str(rule_value), "string"
+
 def check_validation_conditions_for_quote_level(data, quote, depth=1):
-    indent = "  " * depth  # For console indentation
+    indent = "  " * depth
 
     if isinstance(data, dict):
         if "logic" in data and "items" in data:
             logic = data["logic"]
-
             results = []
             for item in data["items"]:
                 result = check_validation_conditions_for_quote_level(item, quote, depth + 1)
@@ -331,49 +376,46 @@ def check_validation_conditions_for_quote_level(data, quote, depth=1):
             operator = data["operator"]
             value = data["value"]
 
-            model_name, attr = field.split(".", 1)
+            # allow nested attributes: "quote.account.name" etc.
+            model_name, attr_path = field.split(".", 1)
             obj = {"quote": quote}.get(model_name)
 
             if not obj:
                 logging.warning(f"{indent}❌ Object not found for: {model_name}")
                 return False
 
-            actual_value = getattr(obj, attr, None)
-
-            if actual_value is None:
-                logging.warning(f"{indent}❌ Attribute '{attr}' not found in {model_name}")
-                return False
+            # traverse nested attributes safely
+            actual_value = obj
+            for part in attr_path.split("."):
+                actual_value = getattr(actual_value, part, None)
+                if actual_value is None:
+                    logging.warning(f"{indent}❌ Attribute '{part}' not found when traversing '{attr_path}'")
+                    return False
 
             logging.info(f"{indent}🔍 Comparing: {actual_value} {operator} {value}")
 
+            # normalize types
+            actual_norm, rule_norm, ttag = _normalize_for_compare(actual_value, value)
+
             try:
                 if operator == "==":
-                    result = actual_value == value
-                    logging.info(f"Result: {result}\n")
-                    return result
+                    result = actual_norm == rule_norm
                 elif operator == "!=":
-                    result = actual_value != value
-                    logging.info(f"Result: {result}\n")
-                    return result
+                    result = actual_norm != rule_norm
                 elif operator == ">":
-                    result = actual_value > value
-                    logging.info(f"Result: {result}\n")
-                    return result
+                    result = actual_norm > rule_norm
                 elif operator == ">=":
-                    result = actual_value >= value
-                    logging.info(f"Result: {result}\n")
-                    return result
+                    result = actual_norm >= rule_norm
                 elif operator == "<":
-                    result = actual_value < value
-                    logging.info(f"Result: {result}\n")
-                    return result
+                    result = actual_norm < rule_norm
                 elif operator == "<=":
-                    result = actual_value <= value
-                    logging.info(f"Result: {result}\n")
-                    return result
+                    result = actual_norm <= rule_norm
                 else:
                     logging.warning(f"{indent}❌ Unsupported operator: {operator}")
                     return False
+
+                logging.info(f"{indent}Result: {result}\n")
+                return result
             except Exception as e:
                 logging.warning(f"{indent}❌ Error during comparison: {e}")
                 return False
@@ -442,10 +484,20 @@ def handle_extracted_rules_details(extracted_rules_details):
 
             # Return a warning message to the user to avoid displaying all rules.
             if all(value is None for value in [name, rule_type, target_type, priority, active, request_description]):
-                logging.warning("⚠️ For security reasons, we cannot show all the rules. If you want to render all rules, please type: show all rules.")
-                return {
-                    "message": "⚠️ For security reasons, we cannot show all the rules. If you want to render all rules, please type: show all rules."
-                }
+                err_message = (
+                    "⚠️ For security reasons, we cannot show all the rules. "
+                    "If you want to render all rules, please type: show all rules.<br><br>"
+                    "🔍 Available search methods:<br>"
+                    "- By name: e.g., VR-00653, ER-87098, or IR-000654.<br>"
+                    "- By rule type: validation, exclusion, or inclusion.<br>"
+                    "- By target type: quote or quote line item.<br>"
+                    "- By priority: numerical value of the rule’s priority (default priority is 10).<br>"
+                    "- By status: active or inactive."
+                )
+
+                logging.warning(err_message)
+
+                return {"message": err_message}
 
             # If name exists, found just by name
             if name:

@@ -440,8 +440,14 @@ def show_rules(user, user_message, session_data):
     try:
         logging.info("🔄 Showing rules...")
 
+        current_state, previous_summary = get_session_context("show_rules", session_data)
+
         # Extract rules details to render
-        extracted_rules_details = extract_rules_details_to_render(user_message)
+        extracted_rules_details = extract_rules_details_to_render(
+            user_message=user_message,
+            current_state=current_state,
+            previous_summary=previous_summary
+        )
 
         # ✅ Format the response
         handle_rules = handle_extracted_rules_details(extracted_rules_details)
@@ -473,9 +479,15 @@ def update_rule(user, user_message, session_data):
 
     logging.info("🔧 Updating rules...\n\n")
 
+    current_state, previous_summary = get_session_context("update_rule", session_data)
 
     # ✅ Extract quote line updates with LLM
-    extracted_updates = extract_rule_updates(user_message)
+    extracted_updates = extract_rule_updates(
+        user_message=user_message,
+        current_state=current_state,
+        previous_summary=previous_summary
+    )
+
 
     if not extracted_updates:
 

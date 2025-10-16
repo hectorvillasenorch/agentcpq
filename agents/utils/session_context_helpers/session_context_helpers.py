@@ -5,6 +5,15 @@ def get_session_context(action, session_data):
     # Get or create state on session_data
     session_data.setdefault("state", {})
 
+    last_attempt = session_data["state"].get("last_attempt")
+
+    if last_attempt and last_attempt != action:
+        if last_attempt in session_data["state"]:
+            del session_data["state"][last_attempt]
+        session_data["state"]["last_attempt"] = action
+    else:
+        session_data["state"]["last_attempt"] = action
+
     # Initialize default state if not exists
     if action not in session_data.get("state", {}):
         if action == "create_quote":
@@ -208,12 +217,7 @@ def get_session_context(action, session_data):
                             "error_message": None,
                             "active": True,
                             "conditions": {
-                                "trigger_product": {
-                                    "sku": None,
-                                    "name": None
-                                },
-                                "excluded_products": [],
-                                "options": [],
+                                "excluded_products": []
                             }
 
                         },
@@ -246,6 +250,49 @@ def get_session_context(action, session_data):
                         },
                         "completed": False
                     }
+                ],
+                "summary": None
+            }
+        if action == "show_quote_details":
+            context_data = {
+                "show_quote_details": [
+                    {
+                        "data": {
+                            "quote": None,
+                        },
+                        "completed": False
+                    },
+                ],
+                "summary": None
+            }
+
+        if action == "show_rules":
+            context_data = {
+                "show_rules": [
+                    {
+                        "data": {
+                            "request_description": None,
+                            "name": None,
+                            "rule_type": None,
+                            "target_type": None,
+                            "priority": None,
+                            "active": None
+                        },
+                        "completed": False
+                    },
+                ],
+                "summary": None
+            }
+
+        if action == "update_rule":
+            context_data = {
+                "update_rule": [
+                    {
+                        "data": {
+                            "name": None
+                        },
+                        "completed": False
+                    },
                 ],
                 "summary": None
             }
