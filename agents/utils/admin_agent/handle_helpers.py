@@ -27,6 +27,9 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message)
         "quote_rejected",
         "quote_expiring",
         "subscription_renewal",
+        "user_created",
+        "opportunity_greater_than_10k",
+        "quote_discount_greater_than_50"
     ]
 
     NATIVE_OBJECT_CHOICES = [
@@ -35,6 +38,13 @@ def handle_email_alerts_creation(user, extracted_email_alerts, response_message)
         "Opportunity",
         "Quote",
         "Subscription",
+        "Product",
+        "QuoteLine",
+        "User",
+        "Contract",
+        "Subscription",
+        "Contact",
+        "Activity"
     ]
 
     ROLE_CHOICES = [

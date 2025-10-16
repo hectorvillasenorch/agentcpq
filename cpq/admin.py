@@ -24,7 +24,8 @@ from .models import (
     Knowledge,
     Contract, 
     ScheduledTask,
-    ActionTrigger
+    ActionTrigger,
+    EmailAlert,
 )
 from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession, AgentPrompt
@@ -571,6 +572,7 @@ class TenantAdmin(DynamicCustomFieldAdmin):
     list_display = ('tenant_id','name', 'plan', 'actions_limit', 'created_at', 'version')
 
 admin.site.register(Tenant, TenantAdmin)
+admin.site.register(EmailAlert)
 
 class ChatMessageInline(admin.TabularInline):
     model = ChatMessage

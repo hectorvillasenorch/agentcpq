@@ -30,6 +30,7 @@ from django.contrib import messages
 import logging
 from django.db.models import Count, Prefetch
 from django.utils.timezone import now
+from django.utils.text import slugify
 from django.db.models.functions import TruncMonth
 from datetime import datetime
 from django.utils.timezone import make_aware
@@ -747,33 +748,42 @@ def manage_notifications_view(request):
 
     # Filtrado por objeto
 
-    alert_groups = [
-        {
-            "title": "Lead Notifications",
-            "icon": "person_add",
-            "alerts": [a for a in alerts_with_lists if a.native_object == "Lead"]
-        },
-        {
-            "title": "Account Notifications",
-            "icon": "account_circle",
-            "alerts": [a for a in alerts_with_lists if a.native_object == "Account"]
-        },
-        {
-            "title": "Opportunity Notifications",
-            "icon": "trending_up",
-            "alerts": [a for a in alerts_with_lists if a.native_object == "Opportunity"]
-        },
-        {
-            "title": "Quote Notifications",
-            "icon": "request_quote",
-            "alerts": [a for a in alerts_with_lists if a.native_object == "Quote"]
-        },
-        {
-            "title": "Subscription Notifications",
-            "icon": "autorenew",
-            "alerts": [a for a in alerts_with_lists if a.native_object == "Subscription"]
-        }
+    icon_map = {
+        "Lead": "person_add",
+        "Account": "account_circle",
+        "Opportunity": "trending_up",
+        "Quote": "request_quote",
+        "Subscription": "autorenew",
+        "Product": "inventory_2",
+        "QuoteLine": "format_list_bulleted",
+        "User": "person",
+        "Contract": "description",
+        "Contact": "contact_mail",
+        "Activity": "history",
+    }
+
+    alert_groups = []
+    native_objects = dict(EmailAlert.NATIVE_OBJECT_CHOICES)
+
+    for native_key, native_label in native_objects.items():
+        alert_groups.append({
+            "title": f"{native_label} Notifications",
+            "icon": icon_map.get(native_key, "notifications"),
+            "alerts": [a for a in alerts_with_lists if a.native_object == native_key],
+            "slug": slugify(native_label) or native_key.lower(),
+        })
+
+    remaining_alerts = [
+        a for a in alerts_with_lists
+        if a.native_object and a.native_object not in native_objects
     ]
+    for native_key in sorted({a.native_object for a in remaining_alerts}):
+        alert_groups.append({
+            "title": f"{native_key} Notifications",
+            "icon": "notifications",
+            "alerts": [a for a in remaining_alerts if a.native_object == native_key],
+            "slug": slugify(native_key) or native_key.lower(),
+        })
 
     return render(request, 'manage_notifications.html', {
         'alert_groups': alert_groups

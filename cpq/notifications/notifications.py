@@ -1,7 +1,6 @@
 from .email_utils import send_notification_email
 from django.contrib.auth import get_user_model
 from cpq.models import EmailAlert
-from django.contrib.auth.models import User
 
 User = get_user_model()
 
@@ -161,6 +160,22 @@ def notify_quote_rejected(quote):
         context_builder=lambda instance, user: {
             "quote": instance,
             "user": user,
+        },
+    )
+
+
+# USER CREATED
+def notify_user_created(user_instance):
+    email_alerts = EmailAlert.objects.filter(trigger="user_created")
+
+    notify_users(
+        alerts=email_alerts,
+        instance=user_instance,
+        template_name="user_created",
+        subject=f"👤 New User Created: {user_instance.get_full_name() or user_instance.username}",
+        context_builder=lambda instance, recipient: {
+            "new_user": instance,
+            "recipient": recipient,
         },
     )
 

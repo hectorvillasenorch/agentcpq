@@ -1339,6 +1339,9 @@ class EmailAlert(models.Model):
         ("quote_rejected", "Quote Rejected"),
         ("quote_expiring", "Quote Expiring Soon"),
         ("subscription_renewal", "Subscription Renewal Reminder"),
+        ("user_created", "New User Created"),
+        ("opportunity_greater_than_10k", "Opportunity Amount > $10K"),
+        ("quote_discount_greater_than_50", "Quote Discount > 50%"),
     ]
 
     NATIVE_OBJECT_CHOICES = [
@@ -1347,6 +1350,12 @@ class EmailAlert(models.Model):
         ("Opportunity", "Opportunity"),
         ("Quote", "Quote"),
         ("Subscription", "Subscription"),
+        ("Product", "Product"),
+        ("QuoteLine", "Quote Line"),
+        ("User", "User"),
+        ("Contract", "Contract"),
+        ("Contact", "Contact"),
+        ("Activity", "Activity"),
     ]
 
     ROLE_CHOICES = [

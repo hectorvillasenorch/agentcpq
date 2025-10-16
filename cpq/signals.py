@@ -1,19 +1,26 @@
 from django.db.models.signals import pre_save, post_save, pre_delete, post_delete
 from django.dispatch import receiver
+from django.contrib.auth import get_user_model
 from cpq.models import Lead,Quote,Tenant,Quote,QuoteDocumentSettings, Account, Opportunity, CustomObject, CustomField, CustomRecord
 from hubspot.views import sync_quote_to_hubspot
 from .custom_objects.custom_objects import set_custom_indentifier
 from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
 import logging, threading
 
-# EMAIL ALERT FUNCTIONS
-from .notifications.notifications import notify_lead_created, notify_account_created, notify_opportunity_created, notify_opportunity_closed_won, notify_opportunity_closed_lost, notify_quote_sent_for_approval
-from .notifications.notifications import notify_quote_approved, notify_quote_rejected
-
+User = get_user_model()
 
 # EMAIL ALERT FUNCTIONS
-from .notifications.notifications import notify_lead_created, notify_account_created, notify_opportunity_created, notify_opportunity_closed_won, notify_opportunity_closed_lost, notify_quote_sent_for_approval
-from .notifications.notifications import notify_quote_approved, notify_quote_rejected
+from .notifications.notifications import (
+    notify_lead_created,
+    notify_account_created,
+    notify_opportunity_created,
+    notify_opportunity_closed_won,
+    notify_opportunity_closed_lost,
+    notify_quote_sent_for_approval,
+    notify_quote_approved,
+    notify_quote_rejected,
+    notify_user_created,
+)
 
 from .renewals.renewals import create_contract_after_closed_won
 
@@ -52,6 +59,12 @@ def send_lead_created_email(sender, instance, created, **kwargs):
 def send_account_created_email(sender, instance, created, **kwargs):
     if created:
         run_async(notify_account_created, instance)
+
+# USER HAS BEEN CREATED
+@receiver(post_save, sender=User)
+def send_user_created_email(sender, instance, created, **kwargs):
+    if created:
+        run_async(notify_user_created, instance)
 
 # OPPORTUNITY HAS BEEN CREATED
 @receiver(post_save, sender=Opportunity)
