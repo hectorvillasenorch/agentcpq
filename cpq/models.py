@@ -1592,8 +1592,8 @@ class ScheduledTask(models.Model):
         indexes = [
             models.Index(fields=["status", "execute_at"]),
         ]
-        verbose_name = "Renewal Task"
-        verbose_name_plural = "Renewal Tasks"
+        verbose_name = "Scheduled Task"
+        verbose_name_plural = "Scheduled Tasks"
 
     def __str__(self):
         return f"ScheduledTask (opp={self.opportunity.name}, exec={self.execute_at}, status={self.status})"

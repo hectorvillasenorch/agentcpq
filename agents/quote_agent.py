@@ -26,7 +26,7 @@ from django.db.models import ForeignKey
 from datetime import datetime
 
 # LLM Utils
-from .utils.quote_agent.llm_helpers import extract_quote_details_with_llm, generate_final_create_quote_message, extract_quote_line_items_to_delete, generate_final_delete_quote_lines_message, generate_final_quote_updates_message, extract_quote_line_to_delete_with_llm
+from .utils.quote_agent.llm_helpers import extract_quote_details_with_llm, generate_final_create_quote_message, generate_final_delete_quote_lines_message, generate_final_quote_updates_message, extract_quote_line_to_delete_with_llm
 from .utils.quote_agent.llm_helpers import extract_quote_updates_with_llm
 
 # Record Helpers (add products)
@@ -598,8 +598,6 @@ def delete_quote_line(user, user_message, session_data):
                 "message": llm_result["agent_message"],
                 "session_summary": llm_result["summary"]
             }
-
-        #extracted_sku = extract_quote_line_items_to_delete(user_message)
 
         extracted_sku = []
 

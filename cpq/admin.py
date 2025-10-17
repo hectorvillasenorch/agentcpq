@@ -38,6 +38,30 @@ from django.utils.text import slugify
 # admin.site.register(Subscription)
 # admin.site.register(Asset)
 
+class UTCDisplayAdmin(admin.ModelAdmin):
+    """Base admin que convierte fechas UTC a data-attributes para JS."""
+    
+    def _utc_field(self, obj, field_name):
+        value = getattr(obj, field_name, None)
+        if value:
+            return format_html(
+                '<span class="utc-date" data-utc="{}">{}</span>',
+                value.isoformat(),
+                value.strftime("%b %d, %Y, %I:%M %p")  # temporal
+            )
+        return "-"
+    
+    def created_at_js(self, obj):
+        return self._utc_field(obj, "created_at")
+    created_at_js.short_description = "Created At"
+
+    def updated_at_js(self, obj):
+        return self._utc_field(obj, "updated_at")
+    updated_at_js.short_description = "Updated At"
+
+    class Media:
+        js = ("js/agents/admin_convert_timezone.js",)
+
 
 class DynamicCustomFieldAdmin(admin.ModelAdmin):
     def get_form(self, request, obj=None, **kwargs):
@@ -51,18 +75,18 @@ class DynamicCustomFieldAdmin(admin.ModelAdmin):
         return RequestBoundForm
 
 @admin.register(CustomObject)
-class CustomObjectAdmin(DynamicCustomFieldAdmin):
+class CustomObjectAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(CustomObject, crm="AgentCPQ", object_type="CustomObject")
-    list_display = ('name', 'label', 'description')  # Adjust as needed
+    list_display = ('name', 'label', 'description', 'created_by', 'created_at_js')  # Adjust as needed
 
 @admin.register(CustomField)
-class CustomFieldAdmin(DynamicCustomFieldAdmin):
+class CustomFieldAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(CustomField, crm="AgentCPQ", object_type="CustomField")
-    list_display = ("label", "name", "data_type", "object_type", "custom_object", "created_by", "created_at")
+    list_display = ("label", "name", "data_type", "object_type", "custom_object", "created_by", "created_at_js")
 
 
 
-class LeadAdmin(DynamicCustomFieldAdmin):
+class LeadAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     readonly_fields = ['related_activities']
 
     def related_activities(self, obj):
@@ -134,7 +158,7 @@ class LeadAdmin(DynamicCustomFieldAdmin):
     search_fields = ['first_name', 'last_name', 'email']
     list_filter = ['status', 'created_at']
 
-    list_display = ('first_name','last_name', 'phone', 'email', 'status', 'assigned_to', 'created_at', 'updated_at')
+    list_display = ('first_name','last_name', 'phone', 'email', 'status', 'assigned_to', 'created_at_js', 'updated_at_js')
 admin.site.register(Lead, LeadAdmin)
 
 
@@ -149,14 +173,14 @@ admin.site.register(Lead, LeadAdmin)
 #     show_change_link = True  # optional: show link to full edit form
 
 
-class AccountAdmin(DynamicCustomFieldAdmin):
+class AccountAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(Account, crm="AgentCPQ", object_type="Account")
-    list_display = ('tenant_id','name', 'industry', 'website', 'phone', 'created_at', 'updated_at')
+    list_display = ('tenant_id','name', 'industry', 'website', 'phone', 'created_at_js', 'updated_at_js')
     def get_fieldsets(self, request, obj=None):
         return [(None, {'fields': list(self.form().fields.keys())})]
 admin.site.register(Account, AccountAdmin)
 
-class ContractAdmin(DynamicCustomFieldAdmin):
+class ContractAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(Contract, crm="AgentCPQ", object_type="Contract")
     list_display = ('opportunity','start_date','end_date', 'contract_status')
     def get_fieldsets(self, request, obj=None):
@@ -178,15 +202,15 @@ class ActionTriggerAdmin(DynamicCustomFieldAdmin):
         return [(None, {'fields': list(self.form().fields.keys())})]
 admin.site.register(ActionTrigger, ActionTriggerAdmin)
 
-class ScheduledTaskAdmin(DynamicCustomFieldAdmin):
+class ScheduledTaskAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(ScheduledTask, crm="AgentCPQ", object_type="ScheduledTask")
-    list_display = ('opportunity','status','execute_at', 'attempts', 'last_error', 'created_at', 'updated_at')
+    list_display = ('opportunity','status','execute_at', 'attempts', 'last_error', 'created_at_js', 'updated_at_js')
     def get_fieldsets(self, request, obj=None):
         return [(None, {'fields': list(self.form().fields.keys())})]
 admin.site.register(ScheduledTask, ScheduledTaskAdmin)
 
 
-class QuoteAdmin(DynamicCustomFieldAdmin):
+class QuoteAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(Quote, crm="AgentCPQ", object_type="Quote")
     list_display = (
         'name',
@@ -196,8 +220,8 @@ class QuoteAdmin(DynamicCustomFieldAdmin):
         'status',
         'expiration_date',
         'quickbooks_invoice_id',
-        'created_at',
-        'updated_at',
+        'created_at_js',
+        'updated_at_js',
     )
     # Required because QuoteDocumentAdmin uses autocomplete_fields=("quote",)
     search_fields = ('name', 'qteid', 'account__name', 'opportunity__name')
@@ -245,9 +269,9 @@ class OpportunityEditableForm(BaseOpportunityForm): # type: ignore
             obj.save()
         return obj
 
-class OpportunityAdmin(DynamicCustomFieldAdmin):
+class OpportunityAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = OpportunityEditableForm
-    list_display = ('name','amount', 'account', 'stage', 'expected_close_date', 'primary_quote', 'created_at')
+    list_display = ('name','amount', 'account', 'stage', 'expected_close_date', 'primary_quote', 'created_at_js')
     def get_fieldsets(self, request, obj=None):
         fields = list(self.form().fields.keys())
         if 'hs_deal_id' not in fields:
@@ -258,8 +282,8 @@ admin.site.register(Opportunity, OpportunityAdmin)
 
 
 @admin.register(Knowledge)
-class KnowledgeAdmin(admin.ModelAdmin):
-    list_display = ('image_preview_list', 'title', 'language', 'has_video', 'is_active', 'created_at')
+class KnowledgeAdmin(UTCDisplayAdmin, admin.ModelAdmin):
+    list_display = ('image_preview_list', 'title', 'language', 'has_video', 'is_active', 'created_at_js')
     list_filter = ('language', 'has_video', 'is_active', 'created_at')
     search_fields = ('title', 'content_text', 'tags')
     readonly_fields = ('created_at', 'updated_at', 'image_preview', 'embedding')
@@ -517,9 +541,9 @@ admin.site.register(Option, OptionAdmin)
 ### Uncomment to Enable This Feature ####
 
 @admin.register(BusinessRule)
-class BusinessRuleAdmin(DynamicCustomFieldAdmin):
+class BusinessRuleAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(BusinessRule, crm="AgentCPQ", object_type="BusinessRule")
-    list_display = ('name', 'rule_type', 'active', 'created_by', 'created_at')
+    list_display = ('name', 'rule_type', 'active', 'created_by', 'created_at_js')
     search_fields = ('name',)
     list_filter = ('rule_type', 'active')
 
@@ -537,7 +561,7 @@ class ActionUsageAdmin(admin.ModelAdmin):
     list_filter = ("action", "related_object_type")
     search_fields = ("action", "related_object_id", "user__username")
 
-class ContactAdmin(DynamicCustomFieldAdmin):
+class ContactAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     # build a dynamic ModelForm for AgentCPQ → Contact
     form = get_dynamic_form(Contact, crm="AgentCPQ", object_type="Contact")
 
@@ -552,7 +576,7 @@ class ContactAdmin(DynamicCustomFieldAdmin):
         'email',
         'phone',
         'account',        # drop if not on the model
-        'created_at',     # idem
+        'created_at_js',     # idem
     )
 
     # optional niceties
@@ -562,13 +586,13 @@ class ContactAdmin(DynamicCustomFieldAdmin):
 # register with the admin site
 admin.site.register(Contact, ContactAdmin)
 
-class TenantAdmin(DynamicCustomFieldAdmin):
+class TenantAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(Tenant, crm="AgentCPQ", object_type="Tenant")
 
     def get_fieldsets(self, request, obj=None):
         return [(None, {'fields': list(self.form().fields.keys())})]
 
-    list_display = ('tenant_id','name', 'plan', 'actions_limit', 'created_at', 'version')
+    list_display = ('tenant_id','name', 'plan', 'actions_limit', 'created_at_js', 'version')
 
 admin.site.register(Tenant, TenantAdmin)
 
