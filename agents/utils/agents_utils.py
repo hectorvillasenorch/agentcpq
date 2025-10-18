@@ -19,7 +19,7 @@ def clean_llm_json(raw_response):
 
     try:
         result_json = json.loads(raw_response)
-        logging.info("\n\n✅ LLM response cleaned and parsed successfully.\n\n")
+        print("\n\n✅ LLM response cleaned and parsed successfully.\n\n")
         return result_json
     except json.JSONDecodeError as e:
         logging.error(f"❌ JSON decode error: {str(e)}")

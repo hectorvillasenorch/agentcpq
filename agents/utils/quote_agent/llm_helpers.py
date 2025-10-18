@@ -340,8 +340,9 @@ def extract_products_to_add_with_llm(user_message, current_state, previous_summa
     )
 
     raw_response = response.choices[0].message.content.strip()
+    logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
     result_json = clean_llm_json(raw_response)
-    logging.info(f"\n\n🔍 Raw GPT Response: {result_json}\n\n")
+    
 
     # 🔹 Use the reusable cleaning function
     if result_json is None:
