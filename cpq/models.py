@@ -1108,6 +1108,7 @@ class CustomFieldValue(models.Model):
     value = models.TextField(blank=True)
     record = models.ForeignKey(CustomRecord, null=True, blank=True, on_delete=models.CASCADE, related_name="custom_field_values")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_by_user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="updated_custom_field_values")
 
     def save(self, *args, **kwargs):
         is_changed = True
@@ -1120,9 +1121,10 @@ class CustomFieldValue(models.Model):
 
         super().save(*args, **kwargs)
 
-        if is_changed and self.updated_by_user:
+        updated_by_user = getattr(self, 'updated_by_user', None)
+        if is_changed and updated_by_user:
             if hasattr(self.field, 'updated_by'):
-                self.field.updated_by = self.updated_by_user
+                self.field.updated_by = updated_by_user
                 self.field.save(update_fields=['updated_by', 'updated_at'])
 
     def __str__(self):

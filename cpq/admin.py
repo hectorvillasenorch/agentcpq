@@ -368,7 +368,8 @@ class ProductAdmin(DynamicCustomFieldAdmin):
                     field=field,
                 )
                 cf_value.value = value if value else ""
-                cf_value.updated_by_user = request.user
+                if hasattr(cf_value, 'updated_by_user'):
+                    cf_value.updated_by_user = request.user
                 cf_value.save()
 
     def format_datetime(self, dt):

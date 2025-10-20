@@ -416,7 +416,8 @@ def get_dynamic_form(model_class, crm, object_type):
                     field=field,
                 )
                 cfv.value = value
-                cfv.updated_by_user = self.user
+                if hasattr(cfv, 'updated_by_user'):
+                    cfv.updated_by_user = self.user
                 cfv.save()
 
             return instance
