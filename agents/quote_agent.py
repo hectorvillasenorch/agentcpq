@@ -39,6 +39,8 @@ from .utils.quote_agent.db_helpers import get_or_create_account_and_opportunity,
 from .utils.quote_agent.general_helpers import get_active_quote, set_active_quote_to_session_data, get_quote_details, get_backup_value_from_quote_line, format_currency, wrap_text
 from .utils.quote_agent.general_helpers import get_document_pdf, get_backup_value_from_quote
 
+from .utils.message_formatters import SUCCESS_ICON, ERROR_ICON, INFO_ICON, WARNING_ICON
+
 from .utils.orchestrator.context_handle_helpers import save_or_update_conversation_context, make_session_context
 
 # Session Context Helpers
@@ -53,6 +55,8 @@ from .utils.quote_agent.general_helpers import extract_line_items_from_user_mess
 from .utils.quote_agent.llm_helpers import extract_products_to_add_with_llm, generate_final_add_product_to_quote_message, extract_quote_line_updates_with_llm, generate_final_update_line_items_message
 
 from .utils.quote_agent.handle_helpers import handle_products_to_add, handle_quote_line_update_request, handle_line_items_updates
+
+from .utils.message_formatters import format_quote_outcome_message
 
 # ✅ Load environment variables
 load_dotenv()
@@ -85,7 +89,7 @@ def quote_agent(user, action, user_message, session_data):
     if action in action_map:
         return action_map[action](user, user_message, session_data)
 
-    return {"message": "🤖 Sorry, I couldn’t understand your request."}
+    return {"message": "{WARNING_ICON} Sorry, I couldn’t understand your request."}
 
 #< ----------------- CREATE A QUOTE -------------------- >
 
@@ -164,7 +168,12 @@ def create_quote(user,user_message, session_data):
         opportunity.primary_quote = quote
         opportunity.save()
 
-    logging.info(f"✅ Quote {quote.name} created for {account.name} under opportunity {opportunity.name}. Would you like to add more products now?")
+    logging.info(
+        "☑️ Quote %s created for %s under opportunity %s. Would you like to add more products now?",
+        quote.name,
+        account.name,
+        opportunity.name,
+    )
 
     # ✅ Extract products
     extracted_products = extracted_details.get("products", [])
@@ -172,42 +181,69 @@ def create_quote(user,user_message, session_data):
     # In case the quote is created without any products
     if not extracted_products:
 
-        result.append(f"✅ Quote {quote.name} created for {account.name} under opportunity {opportunity.name}. Would you like to add more products now?")
-        result.append("🟡 No products provided in initial quote creation.")
+        result.append(
+            f"{SUCCESS_ICON} Quote {quote.name} has been created for {account.name} under "
+            f"'{opportunity.name}'.<br>Would you like to add products now?"
+        )
+        result.append("{WARNING_ICON} No products provided in initial quote creation.")
 
         session_data["pending_action"] = "add_product"
         # ✅ Update quote session
         set_active_quote_to_session_data(session_data, quote)
 
+        formatted_message = format_quote_outcome_message(
+            quote.name,
+            account.name,
+            opportunity.name,
+            [],
+            [],
+            quote.net_amount,
+            approval_suffix="",
+        )
+
         dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_create_quote_message(
             quote=extracted_details,
             db_results=result,
-            previous_summary=llm_result["summary"]
+            previous_summary=llm_result["summary"],
+            formatted_message=formatted_message,
         )
 
         return {
-            "message": dynamic_message,
+            "message": formatted_message,
             "session_summary": updated_summary
         }
 
     # In case the quote is created with any products
     logging.info("🟢 Products provided in initial quote creation.")
 
-    response_message = f"✅ Quote {quote.name} created for {account.name} under deal {opportunity.name}.<br><br>"
+    response_message = (
+        f"{SUCCESS_ICON} Quote {quote.name} has been created for {account.name} under the opportunity "
+        f"'{opportunity.name}'.<br><br>"
+    )
 
-    result.append(f"✅ Quote {quote.name} created for {account.name} under deal {opportunity.name}.<br><br>")
-    result.append("🟢 Products provided in initial quote creation.")
+    result.append(
+        f"{SUCCESS_ICON} Quote {quote.name} has been created for {account.name} under the opportunity "
+        f"'{opportunity.name}'.<br><br>"
+    )
+    result.append("{INFO_ICON} Products provided in initial quote creation.")
 
     # ✅ Save quote products
     #quote, response_message, added_products = save_quote_products(user, extracted_products, quote, response_message)
     result = handle_products_to_add(user, extracted_products, quote, allow_updates=True)
 
-    added_products = []
-
+    successful_results = []
+    failed_results = []
+    successful_products_payload = []
     if result:
         for prod in result:
-            if prod["status"] is "success":
-                added_products.append(prod)
+            if not isinstance(prod, dict):
+                continue
+
+            if prod.get("status") == "success":
+                successful_results.append(prod)
+                successful_products_payload.append(prod.get("product", {}))
+            else:
+                failed_results.append(prod)
 
     print(f"\n\nEsto es result de quote products: {result}\n\n")
 
@@ -232,31 +268,42 @@ def create_quote(user,user_message, session_data):
     # ✅ Check if the quote requires approval after adding the product
     approval_suggestion = get_approval_status("", "", quote.id, "")
 
-    if added_products:
-        response_message += f"<br>💰 Net amount updated to ${quote.net_amount:,.2f}. Would you like to add more products?"
-    else:
+    if not successful_results:
         # No products were added (e.g., unknown SKUs)
         session_data["pending_action"] = "add_product"
         return {
-            "message": f"✅ Quote `{quote.name}` created for {account.name} under opportunity `{opportunity.name}`.<br>Would you like to add products now?"
+            "message": (
+                f"{SUCCESS_ICON} Quote {quote.name} has been created for {account.name} under the opportunity "
+                f"{opportunity.name}.<br>Would you like to add products now?"
+            )
         }
 
     # Append approval message or default notice
     if "message" in approval_suggestion:
-        response_message += f"{approval_suggestion['message']}"
+        approval_suffix = f"{approval_suggestion['message']}"
     else:
-        response_message += "⚠️ No approval suggestion."
+        approval_suffix = "⚠️ No approval suggestion."
+
+    response_message = format_quote_outcome_message(
+        quote.name,
+        account.name,
+        opportunity.name,
+        successful_products_payload,
+        failed_results,
+        quote.net_amount,
+        approval_suffix=approval_suffix,
+    )
 
     result.append(response_message)
 
     dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_create_quote_message(
         quote=extracted_details,
         db_results=result,
-        previous_summary=llm_result["summary"]
+        previous_summary=llm_result["summary"],
+        formatted_message=response_message,
     )
 
-    if added_products:
-        dynamic_message += f"<br>💰 Net amount updated to ${quote.net_amount:,.2f}."
+    dynamic_message = response_message
 
 
     return {
@@ -552,7 +599,7 @@ def update_quote(user, user_message, session_data):
     # ✅ Return
     if not updated_quote:
         return {
-            "message": f"No quotes were updated. <br><br>{dynamic_message}",
+            "message": f"{ERROR_ICON} No quotes were updated.<br>{dynamic_message}",
             "temporaryMessage": True
         }
 
@@ -650,7 +697,10 @@ def delete_quote_line(user, user_message, session_data):
 
                 log_action_usage("DeleteQuoteLine", user, "Quote", quote.name)
 
-                response_message += f"✅ The quote line with product SKU '{product.sku}' was successfully deleted from quote '{quote.name}'.<br>"
+                response_message += (
+                    f"{SUCCESS_ICON} The quote line with product SKU '{product.sku}' "
+                    f"was successfully deleted from quote '{quote.name}'.<br>"
+                )
                 continue
 
             except QuoteLine.DoesNotExist:
@@ -715,7 +765,7 @@ def delete_quote(user, user_message, session_data):
                 quote.delete()
 
                 return {
-                    "message": f"✅ Quote '{quote_name}' has been successfully deleted."
+                    "message": f"{SUCCESS_ICON} Quote '{quote_name}' has been successfully deleted."
                 }
             else:
                 session_data["pending_action"] = "delete_quote_confirmation"

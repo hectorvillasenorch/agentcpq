@@ -27,7 +27,6 @@ from .renewals.renewals import create_contract_after_closed_won
 # Action Trigger Helpers
 from .action_trigger.action_trigger import dispatch_trigger
 
-
 @receiver(post_save, sender=Quote)
 def handle_primary_quote_sync(sender, instance, **kwargs):
     if instance.hs_primary and instance.hs_deal_id:
@@ -50,7 +49,7 @@ def set_or_create_custom_identifier_for_record(sender, instance, created, **kwar
 from .utils import run_async
 # LEAD HAS BEEN CREATED
 @receiver(post_save, sender=Lead)
-def send_lead_created_email(sender, instance, created, **kwargs):
+def send_lead_created_email(objecto,sender, instance, created, **kwargs):
     if created:
         run_async(notify_lead_created, instance)
 
@@ -153,3 +152,4 @@ def quote_rejected_signal(sender, instance, **kwargs):
             logging.info(f"Quote {instance.id} changed to Rejected ❌")
             # Call your notification or post-rejection logic here
             run_async(notify_quote_rejected, instance)
+

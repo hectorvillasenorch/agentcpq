@@ -169,7 +169,7 @@ def generate_final_product_message(completed_products, db_results, remaining_pro
     )
 
     raw_output = response.choices[0].message.content.strip()
-    logging.info(f"\n\n🔍 Raw GPT JSON Response: {raw_output}\n\n")
+    logging.info(f"\n\n🔍 Raw GPT JSON Response Final Product Message: {raw_output}\n\n")
 
     try:
         parsed = json.loads(raw_output)

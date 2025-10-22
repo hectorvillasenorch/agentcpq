@@ -902,3 +902,5 @@ def handle_create_exclusion_rule(user, completed_rules, response_message):
 
 
     return response_message, saved_rules
+
+

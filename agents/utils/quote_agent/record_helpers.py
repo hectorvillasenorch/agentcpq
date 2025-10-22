@@ -15,6 +15,7 @@ from .db_helpers import find_product_and_normalize_variables, update_opportunity
 
 # General Helpers
 from .general_helpers import normalize_term_for_product, get_quote_details, set_active_quote_to_session_data, copy_custom_fields_values_from_product_to_quote_line
+from ..message_formatters import SUCCESS_ICON
 
 #Rules Helpers
 from ..admin_agent.rules_helpers import build_temp_quote_line, check_for_rules_quote_line_level, check_inclusion_rules_for_quote_level, check_exclusion_rules_for_quote_level, check_for_rules_quote_level
@@ -172,7 +173,7 @@ def save_quote_products(user, products, quote, response_message, allow_updates=F
 
                 if response.get("success"):
                     successful_fields.append(update["field"])
-                    response_message += f"✅ Updated `{update['field']}` to `{update['value']}` for product `{update['sku']}`.<br>"
+                    response_message += f"{SUCCESS_ICON} Updated {update['field']} to {update['value']} for product {update['sku']}.<br>"
                 else:
                     failed_fields.append(update["field"])
                     response_message += (
@@ -302,11 +303,11 @@ def save_quote_products(user, products, quote, response_message, allow_updates=F
             added_products.append(f"{quantity}x {sku}/{name}.")
 
             if discount_type == "percentage":
-                response_message += f"✅ Added {quantity}x {sku}/{name} to quote {quote.name} with a {discount_value}% discount.<br>"
+                response_message += f"{SUCCESS_ICON} Added {quantity}x {sku}/{name} to quote {quote.name} with a {discount_value}% discount.<br>"
             elif discount_type == "amount":
-                response_message += f"✅ Added {quantity}x {sku}/{name} to quote {quote.name} with a ${discount_value} discount.<br>"
+                response_message += f"{SUCCESS_ICON} Added {quantity}x {sku}/{name} to quote {quote.name} with a ${discount_value} discount.<br>"
             else:
-                response_message += f"✅ Added {quantity}x {sku}/{name} to quote {quote.name}.<br>"
+                response_message += f"{SUCCESS_ICON} Added {quantity}x {sku}/{name} to quote {quote.name}.<br>"
 
             response_message += bundle_response_message
         except Exception as e:
@@ -339,7 +340,7 @@ def update_quote_line_record(user, update_payload, line_item, quote):
         if term is not None:
             line_item.term = term
         line_item.save()
-        print("✅ DEBUG: Line item updated:", line_item)  # Debugging step
+        print("DEBUG: Line item updated:", line_item)  # Debugging step
 
         return {
             "success": True
@@ -435,7 +436,7 @@ def save_quote_line_update(request, quote):
             #########################################################################################################
 
 
-            response_message = "✅ Quote line updated successfully."
+            response_message = f"{SUCCESS_ICON} Quote line updated successfully."
 
             return {
                 "message": response_message,
@@ -633,7 +634,7 @@ def save_quote_update(request):
             update_opportunity_net_amount(quote.opportunity)
             #########################################################################################################
 
-            response_message = "✅ Quote updated successfully."
+            response_message = f"{SUCCESS_ICON} Quote updated successfully."
 
             return {
                 "message": response_message,

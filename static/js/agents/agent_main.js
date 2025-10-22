@@ -1456,7 +1456,7 @@ function renderQuoteDetailsMobile(quote) {
           : ''
       }
 
-      <p>💰 <b>Net Amount:</b> ${parseFloat(
+      <p><span class="material-icons" style="font-size:20px;vertical-align:middle;color:#2e7d32;margin-right:4px;">attach_money</span><b>Net Amount:</b> ${parseFloat(
         quote.net_amount.replace("$", "")
       ).toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
     </div>`;
