@@ -78,12 +78,24 @@ def show_metrics(user, user_message, session_data):
             "session_summary": llm_result["summary"]
         }
 
-    response_message, results = handle_show_metrics(user, completed_metrics)
+    response_message, results, object_labels = handle_show_metrics(user, completed_metrics)
+
+    display_completed_metrics = []
+    for metric in completed_metrics:
+        metric_copy = {**metric}
+        obj_name = metric_copy.get("object")
+        if obj_name in object_labels:
+            metric_copy = {
+                **metric_copy,
+                "object": object_labels[obj_name],
+                "api_object": obj_name,
+            }
+        display_completed_metrics.append(metric_copy)
 
 
     # --- 5️⃣ Generar mensaje final dinámico usando función separada ---
     dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_metrics_message(
-        completed_metrics=completed_metrics,
+        completed_metrics=display_completed_metrics,
         db_results=response_message,
         remaining_metrics=remaining_metrics,
         previous_summary=llm_result["summary"]
@@ -94,6 +106,7 @@ def show_metrics(user, user_message, session_data):
         "message": dynamic_message,
         "session_summary": updated_summary,
         "retrieved_records": results,
+        "object_labels": object_labels,
         "hiddenMessage": True
     }
 

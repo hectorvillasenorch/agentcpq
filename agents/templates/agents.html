@@ -121,16 +121,19 @@
         <div class="chat-input-container">
         <div class="input-wrapper upload-dropzone" id="upload-dropzone">
             <div class="input-row">
+                
                 <input type="text" id="user-input" placeholder="Create a Quote..." class="chat-input">
                 <button id="send-btn" class="send-button" aria-label="Send message">
                     <i class="material-icons">send</i>
                 </button>
             </div>
-            <!-- <button type="button" id="upload-browse-btn" class="upload-browse-btn" aria-label="Attach image">
-                <i class="material-icons">attach_file</i>
-            </button> -->
             <input type="file" id="upload-input" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" hidden>
-            <ul class="upload-list" id="upload-list"></ul>
+            
+            <div class="attachment-preview" id="attachment-preview">
+              <button type="button" id="upload-browse-btn" class="upload-clip-btn" aria-label="Attach file">
+                    <span class="material-icons" aria-hidden="true">attach_file</span>
+                </button>
+            </div>
           </div>
         
         </div>

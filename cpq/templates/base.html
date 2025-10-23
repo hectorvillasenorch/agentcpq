@@ -142,6 +142,33 @@
           if (icon) icon.textContent = "chevron_right";
       }
     });
+
+    if (typeof window.toggleSidebar !== "function") {
+      window.toggleSidebar = function toggleSidebar() {
+        const sidenav = document.querySelector(".sidenav-fixed");
+        if (!sidenav) return;
+        sidenav.classList.toggle("active");
+      }
+    }
+
+    if (typeof window.colapseSidebar !== "function") {
+      window.colapseSidebar = function colapseSidebar() {
+        const sidenav = document.querySelector(".sidenav-fixed");
+        const icon = document.getElementById("collapse-icon");
+        const mainContent = document.querySelector(".main-content");
+
+        if (!sidenav || !mainContent) return;
+
+        const isCollapsed = sidenav.classList.toggle("collapse_sidebar");
+        mainContent.classList.toggle("main-content-collapsed", isCollapsed);
+
+        localStorage.setItem("sidebarCollapsed", isCollapsed ? "true" : "false");
+
+        if (icon) {
+          icon.textContent = isCollapsed ? "chevron_right" : "chevron_left";
+        }
+      }
+    }
   </script>
 
 

@@ -22,7 +22,7 @@ from django.db.models.functions import TruncMonth
 import hmac
 import hashlib
 from datetime import date
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.clickjacking import xframe_options_exempt
 from django.utils.dateparse import parse_date
 from django.utils import timezone
@@ -30,6 +30,7 @@ from django.db.models import Sum
 from cpq.models import Tenant, ActionUsage, TenantUsageReport
 from django.utils.dateparse import parse_datetime
 import logging
+import json
 logger = logging.getLogger(__name__)
 from datetime import datetime, timezone as dt_timezone
 from django.contrib.auth.views import PasswordResetView
@@ -184,6 +185,44 @@ def dashboard(request):
         'field_values_by_record': field_values_by_record,
         'lookup_options': lookup_options,
 })
+
+
+@login_required
+@require_POST
+def update_chat_session_title(request, session_id):
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (json.JSONDecodeError, AttributeError, UnicodeDecodeError):
+        return JsonResponse({"error": "Invalid JSON payload."}, status=400)
+
+    new_title = (payload.get("title") or "").strip()
+    if not new_title:
+        new_title = "Untitled Session"
+
+    chat_session = get_object_or_404(ChatSession, session_id=session_id, user=request.user)
+    chat_session.title = new_title[:255]
+    chat_session.save(update_fields=["title"])
+
+    return JsonResponse({"title": chat_session.title})
+
+
+@login_required
+@require_POST
+def delete_chat_session(request, session_id):
+    chat_session = get_object_or_404(ChatSession, session_id=session_id, user=request.user)
+    existing_session_data = request.session.get("session_data")
+    active_session_id = existing_session_data.get("session_id") if existing_session_data else None
+
+    chat_session.delete()
+
+    if active_session_id == session_id:
+        request.session.pop("session_data", None)
+
+    return JsonResponse({
+        "success": True,
+        "deleted_session_id": session_id,
+        "was_active": active_session_id == session_id,
+    })
 
 def get_user_accounts(user):
     if user.is_superuser:

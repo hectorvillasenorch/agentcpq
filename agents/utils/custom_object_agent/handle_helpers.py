@@ -9,6 +9,7 @@ from ..orchestrator.context_handle_helpers import save_or_update_conversation_co
 from .record_helpers import create_custom_record_and_values, update_custom_record_and_values, delete_custom_record
 
 from .record_helpers import save_custom_object, update_custom_object, delete_custom_object, save_custom_field, update_custom_field, delete_custom_field
+from ..message_formatters import SUCCESS_ICON, ERROR_ICON, WARNING_ICON, INFO_ICON
 
 def handle_custom_object_creation(user, extracted_custom_objects, response_message, session_context):
 
@@ -33,6 +34,26 @@ def handle_custom_object_creation(user, extracted_custom_objects, response_messa
             response_message += f"⚠️ Oops! It looks like you didn’t provide a label for the custom object. Could you tell me what you’d like to name this field?<br><br>"
             continue
 
+        sanitized_label = label.strip()
+        if sanitized_label == "":
+            agent_response = "Label provided is empty."
+            save_or_update_conversation_context(session_context, agent_response)
+            response_message += (
+                "⚠️ I noticed the label you provided is empty. What should we call this custom object?<br><br>"
+            )
+            continue
+
+        if sanitized_label.lower() in {"custom object", "customobject", "custom-object"}:
+            agent_response = "Label defaulted to 'Custom Object'."
+            save_or_update_conversation_context(session_context, agent_response)
+            response_message += (
+                "⚠️ To create this custom object I need a unique name. What label would you like to use instead of "
+                "<strong>Custom Object</strong>?<br><br>"
+            )
+            continue
+
+        name = sanitized_label.lower().replace(" ", "_") + "__c"
+
         # Check if custom object exists
         if CustomObject.objects.filter(name=name).exists():
             agent_response = f"A custom object with the label '{label}' already exists."
@@ -44,7 +65,7 @@ def handle_custom_object_creation(user, extracted_custom_objects, response_messa
             continue
 
         object_payload = {
-            "label": label,
+            "label": sanitized_label,
             "name": name,
             "description": description
         }
@@ -240,7 +261,7 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
             )
             continue
 
-        response_message += f"<b>🔄 Custom Field Request #{index} 🔄</b><br>"
+        response_message += f"<b>{INFO_ICON} Custom Field Request #{index}</b><br>"
 
         if custom_object_name:
 
@@ -257,7 +278,7 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
 
             # ✅ Format response message
             if index == 1 and custom_object_name:
-                response_message += f"<b>🧩 <u>Fields for {co_obj.label}</u>🧩</b><br><br>"
+                response_message += f"<b>{INFO_ICON}<u>Fields for {co_obj.label}</u></b><br><br>"
 
             if custom_object_name and not CustomObject.objects.filter(name=custom_object_name).exists():
                 response_message += (

@@ -1,13 +1,38 @@
 document.addEventListener("DOMContentLoaded", function () {
   setupChatListeners();
   setupSessionSwitching();
+  setupSessionTitleEditing();
+  setupSessionContextMenu();
   setupUploadZone();
   loadPendingAttachments();
   enhanceStructuredAgentMessagesHistoryChat(); // 🔥
+  updateAttachmentPreview();
+
+  scrollToBottom("DOMContentLoaded", true);
 });
 
-let pendingAttachments = [];
-const UPLOAD_HINT_DEFAULT = "PNG, JPG, GIF, or WEBP up to 8 MB. Attachments are appended to the next PDF.";
+if (typeof window !== "undefined") {
+  window.UPLOAD_HINT_DEFAULT = window.UPLOAD_HINT_DEFAULT || "PNG, JPG, GIF, or WEBP up to 8 MB. Attachments are appended to the next PDF.";
+}
+var UPLOAD_HINT_DEFAULT = (typeof window !== "undefined" && window.UPLOAD_HINT_DEFAULT)
+  ? window.UPLOAD_HINT_DEFAULT
+  : "PNG, JPG, GIF, or WEBP up to 8 MB. Attachments are appended to the next PDF.";
+
+if (typeof window !== "undefined") {
+  window.pendingAttachments = window.pendingAttachments || [];
+}
+var pendingAttachments = (typeof window !== "undefined" && window.pendingAttachments)
+  ? window.pendingAttachments
+  : [];
+let sessionContextMenu = null;
+let sessionContextTarget = null;
+
+function setPendingAttachments(next) {
+  pendingAttachments = Array.isArray(next) ? next : [];
+  if (typeof window !== "undefined") {
+    window.pendingAttachments = pendingAttachments;
+  }
+}
 
 function getUploadHintElement(dropzone) {
   if (!dropzone) return null;
@@ -32,6 +57,11 @@ function getCurrentSessionId() {
 function setupSessionSwitching() {
   document.querySelectorAll(".chat-history-item").forEach(item => {
     item.addEventListener("click", function (e) {
+      if (this.dataset.editing === "true") {
+        e.preventDefault();
+        return;
+      }
+
       e.preventDefault();
 
       const sessionId = this.dataset.sessionId;
@@ -44,9 +74,356 @@ function setupSessionSwitching() {
   });
 }
 
+const SESSION_TITLE_MAX_LENGTH = 255;
+
+function setupSessionTitleEditing() {
+  const items = document.querySelectorAll(".chat-history-item");
+  if (!items.length) {
+    return;
+  }
+
+  items.forEach((item) => {
+    const titleElement = item.querySelector(".chat-history-title");
+    if (!titleElement) {
+      return;
+    }
+
+    if (!item.dataset.sessionTitle) {
+      const storedTitle = item.getAttribute("data-session-title") || titleElement.textContent.trim();
+      if (storedTitle) {
+        item.dataset.sessionTitle = storedTitle;
+      }
+    }
+
+    if (!item.dataset.editing) {
+      item.dataset.editing = "false";
+    }
+
+    const editTrigger = item.querySelector(".chat-edit-trigger");
+    if (editTrigger) {
+      editTrigger.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        startSessionTitleEdit(item);
+      });
+
+      editTrigger.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          event.stopPropagation();
+          startSessionTitleEdit(item);
+        }
+      });
+    }
+  });
+}
+
+function startSessionTitleEdit(item) {
+  closeSessionContextMenu();
+  if (!item || item.dataset.editing === "true") {
+    return;
+  }
+
+  const titleElement = item.querySelector(".chat-history-title");
+  if (!titleElement) {
+    return;
+  }
+
+  const currentTitle = item.dataset.sessionTitle || titleElement.textContent.trim() || "Untitled Session";
+  item.dataset.editing = "true";
+  item.dataset.originalTitle = currentTitle;
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "chat-title-input";
+  input.value = currentTitle;
+  input.maxLength = SESSION_TITLE_MAX_LENGTH;
+
+  titleElement.textContent = "";
+  titleElement.appendChild(input);
+
+  requestAnimationFrame(() => {
+    input.focus();
+    input.select();
+  });
+
+  const finalize = (shouldSave) => {
+    if (input.dataset.finalized === "true") {
+      return;
+    }
+    input.dataset.finalized = "true";
+
+    if (shouldSave) {
+      commitSessionTitleEdit(item, input.value, currentTitle);
+    } else {
+      cancelSessionTitleEdit(item, currentTitle);
+    }
+  };
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finalize(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      finalize(false);
+    }
+  });
+
+  input.addEventListener("blur", () => finalize(true));
+}
+
+function commitSessionTitleEdit(item, rawValue, originalTitle) {
+  const normalizedTitle = (rawValue || "").trim() || "Untitled Session";
+  const sessionId = item.dataset.sessionId;
+
+  setSessionTitleDisplay(item, normalizedTitle);
+  delete item.dataset.originalTitle;
+
+  if (!sessionId) {
+    console.warn("Session id missing for title update.");
+    return;
+  }
+
+  if (normalizedTitle === originalTitle) {
+    return;
+  }
+
+  persistSessionTitle(sessionId, normalizedTitle)
+    .then((savedTitle) => {
+      if (typeof savedTitle === "string" && savedTitle.length) {
+        setSessionTitleDisplay(item, savedTitle);
+      }
+    })
+    .catch((error) => {
+      console.error("Failed to update session title:", error);
+      setSessionTitleDisplay(item, originalTitle);
+    });
+}
+
+function cancelSessionTitleEdit(item, originalTitle) {
+  setSessionTitleDisplay(item, originalTitle);
+  delete item.dataset.originalTitle;
+}
+
+function setSessionTitleDisplay(item, title) {
+  const titleElement = item.querySelector(".chat-history-title");
+  if (!titleElement) {
+    return;
+  }
+
+  const display = truncateTitle(title);
+  titleElement.textContent = display;
+  item.dataset.sessionTitle = title;
+  item.setAttribute("data-session-title", title);
+  item.dataset.editing = "false";
+}
+
+function truncateTitle(title, maxLength = 24) {
+  if (!title) {
+    return "Untitled Session";
+  }
+
+  if (title.length <= maxLength) {
+    return title;
+  }
+
+  return `${title.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function persistSessionTitle(sessionId, title) {
+  return fetch(`/dashboard/chat/session/${encodeURIComponent(sessionId)}/title/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": getCSRFToken(),
+    },
+    body: JSON.stringify({ title }),
+  }).then(async (response) => {
+    if (!response.ok) {
+      let errorMessage = `Request failed with status ${response.status}`;
+      try {
+        const data = await response.json();
+        if (data && data.error) {
+          errorMessage = data.error;
+        }
+      } catch (parseError) {
+        // Ignore JSON parse errors
+      }
+      throw new Error(errorMessage);
+    }
+
+    try {
+      const data = await response.json();
+      return data && typeof data.title === "string" ? data.title : title;
+    } catch (parseError) {
+      return title;
+    }
+  });
+}
+
+function getCSRFToken() {
+  const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
+function setupSessionContextMenu() {
+  sessionContextMenu = createSessionContextMenu();
+  document.body.appendChild(sessionContextMenu);
+
+  document.querySelectorAll(".chat-history-item").forEach((item) => {
+    item.addEventListener("contextmenu", (event) => {
+      if (!item.dataset.sessionId) {
+        return;
+      }
+
+      if (item.dataset.editing === "true") {
+        return;
+      }
+
+      event.preventDefault();
+      sessionContextTarget = item;
+      openSessionContextMenu(event);
+    });
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!sessionContextMenu || sessionContextMenu.style.display !== "block") {
+      return;
+    }
+
+    if (sessionContextMenu.contains(event.target)) {
+      return;
+    }
+
+    closeSessionContextMenu();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeSessionContextMenu();
+    }
+  });
+
+  window.addEventListener("resize", closeSessionContextMenu);
+  document.addEventListener("scroll", closeSessionContextMenu, true);
+}
+
+function createSessionContextMenu() {
+  const menu = document.createElement("div");
+  menu.className = "chat-context-menu";
+  menu.style.display = "none";
+
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "chat-context-menu__item chat-context-menu__item--danger";
+  deleteButton.textContent = "Delete Session";
+  deleteButton.addEventListener("click", () => {
+    if (!sessionContextTarget) {
+      return;
+    }
+
+    const sessionId = sessionContextTarget.dataset.sessionId;
+    if (!sessionId) {
+      return;
+    }
+
+    const confirmed = window.confirm("Delete this chat session?");
+    if (!confirmed) {
+      closeSessionContextMenu();
+      return;
+    }
+
+    deleteChatSession(sessionId)
+      .then((result) => {
+        if (result.was_active) {
+          window.location.href = `${window.location.origin}/dashboard/?view=agents`;
+          return;
+        }
+
+        if (sessionContextTarget && sessionContextTarget.parentElement) {
+          sessionContextTarget.parentElement.removeChild(sessionContextTarget);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to delete session:", error);
+      })
+      .finally(() => {
+        closeSessionContextMenu();
+      });
+  });
+
+  menu.appendChild(deleteButton);
+  return menu;
+}
+
+function openSessionContextMenu(event) {
+  if (!sessionContextMenu) {
+    return;
+  }
+
+  sessionContextMenu.style.display = "block";
+  sessionContextMenu.style.visibility = "hidden";
+
+  const { pageX, pageY } = event;
+  const menuWidth = sessionContextMenu.offsetWidth;
+  const menuHeight = sessionContextMenu.offsetHeight;
+  const viewportWidth = window.innerWidth + window.scrollX;
+  const viewportHeight = window.innerHeight + window.scrollY;
+
+  const left = Math.min(pageX, viewportWidth - menuWidth - 8);
+  const top = Math.min(pageY, viewportHeight - menuHeight - 8);
+
+  sessionContextMenu.style.left = `${Math.max(left, 8)}px`;
+  sessionContextMenu.style.top = `${Math.max(top, 8)}px`;
+  sessionContextMenu.style.visibility = "visible";
+}
+
+function closeSessionContextMenu() {
+  if (!sessionContextMenu) {
+    return;
+  }
+
+  sessionContextMenu.style.display = "none";
+  sessionContextMenu.style.visibility = "hidden";
+  sessionContextTarget = null;
+}
+
+function deleteChatSession(sessionId) {
+  return fetch(`/dashboard/chat/session/${encodeURIComponent(sessionId)}/delete/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": getCSRFToken(),
+    },
+  }).then(async (response) => {
+    if (!response.ok) {
+      let errorMessage = `Request failed with status ${response.status}`;
+      try {
+        const data = await response.json();
+        if (data && data.error) {
+          errorMessage = data.error;
+        }
+      } catch (parseError) {
+        // swallow JSON parse errors
+      }
+      throw new Error(errorMessage);
+    }
+
+    try {
+      return await response.json();
+    } catch (parseError) {
+      return { success: true, was_active: false };
+    }
+  });
+}
+
 function showAgentFeedback() {
   const feedback = document.getElementById("agent-feedback");
-  if (feedback) feedback.style.display = "block";
+  if (feedback) {
+    feedback.style.display = "block";
+    scrollToBottom("showAgentFeedback");
+  }
 }
 
 function hideAgentFeedback() {
@@ -79,6 +456,7 @@ function setupUploadZone() {
   const browseBtn = document.getElementById("upload-browse-btn");
 
   if (!dropzone || !fileInput) {
+    updateAttachmentPreview();
     return;
   }
 
@@ -140,13 +518,14 @@ async function loadPendingAttachments() {
             : "Open or create a quote to enable attachments.";
         }
       }
-      pendingAttachments = [];
+      setPendingAttachments([]);
       renderAttachmentList();
+      updateAttachmentPreview();
       return;
     }
 
     const data = await response.json();
-    pendingAttachments = Array.isArray(data.attachments) ? data.attachments : [];
+    setPendingAttachments(Array.isArray(data.attachments) ? data.attachments : []);
     dropzone.classList.remove("is-disabled");
     const hint = getUploadHintElement(dropzone);
     if (hint) {
@@ -155,6 +534,8 @@ async function loadPendingAttachments() {
     renderAttachmentList();
   } catch (error) {
     console.error("Failed to load pending attachments:", error);
+    setPendingAttachments([]);
+    renderAttachmentList();
   }
 }
 
@@ -188,29 +569,58 @@ function renderAttachmentList() {
 
   listEl.innerHTML = "";
 
+  listEl.style.display = "block";
+
   if (!pendingAttachments.length) {
-    listEl.style.display = "none";
+    const emptyItem = document.createElement("li");
+    emptyItem.classList.add("upload-empty");
+    emptyItem.textContent = "No attachments";
+    listEl.appendChild(emptyItem);
+  } else {
+    pendingAttachments.forEach((attachment) => {
+      const item = document.createElement("li");
+      const nameEl = document.createElement("span");
+      nameEl.classList.add("upload-name");
+      nameEl.textContent = attachment.original_name || "Attachment";
+
+      const metaEl = document.createElement("span");
+      metaEl.classList.add("upload-meta");
+      if (attachment.uploaded_at) {
+        const uploadedDate = new Date(attachment.uploaded_at);
+        metaEl.textContent = uploadedDate.toLocaleString();
+      }
+
+      item.appendChild(nameEl);
+      item.appendChild(metaEl);
+      listEl.appendChild(item);
+    });
+  }
+
+  updateAttachmentPreview();
+}
+
+function updateAttachmentPreview() {
+  const previewEl = document.getElementById("attachment-preview");
+  if (!previewEl) return;
+
+  if (!pendingAttachments.length) {
+    previewEl.classList.add("is-empty");
     return;
   }
 
-  listEl.style.display = "block";
-  pendingAttachments.forEach((attachment) => {
-    const item = document.createElement("li");
-    const nameEl = document.createElement("span");
-    nameEl.classList.add("upload-name");
-    nameEl.textContent = attachment.original_name || "Attachment";
+  const latest = pendingAttachments[0];
+  const name = latest.original_name || "Attachment";
+  let meta = "";
+  if (latest.uploaded_at) {
+    meta = new Date(latest.uploaded_at).toLocaleString();
+  }
 
-    const metaEl = document.createElement("span");
-    metaEl.classList.add("upload-meta");
-    if (attachment.uploaded_at) {
-      const uploadedDate = new Date(attachment.uploaded_at);
-      metaEl.textContent = uploadedDate.toLocaleString();
-    }
-
-    item.appendChild(nameEl);
-    item.appendChild(metaEl);
-    listEl.appendChild(item);
-  });
+  previewEl.classList.remove("is-empty");
+  previewEl.innerHTML = `
+    <span class="material-icons" aria-hidden="true">attach_file</span>
+    <span class="attachment-name">${escapeHtml(name)}</span>
+    ${meta ? `<span class="attachment-meta">${escapeHtml(meta)}</span>` : ""}
+  `;
 }
 
 function agentNoticeMarkup(message) {
@@ -636,7 +1046,7 @@ async function sendMessage() {
     inputField.value = ""; // Clear input field
 
     // Auto-scroll chat
-    scrollToBottom()
+    scrollToBottom("sendMessage:user", true);
 
     try {
 
@@ -645,7 +1055,7 @@ async function sendMessage() {
 
         showAgentFeedback();
 
-        requestAnimationFrame(scrollToBottom);
+        requestAnimationFrame(() => scrollToBottom("sendMessage:pending"));
 
         const response = await fetch("/agents/chat/", {
             method: "POST",
@@ -755,7 +1165,7 @@ async function sendMessage() {
         appendMessage("agent", `<div class="senderagent"><img width="110px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
         loadPendingAttachments();
         hideAgentFeedback();
-        scrollToBottom();
+        scrollToBottom("sendMessage:agentResponse", true);
 
         // ✅ Handle Temporary Quote Details After Update Quote Line, Add Product And Delete Quote Line Item
         if (data.response && data.response.update_details && data.response.temporaryMessage){
@@ -772,12 +1182,55 @@ async function sendMessage() {
     }
 }
 
-function scrollToBottom() {
-    const chatBox = document.getElementById("chat-box");
-    if (chatBox) {
-        chatBox.scrollTop = chatBox.scrollHeight;
+function scrollToBottom(arg, optionalForceWindow) {
+  let reason = "";
+  let forceWindow = false;
+
+  if (typeof arg === "string" || typeof arg === "undefined") {
+    reason = arg || "";
+    forceWindow = Boolean(optionalForceWindow);
+  } else if (arg && typeof arg === "object") {
+    reason = arg.reason || "";
+    forceWindow = Boolean(arg.forceWindow);
+  }
+
+  const label = reason ? `[scrollToBottom] ${reason}` : "[scrollToBottom]";
+  const chatBox = document.getElementById("chat-box");
+  if (!chatBox) {
+    console.warn(`${label} chat-box not found`);
+    return;
+  }
+
+  const performScroll = () => {
+    if (typeof chatBox.scrollTo === "function") {
+      const target = Math.max(0, chatBox.scrollHeight - chatBox.clientHeight);
+      chatBox.scrollTo({ top: target, behavior: "smooth" });
+    } else {
+      chatBox.scrollTop = Math.max(0, chatBox.scrollHeight - chatBox.clientHeight);
     }
+
+    setTimeout(() => {
+      console.log(`${label} chatBox → scrollTop=${chatBox.scrollTop}, scrollHeight=${chatBox.scrollHeight}, clientHeight=${chatBox.clientHeight}`);
+    }, 100);
+
+    if (forceWindow) {
+      const delta = chatBox.getBoundingClientRect().bottom - (window.innerHeight || document.documentElement.clientHeight);
+      if (delta > 0) {
+        window.scrollBy({ top: delta + 24, behavior: "smooth" });
+        console.log(`${label} window scrollBy delta=${delta}`);
+      }
+    }
+  };
+
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(performScroll);
+    });
+  } else {
+    setTimeout(performScroll, 0);
+  }
 }
+
 
 /**
 * ✅ Append message to the chat box
@@ -876,11 +1329,13 @@ function appendMessage(className, message) {
     chatBox.appendChild(messageBubble);
 
     // ✅ Re-initializes select from Materialize
-   const selects = messageBubble.querySelectorAll('select');
-    if (selects.length > 0 && typeof M !== 'undefined' && M.FormSelect) {
+    const selects = messageBubble.querySelectorAll('select');
+    if (selects.length > 0) {
+      if (typeof M !== 'undefined' && M.FormSelect) {
         M.FormSelect.init(selects);
-    } else {
-        console.warn("Materialize M.FormSelect not available or no selects found.");
+      } else {
+        console.warn("Materialize M.FormSelect not available; select elements were not enhanced.");
+      }
     }
 
     if (message.includes("agent-json")) {
@@ -899,6 +1354,8 @@ function appendMessage(className, message) {
             }
         });
     }
+
+    scrollToBottom(`appendMessage:${className}`, true);
 }
 
 function renderQuoteDetails(quote) {
@@ -3298,25 +3755,18 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
           justify-content:space-between;
           align-items:center;
         ">
-          <h5 style="margin:0;">${objectName} records.</h5>
-          <button onclick="makeDraggable(this)" style="
-            background:#2563eb;
-            color:white;
-            border:none;
-            border-radius:4px;
-            padding:2px 6px;
-            cursor:pointer;
-            font-size:0.8rem;
-          ">Pop Out</button>
+          <h4 style="margin:0;">${objectName} records.</h4>
+          <button onclick="makeDraggable(this)" class="record-popout-btn">
+            <span class="material-icons" aria-hidden="true">open_in_new</span>
+          </button>
         </div>
 
         <div class="email-alert-details" style="
           overflow-x:auto;
           overflow-y:auto;
-          max-height:300px;
+          max-height:350px;
           border:1px solid #e5e7eb;
           border-radius:0.75rem;
-          box-shadow:0 2px 6px rgba(0,0,0,0.08);
           margin-top:0.5rem;
         ">
           <table style="
@@ -3327,7 +3777,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
             background-color:white;
             font-family:'Inter',sans-serif;
             color:#111827;
-            font-size:0.95rem;
+            font-size:1rem;
             display:block;
           ">
             <thead>
@@ -3394,14 +3844,15 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
           container.style.position = 'fixed';
           container.style.top = '50px';
           container.style.left = '50px';
-          container.style.width = '600px';
-          container.style.height = '400px';
+          container.style.width = '700px';
+          container.style.height = '500px';
           container.style.background = 'white';
           container.style.border = '1px solid #ccc';
           container.style.borderRadius = '5px';
           container.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
           container.style.zIndex = '10000';
           container.style.overflow = 'auto';
+          container.style.resize = 'both';
           container.classList.add('popup');
 
           const header = container.querySelector('.email-alert-header');
@@ -3424,7 +3875,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
             }
           }
 
-          button.innerText = 'Close';
+          button.innerHTML = '<span class="material-icons" aria-hidden="true">close</span>';
         } else {
           container.style.position = '';
           container.style.top = '';
@@ -3436,8 +3887,9 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
           container.style.boxShadow = '';
           container.style.zIndex = '';
           container.style.overflow = '';
+          container.style.resize = '';
           container.classList.remove('popup');
-          button.innerText = 'Pop Out';
+          button.innerHTML = '<span class="material-icons" aria-hidden="true">open_in_new</span>';
         }
       }
     `;

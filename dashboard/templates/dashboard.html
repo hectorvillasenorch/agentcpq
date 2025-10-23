@@ -24,7 +24,7 @@
 <div class="dashboard-container">
         <!-- Sidebar -->
 <div class="sidebar-toggle" onclick="toggleSidebar()">☰</div>
-<div class="sidenav sidenav-fixed" style="display: flex; flex-direction: column; height: 100vh;">
+<div class="sidenav sidenav-fixed" style="display: flex; flex-direction: column; height: 100vh;" data-selected-session-id="{{ selected_session_id|default:'' }}">
 
     <div style="flex-grow: 1;">
         <div class="brand">
@@ -66,9 +66,13 @@
         <div class="session-list">
             <p class="session-list-title">Recent Activity</p>
             {% for chat in chat_sessions %}
-                <a href="{% url 'dashboard' %}?view=agents&session_id={{ chat.session_id }}" class="chat-history-item" data-session-id="{{ chat.session_id }}">
+                <a href="{% url 'dashboard' %}?view=agents&session_id={{ chat.session_id }}"
+                   class="chat-history-item"
+                   data-session-id="{{ chat.session_id }}"
+                   data-session-title="{{ chat.title|default:'Untitled' }}">
                     <i class="material-icons">chat</i>
-                    <span class="nav-label">{{ chat.title|default:"Untitled"|truncatechars:24 }}</span>
+                    <span class="nav-label chat-history-title">{{ chat.title|default:"Untitled"|truncatechars:24 }}</span>
+                    <span class="material-icons chat-edit-trigger" role="button" aria-label="Rename session" tabindex="0">edit</span>
                 </a>
             {% empty %}
                 <p class="nav-label" style="padding: 0 16px;">No past chats</p>
@@ -78,17 +82,17 @@
    <!-- Fixed Logout/Login Section -->
     <div style="padding: 16px;">
         {% if user.is_authenticated %}
-            <form method="post" action="{% url 'logout' %}" style="padding: 16px;">
+            <form method="post" action="{% url 'logout' %}" class="nav-action-form">
                 {% csrf_token %}
-                <button type="submit" class="btn-flat white-text" style="display: flex; align-items: center; background: none; border: none; cursor: pointer;">
-                    <i class="material-icons" style="margin-right: 8px;">logout</i>
+                <button type="submit" class="nav-action-btn">
+                    <i class="material-icons">logout</i>
                     <span class="nav-label">Logout</span>
                 </button>
             </form>
 
-            <button onclick="colapseSidebar()" class="btn-flat white-text mt-4" style="display: flex; align-items: center; background: none; border: none; cursor: pointer;">
-                <i id="collapse-icon" class="material-icons" style="margin-right: 8px; font-weight: 800; font-size: 30px;">chevron_left</i>
-                <span class="nav-label">Collapse Sidebar</span>
+            <button onclick="colapseSidebar()" class="btn-flat white-text mt-4 nav-collapse-btn">
+                <i id="collapse-icon" class="material-icons">chevron_left</i>
+                <span class="nav-label">Collapse</span>
             </button>
         {% endif %}
     </div>

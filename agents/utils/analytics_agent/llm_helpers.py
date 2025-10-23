@@ -2,6 +2,7 @@ import json
 import os
 import openai
 import logging
+from functools import lru_cache
 from dotenv import load_dotenv
 from datetime import date
 
@@ -15,14 +16,29 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # Session Context Helpers
 from ..orchestrator.context_handle_helpers import estimate_cost
+from cpq.models import CustomObject
 
-def extract_metrics_with_llm(user_message, current_state, previous_summary=None):
-    """
-    Uses LLM to extract metrics from user input.
-    Returns JSON, tokens used, and estimated cost.
-    """
 
-    whitelist_fields = {
+CUSTOM_RECORD_BASE_FILTERS = [
+    "id",
+    "custom_identifier",
+    "record_id",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+]
+
+CUSTOM_RECORD_BASE_SORT = [
+    "custom_identifier",
+    "created_at",
+    "updated_at",
+]
+
+
+@lru_cache(maxsize=1)
+def _build_static_whitelist():
+    return {
         "Product": {
             "filters": [
                 "name", "sku", "price", "is_subscription", "term",
@@ -79,6 +95,39 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
             "sort": []
         }
     }
+
+
+def build_whitelist_fields():
+    whitelist = dict(_build_static_whitelist())
+
+    try:
+        custom_objects = list(CustomObject.objects.prefetch_related("custom_fields"))
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logging.warning(f"⚠️ Unable to load custom objects for analytics whitelist: {exc}")
+        return whitelist
+
+    for custom_obj in custom_objects:
+        field_names = [field.name for field in custom_obj.custom_fields.all()]
+        sortable_custom_fields = [
+            field.name
+            for field in custom_obj.custom_fields.all()
+            if (field.data_type or "").lower() in {"text", "textarea", "dropdown", "number", "date", "lookup"}
+        ]
+
+        whitelist[custom_obj.name] = {
+            "filters": CUSTOM_RECORD_BASE_FILTERS + field_names,
+            "sort": CUSTOM_RECORD_BASE_SORT + sortable_custom_fields,
+        }
+
+    return whitelist
+
+def extract_metrics_with_llm(user_message, current_state, previous_summary=None):
+    """
+    Uses LLM to extract metrics from user input.
+    Returns JSON, tokens used, and estimated cost.
+    """
+
+    whitelist_fields = build_whitelist_fields()
 
     system_prompt = """
     You are an AI assistant that helps extract user requests into a standardized JSON format called 'show_metrics'.
