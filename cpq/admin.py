@@ -152,9 +152,11 @@ class LeadAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
 
     related_activities.short_description = "Activities" # type: ignore[attr-defined]
     form = get_dynamic_form(Lead, crm="AgentCPQ", object_type="Lead")
+
     def get_fieldsets(self, request, obj=None):
-        fields = list(self.form().fields.keys()) + ['related_activities']
+        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']] + ['related_activities']
         return [(None, {'fields': fields})]
+    
     search_fields = ['first_name', 'last_name', 'email']
     list_filter = ['status', 'created_at']
 
@@ -177,7 +179,8 @@ class AccountAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(Account, crm="AgentCPQ", object_type="Account")
     list_display = ('tenant_id','name', 'industry', 'website', 'phone', 'created_at_js', 'updated_at_js')
     def get_fieldsets(self, request, obj=None):
-        return [(None, {'fields': list(self.form().fields.keys())})]
+        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
+        return [(None, {'fields': fields})]
 admin.site.register(Account, AccountAdmin)
 
 class ContractAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
@@ -199,14 +202,16 @@ class ActionTriggerAdmin(DynamicCustomFieldAdmin):
     form = get_dynamic_form(ActionTrigger, crm="AgentCPQ", object_type="ActionTrigger")
     list_display = ('trigger','action','object_name', 'action_params', 'active')
     def get_fieldsets(self, request, obj=None):
-        return [(None, {'fields': list(self.form().fields.keys())})]
+        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
+        return [(None, {'fields': fields})]
 admin.site.register(ActionTrigger, ActionTriggerAdmin)
 
 class ScheduledTaskAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(ScheduledTask, crm="AgentCPQ", object_type="ScheduledTask")
     list_display = ('opportunity','status','execute_at', 'attempts', 'last_error', 'created_at_js', 'updated_at_js')
     def get_fieldsets(self, request, obj=None):
-        return [(None, {'fields': list(self.form().fields.keys())})]
+        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
+        return [(None, {'fields': fields})]
 admin.site.register(ScheduledTask, ScheduledTaskAdmin)
 
 
@@ -271,11 +276,14 @@ class OpportunityEditableForm(BaseOpportunityForm): # type: ignore
 
 class OpportunityAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = OpportunityEditableForm
-    list_display = ('name','amount', 'account', 'stage', 'expected_close_date', 'primary_quote', 'created_at_js')
+    list_display = ('name','amount', 'account', 'stage', 'expected_close_date', 'primary_quote', 'created_by', 'created_at_js')
     def get_fieldsets(self, request, obj=None):
-        fields = list(self.form().fields.keys())
+        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
+
+        # Agregamos hs_deal_id si no está
         if 'hs_deal_id' not in fields:
             fields.append('hs_deal_id')
+
         return [(None, {'fields': fields})]
 
 admin.site.register(Opportunity, OpportunityAdmin)
@@ -283,7 +291,7 @@ admin.site.register(Opportunity, OpportunityAdmin)
 
 @admin.register(Knowledge)
 class KnowledgeAdmin(UTCDisplayAdmin, admin.ModelAdmin):
-    list_display = ('image_preview_list', 'title', 'language', 'has_video', 'is_active', 'created_at_js')
+    list_display = ('image_preview_list', 'title', 'language', 'has_video', 'is_active', 'created_by', 'created_at_js', 'updated_at_js')
     list_filter = ('language', 'has_video', 'is_active', 'created_at')
     search_fields = ('title', 'content_text', 'tags')
     readonly_fields = ('created_at', 'updated_at', 'image_preview', 'embedding')
@@ -296,9 +304,6 @@ class KnowledgeAdmin(UTCDisplayAdmin, admin.ModelAdmin):
         }),
         ('Media', {
             'fields': ('image_file', 'image_url', 'image_preview', 'video_url', 'embedding')
-        }),
-        ('Ownership & Timestamps', {
-            'fields': ('created_by', 'updated_by', 'created_at', 'updated_at')
         }),
     )
 
@@ -334,6 +339,13 @@ class KnowledgeAdmin(UTCDisplayAdmin, admin.ModelAdmin):
                 image_url,
             )
         return "—"
+    
+    def save_model(self, request, obj, form, change):
+        if not change and hasattr(obj, 'created_by'):
+            obj.created_by = request.user
+        elif hasattr(obj, 'updated_by'):
+            obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
 
     image_preview_list.short_description = "Preview"
 
@@ -366,7 +378,8 @@ class ProductAdmin(DynamicCustomFieldAdmin):
 
     def get_fieldsets(self, request, obj=None):
         form = self.get_form(request, obj)()
-        return [(None, {'fields': list(form.fields.keys())})]
+        fields = [f for f in form.fields.keys() if f not in ['created_at', 'updated_at']]
+        return [(None, {'fields': fields})]
 
     def save_model(self, request, obj, form, change):
         if hasattr(obj, 'created_by'):
@@ -473,9 +486,10 @@ admin.site.register(Product, ProductAdmin)
 
 class ActivityAdmin(DynamicCustomFieldAdmin):
     form = get_dynamic_form(Activity, crm="AgentCPQ", object_type="Activity")
-
+    
     def get_fieldsets(self, request, obj=None):
-        return [(None, {'fields': list(self.form().fields.keys())})]
+        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
+        return [(None, {'fields': fields})]
 
     def _redirect_to_related(self, request, obj):
         """Return an HttpResponseRedirect to the related object's admin change page, if any."""
@@ -543,16 +557,24 @@ admin.site.register(Option, OptionAdmin)
 @admin.register(BusinessRule)
 class BusinessRuleAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(BusinessRule, crm="AgentCPQ", object_type="BusinessRule")
-    list_display = ('name', 'rule_type', 'active', 'created_by', 'created_at_js')
+    list_display = ('name', 'rule_type', 'active', 'get_created_by', 'created_at_js')
     search_fields = ('name',)
     list_filter = ('rule_type', 'active')
 
+    def get_created_by(self, obj):
+        return obj.created_by or "-"
+    get_created_by.short_description = "Created by"
 
-class QuoteLineAdmin(DynamicCustomFieldAdmin):
+
+class QuoteLineAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(QuoteLine, crm="AgentCPQ", object_type="QuoteLine")
 
+    list_display = ('product_name', 'unit_price', 'subtotal', 'total_price', 'created_at_js', 'updated_at_js')
+
     def get_fieldsets(self, request, obj=None):
-        return [(None, {'fields': list(self.form().fields.keys())})]
+        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
+        return [(None, {'fields': fields})]
+    
 admin.site.register(QuoteLine, QuoteLineAdmin)
 
 @admin.register(ActionUsage)
@@ -567,7 +589,8 @@ class ContactAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
 
     # expose every form field in a single fieldset
     def get_fieldsets(self, request, obj=None):
-        return [(None, {'fields': list(self.form().fields.keys())})]
+        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
+        return [(None, {'fields': fields})]
 
     # tweak these to match your actual model columns
     list_display = (
@@ -590,7 +613,8 @@ class TenantAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(Tenant, crm="AgentCPQ", object_type="Tenant")
 
     def get_fieldsets(self, request, obj=None):
-        return [(None, {'fields': list(self.form().fields.keys())})]
+        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
+        return [(None, {'fields': fields})]
 
     list_display = ('tenant_id','name', 'plan', 'actions_limit', 'created_at_js', 'version')
 

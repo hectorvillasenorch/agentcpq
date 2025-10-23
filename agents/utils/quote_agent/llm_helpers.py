@@ -5,6 +5,8 @@ import openai
 import logging
 from dotenv import load_dotenv
 from datetime import date
+from cpq.models import Quote
+from django.forms.models import model_to_dict
 
 # System Prompt Helpers
 from ..prompts_helpers.system_prompt_helpers import make_system_prompt
@@ -349,7 +351,6 @@ def extract_products_to_add_with_llm(user_message, current_state, previous_summa
         logging.error("❌ Failed to clean/parse LLM JSON response.")
         return None, tokens_used, cost_est
 
-    # --- Normalizar estructura ---
     normalized_products = []
     for prod in result_json.get("add_product_to_quote", []):
         data = prod.get("data", {})
@@ -364,6 +365,17 @@ def extract_products_to_add_with_llm(user_message, current_state, previous_summa
             },
             "completed": bool(data.get("completed", prod.get("completed", False)))
         })
+
+    # --- Validar y corregir completed automáticamente ---
+    for prod in normalized_products:
+        data = prod["data"]
+        has_identifier = bool(data.get("sku") or data.get("name"))
+        has_quantity = (data.get("quantity") is not None and data.get("quantity") > 0)
+
+        if has_identifier and has_quantity:
+            prod["completed"] = True
+        else:
+            prod["completed"] = False
 
     result_json["add_product_to_quote"] = normalized_products
 
@@ -688,8 +700,13 @@ def extract_quote_updates_with_llm(user_message, current_state, previous_summary
 
     current_date = date.today().isoformat()
 
+    quote = Quote.objects.get(name=quote_name)
+    quote_data = model_to_dict(quote)
+
+    print(f"\n\nThis is quote: {quote_data}\n\n")
+
     system_prompt = """
-    You are a helpful AI assistant that extracts quote updates data from user messages.
+    You are a helpful AI assistant that modifies a quote and responds in the following format:
     Always return JSON with structure:
     {
         "update_quote": [
@@ -705,12 +722,43 @@ def extract_quote_updates_with_llm(user_message, current_state, previous_summary
         "agent_message": "string",
         "summary": "string"
     }
+    """
+
+    system_prompt += f"""
+    The quote you are going to modify is the following:
+    Current quote (JSON representation):
+    {json.dumps(quote_data, indent=2, default=str)}
+    """
+
+    system_prompt += """
+    You must use the current quote data as the base state.
+    - When the user asks to modify, increase, decrease, extend, or remove something, use the existing values in the current quote to determine the new value.
+    - For example:
+    - If the user says “increase the discount by 1%”, and the current discount_percentage is 5, the new value must be 6.
+    - If the user says “extend the expiration date by one week”, and the current expiration_date is "2025-07-10", then the new value must be "2025-07-17".
+    - Apply this rule for ALL fields (numbers, dates, text, etc.).
+    - Never ask for information that already exists in the current quote.
+    - Assume that the current quote data is accurate and complete.
+    """
+
+    system_prompt += """
+    Modify only the fields that the user mentions in their message, and for each field they want to change, add a record like this:
+    {
+        "data": {
+            "quote_name": null,
+            "field": null,
+            "value": null
+        },
+        "completed": false
+    }
+    to the list "update_quote".
+
+    Support flexible update actions such as add, remove, delete, multiply, double, divide, among others.
 
     Requirements:
     - For discounts, if the user specifies a percentage (e.g., "15% discount"), return field: "discount_percentage" and value: 15. If the user specifies a dollar amount (e.g., "$150 off", "150 dollars discount" or just a number like "150"), return field: "discount_amount" and value: 150. Always extract only the numeric value — remove symbols like % or $, and ignore words like "off", "discount", or "dollars".
     - Always normalize discount values to plain numbers.
     - If the user specifies a status value, always normalize it to match one of the following exact formats: "Draft", "Pending Approval", "Approved", "Rejected", or "Closed". Use title casing and ensure the value matches exactly (case-sensitive).
-    - If no quote name are found in the message, return null as quote_name.
     - If no field are found in the message, return null as field.
     - If no value are found in the message, return null as value.
     - If the user specifies words like remove or delete discount, then set field as "discount_percentage" and value = 0.
@@ -722,6 +770,7 @@ def extract_quote_updates_with_llm(user_message, current_state, previous_summary
     """
 
     system_prompt += f"""
+
     Rules:
     - Treat the JSON as ATTEMPTS to update quote, NOT confirmations.
     - If the user provides the quote name, use that, otherwise use the name of the active quote name: {quote_name}
@@ -738,6 +787,17 @@ def extract_quote_updates_with_llm(user_message, current_state, previous_summary
     - The message is sensitive to HTML tags, so if you want to make line breaks use the <br> tag.
     - Create a short, detailed summary that extends the previous summary with changes from this iteration.
     - The summary must always explain the current state + why completed is false (if false) OR confirm completeness (if true).
+
+    Agent message:
+    - Interpret this as an attempt, therefore do not say things like 'has been successfully updated'.
+    - If no quote are mentioned in "Current quote", respond naturally asking the user which fields they want to update. Use language that a regular user would understand, without emphasizing technical or internal terms. It's okay to mention 'quote' if it helps clarity, but keep the message user-friendly.
+    - Generate a natural response for the user explaining what happened: updates, errors, missing information, questions for the user, requests for data, etc.
+    - Short, professional, natural.
+    - Don't be technical.
+    - Continue naturally (do NOT start with 'Hello' or 'Hi')
+    - Use <br> for line breaks
+    - Do not explain if there are no failed or incomplete quotes.
+    - If the user requests to modify a field but the value would be the same as the existing one, explain naturally that no changes were applied because the value is already the same.
     """
 
     user_prompt = f"""
@@ -778,14 +838,24 @@ def extract_quote_updates_with_llm(user_message, current_state, previous_summary
     # Normalize structure
     normalized_products = []
     for prod in result_json.get("update_quote", []):
+        data = prod.get("data", {})
+
+        quote_name = data.get("quote_name") if data.get("quote_name") is not None else prod.get("quote_name")
+        field = data.get("field") if data.get("field") is not None else prod.get("field")
+        value = data.get("value") if data.get("value") is not None else prod.get("value")
+
+        # ✅ Marcar como True solo si field y value tienen valores
+        completed = field is not None and value is not None
+
         normalized_products.append({
             "data": {
-                "quote_name": prod.get("data", {}).get("quote_name") or prod.get("quote_name"),
-                "field": prod.get("data", {}).get("field") or prod.get("field"),
-                "value": prod.get("data", {}).get("value") or prod.get("value")
+                "quote_name": quote_name,
+                "field": field,
+                "value": value
             },
-            "completed": prod.get("data", {}).get("completed", prod.get("completed", False))
+            "completed": completed
         })
+
     result_json["update_quote"] = normalized_products
 
     return result_json, tokens_used, cost_est
@@ -815,7 +885,7 @@ def generate_final_quote_updates_message(completed_quote_updates, db_results, re
     - Be short, friendly, professional, natural, ask follow-ups, concise but specific and friendly.
     - Convert all the messages that appeared when removing the quote updates into a natural, user-friendly message; you can use the exact same message from the backend if you prefer.
     - Always mention the quote name.
-    - Use symple emojis.
+    - Do not specify when there are no pending updates; do not respond with messages like: “There are no pending updates.”, "There are no pending updates at this time."
     - Mention only which quote updates were successfully and which are still pending or incomplete.
     - Do NOT include the detailed changes made to each quote update; those details are already captured in the "summary".
     - Do not specify if there are no incomplete quote updates.

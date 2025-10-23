@@ -470,6 +470,8 @@ def handle_quote_update_request(extracted_updates, quote, response_message):
         field = item.get("field", None)
         value = item.get("value", None)
 
+        print(f"\n\nField: {field}\n\nValue: {value}\n\n")
+
         field_labels = {
             "status": "Status",
             "discount_percentage": "Discount Percentage",
@@ -505,7 +507,7 @@ def handle_quote_update_request(extracted_updates, quote, response_message):
             response_message += f"⚠️ Error: No value was detected in your request. Please specify the new value for the update.<br><br>"
             continue
 
-        if field.startswith("discount") and Decimal(value) <= 0:
+        if field.startswith("discount") and Decimal(value) < 0:
             logging.warning("⚠️ Error: The value for discounts cannot be less than or equals 0. Please provide a valid number.")
             response_message += f"⚠️ Error: The value for discounts cannot be less than or equals 0. Please provide a valid number.<br><br>"
             continue

@@ -45,6 +45,8 @@ from django.utils import timezone
 from .models import EmailAlert
 from cpq.models import default_rendered_fields_for_quote_document_settings, default_omitted_fields_for_quote_document_settings
 from django.utils.html import escape
+from django.urls import reverse
+from django.utils.http import urlencode
 
 # HubSpot sync
 from hubspot.views import sync_opportunity_to_hubspot
@@ -544,7 +546,7 @@ def get_company_information(request):
 
     return render(request, 'company_information.html', {
         'company': company or Tenant(),
-        'logo_url': logo_url,
+        'logo_url': logo_url
     })
 
 

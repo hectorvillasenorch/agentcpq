@@ -157,6 +157,8 @@ def orchestrate_request(user, user_message, session_data):
             "content": """
             You are an AI assistant that classifies user requests into predefined actions.
             Only answer with ONE label from the list provided, no explanations, no emojis, do not use this emoji: ✅.
+            If the user's current message is exactly the same as the previous one, it is possible that what you decided earlier was not the correct action.
+            Consider changing it for this new attempt, or ask the user what they want to do.
             """
         }
     ]
@@ -237,6 +239,13 @@ def orchestrate_request(user, user_message, session_data):
         - "KnowledgeLookup" → Use when the user asks for how-to instructions, FAQs, or training guidance (e.g. "how do I create a quote", "teach me about approvals").
         - "CreateActionTrigger"
         - "CreateExclusionRule"
+        """
+    })
+
+    messages.append({
+        "role": "system",
+        "content": f"""
+        
         """
     })
 

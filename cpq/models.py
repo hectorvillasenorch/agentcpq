@@ -1470,6 +1470,7 @@ class Knowledge(models.Model):
 
     def __str__(self):
         return self.title
+    
 class ActionTrigger(models.Model):
     """
     Represents a trigger (event) and the action to execute on a specific object.

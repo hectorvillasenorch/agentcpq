@@ -39,6 +39,7 @@ import smtplib
 from django.template.loader import render_to_string
 import re
 from .forms import SignupForm
+from django.contrib.auth.views import LogoutView
 
 
 def _decode_message_content(raw: str) -> str:
@@ -458,3 +459,11 @@ def get_next_custom_identifier(last_identifier):
     next_number_str = str(next_number).zfill(5)
     
     return f"{prefix}-{next_number_str}"
+
+
+class CustomLogoutView(LogoutView):
+    def dispatch(self, request, *args, **kwargs):
+        # 🧹 Limpiar datos de sesión personalizados antes de cerrar sesión
+        for key in ['last_session_id', 'last_view', 'last_object_name']:
+            request.session.pop(key, None)
+        return super().dispatch(request, *args, **kwargs)
