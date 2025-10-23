@@ -839,11 +839,13 @@ def handle_custom_object_records(user, extracted_custom_objects_records, respons
 
         # Safety: ensure modified_by is stamped on the parent record
         try:
-            record.modified_by = user
-            record.save(update_fields=["modified_by", "updated_at"])
-        except Exception:
-            logging.warning("Failed to update modified_by on record %s: %s", record.id, str(e))
-            pass
+            if hasattr(record, "modified_by"):
+                record.modified_by = user
+                record.save(update_fields=["modified_by", "updated_at"])
+            else:
+                record.save(update_fields=["updated_at"])
+        except Exception as exc:
+            logging.warning("Failed to update modified_by on record %s: %s", record.id, exc)
 
         records_created.append(record)
         response_message += (

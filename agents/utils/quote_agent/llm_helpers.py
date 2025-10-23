@@ -26,6 +26,7 @@ OPENAI_MODEL = "gpt-4o-mini"
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 from ..orchestrator.context_handle_helpers import estimate_cost
+from ..message_formatters import format_message_with_standard_icons, INFO_ICON, SUCCESS_ICON, ERROR_ICON, WARNING_ICON
 
 
 
@@ -179,7 +180,7 @@ def extract_quote_details_with_llm(user_message, current_state, previous_summary
 
 
 
-def generate_final_create_quote_message(quote, db_results, previous_summary, products = None):
+def generate_final_create_quote_message(quote, db_results, previous_summary, products=None, formatted_message=None):
     """
     Generates in ONE LLM call:
     1) A concise, professional, emoji-rich message for the user.
@@ -254,7 +255,7 @@ def generate_final_create_quote_message(quote, db_results, previous_summary, pro
     )
 
     raw_output = response.choices[0].message.content.strip()
-    logging.info(f"\n\n🔍 Raw GPT JSON Response: {raw_output}\n\n")
+    logging.info(f"\n\n🔍 Raw GPT JSON Response Create quote methond: {raw_output}\n\n")
 
     try:
         parsed = json.loads(raw_output)
@@ -264,6 +265,9 @@ def generate_final_create_quote_message(quote, db_results, previous_summary, pro
         logging.error(f"❌ Error parsing LLM JSON output: {e}")
         message = raw_output
         updated_summary = previous_summary
+
+    if formatted_message:
+        message = formatted_message
 
     return message, updated_summary, tokens_used, cost_est
 
@@ -366,7 +370,6 @@ def extract_products_to_add_with_llm(user_message, current_state, previous_summa
             "completed": bool(data.get("completed", prod.get("completed", False)))
         })
 
-    # --- Validar y corregir completed automáticamente ---
     for prod in normalized_products:
         data = prod["data"]
         has_identifier = bool(data.get("sku") or data.get("name"))
@@ -464,7 +467,7 @@ def generate_final_add_product_to_quote_message(completed_products, db_results, 
     )
 
     raw_output = response.choices[0].message.content.strip()
-    logging.info(f"\n\n🔍 Raw GPT JSON Response: {raw_output}\n\n")
+    logging.info(f"\n\n🔍 Raw GPT JSON Response Delete QuoteLines: {raw_output}\n\n")
 
     try:
         parsed = json.loads(raw_output)
@@ -681,7 +684,7 @@ def generate_final_update_line_items_message(completed_updates, db_results, rema
     )
 
     raw_output = response.choices[0].message.content.strip()
-    logging.info(f"\n\n🔍 Raw GPT JSON Response: {raw_output}\n\n")
+    logging.info(f"\n\n🔍 Raw GPT JSON Response Update LineItems: {raw_output}\n\n")
 
     try:
         parsed = json.loads(raw_output)
@@ -691,6 +694,30 @@ def generate_final_update_line_items_message(completed_updates, db_results, rema
         logging.error(f"❌ Error parsing LLM JSON output: {e}")
         message = raw_output
         updated_summary = previous_summary
+
+    if message:
+        lowered = message.lower()
+        success_triggers = (
+            "successfully updated",
+            "successfully created",
+            "successfully deleted",
+            "successfully",
+            "success",
+            "updated",
+            "created",
+            "deleted",
+        )
+
+        if (
+            not message.lstrip().startswith("<span")
+            and "not success" not in lowered
+            and "not successfully" not in lowered
+            and "unsuccess" not in lowered
+            and any(trigger in lowered for trigger in success_triggers)
+        ):
+            message = f"{SUCCESS_ICON} {message.strip()}"
+
+    message = format_message_with_standard_icons(message)
 
     return message, updated_summary, tokens_used, cost_est
 
@@ -934,7 +961,7 @@ def generate_final_quote_updates_message(completed_quote_updates, db_results, re
     )
 
     raw_output = response.choices[0].message.content.strip()
-    logging.info(f"\n\n🔍 Raw GPT JSON Response: {raw_output}\n\n")
+    logging.info(f"\n\n🔍 Raw GPT JSON Response Final Quote Updates: {raw_output}\n\n")
 
     try:
         parsed = json.loads(raw_output)
@@ -944,6 +971,50 @@ def generate_final_quote_updates_message(completed_quote_updates, db_results, re
         logging.error(f"❌ Error parsing LLM JSON output: {e}")
         message = raw_output
         updated_summary = previous_summary
+
+    if message:
+        message_lower = message.lower()
+        success_triggers = [
+            "successfully updated",
+            "successfully created",
+            "successfully deleted",
+            "successfully",
+            "success",
+            "updated",
+            "created",
+            "deleted",
+        ]
+
+        if (
+            not message.lstrip().startswith("<span")
+            and "not success" not in message_lower
+            and "not successfully" not in message_lower
+            and "unsuccess" not in message_lower
+            and any(trigger in message_lower for trigger in success_triggers)
+        ):
+            message = f"{SUCCESS_ICON} {message.strip()}"
+
+    message = format_message_with_standard_icons(message)
+
+    if message:
+        formatted_lower = message.lower()
+        if (
+            not message.lstrip().startswith("<span")
+            and "not success" not in formatted_lower
+            and "not successfully" not in formatted_lower
+            and "unsuccess" not in formatted_lower
+            and any(trigger in formatted_lower for trigger in (
+                "successfully updated",
+                "successfully created",
+                "successfully deleted",
+                "successfully",
+                "success",
+                "updated",
+                "created",
+                "deleted",
+            ))
+        ):
+            message = f"{SUCCESS_ICON} {message.strip()}"
 
     return message, updated_summary, tokens_used, cost_est
 

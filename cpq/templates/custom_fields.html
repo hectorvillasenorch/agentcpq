@@ -211,27 +211,45 @@
   document.addEventListener('DOMContentLoaded', function () {
     const tabs = document.querySelectorAll('.object-tab');
 
+    const showTab = (tabEl) => {
+      if (!tabEl) return;
+
+      document.querySelectorAll('.object-content').forEach(div => {
+        div.style.display = 'none';
+      });
+
+      tabs.forEach(t => t.classList.remove('active'));
+
+      const targetId = tabEl.getAttribute('href');
+      const targetEl = document.querySelector(targetId);
+      if (targetEl) {
+        targetEl.style.display = 'block';
+      }
+
+      tabEl.classList.add('active');
+      formatDateElements();
+    };
+
     tabs.forEach(tab => {
       tab.addEventListener('click', function (e) {
         e.preventDefault();
-
-        // Hide all content divs
-        document.querySelectorAll('.object-content').forEach(div => {
-          div.style.display = 'none';
-        });
-
-        // Remove 'active' class from all tabs
-        tabs.forEach(t => t.classList.remove('active'));
-
-        // Show the clicked content and set active class
-        const targetId = this.getAttribute('href');
-        document.querySelector(targetId).style.display = 'block';
-        this.classList.add('active');
-
-        // 🔥 Aquí formateamos fechas cada vez que cambiamos de tab
-        formatDateElements();
+        showTab(this);
       });
     });
+
+    const params = new URLSearchParams(window.location.search);
+    const targetObject = params.get('object_name');
+    let initialTab = null;
+
+    if (targetObject) {
+      initialTab = document.querySelector(`.object-tab[href="#tab-${targetObject}"]`);
+    }
+
+    if (!initialTab && tabs.length) {
+      initialTab = tabs[0];
+    }
+
+    showTab(initialTab);
   });
   document.addEventListener("DOMContentLoaded", function () {
     const toggleBtn = document.getElementById("toggle-create-form");

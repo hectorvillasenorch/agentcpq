@@ -24,7 +24,8 @@ from .models import (
     Knowledge,
     Contract, 
     ScheduledTask,
-    ActionTrigger
+    ActionTrigger,
+    EmailAlert,
 )
 from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession, AgentPrompt
@@ -404,7 +405,8 @@ class ProductAdmin(DynamicCustomFieldAdmin):
                     field=field,
                 )
                 cf_value.value = value if value else ""
-                cf_value.updated_by_user = request.user
+                if hasattr(cf_value, 'updated_by_user'):
+                    cf_value.updated_by_user = request.user
                 cf_value.save()
 
     def format_datetime(self, dt):
@@ -619,6 +621,7 @@ class TenantAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     list_display = ('tenant_id','name', 'plan', 'actions_limit', 'created_at_js', 'version')
 
 admin.site.register(Tenant, TenantAdmin)
+admin.site.register(EmailAlert)
 
 class ChatMessageInline(admin.TabularInline):
     model = ChatMessage

@@ -1,6 +1,8 @@
 /* ✅ General Styling */
 body {
   font-family: 'Arial', sans-serif;
+  margin: 0;
+  min-height: 100vh;
 }
 
 /* ✅ Quitar spinners de input type="number" */
@@ -370,11 +372,132 @@ h2 {
 .chat-input-container{
     display: flex;
     flex-direction: column;
-    background: white;
-    border-top: 0px solid #ddd;
-    padding: 10px;
-    margin-bottom: 60px;
-    /* box-shadow: 0px -3px 20px 0px gray; */
+    background: #ffffff;
+    border-top: 1px solid #e5e5e5;
+    padding: 12px 14px 14px;
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+}
+
+
+.input-wrapper.upload-dropzone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.input-wrapper.upload-dropzone .input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.input-wrapper.upload-dropzone .input-row .chat-input {
+  flex-grow: 1;
+  min-width: 0;
+  padding: 8px;
+}
+
+.input-wrapper.upload-dropzone .input-row .send-button {
+  padding: 8px 12px;
+  border-radius: 18px;
+}
+
+.input-wrapper.upload-dropzone.is-dragover {
+  border-color: #fc6a3d;
+  box-shadow: 0 0 0 2px rgba(249, 107, 53, 0.2);
+}
+
+.input-wrapper.upload-dropzone.is-disabled {
+  opacity: 0.75;
+}
+
+
+.upload-browse-btn {
+  margin-top: 6px;
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: #fc6a3d;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+
+.upload-browse-btn:hover,
+.upload-browse-btn:focus {
+  background: rgba(249, 107, 53, 0.1);
+  outline: none;
+}
+
+.input-wrapper.upload-dropzone .chat-input {
+  padding: 6px 8px;
+  font-size: 1.12rem !important;
+}
+
+.input-wrapper.upload-dropzone .upload-browse-btn .material-icons,
+.input-wrapper.upload-dropzone .send-button .material-icons {
+  font-size: 20px;
+}
+
+.upload-hint {
+  display: block;
+  font-size: 0.7rem;
+  color: #767676;
+  margin: 6px 0 0;
+}
+
+.upload-dropzone.is-disabled + .upload-hint {
+  color: #9a9a9a;
+}
+
+
+.upload-list {
+  list-style: none;
+  padding: 8px 4px;
+  margin: 8px 0 0;
+  max-height: 150px;
+  overflow-y: auto;
+  font-size: 0.85rem;
+  color: #444;
+}
+
+.upload-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background-color: #f5f5f5;
+  margin-bottom: 6px;
+}
+
+.upload-list li.upload-empty {
+  justify-content: center;
+  background-color: transparent;
+  color: #9a9a9a;
+  font-style: italic;
+}
+
+.upload-list li .upload-name {
+  flex-grow: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-list li .upload-meta {
+  color: #777;
+  font-size: 0.75rem;
 }
 
 
@@ -384,24 +507,20 @@ h2 {
     align-items: center;
     border: 0.5px solid rgb(210, 210, 210);
     border-radius: 9px;
-    
-    padding: 10px;
+    padding: 8px 10px;
     background: #ffffff;
     width: 100%;
     box-shadow: -1px 1px 3px #cacaca;
 }
 
-input[type=text]:not(.browser-default){
-  font-size: 1.2rem;
-}
-
 .chat-input {
   flex-grow: 1;
+  min-width: 0;
   border: 0 !important;
   outline: none;
   background: transparent;
-  padding: 10px;
-  font-size: 1.3rem !important;
+  padding: 8px;
+  font-size: 1.12rem !important;
 }
 .chat-input:focus,
 .chat-input:focus-visible {
@@ -424,9 +543,9 @@ input[type=text]:not(.browser-default){
   background-color: #f96b35;
   color: white;
   border: none;
-  padding: 12px 15px;
-  margin-left: 10px;
-  border-radius: 25px;
+  padding: 8px 12px;
+  margin-left: 6px;
+  border-radius: 18px;
   cursor: pointer;
 }
 

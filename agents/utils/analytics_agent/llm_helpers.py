@@ -323,7 +323,7 @@ def generate_final_metrics_message(completed_metrics, db_results, remaining_metr
     )
 
     raw_output = response.choices[0].message.content.strip()
-    logging.info(f"\n\n🔍 Raw GPT JSON Response: {raw_output}\n\n")
+    logging.info(f"\n\n🔍 Raw GPT JSON Response Analytics: {raw_output}\n\n")
 
     try:
         parsed = json.loads(raw_output)

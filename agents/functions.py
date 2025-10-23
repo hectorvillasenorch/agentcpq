@@ -20,7 +20,14 @@ def add_product_to_quote(user, user_message, session_data):
     approval_suggestion = get_approval_status("", "", quote.id, "")
 
     if added_products:
-        response_message += f"<br>💰 Net amount updated to ${quote.net_amount:,.2f}. Would you like to add more products?"
+        money_icon = (
+            '<span class="material-icons" '
+            'style="font-size:20px;vertical-align:middle;color:#2e7d32;">attach_money</span>'
+        )
+        response_message += (
+            f"<br>{money_icon} Net amount updated to ${quote.net_amount:,.2f}. "
+            "Would you like to add more products?"
+        )
     else:
         return {
             "message": "⚠️ Error: Something went wrong — no product was added to the quote. Please try again or verify your input."

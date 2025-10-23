@@ -976,6 +976,34 @@ class Tenant(models.Model):
 def temp_file_path(instance, filename):
     return f"temp/quotes/{filename}"
 
+
+def quote_attachment_upload_path(instance, filename):
+    base_name = os.path.basename(filename)
+    name, ext = os.path.splitext(base_name)
+    ext = ext or ""
+    random_suffix = uuid.uuid4().hex[:12]
+    tenant = instance.quote.account.tenant_id if instance.quote and instance.quote.account else "shared"
+    return f"tenant_{tenant}/quote_uploads/{instance.quote_id}/{name}_{random_suffix}{ext}"
+
+
+class QuotePendingAttachment(models.Model):
+    quote = models.ForeignKey('Quote', on_delete=models.CASCADE, related_name='pending_attachments')
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='quote_pending_attachments')
+    file = models.FileField(upload_to=quote_attachment_upload_path)
+    original_name = models.CharField(max_length=255, blank=True)
+    mime_type = models.CharField(max_length=100, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    consumed = models.BooleanField(default=False)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["quote", "consumed"]),
+        ]
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return f"Attachment for quote {self.quote.name} ({self.original_name or self.file.name})"
+
 class QuoteDocument(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name='documents')
     version = models.PositiveIntegerField()
@@ -1080,6 +1108,7 @@ class CustomFieldValue(models.Model):
     value = models.TextField(blank=True)
     record = models.ForeignKey(CustomRecord, null=True, blank=True, on_delete=models.CASCADE, related_name="custom_field_values")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_by_user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="updated_custom_field_values")
 
     def save(self, *args, **kwargs):
         is_changed = True
@@ -1092,9 +1121,10 @@ class CustomFieldValue(models.Model):
 
         super().save(*args, **kwargs)
 
-        if is_changed and self.updated_by_user:
+        updated_by_user = getattr(self, 'updated_by_user', None)
+        if is_changed and updated_by_user:
             if hasattr(self.field, 'updated_by'):
-                self.field.updated_by = self.updated_by_user
+                self.field.updated_by = updated_by_user
                 self.field.save(update_fields=['updated_by', 'updated_at'])
 
     def __str__(self):
@@ -1311,6 +1341,9 @@ class EmailAlert(models.Model):
         ("quote_rejected", "Quote Rejected"),
         ("quote_expiring", "Quote Expiring Soon"),
         ("subscription_renewal", "Subscription Renewal Reminder"),
+        ("user_created", "New User Created"),
+        ("opportunity_greater_than_10k", "Opportunity Amount > $10K"),
+        ("quote_discount_greater_than_50", "Quote Discount > 50%"),
     ]
 
     NATIVE_OBJECT_CHOICES = [
@@ -1319,6 +1352,12 @@ class EmailAlert(models.Model):
         ("Opportunity", "Opportunity"),
         ("Quote", "Quote"),
         ("Subscription", "Subscription"),
+        ("Product", "Product"),
+        ("QuoteLine", "Quote Line"),
+        ("User", "User"),
+        ("Contract", "Contract"),
+        ("Contact", "Contact"),
+        ("Activity", "Activity"),
     ]
 
     ROLE_CHOICES = [

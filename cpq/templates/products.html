@@ -188,12 +188,18 @@
     {% endfor %}
   </tbody>
 </table>
-</div>
+
 
 {% if bundles %}
   <br>
+  <br>wh
   <div class="container-fluid">
-    <h2><i class="material-icons"></i>Bundle Catalog</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+      <h4 style="display: flex; align-items: center; margin: 0; font-weight: 600;">
+        <i class="material-icons" style="margin-right: 8px;">inventory</i>
+        Bundle Catalog
+      </h4>
+    </div>
     <table class="product-table">
     <thead>
       <tr>
@@ -258,4 +264,5 @@
     </tbody>
   </table>
   </div>
+</div>
 {% endif %}

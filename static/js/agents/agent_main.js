@@ -1,8 +1,24 @@
 document.addEventListener("DOMContentLoaded", function () {
   setupChatListeners();
   setupSessionSwitching();
+  setupUploadZone();
+  loadPendingAttachments();
   enhanceStructuredAgentMessagesHistoryChat(); // 🔥
 });
+
+let pendingAttachments = [];
+const UPLOAD_HINT_DEFAULT = "PNG, JPG, GIF, or WEBP up to 8 MB. Attachments are appended to the next PDF.";
+
+function getUploadHintElement(dropzone) {
+  if (!dropzone) return null;
+  const internal = dropzone.querySelector(".upload-hint");
+  if (internal) return internal;
+  const sibling = dropzone.nextElementSibling;
+  if (sibling && sibling.classList && sibling.classList.contains("upload-hint")) {
+    return sibling;
+  }
+  return null;
+}
 
 /**
 * ✅ Get the current session
@@ -55,6 +71,229 @@ function setupChatListeners() {
   });
 
   console.log("Chat listeners attached.");
+}
+
+function setupUploadZone() {
+  const dropzone = document.getElementById("upload-dropzone");
+  const fileInput = document.getElementById("upload-input");
+  const browseBtn = document.getElementById("upload-browse-btn");
+
+  if (!dropzone || !fileInput) {
+    return;
+  }
+
+  const activateDropzone = (event) => {
+    event.preventDefault();
+    dropzone.classList.add("is-dragover");
+  };
+
+  const deactivateDropzone = (event) => {
+    event.preventDefault();
+    dropzone.classList.remove("is-dragover");
+  };
+
+  ["dragenter", "dragover"].forEach((evt) => {
+    dropzone.addEventListener(evt, activateDropzone);
+  });
+
+  ["dragleave", "dragend"].forEach((evt) => {
+    dropzone.addEventListener(evt, deactivateDropzone);
+  });
+
+  dropzone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropzone.classList.remove("is-dragover");
+    const files = Array.from(event.dataTransfer?.files || []);
+    handleAttachmentFiles(files);
+  });
+
+  if (browseBtn) {
+    browseBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      fileInput.click();
+    });
+  }
+
+  fileInput.addEventListener("change", (event) => {
+    const files = Array.from(event.target.files || []);
+    handleAttachmentFiles(files);
+    fileInput.value = "";
+  });
+}
+
+async function loadPendingAttachments() {
+  const dropzone = document.getElementById("upload-dropzone");
+  if (!dropzone) {
+    return;
+  }
+
+  try {
+    const response = await fetch("/agents/upload-attachment/");
+    if (!response.ok) {
+      if (response.status === 400 || response.status === 503) {
+        dropzone.classList.add("is-disabled");
+        const hint = getUploadHintElement(dropzone);
+        if (hint) {
+          hint.textContent = response.status === 503
+            ? "Attachment uploads need pending migrations. Contact your administrator."
+            : "Open or create a quote to enable attachments.";
+        }
+      }
+      pendingAttachments = [];
+      renderAttachmentList();
+      return;
+    }
+
+    const data = await response.json();
+    pendingAttachments = Array.isArray(data.attachments) ? data.attachments : [];
+    dropzone.classList.remove("is-disabled");
+    const hint = getUploadHintElement(dropzone);
+    if (hint) {
+      hint.textContent = UPLOAD_HINT_DEFAULT;
+    }
+    renderAttachmentList();
+  } catch (error) {
+    console.error("Failed to load pending attachments:", error);
+  }
+}
+
+async function handleAttachmentFiles(files) {
+  const dropzone = document.getElementById("upload-dropzone");
+  if (!files.length) {
+    return;
+  }
+
+  if (dropzone && dropzone.classList.contains("is-disabled")) {
+    await loadPendingAttachments();
+    if (dropzone.classList.contains("is-disabled")) {
+      const hint = getUploadHintElement(dropzone);
+      const fallbackMessage = hint ? hint.textContent : "⚠️ Open or create a quote before attaching files.";
+      appendMessage(
+        "agent",
+        agentNoticeMarkup(fallbackMessage || "⚠️ Open or create a quote before attaching files.")
+      );
+      return;
+    }
+  }
+
+  files.forEach((file) => uploadAttachment(file));
+}
+
+function renderAttachmentList() {
+  const listEl = document.getElementById("upload-list");
+  if (!listEl) {
+    return;
+  }
+
+  listEl.innerHTML = "";
+
+  if (!pendingAttachments.length) {
+    listEl.style.display = "none";
+    return;
+  }
+
+  listEl.style.display = "block";
+  pendingAttachments.forEach((attachment) => {
+    const item = document.createElement("li");
+    const nameEl = document.createElement("span");
+    nameEl.classList.add("upload-name");
+    nameEl.textContent = attachment.original_name || "Attachment";
+
+    const metaEl = document.createElement("span");
+    metaEl.classList.add("upload-meta");
+    if (attachment.uploaded_at) {
+      const uploadedDate = new Date(attachment.uploaded_at);
+      metaEl.textContent = uploadedDate.toLocaleString();
+    }
+
+    item.appendChild(nameEl);
+    item.appendChild(metaEl);
+    listEl.appendChild(item);
+  });
+}
+
+function agentNoticeMarkup(message) {
+  return `
+    <div class="senderagent">
+      <img width="95px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
+    </div>
+    <div class="message">${message}</div>
+  `;
+}
+
+async function uploadAttachment(file) {
+  const allowedTypes = [
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/gif",
+    "image/webp",
+  ];
+  const maxSize = 8 * 1024 * 1024; // 8 MB
+
+  if (!allowedTypes.includes(file.type)) {
+    appendMessage(
+      "agent",
+      agentNoticeMarkup(`⚠️ <strong>${escapeHtml(file.name)}</strong> is not a supported format. Please upload PNG, JPG, GIF, or WEBP.`)
+    );
+    return;
+  }
+
+  if (file.size > maxSize) {
+    appendMessage(
+      "agent",
+      agentNoticeMarkup(`⚠️ <strong>${escapeHtml(file.name)}</strong> is too large. Keep attachments under 8 MB.`)
+    );
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const sessionId = getCurrentSessionId();
+  if (sessionId) {
+    formData.append("session_id", sessionId);
+  }
+
+  try {
+    const response = await fetch("/agents/upload-attachment/", {
+      method: "POST",
+      body: formData,
+    });
+
+    const payload = await response.json();
+
+    if (!response.ok) {
+      if (response.status === 503) {
+        const dropzone = document.getElementById("upload-dropzone");
+        if (dropzone) {
+          dropzone.classList.add("is-disabled");
+          const hint = getUploadHintElement(dropzone);
+          if (hint) {
+            hint.textContent = "Attachment uploads need pending migrations. Contact your administrator.";
+          }
+        }
+      }
+      throw new Error(payload.error || "Upload failed");
+    }
+
+    if (payload.attachment) {
+      pendingAttachments.unshift(payload.attachment);
+      renderAttachmentList();
+    }
+
+    appendMessage(
+      "agent",
+      agentNoticeMarkup(`📎 <strong>${escapeHtml(file.name)}</strong> uploaded. I'll merge it into the next quote PDF.`)
+    );
+  } catch (error) {
+    console.error("Attachment upload failed:", error);
+    appendMessage(
+      "agent",
+      agentNoticeMarkup(`❌ Couldn't upload <strong>${escapeHtml(file.name)}</strong>: ${escapeHtml(error.message)}`)
+    );
+  }
 }
 
 function renderGreeting() {
@@ -506,6 +745,7 @@ async function sendMessage() {
 
         // ✅ Append the final response message to the chat
         appendMessage("agent", `<div class="senderagent"><img width="110px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
+        loadPendingAttachments();
         hideAgentFeedback();
         scrollToBottom();
 
@@ -1206,7 +1446,7 @@ function renderQuoteDetailsMobile(quote) {
           : ''
       }
 
-      <p>💰 <b>Net Amount:</b> ${parseFloat(
+      <p><span class="material-icons" style="font-size:20px;vertical-align:middle;color:#2e7d32;margin-right:4px;">attach_money</span><b>Net Amount:</b> ${parseFloat(
         quote.net_amount.replace("$", "")
       ).toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
     </div>`;

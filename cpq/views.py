@@ -1,4 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
+from django.urls import reverse
 from .models import (
     Product,
     SystemFieldMapping,
@@ -30,6 +31,7 @@ from django.contrib import messages
 import logging
 from django.db.models import Count, Prefetch
 from django.utils.timezone import now
+from django.utils.text import slugify
 from django.db.models.functions import TruncMonth
 from datetime import datetime
 from django.utils.timezone import make_aware
@@ -59,6 +61,16 @@ def root_redirect(request):
     if request.user.is_authenticated:
         return redirect('dashboard')  # or any logged-in home view
     return redirect('login')
+
+
+def _redirect_to_custom_fields(object_name=None):
+    base_url = reverse('cpq:custom_fields')
+
+    if object_name:
+        view_param = 'custom' if CustomObject.objects.filter(name=object_name).exists() else 'standard'
+        return redirect(f"{base_url}?view={view_param}&object_name={object_name}")
+
+    return redirect(base_url)
 
 def product_list(request):
     """Fetch all products and display them in a table."""
@@ -309,7 +321,7 @@ def custom_fields_view(request):
             custom_object.updated_by = request.user
             custom_object.save()
             request.session['custom_object_success'] = True
-            return redirect('cpq:custom_fields')
+            return _redirect_to_custom_fields(custom_object.name)
     else:
         form = CustomObjectForm()
 
@@ -390,7 +402,7 @@ def edit_custom_object(request, object_name):
             updated_object = form.save(commit=False)
             updated_object.updated_by = request.user
             updated_object.save()
-            return redirect('cpq:custom_fields')  # O donde quieras regresar
+            return _redirect_to_custom_fields(object_name)
     else:
         form = CustomObjectForm(instance=custom_object)
 
@@ -419,7 +431,7 @@ def delete_custom_object(request, object_name):
         return HttpResponseForbidden("You do not have permission to delete this custom object.")
 
     custom_object.delete()
-    return redirect('cpq:custom_fields')
+    return _redirect_to_custom_fields(object_name)
 
 def create_custom_field(request, object_name):
     if request.method == 'POST':
@@ -449,7 +461,7 @@ def create_custom_field(request, object_name):
             #        quote_document_settings.omitted_fields = omitted
             #        quote_document_settings.save()
 
-            return redirect('cpq:custom_fields')  # or wherever you want to go after save
+            return _redirect_to_custom_fields(field.object_type)
         else:
             print("Form errors:", form.errors)
     else:
@@ -482,15 +494,20 @@ def edit_custom_field(request, field_id):
                 updated_field.options = []  # Limpiar si ya no es dropdown
 
             updated_field.save()
-            return redirect('cpq:custom_fields')
+            return _redirect_to_custom_fields(updated_field.object_type)
     else:
         form = CustomFieldForm(instance=custom_field)
         related_values = custom_field.values.all()
 
+    object_name = custom_field.object_type
+    object_view = 'custom' if CustomObject.objects.filter(name=object_name).exists() else 'standard'
+
     return render(request, 'edit_custom_field.html', {
         'form': form,
         'field_id': field_id,
-        'related_values': related_values
+        'related_values': related_values,
+        'object_name': object_name,
+        'object_view': object_view,
     })
 
 
@@ -503,8 +520,9 @@ def delete_custom_field(request, field_id):
         return HttpResponseForbidden("You do not have permission to delete this custom field.")
 
 
+    object_name = custom_field.object_type
     custom_field.delete()
-    return redirect('cpq:custom_fields')
+    return _redirect_to_custom_fields(object_name)
 
 
 @login_required
@@ -749,33 +767,42 @@ def manage_notifications_view(request):
 
     # Filtrado por objeto
 
-    alert_groups = [
-        {
-            "title": "Lead Notifications",
-            "icon": "person_add",
-            "alerts": [a for a in alerts_with_lists if a.native_object == "Lead"]
-        },
-        {
-            "title": "Account Notifications",
-            "icon": "account_circle",
-            "alerts": [a for a in alerts_with_lists if a.native_object == "Account"]
-        },
-        {
-            "title": "Opportunity Notifications",
-            "icon": "trending_up",
-            "alerts": [a for a in alerts_with_lists if a.native_object == "Opportunity"]
-        },
-        {
-            "title": "Quote Notifications",
-            "icon": "request_quote",
-            "alerts": [a for a in alerts_with_lists if a.native_object == "Quote"]
-        },
-        {
-            "title": "Subscription Notifications",
-            "icon": "autorenew",
-            "alerts": [a for a in alerts_with_lists if a.native_object == "Subscription"]
-        }
+    icon_map = {
+        "Lead": "person_add",
+        "Account": "account_circle",
+        "Opportunity": "trending_up",
+        "Quote": "request_quote",
+        "Subscription": "autorenew",
+        "Product": "inventory_2",
+        "QuoteLine": "format_list_bulleted",
+        "User": "person",
+        "Contract": "description",
+        "Contact": "contact_mail",
+        "Activity": "history",
+    }
+
+    alert_groups = []
+    native_objects = dict(EmailAlert.NATIVE_OBJECT_CHOICES)
+
+    for native_key, native_label in native_objects.items():
+        alert_groups.append({
+            "title": f"{native_label} Notifications",
+            "icon": icon_map.get(native_key, "notifications"),
+            "alerts": [a for a in alerts_with_lists if a.native_object == native_key],
+            "slug": slugify(native_label) or native_key.lower(),
+        })
+
+    remaining_alerts = [
+        a for a in alerts_with_lists
+        if a.native_object and a.native_object not in native_objects
     ]
+    for native_key in sorted({a.native_object for a in remaining_alerts}):
+        alert_groups.append({
+            "title": f"{native_key} Notifications",
+            "icon": "notifications",
+            "alerts": [a for a in remaining_alerts if a.native_object == native_key],
+            "slug": slugify(native_key) or native_key.lower(),
+        })
 
     return render(request, 'manage_notifications.html', {
         'alert_groups': alert_groups

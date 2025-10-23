@@ -1,0 +1,6 @@
+Hello,
+
+{{ message|default:'You have a new notification in AgentCPQ.' }}
+
+Thanks,
+AgentCPQ

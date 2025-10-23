@@ -99,17 +99,34 @@ class CustomFieldForm(forms.ModelForm):
             'label', 'name', 'crm', 'object_type',
             'custom_object', 'data_type', 'required', 'lookup_model'
         ]
-        widgets = {
-            'data_type': forms.Select(attrs={
-                'class': 'w-full mt-1 border rounded-lg p-2'
-            }),
-        }
+        widgets = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['custom_object'].required = False
         self.fields['object_type'].required = False
         self.fields['lookup_model'].required = False
+
+        def append_classes(widget, *class_names):
+            existing = widget.attrs.get('class', '')
+            classes = [cls for cls in existing.split() if cls]
+            for name in class_names:
+                if name not in classes:
+                    classes.append(name)
+            widget.attrs['class'] = ' '.join(classes)
+
+        for field_name, field in self.fields.items():
+            widget = field.widget
+
+            if isinstance(widget, forms.CheckboxInput):
+                append_classes(widget, 'cpq-checkbox-input')
+                widget.attrs.setdefault('aria-label', field.label)
+                continue
+
+            append_classes(widget, 'cpq-input')
+
+            if isinstance(widget, (forms.Select, forms.SelectMultiple)):
+                append_classes(widget, 'cpq-select', 'browser-default')
 
     def clean(self):
         cleaned_data = super().clean()
@@ -441,7 +458,8 @@ def get_dynamic_form(model_class, crm, object_type):
                     field=field,
                 )
                 cfv.value = value
-                cfv.updated_by_user = self.user
+                if hasattr(cfv, 'updated_by_user'):
+                    cfv.updated_by_user = self.user
                 cfv.save()
 
             return instance
