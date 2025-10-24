@@ -50,6 +50,16 @@ logging.basicConfig(level=logging.DEBUG)
 openai.log = "warning"
 
 
+def _safe_serialize(value):
+    if isinstance(value, dict):
+        return {k: _safe_serialize(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_safe_serialize(v) for v in value]
+    if hasattr(value, "__dict__") and not isinstance(value, (str, bytes)):
+        return str(value)
+    return value
+
+
 def handle_user_request(user,user_message, session_data):
     user = User.objects.get(username=user)
     logger.info(f"USER LOGGED IN - {user}")
@@ -291,7 +301,7 @@ def orchestrate_request(user, user_message, session_data):
                 "update_details", "iterations", "success", "quote_id", "notes",
                 "tokens", "cost", "session_summary", "rules_created"
             ):
-                agent_message += f"\n\n{key}:\n{json.dumps(value, indent=2, ensure_ascii=False)}"
+                agent_message += f"\n\n{key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 
         decoded_agent_message = _decode_chat_text(agent_message)
 
@@ -305,10 +315,11 @@ def orchestrate_request(user, user_message, session_data):
             hiddenMessage=hiddenMessage
         )
 
-        result["message"] = decoded_agent_message
-        result["session_id"] = session_data["session_id"]
+        sanitized_result = {key: _safe_serialize(value) for key, value in result.items()}
+        sanitized_result["message"] = decoded_agent_message
+        sanitized_result["session_id"] = session_data["session_id"]
 
-        return result
+        return sanitized_result
 
     logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
     return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
@@ -386,7 +397,7 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
 
         for key, value in result.items():
             if key not in ("message", "session_id", "hiddenMessage", "original_value"):
-                agent_message += f"\n\n📦 {key}:\n{json.dumps(value, indent=2, ensure_ascii=False)}"
+                agent_message += f"\n\n📦 {key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 
         agent_message = _decode_chat_text(agent_message)
 
@@ -397,10 +408,11 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
             hiddenMessage = hiddenMessage
         )
 
-        result["message"] = agent_message
-        result["session_id"] = session_data["session_id"]
+        sanitized_result = {key: _safe_serialize(value) for key, value in result.items()}
+        sanitized_result["message"] = agent_message
+        sanitized_result["session_id"] = session_data["session_id"]
 
-        return result
+        return sanitized_result
 
     logging.warning(f"⚠️ AI returned an unknown intent: {decision}")
     return {"message": "Sorry, I couldn’t understand your request. From Orchestrator"}
