@@ -407,6 +407,11 @@ h2 {
   padding: 8px;
 }
 
+.chat-input::placeholder {
+  color: rgba(12, 30, 57, 0.45);
+  font-style: italic;
+}
+
 .input-wrapper.upload-dropzone .input-row .send-button {
   padding: 8px 12px;
   border-radius: 18px;

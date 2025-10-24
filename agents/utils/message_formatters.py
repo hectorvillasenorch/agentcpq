@@ -204,12 +204,11 @@ def _apply_status_icon(line: str) -> str:
         line = line[len("🔷"):].lstrip()
 
     lowered = line.lower()
-    if lowered.startswith("great news!"):
-        line = line[len("Great news!"):].lstrip()
-    elif lowered.startswith("good news!"):
-        line = line[len("Good news!"):].lstrip()
-    elif lowered.startswith("fantastic news!"):
-        line = line[len("Fantastic news!"):].lstrip()
+    for prefix in ("great news!", "good news!", "fantastic news!", "awesome news!", "amazing news!"):
+        if lowered.startswith(prefix):
+            line = line[len(prefix):].lstrip()
+            lowered = line.lower()
+            break
 
     forced_success = False
 
@@ -228,19 +227,15 @@ def _apply_status_icon(line: str) -> str:
 
     if (
         forced_success
-        or (
-            "successfully" in normalized
-            and "not successfully" not in normalized
-            and "unsuccessful" not in normalized
-        )
-        or " success" in normalized
+        or ("success" in normalized and "not success" not in normalized and "unsuccess" not in normalized)
         or normalized.startswith("success")
         or any(keyword in normalized for keyword in (
             "successfully updated",
             "successfully created",
-            "successfully deleted"
+            "successfully deleted",
+            "successfully removed"
         ))
-        or any(keyword in normalized for keyword in ("created", "updated", "deleted"))
+        or any(keyword in normalized for keyword in ("created", "updated", "deleted", "removed"))
     ):
         return f"{SUCCESS_ICON} {line}"
 

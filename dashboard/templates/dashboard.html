@@ -28,10 +28,11 @@
 
     <div style="flex-grow: 1;">
         <div class="brand">
-            <img src="{% static 'img/logo-small.png' %}" width="80%" alt="AgentCPQ Logo"/>
+            <img class="brand-logo" src="{% static 'img/logo-small.png' %}" width="80%" alt="AgentCPQ Logo"/>
+            <img class="brand-logo-collapsed" src="{% static 'img/agent-white.png' %}" alt="Agent icon">
         </div>
         <a href="{% url 'dashboard' %}?view=agents&new_chat=true" class="new-chat-button">
-            <i class="material-icons">smart_toy</i>
+            <img src="{% static 'img/agent-white.png' %}" alt="New chat" class="nav-icon-image">
             <span class="nav-label">New Chat</span><span class="nav-label" style="margin: 0 4px;">+</span>
         </a>
 
@@ -80,8 +81,13 @@
         </div>
     </div>
    <!-- Fixed Logout/Login Section -->
-    <div style="padding: 16px;">
+    <div class="nav-footer">
         {% if user.is_authenticated %}
+            <button onclick="colapseSidebar()" class="btn-flat white-text nav-collapse-btn">
+                <i id="collapse-icon" class="material-icons">chevron_left</i>
+                <span class="nav-label">Collapse</span>
+            </button>
+
             <form method="post" action="{% url 'logout' %}" class="nav-action-form">
                 {% csrf_token %}
                 <button type="submit" class="nav-action-btn">
@@ -90,12 +96,21 @@
                 </button>
             </form>
 
-            <button onclick="colapseSidebar()" class="btn-flat white-text mt-4 nav-collapse-btn">
-                <i id="collapse-icon" class="material-icons">chevron_left</i>
-                <span class="nav-label">Collapse</span>
-            </button>
         {% endif %}
     </div>
+
+    {% if user.is_authenticated %}
+    <div class="nav-user-fixed" aria-label="Current user">
+        <div class="nav-user-card" aria-hidden="false">
+            <div class="nav-user-card__avatar" aria-hidden="true">
+                <span>{{ request.user.first_name|default:request.user.username|first|upper }}</span>
+            </div>
+            <div class="nav-user-card__details">
+                <span class="nav-user-card__name">{{ request.user.get_full_name|default:request.user.username }}</span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
         <!-- Main Content -->
         <main class="main-content">

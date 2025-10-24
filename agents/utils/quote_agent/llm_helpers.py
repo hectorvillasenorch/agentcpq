@@ -232,7 +232,7 @@ def generate_final_create_quote_message(quote, db_results, previous_summary, pro
     - The message is user-facing and can use <br> for line breaks.
     - If an add fails, explain it as a short, natural comment for the user, not as a system error. Keep it user-friendly and conversational, not technical or formal.
     - NEVER start the message with phrases like "Great news!", "Good job!", "Perfect!", or similar interjections.
-    - Use this emoji: ✅ to indicate that a quote has been successfully created.
+    - Do not include emojis; visual status indicators are handled downstream.
     - Do not put information about net amount.
     - Show the information of the triggered rules.
     Begin directly with the content.
@@ -601,11 +601,13 @@ def generate_final_quote_updates_message(completed_quote_updates, db_results, re
             "successfully updated",
             "successfully created",
             "successfully deleted",
+            "successfully removed",
             "successfully",
             "success",
             "updated",
             "created",
             "deleted",
+            "removed",
         ]
 
         if (
@@ -630,14 +632,25 @@ def generate_final_quote_updates_message(completed_quote_updates, db_results, re
                 "successfully updated",
                 "successfully created",
                 "successfully deleted",
+                "successfully removed",
                 "successfully",
                 "success",
                 "updated",
                 "created",
                 "deleted",
+                "removed",
             ))
         ):
             message = f"{SUCCESS_ICON} {message.strip()}"
+
+    if message:
+        separator = "<br>" if "<br>" in message else "\n"
+        segments = message.split(separator)
+        if segments:
+            first_segment = segments[0].strip()
+            if first_segment and not first_segment.startswith((SUCCESS_ICON, INFO_ICON, ERROR_ICON, WARNING_ICON)):
+                segments[0] = f"{SUCCESS_ICON} {first_segment}"
+                message = separator.join(segments)
 
     return message, updated_summary, tokens_used, cost_est
 
@@ -861,7 +874,7 @@ def generate_final_delete_quote_lines_message(completed_quote_lines, db_results,
     - Be short, friendly, professional, natural, ask follow-ups, concise but specific and friendly.
     - Convert all the messages that appeared when removing the quote lines into a natural, user-friendly message; you can use the exact same message from the backend if you prefer.
     - Always mention the quote line name or sku.
-    - Use symple emojis.
+    - Do not include any emojis; visual status indicators are handled downstream.
     - Mention only which quote lines were successfully deleted and which are still pending or incomplete.
     - Do NOT include the detailed changes made to each quote line; those details are already captured in the "summary".
     - Do not specify if there are no incomplete quote lines.
@@ -873,7 +886,7 @@ def generate_final_delete_quote_lines_message(completed_quote_lines, db_results,
     - The message is user-facing and can use <br> for line breaks.
     - If an add fails, explain it as a short, natural comment for the user, not as a system error. Keep it user-friendly and conversational, not technical or formal.
     - NEVER start the message with phrases like "Great news!", "Good job!", "Perfect!", or similar interjections.
-    - Use this emoji: ✅ to indicate that a quote line has been successfully deleted.
+    - Do not include emojis; visual status indicators are handled downstream.
     Begin directly with the content.
 
     Instructions for "summary":

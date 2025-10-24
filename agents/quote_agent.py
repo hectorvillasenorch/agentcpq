@@ -68,6 +68,34 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 logger = logging.getLogger(__name__)
 
+
+def _ensure_success_icon(message: str) -> str:
+    if not message:
+        return message
+
+    separator = "<br>" if "<br>" in message else ("\n" if "\n" in message else None)
+    segments = message.split(separator) if separator else [message]
+
+    for idx, segment in enumerate(segments):
+        segment_no_emoji = segment.replace("✅", "")
+        cleaned = segment_no_emoji.replace("&nbsp;", " ").strip()
+        if not cleaned:
+            segments[idx] = segment_no_emoji
+            continue
+
+        if cleaned.startswith((SUCCESS_ICON, INFO_ICON, ERROR_ICON, WARNING_ICON)):
+            segments[idx] = segment_no_emoji.strip() or segment_no_emoji
+            break
+
+        lowered = cleaned.lower()
+        if any(keyword in lowered for keyword in ("success", "successfully", "created", "added", "updated", "removed")):
+            segments[idx] = f"{SUCCESS_ICON} {cleaned}"
+            break
+        else:
+            segments[idx] = cleaned if cleaned else segment_no_emoji
+
+    return separator.join(segments) if separator else segments[0]
+
 def quote_agent(user, action, user_message, session_data):
 
     action_map = {
@@ -208,6 +236,8 @@ def create_quote(user,user_message, session_data):
             formatted_message=formatted_message,
         )
 
+        formatted_message = _ensure_success_icon(formatted_message)
+
         return {
             "message": formatted_message,
             "session_summary": updated_summary
@@ -294,6 +324,8 @@ def create_quote(user,user_message, session_data):
         approval_suffix=approval_suffix,
     )
 
+    response_message = _ensure_success_icon(response_message)
+
     result.append(response_message)
 
     dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_create_quote_message(
@@ -307,7 +339,7 @@ def create_quote(user,user_message, session_data):
 
 
     return {
-        "message": dynamic_message,
+        "message": _ensure_success_icon(dynamic_message),
         "session_summary": updated_summary
     }
 
@@ -698,14 +730,14 @@ def delete_quote_line(user, user_message, session_data):
                 log_action_usage("DeleteQuoteLine", user, "Quote", quote.name)
 
                 response_message += (
-                    f"{SUCCESS_ICON} The quote line with product SKU '{product.sku}' "
-                    f"was successfully deleted from quote '{quote.name}'.<br>"
+                    f"{SUCCESS_ICON} The quote line with product SKU {product.sku} "
+                    f"was successfully deleted from quote <b>{quote.name}</b><br>"
                 )
                 continue
 
             except QuoteLine.DoesNotExist:
                 quote_line = None
-                response_message += f"⚠️ The quote line with product SKU '{product.sku}' does not exist in quote {quote.name}.<br>"
+                response_message += f"{WARNING_ICON} The quote line with product SKU {product.sku} does not exist in quote {quote.name}.<br>"
                 continue
 
             except Exception as e:
@@ -715,7 +747,7 @@ def delete_quote_line(user, user_message, session_data):
 
     except Quote.DoesNotExist:
         return {
-            "message": "⚠️ Error: Quote not found. Please check the quote name."
+            "message": "{WARNING_ICON} Error: Quote not found. Please check the quote name."
         }
 
     # ✅ Save quote in session data
@@ -730,6 +762,8 @@ def delete_quote_line(user, user_message, session_data):
         remaining_quote_lines=remaining_quote_lines,
         previous_summary=llm_result["summary"]
     )
+
+    dynamic_message = _ensure_success_icon(dynamic_message)
 
     return {
         "message": dynamic_message,
