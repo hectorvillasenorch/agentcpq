@@ -17,6 +17,13 @@ from django.utils.timezone import now
 
 from agents.utils.knowledge_agent.embedding_helpers import generate_embedding as generate_knowledge_embedding
 
+from django.db import models
+from django.contrib.auth import get_user_model
+from django.utils.translation import gettext_lazy as _
+from django.core.validators import MinLengthValidator
+
+User = get_user_model()
+
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -1512,71 +1519,57 @@ class Knowledge(models.Model):
     
 class ActionTrigger(models.Model):
     """
-    Represents a trigger (event) and the action to execute on a specific object.
-    The combination of action and object will determine the function to call in the backend.
+    Represents an automation trigger that executes one or more actions
+    when certain conditions are met after a specific event (e.g. quote_line.updated).
     """
 
-    # Trigger choices
-    TRIGGER_CHOICES = [
-        ("opportunity_closed_won", "Opportunity Closed Won"),
-        # Add more triggers in the future
-    ]
+    name = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True, null=True)
+    event_type = models.TextField(blank=True, null=True)
+    active = models.BooleanField(default=True)
 
-    # Action choices
-    ACTION_CHOICES = [
-        ("create", "Create"),
-        ("update", "Update"),
-        ("delete", "Delete"),
-    ]
-
-    # Object choices
-    OBJECT_CHOICES = [
-        ("renewal_task", "Renewal Task"),
-        # Add more objects in the future
-    ]
-
-    trigger = models.CharField(
-        max_length=100,
-        choices=TRIGGER_CHOICES,
-        verbose_name="Trigger (event)",
-        help_text="Select the event that will trigger the action."
+    # Conditions and actions stored as JSON for flexibility
+    conditions = models.JSONField(
+        help_text=_("Logical structure for evaluating conditions (with AND/OR, items, etc.)")
     )
 
-    action = models.CharField(
-        max_length=20,
-        choices=ACTION_CHOICES,
-        verbose_name="Action",
-        help_text="Select the action to perform: Create, Update, or Delete."
-    )
-
-    object_name = models.CharField(
-        max_length=50,
-        choices=OBJECT_CHOICES,
-        verbose_name="Object",
-        help_text="Select the object on which the action will be performed."
-    )
-
-    action_params = models.JSONField(
+    actions = models.JSONField(
         default=dict,
+        help_text=_("List of actions to execute if conditions are met.")
+    )
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
         blank=True,
-        verbose_name="Action Parameters",
-        help_text="Optional. JSON with parameters for the action/function."
+        related_name="created_action_triggers"
     )
 
-    active = models.BooleanField(
-        default=True,
-        verbose_name="Active",
-        help_text="Indicates whether the trigger is active and will execute when the event occurs."
-    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name="Created At",
-        help_text="The date and time when this record was created (read-only)."
-    )
+    class Meta:
+        verbose_name = "Action Trigger"
+        verbose_name_plural = "Action Triggers"
+        ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.trigger} -> {self.action} {self.object_name} (id={self.id})"
+        return f"{self.name} ({self.event_type})"
+
+    def is_applicable(self, event_type: str) -> bool:
+        """Check if this trigger applies to a given event type."""
+        return self.active and self.event_type == event_type
+
+    def execute(self, context: dict):
+        """
+        Placeholder for the future execution logic:
+        - Evaluate conditions using context (e.g. updated quote line)
+        - If true, execute all defined actions
+        """
+        pass
+
+    
 
 class ScheduledTask(models.Model):
     """

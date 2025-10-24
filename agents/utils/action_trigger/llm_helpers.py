@@ -3,6 +3,7 @@ import openai
 import logging
 from dotenv import load_dotenv
 from agents.models import AgentPrompt
+from django.apps import apps
 
 # System Prompt Helpers
 from ..prompts_helpers.system_prompt_helpers import make_system_prompt
@@ -15,50 +16,110 @@ OPENAI_MODEL = "gpt-3.5-turbo"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
+def to_snake_case(name):
+    return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
+
 
 def extract_action_triggers_with_llm(user_message, current_state, previous_summary=None):
     """
     Uses LLM to extract structured data for creating action triggers.
     Returns JSON and agent message.
     """
+    # 🔹 Obtener todos los modelos disponibles en CPQ (y normalizarlos)
+    EXCLUDED_MODELS = ["SystemFieldMapping", "ApprovalRule", "AuditLog"]
+    all_models = [m.__name__ for m in apps.get_app_config('cpq').get_models()]
+    available_models = [to_snake_case(m) for m in all_models if m not in EXCLUDED_MODELS]
+
+    print(f"\n\nAvailable models: {available_models}\n\n")
+
     system_prompt = """
-    You are a helpful AI assistant that create action triggers from user message.
-    Always return JSON with structure:
+    You are a helpful AI assistant that extracts structured data to define Action Triggers for a CPQ system.
+    Your goal is to interpret the user message and build an Action Trigger definition in JSON format.
+
+    Always return a JSON with this structure:
     {
         "create_action_trigger": [
             {
                 "data": {
-                    "trigger": None,
-                    "action": None,
-                    "object_name": None,
-                    "action_params": {},
-                    "active": true,
-
+                    "description": null,
+                    "event_type": null,
+                    "conditions": {
+                        "logic": "AND",
+                        "items": []
+                    },
+                    "actions": [],
+                    "active": true
                 },
-                "completed": False
+                "completed": false
             }
         ],
         "agent_message": "string",
         "summary": "string"
     }
 
-    **Rules:**  
-    1. The trigger must be one of the following: `opportunity_closed_won`  
-    2. Action must be: `create`, `update`, or `delete`  
-    3. Object Name must be one of the following: `renewal_task`  
-    4. If the user does not specify the **Active** field, set it to `true` by default
-    5. Mark completed as true when user provided trigger, action, object_name and action_params
+    🔹 **Field definitions:**
 
-    **Rules for action_params:**  
-    1. If the `object_name` is `renewal_task`, then `action_params` must have the following JSON format:  
-    ```json
-    {
-    "months_before": <VALUE>
-    }
-    The value of the months_before key must be:
-    - "immediately", if the user specifies that they want the action trigger to be activated immediately.
-    - 6, if the user specifies "after 6 months".
-    - 3, if the user specifies "3 months before expiration date".
+    - description: A short natural language summary (1 sentence) explaining what the trigger does.  
+      Example: "Update quote line price using Pricing Table when SKU and Tier match."
+
+    - event_type: The system event that activates the trigger. Must follow the format:
+      "<object>.<action>"  
+      Examples:
+        - "quote.created"
+        - "quote.updated"
+        - "quote_line.updated"
+        - "quote_line.created"
+
+    - conditions: Defines logical comparisons that determine when the trigger executes.
+      Must have:
+      {
+        "logic": "AND" | "OR",
+        "items": [
+          {
+            "alias": "optional_alias",
+            "left": {"object": "<ObjectName>", "path": "<field>"},
+            "operator": "== | != | > | < | >= | <= | contains | in | not in",
+            "right": {
+              "type": "field" | "static",
+              "object": "<ObjectName>" (if type=field),
+              "path": "<field>",
+              "data": "<value if static>"
+            }
+          }
+        ]
+      }
+
+    - actions: Defines what to do if the conditions are true.
+      Example:
+      [
+        {
+          "operation": "SET" | "CREATE" | "DELETE",
+          "target": {"object": "<ObjectName>", "path": "<field>"},
+          "value": {
+            "type": "field" | "static",
+            "object": "<ObjectName>" (if type=field),
+            "path": "<field>",
+            "data": "<value if static>"
+          }
+        }
+      ]
+
+    - active: boolean. If not specified, assume true.
+    """
+
+    system_prompt += f"""
+    🔸 Model naming rules:
+    The user might refer to models using variations like "Quote Line", "QuoteLine", or "quoteline".
+    You must always normalize object names to lowercase snake_case.
+
+    Here are the available object names in this system:
+    {json.dumps(available_models, indent=2)}
+
+    Only use these normalized names for "object" fields.
+    """
+
+    system_prompt += """
+    - completed: true only if all required fields (description, event_type, conditions, actions) are fully defined and valid.
 
     **Agent message:**  
     - Interpret this as an attempt, therefore do not say things like "created successfully".  
@@ -94,7 +155,7 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=messages,
-        temperature=1
+        temperature=0.8
     )
 
     raw_response = response.choices[0].message.content.strip()
@@ -106,20 +167,21 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
         logging.error(f"❌ JSON decode error: {str(e)}")
         return None
 
-    # ✅ Normalize structure for action triggers
+    # ✅ Normalize structure
     normalized_triggers = []
     for trig in result_json.get("create_action_trigger", []):
         data = trig.get("data", {})
+
         normalized_triggers.append({
             "data": {
-                "trigger": data.get("trigger"),
-                "action": data.get("action"),
-                "object_name": data.get("object_name"),
-                "action_params": data.get("action_params", {}),
+                "description": data.get("description"),
+                "event_type": data.get("event_type"),
+                "conditions": data.get("conditions", {"logic": "AND", "items": []}),
+                "actions": data.get("actions", []),
                 "active": data.get("active", True)
             },
             "completed": trig.get("completed", False)
         })
-    result_json["create_action_trigger"] = normalized_triggers
 
+    result_json["create_action_trigger"] = normalized_triggers
     return result_json

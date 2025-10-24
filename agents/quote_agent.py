@@ -498,7 +498,7 @@ def update_quote(user, user_message, session_data):
 
     response_message = ""
 
-    print(f"\n\Completed updates: {completed_quote_updates}\n\n")
+    print(f"\n\nCompleted updates: {completed_quote_updates}\n\n")
 
     # ✅ Handle quote line update request
     quote, response_message, updated_quote = handle_quote_update_request(completed_quote_updates, quote, response_message)

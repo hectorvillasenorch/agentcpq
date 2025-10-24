@@ -192,11 +192,11 @@ def get_session_context(action, session_data):
                 "create_action_trigger": [
                     {
                         "data": {
-                            "trigger": None,
-                            "action": None,
-                            "object_name": None,
-                            "action_params": {},
+                            "description": None,
+                            "event_type": None,
                             "active": None,
+                            "conditions": {},
+                            "actions": {}
 
                         },
                         "completed": False

@@ -199,13 +199,13 @@ class SubscriptionAdmin(DynamicCustomFieldAdmin):
 admin.site.register(Subscription, SubscriptionAdmin)
 
 
-class ActionTriggerAdmin(DynamicCustomFieldAdmin):
-    form = get_dynamic_form(ActionTrigger, crm="AgentCPQ", object_type="ActionTrigger")
-    list_display = ('trigger','action','object_name', 'action_params', 'active')
-    def get_fieldsets(self, request, obj=None):
-        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
-        return [(None, {'fields': fields})]
-admin.site.register(ActionTrigger, ActionTriggerAdmin)
+# class ActionTriggerAdmin(DynamicCustomFieldAdmin):
+#     form = get_dynamic_form(ActionTrigger, crm="AgentCPQ", object_type="ActionTrigger")
+#     list_display = ('trigger','action','object_name', 'action_params', 'active')
+#     def get_fieldsets(self, request, obj=None):
+#         fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
+#         return [(None, {'fields': fields})]
+# admin.site.register(ActionTrigger, ActionTriggerAdmin)
 
 class ScheduledTaskAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(ScheduledTask, crm="AgentCPQ", object_type="ScheduledTask")
