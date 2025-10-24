@@ -158,10 +158,9 @@ def check_inclusion_rules_for_quote_level(user, target_type, rule_type, quote, p
 
         print(f"\n📜 Evaluating inclusion rule: {rule.name} ('{rule.description}')")
         if rule.rule_type == "inclusion":
-            logging.warning("Comprobando si la regla aplica")
             success, result = check_inclusion_rule(user, conditions, quote, product)
 
-            if success:
+            if success == "success":
                 logging.warning(f"Rule {rule.name} has been triggered.")
                 triggered_rules += f"Rule: {rule.name} has been triggered -> {rule.error_message}."
             else:
@@ -174,13 +173,20 @@ def check_inclusion_rule(user, conditions, quote, product):
     from ..quote_agent.handle_helpers import handle_products_to_add
 
     trigger_product = conditions.get("trigger_product")
+    if trigger_product["sku"] is not None:
+        if (trigger_product["sku"] == product.sku) or (trigger_product["sku"] == product.name):
+            included_products = conditions.get("included_products")
 
-    if (trigger_product["sku"] == product.sku) or (trigger_product["name"] == product.sku) or (trigger_product["name"] == product.name) or (trigger_product["sku"] == product.name):
-        included_products = conditions.get("included_products")
+            result = handle_products_to_add(user, included_products, quote, allow_updates=True)
 
-        result = handle_products_to_add(user, included_products, quote, allow_updates=True)
+            return "success", result
+    elif trigger_product["name"] is not None:
+        if (trigger_product["name"] == product.sku) or (trigger_product["name"] == product.name):
+            included_products = conditions.get("included_products")
 
-        return "success", result
+            result = handle_products_to_add(user, included_products, quote, allow_updates=True)
+
+            return "success", result
 
     return "failed", None
 

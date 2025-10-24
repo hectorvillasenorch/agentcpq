@@ -50,7 +50,7 @@ function getUploadHintElement(dropzone) {
 */
 function getCurrentSessionId() {
   const urlParams = new URLSearchParams(window.location.search);
-  console.log(urlParams.get("session_id"));
+  //console.log(urlParams.get("session_id"));
   return urlParams.get("session_id");
 }
 
@@ -827,7 +827,6 @@ function enhanceStructuredAgentMessages() {
 
       const jsonStr = extractJson(raw);
       if (!jsonStr) {
-        console.log("enhanceStructuredAgentMessages")
         div.innerHTML = `<div class="error-message">⚠️ Could not find valid JSON in message</div>`;
         return;
       }
@@ -904,7 +903,7 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     try {
       const data = JSON.parse(unescapeUnicode(jsonPart));
 
-      console.log("This is data: ", data);
+      //console.log("This is data: ", data);
 
       // === VALIDATION RULES ===
       if (data.rules || (Array.isArray(data) && data[0]?.rule_type == 'validation')) {
@@ -1063,7 +1062,7 @@ async function sendMessage() {
             body: JSON.stringify({ message: userMessage, session_id: sessionId})
         });
 
-        console.log("Full Response:", response);
+        //console.log("Full Response:", response);
 
         if (!response.ok) {
             const errorText = await response.text();
@@ -1107,41 +1106,34 @@ async function sendMessage() {
         }
         // ✅ Handle Quote PDF Response
         else if (data.response.download_url) {
-            console.log(data.response);
             responseMessage += `📄 Quote PDF (v${data.response.document_version}) generated successfully! <a href="${data.response.download_url}" target="_blank">Download Here</a>`;
         }
         // ✅ Handle Validation Rules Response
         else if (data.response && data.response.validation_rules_details) {
-          console.log("Validation Rules Details");
           //console.log(data.response);
           //console.log(data.response.validation_rules_details)
           responseMessage += renderValidationRuleDetails(data.response.validation_rules_details);
         }
         // ✅ Handle Inclusion Rules Response
         else if (data.response && data.response.inclusion_rules_details) {
-          console.log("Inclusion Rules Details");
           responseMessage += renderInclusionRuleDetails(data.response.message, data.response.inclusion_rules_details);
         }
         // ✅ Handle Exclusion Rules Response
         else if (data.response && data.response.exclusion_rules_details) {
-          console.log("Exclusion Rules Details");
           responseMessage += renderExclusionRuleDetails(data.response.message, data.response.exclusion_rules_details);
         }
         // ✅ Handle Action Triggers Response
         else if (data.response && data.response.action_triggers_details) {
-          console.log("Entra a action trigger");
           responseMessage += renderActionTriggersDetails(data.response.message, data.response.action_triggers_details);
         }
         // ✅ Show Rules
         else if (data.response && data.response.rules && data.response.read_only) {
-          console.log("Show Rules");
           //console.log(data.response);
           //console.log(data.response.validation_rules_details)
           responseMessage += renderRules(data.response.rules);
         }
         // ✅ Email Alerts
         else if (data.response && data.response.email_alerts_details) {
-          console.log("Email Alerts");
           //console.log(data.response);
           //console.log(data.response.email_alerts_details)
           responseMessage += renderEmailAlerstDetails(data.response.email_alerts_details);
@@ -1315,7 +1307,6 @@ function appendMessage(className, message) {
       try {
         // Extract JSON from string
         const match = message.match(/retrieved_records:\s({.+})/);
-        console.log("Message: ", message);
         if (match && match[1]) {
           const records = JSON.parse(match[1]);
           message = renderRetrievedRecords(records);  // Use your nice formatter
@@ -1487,12 +1478,11 @@ function renderQuoteDetails(quote) {
       }
 
       html += `<tr${item.is_bundle_child ? ' class="bundle-child"' : ''}>`;
-      console.log("Item: ", item);
+      //console.log("Item: ", item);
 
       quote.rendered_fields.forEach(field => {
         // Limpiar campos como Product.UOM
         const cleanedField = field.replace(/^Product\./, "");
-        console.log("Field: ", cleanedField)
 
         if (field === "Product And SKU") {
           html += `
@@ -2425,7 +2415,7 @@ document.addEventListener("change", (event) => {
           event.target.removeAttribute("data-changed");
       }
 
-      console.log(`🔄 Field Changed: ${event.target.name}, New Value: ${newValue}, Initial Value: ${initialValue}`);
+      //console.log(`🔄 Field Changed: ${event.target.name}, New Value: ${newValue}, Initial Value: ${initialValue}`);
   }
 });
 
@@ -2461,7 +2451,7 @@ async function updateQuoteLine(input) {
         return;
     }
 
-    console.log(`🔄 Field Changed: ${field}, SKU: ${sku}, New Value: ${newValue}, Quote: ${quoteId}, QuoteLine: ${quoteLineId}`);
+    //console.log(`🔄 Field Changed: ${field}, SKU: ${sku}, New Value: ${newValue}, Quote: ${quoteId}, QuoteLine: ${quoteLineId}`);
 
     const updateData = { sku, field, value: newValue, quote_line_id: quoteLineId, hiddenMessage: true };
     const userMessage = `Update Quote Line: ${JSON.stringify(updateData)}`;
@@ -2474,7 +2464,6 @@ async function updateQuoteLine(input) {
         });
 
         const data = await response.json();
-        console.log("✅ Server Response:", data);
 
         if (data.response && data.response.quote_details) {
             const updatedQuote = data.response.quote_details;
@@ -2586,7 +2575,7 @@ async function updateQuote(input) {
         newValue = newValue.replace(/,/g, '');
     }
 
-    console.log(`🔄 Field Changed: ${field}, Quote: ${quote}, New Value: ${newValue}`);
+    //console.log(`🔄 Field Changed: ${field}, Quote: ${quote}, New Value: ${newValue}`);
 
     const updateData = {
         field: field,
@@ -2605,7 +2594,6 @@ async function updateQuote(input) {
         });
 
         const data = await response.json();
-        console.log("✅ Server Response:", data);
 
         if (data.response && data.response.message.includes("✅ Quote updated successfully.") && data.response.quote_details) {
             input.blur();
@@ -3164,7 +3152,7 @@ function renderValidationRuleDetails(rules, read_only=false) {
 
 function renderInclusionRuleDetails(message, rules, read_only=false) {
   let html = "";
-  console.log(rules);
+  //console.log(rules);
 
   // Agregar mensaje si viene
   if (message) {
@@ -3243,7 +3231,7 @@ function renderInclusionRuleDetails(message, rules, read_only=false) {
 
 function renderExclusionRuleDetails(message, rules, read_only=false) {
   let html = "";
-  console.log(rules);
+  //console.log(rules);
 
   // Agregar mensaje si viene
   if (message) {
@@ -3312,7 +3300,7 @@ function renderExclusionRuleDetails(message, rules, read_only=false) {
 
 function renderActionTriggersDetails(message, action_triggers, read_only=false) {
   let html = "";
-  console.log(action_triggers);
+  //console.log(action_triggers);
 
   // Agregar mensaje si viene
   if (message) {
@@ -3603,44 +3591,6 @@ function extractJson(raw) {
   return null;
 }
 
-/* For Show Me Functionality */
-function openTabMenu() {
-    const menu = document.getElementById("tab-menu");
-    menu.style.display = "flex";
-}
-
-function loadTabContent(type) {
-    const contentArea = document.getElementById("tab-content");
-    contentArea.classList.remove("hidden");
-
-    if (type === "products") {
-        contentArea.innerHTML = `
-            <h5>Search Products</h5>
-            <input type="text" id="product-search" placeholder="Type to search..." class="browser-default">
-            <ul id="product-list"></ul>
-        `;
-
-        // Fake product list for demo, replace with AJAX call later
-        const products = ["Table", "Chair", "Laptop", "Mouse", "Desk"];
-        const input = document.getElementById("product-search");
-        const list = document.getElementById("product-list");
-
-        input.addEventListener("input", () => {
-            const query = input.value.toLowerCase();
-            list.innerHTML = "";
-            products
-                .filter(p => p.toLowerCase().includes(query))
-                .forEach(p => {
-                    const li = document.createElement("li");
-                    li.textContent = p;
-                    li.style.padding = "6px 0";
-                    list.appendChild(li);
-                });
-        });
-    }
-
-}
-
 function renderEmailAlerstDetails(alerts) {
   let html = "";
 
@@ -3739,13 +3689,179 @@ function normalizeFieldName(fieldName) {
     .replace(/\b\w/g, char => char.toUpperCase()); // primera letra de cada palabra en mayúscula
 }
 
+// =====================================================
+// ✅ renderRetrievedRecords (con estilos y scroll)
+// ✅ openRecordsPopout (popout draggable con overlay)
+// =====================================================
 
 function renderRetrievedRecords(userMessage, recordsDetails) {
   let html = "";
 
+  // Añadir estilos globales una sola vez
+  if (!document.getElementById("records-table-style")) {
+    const style = document.createElement("style");
+    style.id = "records-table-style";
+    style.innerHTML = `
+      .records-container {
+        font-family: 'Inter', sans-serif;
+        color: #1f2937;
+      }
+
+      .records-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: linear-gradient(135deg, #041530, #233049);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem 0.5rem 0 0;
+      }
+
+      .records-header h5 {
+        margin: 0;
+        font-size: 1rem;
+        letter-spacing: 0.5px;
+      }
+
+      .records-popout-btn {
+        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255,255,255,0.3);
+        color: white;
+        padding: 0.25rem 0.6rem;
+        font-size: 0.8rem;
+        border-radius: 0.4rem;
+        cursor: pointer;
+        transition: background 0.2s ease, transform 0.1s ease;
+      }
+
+      .records-popout-btn:focus {
+        outline: none;
+        box-shadow: none;
+      }
+
+      .records-popout-btn:hover {
+        background: rgba(255, 255, 255, 0.35);
+        transform: scale(1.05);
+      }
+
+      .records-table-wrapper {
+        overflow-x: auto;
+        overflow-y: auto;
+        max-height: 320px;
+        border: 1px solid #e5e7eb;
+        border-radius: 0 0 0.5rem 0.5rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      }
+
+      .records-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        font-size: 0.9rem;
+      }
+
+      .records-table thead {
+        background: #f9fafb;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+      }
+
+      .records-table th, .records-table td {
+        padding: 0.75rem 1rem;
+        white-space: nowrap;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      .records-table th {
+        text-align: left;
+        font-weight: 600;
+        color: #374151;
+        text-transform: uppercase;
+        font-size: 0.8rem;
+      }
+
+      .records-table tbody tr:nth-child(even) {
+        background-color: #f8fafc;
+      }
+
+      .records-table tbody tr:hover {
+        background-color: #eff6ff;
+      }
+
+      /* Popup general */
+      .records-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15,23,42,0.45);
+        z-index: 9998;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .popup {
+        background: #fff;
+        border-radius: 0.9rem;
+        box-shadow: 0 14px 40px rgba(2,6,23,0.36);
+        width: 840px;
+        max-width: 94vw;
+        max-height: 84vh;
+        overflow: hidden;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .popup .popup-header {
+        padding: 0.6rem 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 52px;
+        flex: 0 0 52px;
+        border-radius: 0.9rem 0.9rem 0 0;
+        background: linear-gradient(135deg, #041530, #233049);
+        color: white;
+      }
+
+      .popup .popup-close {
+        background: rgba(255,255,255,0.12);
+        border: none;
+        color: white;
+        width: 34px;
+        height: 34px;
+        border-radius: 6px;
+        font-size: 16px;
+        cursor: pointer;
+      }
+
+      .popup .popup-body {
+        padding: 0.5rem;
+        overflow: auto;
+        flex: 1 1 auto;
+      }
+
+      .records-popout-btn:focus {
+        outline: none;
+        box-shadow: none;
+        background-color: rgba(255,255,255,0.12);
+      }
+      .records-popout-btn:active {
+        background-color: rgba(255,255,255,0.12);
+      }
+
+      @media (max-width:640px) {
+        .popup { width: 96vw; max-height: 90vh; }
+        .records-table th, .records-table td { padding: 0.5rem 0.6rem; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Renderizar objetos
   for (const [objectName, records] of Object.entries(recordsDetails)) {
     if (!records || records.length === 0) continue;
-
     const allFields = Object.keys(records[0]);
 
     html += `
@@ -3781,50 +3897,25 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
             display:block;
           ">
             <thead>
-              <tr>
-                ${allFields.map(f => `
-                  <th style="
-                    padding:0.75rem 1rem;
-                    text-align:left;
-                    border-bottom:1px solid #e5e7eb;
-                    background-color:#f3f4f6;
-                    font-weight:600;
-                    color:#374151;
-                    text-transform:uppercase;
-                    font-size:0.85rem;
-                    position:sticky;
-                    top:0;
-                    z-index:2;
-                    box-shadow:0 2px 3px rgba(0,0,0,0.05);
-                    white-space:nowrap;
-                  ">${normalizeFieldName(f)}</th>`).join("")}
-              </tr>
+              <tr>${allFields.map(f => `<th>${normalizeFieldName(f)}</th>`).join('')}</tr>
             </thead>
-
             <tbody>
               ${records.map(record => `
-                <tr style="hover:background-color:#f9fafb;">
+                <tr>
                   ${allFields.map(field => {
                     let value = record[field];
-                    if (value === null || value === undefined || value === "")
-                      return `<td style="padding:0.75rem 1rem; white-space:nowrap; border-bottom:1px solid #e5e7eb;">---</td>`;
-                    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) {
-                      const dateObj = new Date(value);
-                      // Mostrar fecha y hora
-                      value = dateObj.toLocaleString("en-US", {
-                        year: "numeric",
-                        month: "2-digit",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                        hour12: false  // 24h
+                    if (value === null || value === undefined || value === "") return `<td>—</td>`;
+                    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+                      const d = new Date(value);
+                      value = d.toLocaleString('en-US', {
+                        year:"numeric",month:"2-digit",day:"2-digit",
+                        hour:"2-digit",minute:"2-digit",second:"2-digit",
+                        hour12:false
                       });
                     }
-                    return `<td style="padding:0.75rem 1rem; white-space:nowrap; border-bottom:1px solid #e5e7eb;">${value}</td>`;
-                  }).join("")}
-                </tr>
-              `).join("")}
+                    return `<td>${value}</td>`;
+                  }).join('')}
+                </tr>`).join('')}
             </tbody>
           </table>
         </div>
@@ -3899,10 +3990,127 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
 
   if (userMessage) {
     const cleanMessage = userMessage.split("retrieved_records:")[0];
-    html += `<div style="margin-bottom:10px;">
-              <p>${cleanMessage}</p>
-            </div>`;
+    html += `<div style="margin-bottom:10px;"><p>${cleanMessage}</p></div>`;
   }
 
   return html;
+}
+
+// =====================================================
+// ✅ POPUP con overlay + drag (de la primera versión)
+// =====================================================
+
+function openRecordsPopout(button) {
+  const source = button.closest('.records-container');
+  if (!source) return;
+
+  // Crear popup
+  const popup = document.createElement('div');
+  popup.className = 'popup';
+  popup.style.position = 'fixed';
+  popup.style.top = '50%';
+  popup.style.left = '50%';
+  popup.style.transform = 'translate(-50%, -50%)';
+  popup.style.width = '800px';
+  popup.style.maxWidth = '90vw';
+  popup.style.background = '#fff';
+  popup.style.borderRadius = '1rem';
+  popup.style.boxShadow = '0 12px 30px rgba(0,0,0,0.25)';
+  popup.style.zIndex = '10000';
+  popup.style.display = 'flex';
+  popup.style.flexDirection = 'column';
+  popup.style.overflow = 'hidden';
+
+  // Header
+  const popupHeader = document.createElement('div');
+  popupHeader.className = 'popup-header';
+  popupHeader.style.background = 'linear-gradient(135deg, #041530, #233049)';
+  popupHeader.style.color = 'white';
+  popupHeader.style.padding = '0 1rem';
+  popupHeader.style.height = '48px';
+  popupHeader.style.display = 'flex';
+  popupHeader.style.alignItems = 'center';
+  popupHeader.style.justifyContent = 'space-between';
+  popupHeader.style.borderRadius = '1rem 1rem 0 0';
+  popupHeader.style.cursor = 'grab';
+
+  const titleText = source.querySelector('.records-header h5')?.innerText || 'Records';
+  const titleDiv = document.createElement('div');
+  titleDiv.style.fontWeight = '600';
+  titleDiv.innerText = titleText;
+  popupHeader.appendChild(titleDiv);
+
+  // Botón cerrar
+  const closeBtn = document.createElement('button');
+  closeBtn.innerText = '✕';
+  closeBtn.style.cssText = `
+    background: rgba(255,255,255,0.2);
+    color: white;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: 0.2s;
+  `;
+  closeBtn.onmouseenter = () => closeBtn.style.color = '#fc6a3d';
+  closeBtn.onmouseleave = () => closeBtn.style.color = 'white';
+  closeBtn.onclick = () => popup.remove();
+  popupHeader.appendChild(closeBtn);
+
+  // Body (tabla)
+  const popupBody = document.createElement('div');
+  popupBody.className = 'popup-body';
+  popupBody.style.flex = '1';
+  popupBody.style.overflowY = 'auto';
+  popupBody.style.padding = '0.5rem';
+  
+  const clonedWrapper = source.querySelector('.records-table-wrapper').cloneNode(true);
+  clonedWrapper.style.maxHeight = 'none';
+  clonedWrapper.style.overflow = 'visible';
+  popupBody.appendChild(clonedWrapper);
+
+  popup.appendChild(popupHeader);
+  popup.appendChild(popupBody);
+  document.body.appendChild(popup);
+
+  // Ajuste de altura dinámica según ventana
+  requestAnimationFrame(() => {
+    const maxBody = Math.round(window.innerHeight * 0.8) - popupHeader.getBoundingClientRect().height;
+    popupBody.style.maxHeight = maxBody + 'px';
+  });
+
+  // Dragging
+  let isDragging = false, offsetX = 0, offsetY = 0;
+  popupHeader.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    const rect = popup.getBoundingClientRect();
+    offsetX = e.clientX - rect.left;
+    offsetY = e.clientY - rect.top;
+    popupHeader.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDragging = false;
+    popupHeader.style.cursor = 'grab';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    popup.style.left = `${e.clientX - offsetX}px`;
+    popup.style.top = `${e.clientY - offsetY}px`;
+    popup.style.transform = 'translate(0, 0)';
+  });
+
+  // Cerrar con ESC
+  const onKey = (ev) => {
+    if (ev.key === 'Escape') popup.remove();
+  };
+  window.addEventListener('keydown', onKey);
+
+  // Limpieza al remover
+  popup.addEventListener('remove', () => {
+    window.removeEventListener('mouseup', () => {});
+    window.removeEventListener('mousemove', () => {});
+    window.removeEventListener('keydown', onKey);
+  });
 }

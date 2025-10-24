@@ -284,11 +284,13 @@ def get_dynamic_form(model_class, crm, object_type):
         class Meta:
             model = model_class
             fields = '__all__'
-            exclude = ('updated_by',)
+            exclude = ('updated_by', 'created_by', 'created_at', 'updated_at')
 
         def __init__(self, *args, user=None, **kwargs):
             self.user = user
             super().__init__(*args, **kwargs)
+            for field_name in ['created_at', 'updated_at']:
+                self.fields.pop(field_name, None)
             User = get_user_model()
 
             instance = kwargs.get("instance")
@@ -302,6 +304,14 @@ def get_dynamic_form(model_class, crm, object_type):
                         widget=forms.DateInput(attrs={'type': 'date'})
                     )
 
+                if field.name in ["primary_color", "secondary_color"]:
+                    self.fields[field.name] = forms.CharField(
+                        label=field.verbose_name.title(),
+                        required=not field.blank,
+                        initial=getattr(instance, field.name, None) if instance else None,
+                        widget=forms.TextInput(attrs={"type": "color"})
+                    )
+
             # --- Manejo de due_date ---
             if hasattr(self._meta.model, "due_date"):
                 self.fields["due_date"] = forms.DateField(
@@ -313,19 +323,34 @@ def get_dynamic_form(model_class, crm, object_type):
 
             # --- Manejo de created_by (readonly visible) ---
             if hasattr(self._meta.model, "created_by"):
+                # ❗ Eliminar el campo original del formulario
+                self.fields.pop("created_by", None)
+
                 if instance and instance.created_by:
+                    display_value = str(instance.created_by)
                     initial_user = instance.created_by
                 elif self.user:
+                    display_value = str(self.user)
                     initial_user = self.user
                 else:
+                    display_value = ""
                     initial_user = None
 
-                self.fields["created_by"] = forms.ModelChoiceField(
+                # Muestra como texto, no como dropdown
+                self.fields["created_by_display"] = forms.CharField(
+                    label="Created by",
+                    initial=display_value,
+                    required=False,
+                    disabled=True,
+                    widget=forms.TextInput(attrs={"readonly": "readonly"})
+                )
+
+                # Mantén el verdadero campo oculto (para guardar correctamente)
+                self.fields["created_by_hidden"] = forms.ModelChoiceField(
                     queryset=User.objects.all(),
                     initial=initial_user,
                     required=False,
-                    disabled=True,  # readonly
-                    label="Created by"
+                    widget=forms.HiddenInput()
                 )
 
             # --- Manejo de campos dinámicos ---
@@ -410,7 +435,7 @@ def get_dynamic_form(model_class, crm, object_type):
 
             # --- Asignar created_by SOLO al crear ---
             if hasattr(instance, "created_by") and not instance.pk and self.user:
-                instance.created_by = self.user
+                instance.created_by = self.cleaned_data.get("created_by_hidden") or self.user
 
             # --- Asignar updated_by siempre ---
             if hasattr(instance, "updated_by") and self.user:
@@ -440,7 +465,6 @@ def get_dynamic_form(model_class, crm, object_type):
             return instance
 
     return DynamicCustomForm
-
 
 
 

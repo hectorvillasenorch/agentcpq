@@ -26,7 +26,7 @@ from django.db.models import ForeignKey
 from datetime import datetime
 
 # LLM Utils
-from .utils.quote_agent.llm_helpers import extract_quote_details_with_llm, generate_final_create_quote_message, extract_quote_line_items_to_delete, generate_final_delete_quote_lines_message, generate_final_quote_updates_message, extract_quote_line_to_delete_with_llm
+from .utils.quote_agent.llm_helpers import extract_quote_details_with_llm, generate_final_create_quote_message, generate_final_delete_quote_lines_message, generate_final_quote_updates_message, extract_quote_line_to_delete_with_llm
 from .utils.quote_agent.llm_helpers import extract_quote_updates_with_llm
 
 # Record Helpers (add products)
@@ -483,75 +483,6 @@ def update_quote_line(user, user_message, session_data):
         "session_summary": updated_summary
     }
 
-#< ----------------- UPDATE QUOTE LINE -------------------- >
-
-def update_quote_line2(user, user_message, session_data):
-    """
-    Handles product creation requests for multiple products.
-    Tracks products in session state, saves completed products,
-    and generates dynamic messages using LLM including DB errors.
-    """
-    logging.info("🔧 Updating quote line...\n\n")
-
-    # ✅ Looking for active quote
-    quote = get_active_quote(user_message, session_data)
-
-    # ⚠️ Verify if function return an error
-    if isinstance(quote, dict) and "message" in quote:
-        return quote
-
-
-    current_state, previous_summary = get_session_context("update_quote_line", session_data)
-
-    line_items_on_user_message = extract_line_items_from_user_message(user_message, quote)
-
-    print(f"\n\nLine items mencionados: {line_items_on_user_message}\n\n")
-
-    # --- 1️⃣ Llamada inicial al LLM para extraer actualizaciones de quote line ---
-    llm_result, tokens_used, cost_est = extract_quote_line_updates_with_llm(
-        user_message=user_message,
-        current_state=current_state,
-        previous_summary=previous_summary,
-        line_items_on_user_message=line_items_on_user_message #Send line items to LLM can updates
-    )
-
-    # --- 3️⃣ Separar productos completados vs incompletos ---
-    completed_updates = []
-    remaining_updates = []
-
-    for line_item in llm_result["update_quote_line"]:
-        if line_item.get("completed"):
-            completed_updates.append(line_item["data"])
-        else:
-            remaining_updates.append(line_item)
-
-
-    # Guardar solo los incompletos en session state
-    session_data["state"]["line_items_updates"] = remaining_updates
-
-    # Return if not any completed products
-    if not completed_updates:
-        return {
-            "message": llm_result["agent_message"],
-            "session_summary": llm_result["summary"]
-        }
-
-    # --- 4️⃣ Persistir productos completados y capturar errores ---
-    result = handle_line_items_updates(user, completed_updates, quote)
-
-    # --- 5️⃣ Generar mensaje final dinámico usando función separada ---
-    dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_update_line_items_message(
-        completed_updates=completed_updates,
-        db_results=result,
-        remaining_updates=remaining_updates,
-        previous_summary=llm_result["summary"]
-    )
-
-    return {
-        "message": dynamic_message,
-        "session_summary": updated_summary
-    }
-
 #< ----------------- UPDATE QUOTE -------------------- >
 
 def update_quote(user, user_message, session_data):
@@ -559,17 +490,15 @@ def update_quote(user, user_message, session_data):
 
     logging.info("🔧 Updating quote...\n\n")
 
-    # 🧠 Make the session context
-    #session_context = make_session_context(user, "UpdateQuote", "quote_agent", session_data, user_message)
-
-    current_state, previous_summary = get_session_context("update_quote", session_data)
-
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)
 
     # ⚠️ Verify if function return an error
     if isinstance(quote, dict) and "message" in quote:
         return quote
+
+    # 🧠 Make the session context
+    current_state, previous_summary = get_session_context("update_quote", session_data)
 
     # --- 1️⃣ Llamada inicial al LLM para extraer productos ---
     llm_result, tokens_used, cost_est = extract_quote_updates_with_llm(
@@ -599,23 +528,12 @@ def update_quote(user, user_message, session_data):
             "session_summary": llm_result["summary"]
         }
 
-    extracted_updates = []
-
-    for quote_update in llm_result["update_quote"]:
-            extracted_updates.append(quote_update["data"])
-
-    if not extracted_updates:
-        # ✅ Save quote in session data
-        set_active_quote_to_session_data(session_data, quote)
-
-        return {
-            "message": "⚠️ AgentCPQ: An error occurred while extracting your updates. Please try again."
-        }
-
     response_message = ""
 
+    print(f"\n\Completed updates: {completed_quote_updates}\n\n")
+
     # ✅ Handle quote line update request
-    quote, response_message, updated_quote = handle_quote_update_request(extracted_updates, quote, response_message)
+    quote, response_message, updated_quote = handle_quote_update_request(completed_quote_updates, quote, response_message)
     log_action_usage("UpdateQuote", user, "Quote", quote.name)
 
     # ✅ Safe active quote to session data
@@ -677,8 +595,6 @@ def delete_quote_line(user, user_message, session_data):
                 "message": llm_result["agent_message"],
                 "session_summary": llm_result["summary"]
             }
-
-        #extracted_sku = extract_quote_line_items_to_delete(user_message)
 
         extracted_sku = []
 

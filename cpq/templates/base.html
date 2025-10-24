@@ -29,8 +29,9 @@
 
 <div id="sidenav" class="sidenav sidenav-fixed" style="display: flex; flex-direction: column; height: 100vh;">
     <div style="flex-grow: 1;">
-        <a href="{% url 'dashboard' %}?view=agents">
-            <i class="material-icons">arrow_back</i> <span class="nav-label">Back To AgentCPQ</span>
+        <a href="{{ request.session.last_dashboard_session }}">
+            <i class="material-icons">arrow_back</i>
+            <span class="nav-label">Back To AgentCPQ</span>
         </a>
         <div class="brand">
           <img id="sidebar-logo" src="{% static 'img/logo-small.png' %}" alt="AgentCPQ Logo"style="width: 85%; margin: 0 auto;" />
