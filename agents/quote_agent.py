@@ -366,7 +366,8 @@ def add_product_to_quote(user, user_message, session_data):
     llm_result, tokens_used, cost_est = extract_products_to_add_with_llm(
         user_message=user_message,
         current_state=current_state,
-        previous_summary=previous_summary
+        previous_summary=previous_summary,
+        quote_name=quote.name
     )
 
     # --- 3️⃣ Separar productos completados vs incompletos ---

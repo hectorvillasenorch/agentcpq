@@ -86,18 +86,18 @@
     </div>
 
   <!-- Fixed Logout/Login Section -->
-    <div style="padding: 16px;">
+    <div class="nav-footer">
         {% if user.is_authenticated %}
-            <form method="post" action="{% url 'logout' %}" style="padding: 16px;">
+            <form method="post" action="{% url 'logout' %}" class="nav-action-form">
                 {% csrf_token %}
-                <button type="submit" class="btn-flat white-text" style="display: flex; align-items: center; background: none; border: none; cursor: pointer;">
-                    <i class="material-icons" style="margin-right: 8px;">logout</i>
+                <button type="submit" class="nav-action-btn">
+                    <i class="material-icons">logout</i>
                     <span class="nav-label">Logout</span>
                 </button>
             </form>
 
-            <button onclick="colapseSidebar()" class="btn-flat white-text mt-4" style="display: flex; align-items: center; background: none; border: none; cursor: pointer;">
-                <i id="collapse-icon" class="material-icons" style="margin-right: 8px; font-weight: 800; font-size: 30px;">chevron_left</i>
+            <button type="button" onclick="colapseSidebar()" class="nav-collapse-btn">
+                <i id="collapse-icon" class="material-icons">chevron_left</i>
                 <span class="nav-label">Collapse Sidebar</span>
             </button>
         {% endif %}

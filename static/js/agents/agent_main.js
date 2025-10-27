@@ -3606,13 +3606,13 @@ function renderEmailAlerstDetails(alerts) {
 
       html +=
         `<div class="email-alert-container">
-          <div class="email-alert-header">
+          <div class="email-alert-header" style="background: linear-gradient(135deg, #041530, #233049); color:#fff; padding:10px 14px; border-radius:12px 12px 0 0;">
               <h5>${head_text}</h3>
               <span style="margin-left: 10px; font-weight: bold; color: ${alert.active ? 'green' : 'red'};">
                 ${alert.active ? '🟢 Active' : '🔴 Inactive'}
               </span>
           </div>
-          <div class="email-alert-details">
+          <div class="email-alert-details" style="border-radius:0 0 12px 12px;">
 
               <div class="email-alert-name">
                 <label><strong>Name:</strong></label>
@@ -3870,6 +3870,10 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
           display:flex;
           justify-content:space-between;
           align-items:center;
+          background: linear-gradient(135deg, #041530, #233049);
+          color:#fff;
+          padding:10px 14px;
+          border-radius:12px 12px 0 0;
         ">
           <h4 style="margin:0;">${objectName} records.</h4>
           <button onclick="makeDraggable(this)" class="record-popout-btn">
@@ -3882,19 +3886,17 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
           overflow-y:auto;
           max-height:350px;
           border:1px solid #e5e7eb;
-          border-radius:0.75rem;
-          margin-top:0.5rem;
+          border-radius:0 0 12px 12px;
+          margin-top:0;
         ">
           <table style="
-            width:max-content;
+            width:100%;
             border-collapse:collapse;
-            border-radius:0.5rem;
-            overflow:hidden;
             background-color:white;
             font-family:'Inter',sans-serif;
             color:#111827;
             font-size:1rem;
-            display:block;
+            table-layout:auto;
           ">
             <thead>
               <tr>${allFields.map(f => `<th>${normalizeFieldName(f)}</th>`).join('')}</tr>

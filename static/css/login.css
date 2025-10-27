@@ -117,3 +117,23 @@ input:not([type]):focus:not([readonly])+label, input[type=text]:not(.browser-def
   .login-wrapper{flex-direction:column}
   .login-right{display:none}
 }
+
+@media(max-width:600px){
+  .login-wrapper{
+    height:auto;
+    min-height:100vh;
+    overflow:auto;
+    padding-bottom:32px;
+  }
+
+  .login-left{
+    justify-content:flex-start;
+    padding:24px 16px 48px;
+  }
+
+  .login-form .login-btn{
+    width:100%;
+    margin:1.5rem 0 0;
+    padding:0.75rem 2rem;
+  }
+}

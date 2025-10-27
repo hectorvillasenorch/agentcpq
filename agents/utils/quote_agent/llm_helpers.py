@@ -274,22 +274,29 @@ def generate_final_create_quote_message(quote, db_results, previous_summary, pro
 
 
 # FUNCTION TO EXTRACT PRODUCT DETAILS (ADD_PRODUCT_TO_QUOTE)
-def extract_products_to_add_with_llm(user_message, current_state, previous_summary=None):
+def extract_products_to_add_with_llm(user_message, current_state, previous_summary=None, quote_name=None):
     """Extract multiple product SKUs, quantities, and discounts from user input using GPT."""
 
+    current_date = date.today().strftime("%Y-%m-%d")
+    active_quote_name = quote_name or "the active quote"
+
     system_prompt = """
-    You are a helpful AI assistant that extracts product data from user messages.
+    You are a helpful AI assistant that extracts product line items to add to an existing quote from the user's message.
     Always return JSON with structure:
     {
-        "update_quote": [
+        "add_product_to_quote": [
             {
                 "data": {
                     "quote_name": null,
-                    "field": null,
-                    "value": null
+                    "sku": null,
+                    "name": null,
+                    "quantity": null,
+                    "discount_type": null,
+                    "discount_value": null,
+                    "term": null
                 },
-                "completed": False
-            },
+                "completed": false
+            }
         ],
         "agent_message": "string",
         "summary": "string"
@@ -313,7 +320,7 @@ def extract_products_to_add_with_llm(user_message, current_state, previous_summa
     system_prompt += f"""
     Rules:
     - Treat the JSON as ATTEMPTS to update quote, NOT confirmations.
-    - If the user provides the quote name, use that, otherwise use the name of the active quote name: {quote_name}
+    - If the user provides the quote name, use that, otherwise use the name of the active quote name: {active_quote_name}
     - Do NOT include explanations.
     - Do NOT wrap the result in Markdown or use triple backticks.
     - Return only a single JSON object.
@@ -839,6 +846,7 @@ def extract_quote_line_updates_with_llm(user_message, current_state, previous_su
     """
 
     allowed_fields_str = '", "'.join(["quantity", "discount_amount", "discount_percentage", "term"])
+    current_date = date.today().strftime("%Y-%m-%d")
 
     system_prompt = """
     You are a helpful AI assistant that updates quote line items from user messages.
