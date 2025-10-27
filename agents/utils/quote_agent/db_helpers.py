@@ -7,10 +7,36 @@ from django.db import transaction
 from ..orchestrator.context_handle_helpers import save_or_update_conversation_context
 
 
+def _clean_identifier(value):
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
 def find_product_and_normalize_variables(sku, name):
+    """Return a product matching either SKU or name (case-insensitive)."""
+
+    sku_clean = _clean_identifier(sku)
+    name_clean = _clean_identifier(name)
+
+    if not sku_clean and not name_clean:
+        return None, sku, name
+
+    filters = Q()
+
+    if sku_clean:
+        filters |= Q(sku__iexact=sku_clean) | Q(name__iexact=sku_clean)
+
+    if name_clean:
+        filters |= Q(sku__iexact=name_clean) | Q(name__iexact=name_clean)
+
     try:
-        product = Product.objects.get(Q(sku=sku) | Q(sku=name) | Q(name=name) | Q(name=sku))
-    except Product.DoesNotExist:
+        product = Product.objects.filter(filters).first()
+    except Product.DoesNotExist:  # pragma: no cover - `.first()` will not raise
+        product = None
+
+    if not product:
         return None, sku, name
 
     return product, product.sku, product.name
