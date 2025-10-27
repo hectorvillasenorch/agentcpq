@@ -312,6 +312,8 @@ def extract_products_to_add_with_llm(user_message, current_state, previous_summa
     - If the user specifies words like remove or delete discount, then set field as "discount_percentage" and value = 0.
     - For expiration dates, always return the value as a string in ISO 8601 format (YYYY-MM-DD), which is compatible with Python and Django. For example, July 30, 2025 → "2025-07-30".
     - For notes, always ensure the returned value ends with a period (.). If the user's note doesn't end with one, automatically add it to the end of the note.
+    - If a SKU is provided, treat it as the authoritative identifier even if the product name is missing. Never request or require the product name when a SKU is present, and do not mark the item as incomplete for that reason.
+    - When a SKU is present and quantity is determined, mark the item as completed and keep the name value as null unless the user provided it explicitly.
     """
     system_prompt += f"""
     - The current date is {current_date}. Use this as the reference point when interpreting relative dates like "next Friday", "tomorrow", or "in two weeks".
@@ -736,6 +738,41 @@ def extract_quote_line_to_delete_with_llm(user_message, current_state, previous_
             prod["completed"] = True
         else:
             prod["completed"] = False
+
+    if normalized_products:
+        all_completed = all(prod["completed"] for prod in normalized_products)
+        has_sku_without_name = any(
+            prod["data"].get("sku") and not prod["data"].get("name")
+            for prod in normalized_products
+        )
+
+        if all_completed and has_sku_without_name:
+            captured_items = []
+            for prod in normalized_products:
+                data = prod["data"]
+                sku = data.get("sku")
+                name = data.get("name")
+                qty = data.get("quantity")
+                label = sku or name or "product"
+                if qty:
+                    captured_items.append(f"{qty}x {label}")
+                else:
+                    captured_items.append(label)
+
+            if captured_items:
+                current_message = result_json.get("agent_message") or ""
+                if (not current_message) or ("product name" in current_message.lower()):
+                    joined = ", ".join(captured_items)
+                    result_json["agent_message"] = (
+                        f"Great, I noted {joined}. Let me know if you want to add discounts or more items."
+                    )
+
+                current_summary = result_json.get("summary") or ""
+                if "product name" in current_summary.lower():
+                    active_label = quote_name or active_quote_name
+                    result_json["summary"] = (
+                        f"Captured {', '.join(captured_items)} for {active_label}. Awaiting any optional discounts or additional items."
+                    )
 
     result_json["add_product_to_quote"] = normalized_products
 
