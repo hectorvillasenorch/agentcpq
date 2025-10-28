@@ -6,6 +6,7 @@ import os
 import re
 import logging,threading
 from .utils.quote_agent.db_helpers import log_action_usage
+from .utils.message_formatters import SUCCESS_ICON
 from decimal import Decimal
 
 from .utils.orchestrator.context_handle_helpers import estimate_cost
@@ -174,6 +175,8 @@ def update_product(user, user_message, session_data):
             "is_subscription": product.is_subscription,
             "term": product.term,
             "is_bundle": product.is_bundle,
+            "description": product.description or "",
+            "family": product.family,
         }
 
         print("🔹 DEBUG: Current Product Details in DB:", product_details)  # Debugging step
@@ -217,14 +220,18 @@ def update_product_record(user,updated_product_details):
         product.is_subscription = updated_product_details.get("is_subscription", product.is_subscription)
         product.term = updated_product_details.get("term", product.term)
         product.is_bundle = updated_product_details.get("is_bundle", product.is_bundle)
+        if "description" in updated_product_details:
+            product.description = updated_product_details.get("description") or ""
+        if "family" in updated_product_details:
+            product.family = updated_product_details.get("family") or product.family
         product.updated_by = user
 
         # ✅ Save the updated product
         product.save()
         log_action_usage("UpdateProductRecord", user, "Product", product.name)
-        print(f"✅ DEBUG: Product `{sku}` successfully updated.")  # ✅ Debugging step
+        print(f"✅ DEBUG: Product {sku} successfully updated.")  # ✅ Debugging step
 
-        return f"✅ Product `{sku}` successfully updated."
+        return f"{SUCCESS_ICON} Product {sku} successfully updated."
 
     except Product.DoesNotExist:
         return f"⚠️ Error: Product with SKU `{sku}` not found."

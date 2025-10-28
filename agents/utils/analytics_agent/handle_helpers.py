@@ -2,7 +2,7 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, date, timedelta
 
 from django.core.exceptions import FieldError
-from django.db.models import ForeignKey, OuterRef, Subquery
+from django.db.models import ForeignKey, OuterRef, Subquery, Q
 from django.db.models.functions import Cast
 from django.db.models import DecimalField, DateField
 from django.utils.dateparse import parse_date
@@ -64,6 +64,23 @@ def handle_show_metrics(user, completed_metrics):
 
     for metric in completed_metrics:
         object_name = metric.get("object")
+        conditions = metric.get("conditions", [])
+
+        if (not object_name) and conditions:
+            first_condition = conditions[0]
+            raw_field = first_condition.get("field")
+            raw_value = first_condition.get("value")
+
+            if raw_field and raw_value:
+                lowered_field = str(raw_field).lower()
+                lowered_value = str(raw_value).lower()
+
+                if lowered_field in {"product", "product_sku", "product_name", "sku", "name"}:
+                    object_name = "Product"
+                    first_condition["field"] = "sku"
+                    first_condition["value"] = raw_value
+
+        object_name = object_name or metric.get("object")
         method = metric.get("method", "read")
         limit = metric.get("limit", 10)
         try:
@@ -124,6 +141,28 @@ def handle_show_metrics(user, completed_metrics):
             custom_field = None
             if custom_object and isinstance(field, str):
                 custom_field = custom_field_lookup.get(field.lower())
+
+            # Special handling for Product SKU/Name overlap
+            if (
+                not custom_field
+                and object_name == "Product"
+                and isinstance(field, str)
+                and isinstance(value, str)
+            ):
+                lowered_field = field.lower()
+                if lowered_field in {"name", "product", "product_name", "product_sku", "sku"}:
+                    operator_lower = operator.lower()
+                    if operator_lower in {"equals", "contains", "starts_with", "ends_with"}:
+                        lookup_map = {
+                            "equals": ("iexact", "iexact"),
+                            "contains": ("icontains", "icontains"),
+                            "starts_with": ("istartswith", "istartswith"),
+                            "ends_with": ("iendswith", "iendswith"),
+                        }
+                        name_lookup, sku_lookup = lookup_map[operator_lower]
+                        condition_q = Q(**{f"name__{name_lookup}": value}) | Q(**{f"sku__{sku_lookup}": value})
+                        qs = qs.filter(condition_q)
+                        continue
 
             if custom_field:
                 success, error_msg, qs = apply_custom_field_condition(qs, custom_field, operator, value)

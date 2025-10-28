@@ -228,24 +228,24 @@ def orchestrate_request(user, user_message, session_data):
         - "CreateEmailAlert"
         - "UpdateEmailAlert"
         - "DeleteEmailAlert"
-        - "ShowQuoteDetails" → Use when the user requests to view or open a single quote — 
-                either a specific one (by ID or name) **or the active quote in the current session**.  
-                This label should also be used for messages like:
+        - "ShowQuoteDetails" → Use only when the user explicitly asks to view a quote.
+                The message must reference a quote (the word "quote", a quote ID, or the current quote session).
+                Examples:
                     - "Show quote"
-                    - "Show details"
+                    - "Show details of quote Q-2024-001"
                     - "Display the current quote"
                     - "Open quote Q-2024-001"
-                    - "Show the quote for ACPQ-TEAM"
-                Do NOT use this label when the user requests multiple quotes, lists, or filtered results.
+                Do NOT pick this label when the user mentions products, bundles, accounts, metrics, lists, or any non-quote record.
         - "ShowMetrics" → Use when the user requests listings, summaries, or filtered searches 
-                involving multiple records (quotes, products, accounts, etc.).  
-                This includes plural forms ("quotes", "products"), date filters ("last 3 days", "this month"),
-                or numerical filters ("top 5", "all", "recent").  
+                involving one or more records (products, quotes, accounts, bundles, etc.).  
+                This includes plural forms ("quotes", "products"), specific record lookups ("show product record TEAM-BUNDLE"),
+                date filters ("last 3 days", "this month"), or numerical filters ("top 5", "all", "recent").  
                 Examples:
                     - "Show me my quotes created in the last 3 days"
                     - "List all quotes pending approval"
                     - "Show my last 5 quotes"
                     - "Display all products in the catalog"
+                    - "List product record TEAM-BUNDLE"
         - "KnowledgeLookup" → Use when the user asks for how-to instructions, FAQs, or training guidance (e.g. "how do I create a quote", "teach me about approvals").
         - "CreateActionTrigger"
         - "CreateExclusionRule"
