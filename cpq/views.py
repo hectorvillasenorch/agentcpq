@@ -16,6 +16,12 @@ from .models import (
     Option,
     TenantUsageReport,
     Account,
+    Opportunity,
+    QuoteDocument,
+    QuotePendingAttachment,
+    Contact,
+    Lead,
+    Activity,
 )
 from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
@@ -43,18 +49,265 @@ from django.views.decorators.http import require_POST
 from decimal import Decimal, InvalidOperation
 from collections import defaultdict, OrderedDict
 from django.contrib.auth.models import User, Group
+from django.conf import settings
 from django.utils import timezone
 from .models import EmailAlert
 from cpq.models import default_rendered_fields_for_quote_document_settings, default_omitted_fields_for_quote_document_settings
 from django.utils.html import escape
 from django.urls import reverse
 from django.utils.http import urlencode
+import boto3
+from botocore.config import Config
 
 # HubSpot sync
 from hubspot.views import sync_opportunity_to_hubspot
 
 # Agents General Helpers
 from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
+
+
+def _estimate_queryset_size(qs, field_names=None, chunk_size=250):
+    """Approximate the size in bytes of all rows returned by a queryset."""
+
+    if field_names is None:
+        field_names = [f.name for f in qs.model._meta.concrete_fields]
+
+    total = 0
+    for row in qs.values(*field_names).iterator(chunk_size=chunk_size):
+        total += len(json.dumps(row, default=str))
+    return total
+
+
+def _sum_file_field_sizes(qs, field_name):
+    from django.core.files.storage import default_storage
+
+    total = 0
+    for instance in qs.iterator(chunk_size=100):
+        file_field = getattr(instance, field_name, None)
+        if not file_field or not getattr(file_field, "name", None):
+            continue
+        try:
+            total += default_storage.size(file_field.name)
+        except (OSError, FileNotFoundError):
+            continue
+    return total
+
+
+def _get_r2_client():
+    required_settings = (
+        getattr(settings, "AWS_S3_ENDPOINT_URL", None),
+        getattr(settings, "AWS_ACCESS_KEY_ID", None),
+        getattr(settings, "AWS_SECRET_ACCESS_KEY", None),
+        getattr(settings, "AWS_STORAGE_BUCKET_NAME", None),
+    )
+
+    if not all(required_settings):
+        return None
+
+    try:
+        client = boto3.client(
+            "s3",
+            endpoint_url=settings.AWS_S3_ENDPOINT_URL,
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            config=Config(signature_version="s3v4"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logging.warning("Unable to create R2 client: %s", exc)
+        return None
+
+    return client
+
+
+def _get_r2_storage_usage(tenant):
+    if not tenant or not getattr(tenant, "tenant_id", None):
+        return 0
+
+    client = _get_r2_client()
+    if client is None:
+        return 0
+
+    prefix = f"tenant_{tenant.tenant_id}/"
+    total = 0
+
+    try:
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(
+            Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+            Prefix=prefix,
+        ):
+            for obj in page.get("Contents", []):
+                total += obj.get("Size", 0)
+
+    except Exception as exc:  # noqa: BLE001
+        logging.warning(
+            "Unable to fetch R2 usage for tenant %s: %s",
+            tenant.tenant_id,
+            exc,
+        )
+        return 0
+
+    return total
+
+
+def _list_r2_objects(tenant):
+    if not tenant or not getattr(tenant, "tenant_id", None):
+        return []
+
+    client = _get_r2_client()
+    if client is None:
+        return []
+
+    prefix = f"tenant_{tenant.tenant_id}/"
+    objects = []
+
+    try:
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(
+            Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+            Prefix=prefix,
+        ):
+            for obj in page.get("Contents", []):
+                key = obj.get("Key")
+                item = {
+                    "key": key,
+                    "size": obj.get("Size", 0),
+                    "last_modified": obj.get("LastModified"),
+                }
+
+                if key:
+                    try:
+                        item["preview_url"] = client.generate_presigned_url(
+                            "get_object",
+                            Params={
+                                "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
+                                "Key": key,
+                            },
+                            ExpiresIn=300,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logging.warning("Unable to generate preview URL for %s: %s", key, exc)
+                        item["preview_url"] = None
+                else:
+                    item["preview_url"] = None
+
+                objects.append(item)
+    except Exception as exc:  # noqa: BLE001
+        logging.warning(
+            "Unable to list R2 objects for tenant %s: %s",
+            tenant.tenant_id,
+            exc,
+        )
+
+    return objects
+
+
+def _delete_r2_objects(tenant, keys):
+    if not tenant or not keys:
+        return False, "No tenant or keys provided"
+
+    client = _get_r2_client()
+    if client is None:
+        return False, "Cloudflare R2 is not configured"
+
+    deleted = 0
+    errors = []
+
+    for key in keys:
+        try:
+            client.delete_object(
+                Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+                Key=key,
+            )
+            deleted += 1
+        except Exception as exc:  # noqa: BLE001
+            logging.warning("Failed to delete R2 object %s: %s", key, exc)
+            errors.append(key)
+
+    if errors:
+        return False, f"Failed to delete {len(errors)} object(s)."
+
+    return True, f"Deleted {deleted} object(s)."
+
+
+def _calculate_tenant_storage_usage(tenant):
+    if not tenant:
+        return None
+
+    tenant_id = getattr(tenant, "tenant_id", None)
+
+    account_qs = Account.objects.all()
+    if tenant_id:
+        tenant_accounts = account_qs.filter(tenant_id=tenant_id)
+        if tenant_accounts.exists():
+            account_qs = tenant_accounts
+
+    contact_qs = Contact.objects.filter(account__in=account_qs)
+    opportunity_qs = Opportunity.objects.filter(account__in=account_qs)
+    quote_qs = Quote.objects.filter(account__in=account_qs)
+    quote_line_qs = QuoteLine.objects.filter(quote__in=quote_qs)
+
+    document_qs = QuoteDocument.objects.filter(quote__in=quote_qs)
+    attachment_qs = QuotePendingAttachment.objects.filter(quote__in=quote_qs)
+    activity_qs = Activity.objects.filter(opportunity__in=opportunity_qs)
+
+    lead_qs = Lead.objects.all()
+    if tenant_id:
+        tenant_leads = lead_qs.filter(contact__account__tenant_id=tenant_id)
+        if tenant_leads.exists():
+            lead_qs = tenant_leads
+
+    records_bytes = 0
+    records_bytes += _estimate_queryset_size(account_qs)
+    records_bytes += _estimate_queryset_size(contact_qs)
+    records_bytes += _estimate_queryset_size(opportunity_qs)
+    records_bytes += _estimate_queryset_size(quote_qs)
+    records_bytes += _estimate_queryset_size(quote_line_qs)
+    records_bytes += _estimate_queryset_size(document_qs)
+    records_bytes += _estimate_queryset_size(
+        attachment_qs,
+        field_names=[
+            "id",
+            "quote_id",
+            "original_name",
+            "mime_type",
+            "uploaded_at",
+            "consumed",
+        ],
+    )
+    records_bytes += _estimate_queryset_size(activity_qs)
+    records_bytes += _estimate_queryset_size(lead_qs)
+
+    files_bytes_local = _sum_file_field_sizes(document_qs, "file")
+    files_bytes_local += _sum_file_field_sizes(attachment_qs, "file")
+    files_bytes_r2 = _get_r2_storage_usage(tenant)
+    files_bytes = files_bytes_local + files_bytes_r2
+
+    total_bytes = records_bytes + files_bytes
+
+    mb_divisor = 1024 * 1024
+    records_mb = round(records_bytes / mb_divisor, 2) if records_bytes else 0.0
+    files_mb = round(files_bytes / mb_divisor, 2) if files_bytes else 0.0
+    storage_mb = round(total_bytes / mb_divisor, 2) if total_bytes else 0.0
+
+    records_percent = 0.0
+    documents_percent = 0.0
+    if records_bytes:
+        records_percent = min((records_bytes / (10 * mb_divisor)) * 100, 100)
+    if files_bytes:
+        documents_percent = min((files_bytes / (50 * mb_divisor)) * 100, 100)
+
+    return {
+        "tenant": tenant,
+        "storage_bytes": total_bytes,
+        "storage_mb": storage_mb,
+        "records_bytes": records_bytes,
+        "files_bytes": files_bytes,
+        "records_mb": records_mb,
+        "files_mb": files_mb,
+        "records_percent": round(records_percent, 2),
+        "documents_percent": round(documents_percent, 2),
+    }
 
 
 def root_redirect(request):
@@ -1012,12 +1265,13 @@ def search_accounts(request):
 
     return JsonResponse({"results": results})
 
-
+@login_required
 def usage_dashboard(request):
     current_tenant = Tenant.objects.first()
     usage_logs = ActionUsage.objects.all()
 
     tenants_usage = TenantUsageReport.objects.select_related('tenant')
+    tenant_storage_usage = _calculate_tenant_storage_usage(current_tenant)
 
 
     # ---- Total Actions by Month ----
@@ -1044,7 +1298,6 @@ def usage_dashboard(request):
         .annotate(count=Count("id"))
         .order_by("-count")
     )
-    print(actions_by_user)
     # ---- Overflow Metric (Current Month Only) ----
     start_of_month = make_aware(datetime(now().year, now().month, 1))
     monthly_count = usage_logs.filter(timestamp__gte=start_of_month).count()
@@ -1068,6 +1321,8 @@ def usage_dashboard(request):
     ]
 
 
+    storage_info = tenant_storage_usage or {}
+
     context = {
         "tenant": current_tenant,
         "actions_by_month_json": json.dumps(actions_by_month_serialized),
@@ -1077,6 +1332,61 @@ def usage_dashboard(request):
         "limit": action_limit,
         "overflow": max(0, overflow),
         "tenants_usage": tenants_usage,
+        "storage_mb": storage_info.get("storage_mb", 0.0),
+        "records_mb": storage_info.get("records_mb", 0.0),
+        "files_mb": storage_info.get("files_mb", 0.0),
+        "records_percent": storage_info.get("records_percent", 0.0),
+        "documents_percent": storage_info.get("documents_percent", 0.0),
     }
 
     return render(request, "usage.html", context)
+
+
+@login_required
+def usage_documents(request):
+    current_tenant = Tenant.objects.first()
+    documents = []
+    total_size = 0
+
+    if current_tenant:
+        raw_documents = _list_r2_objects(current_tenant)
+        for item in raw_documents:
+            size_bytes = item.get("size", 0) or 0
+            item["size_mb"] = round(size_bytes / (1024 * 1024), 2) if size_bytes else 0.0
+        documents = raw_documents
+        total_size = sum(item.get("size", 0) for item in documents)
+
+    if request.method == "POST":
+        action = request.POST.get("action")
+        keys = []
+
+        if action == "delete_all":
+            keys = [item.get("key") for item in documents if item.get("key")]
+        elif action == "delete_selected":
+            keys = request.POST.getlist("keys")
+        elif action == "delete_single":
+            key = request.POST.get("key")
+            if key:
+                keys = [key]
+
+        if keys:
+            success, message_text = _delete_r2_objects(current_tenant, keys)
+            if success:
+                messages.success(request, message_text)
+            else:
+                messages.error(request, message_text)
+        else:
+            messages.warning(request, "No documents selected for deletion.")
+
+        return redirect("cpq:usage_documents")
+
+    total_mb = round(total_size / (1024 * 1024), 2) if total_size else 0.0
+
+    context = {
+        "tenant": current_tenant,
+        "documents": documents,
+        "documents_total_bytes": total_size,
+        "documents_total_mb": total_mb,
+    }
+
+    return render(request, "usage_documents.html", context)
