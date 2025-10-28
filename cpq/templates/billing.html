@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="container">
+  <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
+    <i class="material-icons left" style="vertical-align: middle;">credit_card</i>
+    Billing & Subscription
+  </h4>
+
+  {% if not stripe_publishable_key %}
+    <div class="card-panel yellow lighten-4 yellow-text text-darken-4">
+      Stripe is not configured. Please set the STRIPE_KEY environment variable.
+    </div>
+  {% endif %}
+
+  <div class="card-panel white z-depth-1" style="max-width: 520px;">
+    <p class="grey-text text-darken-2" style="margin-bottom: 24px;">
+      Add or update your payment method. This card will be used to run your AgentCPQ subscriptions.
+    </p>
+
+    <form id="payment-form">
+      <div id="payment-element" style="margin-bottom: 20px;"></div>
+      <button id="submit" class="btn btn-standard" type="button">Subscribe</button>
+    </form>
+
+    <div id="payment-message" class="grey-text" style="margin-top: 16px; display: none;"></div>
+  </div>
+</div>
+
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+  const stripeKey = "{{ stripe_publishable_key }}";
+  const stripeMessage = document.getElementById('payment-message');
+  const submitButton = document.getElementById('submit');
+  const paymentElementContainer = document.getElementById('payment-element');
+  const createSetupIntentUrl = "{% url 'cpq:billing_create_setup_intent' %}";
+
+  submitButton.disabled = true;
+
+  function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+  }
+
+  if (!stripeKey) {
+    stripeMessage.style.display = 'block';
+    stripeMessage.textContent = 'Stripe publishable key missing. Add STRIPE_KEY to the environment.';
+  } else {
+    const stripe = Stripe(stripeKey);
+    let elements;
+
+    async function initialize() {
+      try {
+        const response = await fetch(createSetupIntentUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken'),
+          },
+          body: JSON.stringify({}),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.clientSecret) {
+          throw new Error(data.error || 'Unable to generate client secret.');
+        }
+
+        elements = stripe.elements({ clientSecret: data.clientSecret });
+        const paymentElement = elements.create('payment');
+        paymentElement.mount('#payment-element');
+        submitButton.disabled = false;
+      } catch (error) {
+        paymentElementContainer.innerHTML = '<div class="red-text">' + error.message + '</div>';
+        stripeMessage.style.display = 'block';
+        stripeMessage.textContent = 'Stripe setup failed. Please try again later or contact support.';
+      }
+    }
+
+    initialize();
+
+    submitButton.addEventListener('click', async () => {
+      if (!elements) return;
+
+      stripeMessage.style.display = 'block';
+      stripeMessage.textContent = 'Processing...';
+      submitButton.disabled = true;
+
+      const { error } = await stripe.confirmSetup({
+        elements,
+        confirmParams: {
+          return_url: window.location.href,
+        },
+        redirect: 'if_required',
+      });
+
+      if (error) {
+        stripeMessage.textContent = error.message || 'Unable to save payment method.';
+        submitButton.disabled = false;
+      } else {
+        stripeMessage.textContent = 'Payment method saved successfully. You may close this page.';
+      }
+    });
+  }
+</script>
+{% endblock %}

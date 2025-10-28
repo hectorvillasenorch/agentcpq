@@ -1,7 +1,22 @@
 from django.http import HttpResponse
 from django.urls import path
 from .views import accounts_view, settings_view, product_list, product_detail,field_mapping_view,save_field_mappings,set_primary_quote, custom_fields_view,create_custom_field, get_company_information, create_custom_object, get_document_template, business_rules_view,create_business_rule
-from .views import create_notification, create_custom_record, search_accounts,create_custom_field, usage_dashboard, usage_documents, edit_custom_object, edit_custom_field, delete_custom_field, delete_custom_object, manage_notifications_view, edit_notification, delete_email_alert
+from .views import (
+    create_notification,
+    create_custom_record,
+    search_accounts,
+    create_custom_field,
+    usage_dashboard,
+    usage_documents,
+    billing_view,
+    edit_custom_object,
+    edit_custom_field,
+    delete_custom_field,
+    delete_custom_object,
+    manage_notifications_view,
+    edit_notification,
+    delete_email_alert,
+)
 from hubspot.views import get_hubspot_schema
 from django.conf import settings
 from django.conf.urls.static import static
@@ -48,6 +63,8 @@ urlpatterns = [
     path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote'),
     path('admin/usage/', usage_dashboard, name='usage_dashboard'),
     path('admin/usage/documents/', usage_documents, name='usage_documents'),
+    path('admin/billing/', billing_view, name='billing_view'),
+    path('admin/billing/create-setup-intent/', views.billing_create_setup_intent, name='billing_create_setup_intent'),
 ]
 
 

@@ -58,6 +58,7 @@ from django.urls import reverse
 from django.utils.http import urlencode
 import boto3
 from botocore.config import Config
+import stripe
 
 # HubSpot sync
 from hubspot.views import sync_opportunity_to_hubspot
@@ -1390,3 +1391,46 @@ def usage_documents(request):
     }
 
     return render(request, "usage_documents.html", context)
+
+
+@login_required
+def billing_view(request):
+    current_tenant = Tenant.objects.first()
+    publishable_key = settings.STRIPE_PUBLISHABLE_KEY or ""
+
+    context = {
+        "tenant": current_tenant,
+        "stripe_publishable_key": publishable_key,
+    }
+
+    return render(request, "billing.html", context)
+
+
+@login_required
+@require_POST
+def billing_create_setup_intent(request):
+    if not settings.STRIPE_SECRET_KEY or not settings.STRIPE_PUBLISHABLE_KEY:
+        return JsonResponse({"error": "Stripe is not configured."}, status=400)
+
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+
+    tenant = Tenant.objects.first()
+    metadata = {}
+    if tenant:
+        if tenant.tenant_id:
+            metadata["tenant_id"] = tenant.tenant_id
+        if tenant.name:
+            metadata["tenant_name"] = tenant.name
+
+    try:
+        intent = stripe.SetupIntent.create(
+            payment_method_types=["card"],
+            metadata=metadata or None,
+        )
+        return JsonResponse({"clientSecret": intent.client_secret})
+    except stripe.error.StripeError as exc:
+        logging.error("Stripe error creating setup intent: %s", exc)
+        return JsonResponse({"error": str(exc)}, status=400)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Unexpected error creating setup intent")
+        return JsonResponse({"error": "Unexpected error creating setup intent."}, status=500)
