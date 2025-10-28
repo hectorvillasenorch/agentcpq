@@ -161,6 +161,9 @@ def dashboard(request):
 
     quickbooks_connected = QuickbooksToken.objects.exists()
 
+    tenant = Tenant.objects.first()
+    tenant_version = tenant.version if tenant and tenant.version else ""
+
     records_custom_object, field_values_by_record = get_values_by_record(custom_object)
     lookup_options = get_lookup_data_for_form(custom_object)
 
@@ -185,6 +188,7 @@ def dashboard(request):
         "records_custom_object": records_custom_object,
         'field_values_by_record': field_values_by_record,
         'lookup_options': lookup_options,
+        'tenant_version': tenant_version,
 })
 
 

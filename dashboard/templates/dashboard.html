@@ -107,6 +107,9 @@
             </div>
             <div class="nav-user-card__details">
                 <span class="nav-user-card__name">{{ request.user.get_full_name|default:request.user.username }}</span>
+                {% if tenant_version %}
+                  <span class="nav-user-card__version">v{{ tenant_version }}</span>
+                {% endif %}
             </div>
         </div>
     </div>

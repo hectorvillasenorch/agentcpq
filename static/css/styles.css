@@ -334,6 +334,17 @@ h4{
   font-weight: 600;
 }
 
+.nav-user-card__version {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #fc6a3d;
+  margin-top: 2px;
+  align-self: stretch;
+  text-align: center;
+}
+
 .nav-user-fixed {
   position: fixed;
   bottom: 0;
