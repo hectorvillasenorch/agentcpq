@@ -7,9 +7,31 @@ document.addEventListener("DOMContentLoaded", function () {
   loadPendingAttachments();
   enhanceStructuredAgentMessagesHistoryChat(); // 🔥
   updateAttachmentPreview();
+  initializeMaterializeSelects(document);
 
   scrollToBottom("DOMContentLoaded", true);
 });
+
+function initializeMaterializeSelects(root) {
+  if (!root) {
+    return;
+  }
+
+  const selects = root.querySelectorAll('select');
+  if (!selects.length) {
+    return;
+  }
+
+  if (typeof M !== 'undefined' && M.FormSelect) {
+    M.FormSelect.init(selects);
+  } else {
+    console.warn('Materialize M.FormSelect not available; select elements were not enhanced.');
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.initializeMaterializeSelects = initializeMaterializeSelects;
+}
 
 if (typeof window !== "undefined") {
   window.UPLOAD_HINT_DEFAULT = window.UPLOAD_HINT_DEFAULT || "PNG, JPG, GIF, or WEBP up to 8 MB. Attachments are appended to the next PDF.";
@@ -872,6 +894,7 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     // Claves a buscar en el mensaje
     const keys = [
       'quote_details:',
+      'single_record:',
       'validation_rules_details:',
       'rules:',
       'email_alerts_details:',
@@ -933,6 +956,17 @@ function enhanceStructuredAgentMessagesHistoryChat() {
           data.rules || data
         );
         div.innerHTML = html;
+        return;
+      }
+
+      if (matchedKey === 'single_record:') {
+        let messageBeforeJson = raw.slice(0, raw.indexOf(matchedKey)).trim();
+        messageBeforeJson = unescapeUnicode(messageBeforeJson);
+        messageBeforeJson = messageBeforeJson.replace(/\\u003C/g, "<").replace(/\\u003E/g, ">");
+
+        const recordHtml = renderSingleRecord(data);
+        const prefix = messageBeforeJson ? `<div class="general-message">${messageBeforeJson}</div>` : '';
+        div.innerHTML = `${prefix}${recordHtml}`;
         return;
       }
 
@@ -1093,6 +1127,9 @@ async function sendMessage() {
         // ✅ Handle Approval History Response
         if (data.response && data.response.history) {
             responseMessage += renderApprovalHistory(data.response);
+        }
+        else if (data.response && data.response.single_record) {
+          responseMessage += renderSingleRecord(data.response.single_record);
         }
         // ✅ Handle Quote Details Response
         else if (data.response && data.response.quote_details && !data.response.quote_notes) {
@@ -1302,6 +1339,19 @@ function appendMessage(className, message) {
       }
     }
 
+    // ✅ Detect stored single record cards
+    if (className === "agent" && message.includes("single_record:")) {
+      try {
+        const match = message.match(/single_record:\s({[\s\S]+})/);
+        if (match && match[1]) {
+          const record = JSON.parse(match[1]);
+          message = renderSingleRecord(record);
+        }
+      } catch (e) {
+        console.warn("Failed to parse single_record JSON:", e);
+      }
+    }
+
     // ✅ Detect stored retrieved records (Analytics Agent)
     if (className === "agent" && message.includes("retrieved_records:")) {
       try {
@@ -1349,6 +1399,92 @@ function appendMessage(className, message) {
     scrollToBottom(`appendMessage:${className}`, true);
 }
 
+function renderQuoteDiscountControls(quote) {
+  const type = quote && quote.discount_type;
+  const percentageRaw = quote && quote.discount_percentage;
+  const amountRaw = quote && quote.discount_amount;
+
+  const hasValues = Boolean(type) && percentageRaw !== null && percentageRaw !== undefined && amountRaw !== null && amountRaw !== undefined;
+
+  if (!hasValues) {
+    return "*****";
+  }
+
+  const percentageValue = Number(percentageRaw);
+  const amountValue = Number(amountRaw);
+
+  const safePercentage = Number.isFinite(percentageValue) ? percentageValue : 0;
+  const safeAmount = Number.isFinite(amountValue) ? amountValue : 0;
+  const formattedAmount = safeAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const quoteName = quote && quote.quote_name ? quote.quote_name : '';
+
+  return `
+    <input type="number"
+      value="${safePercentage}"
+      data-field="discount_percentage"
+      data-quote="${quoteName}"
+      onchange="updateQuote(this)"
+      style="width: 3rem; color: red;">
+    <span style="color: red;">%</span>
+    <span style="color: red;">( - $</span>
+    <input type="text"
+      value="${formattedAmount}"
+      data-field="discount_amount"
+      data-quote="${quoteName}"
+      onchange="updateQuote(this)"
+      style="width: 6rem; color: red;">
+    <span style="color: red;"> )</span>
+  `.trim();
+}
+
+function replaceQuoteDetailsElement(existingElement, quote) {
+  if (!existingElement || !quote) {
+    return null;
+  }
+
+  const parent = existingElement.parentNode;
+  if (!parent) {
+    return null;
+  }
+
+  const template = document.createElement("div");
+  template.innerHTML = renderQuoteDetails(quote);
+  const nextElement = template.firstElementChild;
+  if (!nextElement) {
+    return null;
+  }
+
+  parent.replaceChild(nextElement, existingElement);
+  initializeQuoteDetailInteractions(nextElement);
+  return nextElement;
+}
+
+function initializeQuoteDetailInteractions(container) {
+  if (!container) {
+    return;
+  }
+
+  const selects = container.querySelectorAll('select');
+  if (selects.length > 0) {
+    if (typeof M !== 'undefined' && M.FormSelect) {
+      M.FormSelect.init(selects);
+    }
+  }
+
+  const expirationInput = container.querySelector('#expiration_date[data-field="expiration_date"]');
+  if (expirationInput && typeof flatpickr === "function") {
+    flatpickr(expirationInput, {
+      dateFormat: "m/d/Y",
+      defaultDate: expirationInput.value,
+      allowInput: false,
+      onChange: function(selectedDates, dateStr, instance) {
+        updateQuote(instance.input);
+      }
+    });
+  }
+}
+
 function renderQuoteDetails(quote) {
   if (window.innerWidth < 1200) {
     return renderQuoteDetailsMobile(quote);   // ← new helper (see below)
@@ -1368,7 +1504,7 @@ function renderQuoteDetails(quote) {
 
   const formattedDate_e = `${monthFormatted}/${dayFormatted}/${yearFormatted}`;
 
-  var html = `<div class="quote-container">
+  var html = `<div class="quote-container" data-quote-name="${quote.quote_name}">
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
                   <div style="display: flex; align-items: center; gap: 8px;" class="status-select">
@@ -1411,25 +1547,7 @@ function renderQuoteDetails(quote) {
                 </div>
 
                 <div class="discount">
-                  <p><strong>Discount: </strong>
-                    ${(quote.discount_type && quote.discount_percentage && quote.discount_amount) ? `
-                    <input type="number"
-                          value="${Number(quote.discount_percentage)}"
-                          data-field="discount_percentage"
-                          data-quote="${quote.quote_name}"
-                          onchange="updateQuote(this)"
-                          style="width: 3rem; color: red;">
-                    <span style="color: red;">%</span>
-                    <span style="color: red;">( - $</span>
-                    <input type="text"
-                      value="${Number(quote.discount_amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}"
-                      data-field="discount_amount"
-                      data-quote="${quote.quote_name}"
-                      onchange="updateQuote(this)"
-                      style="width: 6rem; color: red;">
-                    <span style="color: red;"> )</span>
-                    ` : "*****"}
-                  </p>
+                  <p><strong>Discount: </strong>${renderQuoteDiscountControls(quote)}</p>
                 </div>
               </div>
               <h4>Line Items</h4>`;
@@ -1850,16 +1968,19 @@ function renderQuoteDetailsMobile(quote) {
 
   const createdAt = new Date(quote.created_at);
   const expiration = new Date(quote.expiration_date);
+  const discountPercentageValue = Number(quote.discount_percentage ?? 0);
+  const discountAmountValue = Number(quote.discount_amount ?? 0);
+  const safeDiscountPercentage = Number.isFinite(discountPercentageValue) ? discountPercentageValue : 0;
+  const safeDiscountAmount = Number.isFinite(discountAmountValue) ? discountAmountValue : 0;
+  const formattedDiscountAmount = safeDiscountAmount.toLocaleString("en-US", { minimumFractionDigits: 2 });
 
   let html = `
-    <div class="quote-mobile" style="font-family: Arial, sans-serif; line-height: 1.4">
+    <div class="quote-mobile" data-quote-name="${quote.quote_name}" style="font-family: Arial, sans-serif; line-height: 1.4">
       <h3 style="margin:0 0 8px 0; color:#ff7f00; font-size:1.2rem; font-weight:600; background-color:#f5f5f5; padding:0.5rem">${quote.quote_name}</h3>
       <p>🏢 <b>Account:</b> ${quote.account} 🔸 🗒️ <b>Status:</b> ${quote.status}</p>
       <p>📆 <b>Expires:</b> ${format(expiration)}</p>
       <p>🚀 <b>Opportunity:</b> ${quote.opportunity}</p>
-      <p>🏷️ <b>Discount:</b> ${quote.discount_percentage}% (-$${Number(
-        quote.discount_amount
-      ).toLocaleString("en-US", { minimumFractionDigits: 2 })})</p>
+      <p>🏷️ <b>Discount:</b> ${safeDiscountPercentage}% (-$${formattedDiscountAmount})</p>
 
       <h4 style="margin:16px 0 8px 0; font-size:1.3rem; color: #ff7f00; padding:0.5rem; border-bottom: 1px solid border-bottom: 1px solid #e7e7e7;) ">Line Items</h4>
       <ul style="padding-left:18px; margin:0">
@@ -1930,7 +2051,7 @@ function renderReadOnlyQuoteDetails(quote) {
 
   const formattedDate_e = `${monthFormatted}/${dayFormatted}/${yearFormatted}`;
 
-  var html = `<div class="quote-container">
+  var html = `<div class="quote-container" data-quote-name="${quote.quote_name}">
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
                   <div style="display: flex; align-items: center; gap: 8px;" class="status-select">
@@ -2329,6 +2450,512 @@ function renderReadOnlyQuoteDetails(quote) {
   return html;
 }
 
+function renderSingleRecord(record) {
+  if (!record || !Array.isArray(record.fields)) {
+    return `<div class="error-message">⚠️ Unable to display this record right now.</div>`;
+  }
+
+  const title = record.record_value != null ? escapeHtml(String(record.record_value)) : 'Record';
+  const objectLabel = record.display_label || record.object || '';
+  const subtitle = objectLabel ? `<div class="single-record-subtitle">${escapeHtml(objectLabel)}</div>` : '';
+  const headerLabel = record.record_label ? `<span class="single-record-label">${escapeHtml(record.record_label)}</span>` : '';
+  const customBadge = record.is_custom_object ? `<span class="single-record-badge">Custom object</span>` : '';
+
+  const fieldCards = record.fields
+    .map(field => renderSingleRecordField(record, field))
+    .join('');
+
+  const relatedSections = (record.related || [])
+    .map(entry => renderSingleRecordRelated(entry))
+    .join('');
+
+  const gridContent = fieldCards || '<div class="single-record-empty">No additional details were provided for this record.</div>';
+
+  return `
+    <div class="single-record-card" data-record-object="${escapeHtml(record.object || '')}" data-record-id="${record.record_id ?? ''}">
+      <div class="single-record-header">
+        <div class="single-record-header-text">
+          ${subtitle}
+          <div class="single-record-title">${title}</div>
+        </div>
+        <div class="single-record-header-meta">
+          ${headerLabel}
+          ${customBadge}
+        </div>
+      </div>
+      <div class="single-record-body">
+        <div class="single-record-grid">
+          ${gridContent}
+        </div>
+        ${relatedSections}
+        <div class="single-record-feedback" data-role="card-feedback" aria-live="polite"></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSingleRecordField(record, field) {
+  const label = escapeHtml(field.label || field.name || 'Field');
+  const customPill = field.is_custom ? `<span class="single-record-pill">Custom</span>` : '';
+  const fieldKey = `${field.name || ''}::${field.is_custom ? 'custom' : 'standard'}${field.is_custom ? '::' + (field.field_id || '') : ''}`;
+  const inputId = `single-record-input-${fieldKey}`;
+  const isEditable = field.is_editable !== false;
+  const originalValue = encodeSingleRecordOriginal(field.raw_value ?? null);
+
+  const containerAttrs = [
+    `class="single-record-field"`,
+    `data-field="${escapeHtml(field.name)}"`,
+    `data-type="${escapeHtml(field.data_type || 'text')}"`,
+    `data-is-custom="${field.is_custom ? 'true' : 'false'}"`,
+    field.field_id ? `data-field-id="${field.field_id}"` : '',
+    `data-field-key="${fieldKey}"`,
+    `data-original-value="${originalValue}"`
+  ].filter(Boolean).join(' ');
+
+  return `
+    <div ${containerAttrs}>
+      <div class="single-record-field-label-row">
+        <label class="single-record-field-label" for="${inputId}">${label}</label>
+        ${customPill}
+      </div>
+      <div class="single-record-field-control">
+        ${isEditable
+          ? buildSingleRecordInput(field, inputId)
+          : `<div class="single-record-field-value">${formatSingleRecordValue(field.display_value ?? field.value)}</div>`}
+      </div>
+    </div>
+  `;
+}
+
+function buildSingleRecordInput(field, inputId) {
+  const dataType = (field.data_type || 'text').toLowerCase();
+  const rawValue = field.raw_value;
+  const valueForInput = prepareSingleRecordInputValue(rawValue, dataType);
+  const baseAttrs = [
+    `id="${inputId}"`,
+    `class="single-record-input"`,
+    `data-input="true"`,
+    `data-type="${dataType}"`,
+    `data-field="${field.name}"`,
+    `data-is-custom="${field.is_custom ? 'true' : 'false'}"`,
+    field.field_id ? `data-field-id="${field.field_id}"` : '',
+    `onchange="handleSingleRecordAutoSave(this)"`,
+  ];
+
+  if (dataType === 'boolean') {
+    return `
+      <select ${baseAttrs.join(' ')}>
+        <option value="" ${valueForInput === '' ? 'selected' : ''}>Unset</option>
+        <option value="true" ${valueForInput === 'true' ? 'selected' : ''}>Yes</option>
+        <option value="false" ${valueForInput === 'false' ? 'selected' : ''}>No</option>
+      </select>
+    `;
+  }
+
+  if (dataType === 'date') {
+    return `<input type="date" ${baseAttrs.join(' ')} value="${escapeHtml(valueForInput)}">`;
+  }
+
+  if (dataType === 'datetime') {
+    return `<input type="datetime-local" ${baseAttrs.join(' ')} value="${escapeHtml(valueForInput)}">`;
+  }
+
+  if (dataType === 'number') {
+    return `<input type="number" step="any" ${baseAttrs.join(' ')} value="${escapeHtml(valueForInput)}">`;
+  }
+
+  if (dataType === 'choice') {
+    const options = buildSingleRecordChoiceOptions(field.options, valueForInput);
+    return `
+      <select ${baseAttrs.join(' ')}>
+        <option value="" ${valueForInput === '' ? 'selected' : ''}>Select…</option>
+        ${options}
+      </select>
+    `;
+  }
+
+  if (field.is_multiline) {
+    return `<textarea ${baseAttrs.join(' ')} rows="3">${escapeHtml(valueForInput)}</textarea>`;
+  }
+
+  return `<input type="text" ${baseAttrs.join(' ')} value="${escapeHtml(valueForInput)}">`;
+}
+
+function prepareSingleRecordInputValue(rawValue, dataType) {
+  if (rawValue === null || rawValue === undefined) {
+    return '';
+  }
+
+  if (dataType === 'boolean') {
+    if (rawValue === true || rawValue === 'true') return 'true';
+    if (rawValue === false || rawValue === 'false') return 'false';
+    return '';
+  }
+
+  if (dataType === 'date') {
+    const dateObj = new Date(rawValue);
+    if (Number.isNaN(dateObj.getTime())) {
+      return '';
+    }
+    return dateObj.toISOString().slice(0, 10);
+  }
+
+  if (dataType === 'datetime') {
+    const dateObj = new Date(rawValue);
+    if (Number.isNaN(dateObj.getTime())) {
+      return '';
+    }
+    return dateObj.toISOString().slice(0, 16);
+  }
+
+  if (dataType === 'number') {
+    return typeof rawValue === 'number' ? String(rawValue) : String(rawValue ?? '');
+  }
+
+  return String(rawValue);
+}
+
+function buildSingleRecordChoiceOptions(options, currentValue) {
+  if (!options || !Array.isArray(options)) {
+    return '';
+  }
+
+  return options
+    .map(option => {
+      if (option === null || option === undefined) {
+        return '';
+      }
+      const optValue = typeof option === 'object' ? option.value : option;
+      const optLabel = typeof option === 'object' ? option.label : option;
+      const valueStr = optValue === null || optValue === undefined ? '' : String(optValue);
+      const labelStr = optLabel === null || optLabel === undefined ? '' : String(optLabel);
+      const selected = valueStr === currentValue ? 'selected' : '';
+      return `<option value="${escapeHtml(valueStr)}" ${selected}>${escapeHtml(labelStr)}</option>`;
+    })
+    .join('');
+}
+
+function readSingleRecordInputValue(input, dataType) {
+  if (dataType === 'boolean') {
+    const value = input.value;
+    if (value === '') return '';
+    return value === 'true';
+  }
+
+  if (dataType === 'number') {
+    if (input.value === '') return '';
+    const parsed = Number(input.value);
+    return Number.isNaN(parsed) ? input.value : parsed;
+  }
+
+  return input.value;
+}
+
+function decodeSingleRecordOriginal(encoded) {
+  if (!encoded) return '';
+  try {
+    return JSON.parse(decodeURIComponent(encoded));
+  } catch (error) {
+    return '';
+  }
+}
+
+function encodeSingleRecordOriginal(value) {
+  return encodeURIComponent(JSON.stringify(value));
+}
+
+function setSingleRecordCardFeedback(element, message, intent) {
+  if (!element) return;
+  element.textContent = message || '';
+  element.classList.remove('single-record-feedback--success', 'single-record-feedback--error', 'single-record-feedback--info');
+  if (intent === 'success') {
+    element.classList.add('single-record-feedback--success');
+  } else if (intent === 'error') {
+    element.classList.add('single-record-feedback--error');
+  } else {
+    element.classList.add('single-record-feedback--info');
+  }
+}
+
+function normalizeSingleRecordValue(value, dataType) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+
+  if (dataType === 'boolean') {
+    if (value === true || value === 'true') return true;
+    if (value === false || value === 'false') return false;
+    return '';
+  }
+
+  if (dataType === 'number') {
+    const num = Number(value);
+    return Number.isNaN(num) ? String(value) : num;
+  }
+
+  if (dataType === 'date' || dataType === 'datetime') {
+    const dateObj = new Date(value);
+    if (Number.isNaN(dateObj.getTime())) {
+      return '';
+    }
+    return dateObj.toISOString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(item => normalizeSingleRecordValue(item, 'text'));
+  }
+
+  return String(value);
+}
+
+function singleRecordValuesEqual(a, b) {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+  return a === b;
+}
+
+async function handleSingleRecordAutoSave(input) {
+  const card = input.closest('.single-record-card');
+  if (!card) return;
+
+  const fieldContainer = input.closest('.single-record-field');
+  if (!fieldContainer) return;
+
+  const feedback = card.querySelector('[data-role="card-feedback"]');
+  const dataType = (input.dataset.type || fieldContainer.dataset.type || 'text').toLowerCase();
+  const original = decodeSingleRecordOriginal(fieldContainer.dataset.originalValue);
+  const value = readSingleRecordInputValue(input, dataType);
+
+  const normalizedOriginal = normalizeSingleRecordValue(original, dataType);
+  const normalizedCurrent = normalizeSingleRecordValue(value, dataType);
+
+  if (singleRecordValuesEqual(normalizedOriginal, normalizedCurrent)) {
+    setSingleRecordCardFeedback(feedback, '', 'info');
+    return;
+  }
+
+  if (handleSingleRecordAutoSave.timer) {
+    clearTimeout(handleSingleRecordAutoSave.timer);
+  }
+
+  handleSingleRecordAutoSave.timer = setTimeout(() => {
+    executeSingleRecordAutoSave(card);
+  }, 800);
+}
+
+async function executeSingleRecordAutoSave(card) {
+  const feedback = card.querySelector('[data-role="card-feedback"]');
+  const fields = Array.from(card.querySelectorAll('.single-record-field'));
+  const updates = [];
+
+  fields.forEach(field => {
+    const input = field.querySelector('[data-input="true"]');
+    if (!input) return;
+
+    const dataType = (input.dataset.type || field.dataset.type || 'text').toLowerCase();
+    const original = decodeSingleRecordOriginal(field.dataset.originalValue);
+    const value = readSingleRecordInputValue(input, dataType);
+
+    const normalizedOriginal = normalizeSingleRecordValue(original, dataType);
+    const normalizedCurrent = normalizeSingleRecordValue(value, dataType);
+
+    if (!singleRecordValuesEqual(normalizedOriginal, normalizedCurrent)) {
+      updates.push({
+        field: input.dataset.field,
+        value,
+        data_type: dataType,
+        is_custom: input.dataset.isCustom === 'true',
+        field_id: input.dataset.fieldId ? Number(input.dataset.fieldId) : null,
+        input,
+        fieldContainer: field,
+        normalizedCurrent,
+      });
+    }
+  });
+
+  if (updates.length === 0) {
+    setSingleRecordCardFeedback(feedback, '', 'info');
+    return;
+  }
+
+  const payload = {
+    object: card.dataset.recordObject,
+    record_id: card.dataset.recordId,
+    updates: updates.map(update => ({
+      field: update.field,
+      value: update.value,
+      data_type: update.data_type,
+      is_custom: update.is_custom,
+      field_id: update.field_id,
+    })),
+    hiddenMessage: true,
+  };
+
+  if (!payload.object || !payload.record_id) {
+    setSingleRecordCardFeedback(feedback, '⚠️ Missing record information for this update.', 'error');
+    return;
+  }
+
+  setSingleRecordCardFeedback(feedback, 'Saving…', 'info');
+
+  try {
+    const response = await fetch("/agents/chat/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: `Update Record: ${JSON.stringify(payload)}` })
+    });
+
+    const data = await response.json();
+    const result = data.response || {};
+
+    if (result.single_record) {
+      updateSingleRecordCard(card, result.single_record);
+      setSingleRecordCardFeedback(feedback, '✅ Saved', 'success');
+    } else {
+      const errorMessage = result.message || '⚠️ Unable to update the record.';
+      setSingleRecordCardFeedback(feedback, errorMessage, 'error');
+    }
+  } catch (error) {
+    console.error('Error updating record:', error);
+    setSingleRecordCardFeedback(feedback, '❌ Something went wrong while saving. Please try again.', 'error');
+  }
+}
+
+function updateSingleRecordCard(card, recordData) {
+  if (!recordData) return;
+
+  card.dataset.recordObject = recordData.object || '';
+  card.dataset.recordId = recordData.record_id ?? '';
+
+  const fieldsByKey = {};
+  recordData.fields.forEach(field => {
+    const key = buildFieldKey(field.name, field.is_custom, field.field_id);
+    fieldsByKey[key] = field;
+  });
+
+  Object.entries(fieldsByKey).forEach(([key, fieldData]) => {
+    const selector = `.single-record-field[data-field-key="${key}"]`;
+    const fieldEl = card.querySelector(selector);
+    if (!fieldEl) return;
+
+    fieldEl.dataset.originalValue = encodeSingleRecordOriginal(fieldData.raw_value ?? null);
+
+    const control = fieldEl.querySelector('.single-record-field-control');
+    if (!control) return;
+
+    if (fieldData.is_editable === false) {
+      control.innerHTML = `<div class="single-record-field-value">${formatSingleRecordValue(fieldData.display_value ?? fieldData.value)}</div>`;
+      return;
+    }
+
+    const input = control.querySelector('[data-input="true"]');
+    if (input) {
+      setSingleRecordInputValue(input, fieldData.data_type, fieldData.raw_value);
+    }
+  });
+
+  initializeMaterializeSelects(card);
+}
+
+function buildFieldKey(name, isCustom, fieldId) {
+  const base = `${name || ''}::${isCustom ? 'custom' : 'standard'}`;
+  return isCustom ? `${base}::${fieldId || ''}` : base;
+}
+
+function setSingleRecordInputValue(input, dataType, rawValue) {
+  const prepared = prepareSingleRecordInputValue(rawValue, dataType);
+
+  if (dataType === 'boolean') {
+    input.value = prepared;
+    return;
+  }
+
+  if (dataType === 'choice') {
+    input.value = prepared;
+    return;
+  }
+
+  if (dataType === 'number') {
+    input.value = prepared;
+    return;
+  }
+
+  if (dataType === 'date' || dataType === 'datetime') {
+    input.value = prepared;
+    return;
+  }
+
+  input.value = prepared;
+}
+
+function showSingleRecordToast(message, intent) {
+  if (window.M && M.toast) {
+    const classes = intent === 'error' ? 'toast-error' : intent === 'info' ? 'toast-info' : 'toast-success';
+    M.toast({ html: escapeHtml(message), classes });
+  } else {
+    console.log(`[single-record:${intent}] ${message}`);
+  }
+}
+
+function renderSingleRecordRelated(entry) {
+  if (!entry || !Array.isArray(entry.records) || entry.records.length === 0) {
+    return '';
+  }
+
+  const sectionTitle = escapeHtml(entry.label || 'Related Records');
+  const rows = entry.records
+    .map(item => {
+      if (typeof item === 'string') {
+        return `<li>${escapeHtml(item)}</li>`;
+      }
+      const pairs = Object.entries(item || {})
+        .map(([key, value]) => `<div class="single-related-row"><strong>${escapeHtml(key)}:</strong> <span>${formatSingleRecordValue(value)}</span></div>`)
+        .join('');
+      return `<li class="single-related-item">${pairs}</li>`;
+    })
+    .join('');
+
+  return `
+    <div class="single-record-related">
+      <h5>${sectionTitle}</h5>
+      <ul>${rows}</ul>
+    </div>
+  `;
+}
+
+function formatSingleRecordValue(value) {
+  if (value === null || value === undefined || value === '') {
+    return '<span class="single-record-missing">—</span>';
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return '<span class="single-record-missing">—</span>';
+    }
+    const allPrimitive = value.every(item => item === null || item === undefined || ['string', 'number', 'boolean'].includes(typeof item));
+    if (allPrimitive) {
+      return value
+        .map(item => item === null || item === undefined ? '—' : escapeHtml(String(item)))
+        .join(', ');
+    }
+
+    return value
+      .map(item => `<div class="single-record-nested-item">${formatSingleRecordValue(item)}</div>`)
+      .join('');
+  }
+
+  if (typeof value === 'object') {
+    const objectRows = Object.entries(value)
+      .map(([key, val]) => `<div class="single-related-row"><strong>${escapeHtml(key)}:</strong> <span>${formatSingleRecordValue(val)}</span></div>`)
+      .join('');
+    return `<div class="single-record-nested">${objectRows}</div>`;
+  }
+
+  const safe = escapeHtml(String(value));
+  return safe.replace(/\n/g, '<br>');
+}
+
 /*
 *
 */
@@ -2595,55 +3222,35 @@ async function updateQuote(input) {
 
         const data = await response.json();
 
-        if (data.response && data.response.message.includes("✅ Quote updated successfully.") && data.response.quote_details) {
+        if (data.response && data.response.success === true && data.response.quote_details) {
             input.blur();
 
             const updatedQuote = data.response.quote_details;
 
-            const quoteContainer = input.closest(".quote-details");
-
-            if (field === "discount_percentage") {
-                const discountAmountInput = quoteContainer.querySelector('input[data-field="discount_amount"]');
-                if (discountAmountInput) {
-                    const discountAmount = parseFloat(updatedQuote.discount_amount);
-                    discountAmountInput.value = discountAmount.toLocaleString('en-US', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2
-                    });
-                }
+            let existingDetails = input.closest('[data-quote-name]');
+            if (!existingDetails) {
+                existingDetails = document.querySelector(`.quote-container[data-quote-name="${updatedQuote.quote_name}"]`) ||
+                    document.querySelector(`.quote-mobile[data-quote-name="${updatedQuote.quote_name}"]`);
             }
 
-            if (field === "discount_amount") {
-                const discountPctInput = quoteContainer.querySelector('input[data-field="discount_percentage"]');
-                if (discountPctInput) {
-                    const discountPct = parseFloat(updatedQuote.discount_percentage);
-                    discountPctInput.value = discountPct.toFixed(2);
-                }
+            if (existingDetails) {
+                replaceQuoteDetailsElement(existingDetails, updatedQuote);
             }
 
-            // 🧮 Update Net Amount (total amount)
-            const totalContainer = input.closest(".quote-container");
-            const netAmountEl = totalContainer.querySelector(".total-amount");
-            if (netAmountEl && updatedQuote.net_amount) {
-                const net = parseFloat(updatedQuote.net_amount.replace('$', ''));
-                netAmountEl.innerHTML = `
-                    Net Amount: ${net.toLocaleString('en-US', {
-                        style: 'currency',
-                        currency: 'USD'
-                    })}
-                `;
-            }
-
-            alert("✅ Quote updated successfully!");
+            alert("✅ Quote updated successfully.");
         } else {
             // ⬅️ Restart original value of the input field
-            input.value = data.response.original_value
-            alert(data.response.message.replace(/<br\s*\/?>/gi, '\n'));
+            if (data.response && Object.prototype.hasOwnProperty.call(data.response, 'original_value')) {
+                input.value = data.response.original_value;
+            }
+            alert((data.response && data.response.message ? data.response.message : '⚠️ Unable to update quote.').replace(/<br\s*\/?>/gi, '\n'));
         }
     } catch (error) {
         console.error("❌ Error updating quote:", error);
         // ⬅️ Restart original value of the input field
-        input.value = data.response.original_value
+        if (Object.prototype.hasOwnProperty.call(input.dataset, 'initialValue')) {
+            input.value = input.dataset.initialValue;
+        }
         alert("❌ Error occurred while updating quote.");
     }
 }

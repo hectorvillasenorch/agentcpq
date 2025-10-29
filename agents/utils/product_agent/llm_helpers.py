@@ -80,7 +80,7 @@ def extract_product_data_with_llm(user_message, current_state, previous_summary=
     )
 
     raw_response = response.choices[0].message.content.strip()
-    logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+    logging.info(f"\n\n🔍 Raw GPT Response -- extract_product_data_with_llm: {raw_response}\n\n")
 
     try:
         result_json = json.loads(raw_response)

@@ -266,6 +266,21 @@ def get_session_context(action, session_data):
                 "summary": None
             }
 
+        if action == "show_single_record":
+            context_data = {
+                "show_single_record": [
+                    {
+                        "data": {
+                            "object": None,
+                            "identifier": None,
+                            "lookup_field": None,
+                        },
+                        "completed": False
+                    },
+                ],
+                "summary": None
+            }
+
         if action == "show_rules":
             context_data = {
                 "show_rules": [

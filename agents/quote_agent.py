@@ -404,6 +404,8 @@ def add_product_to_quote(user, user_message, session_data):
         previous_summary=llm_result["summary"]
     )
 
+    dynamic_message = _ensure_success_icon(dynamic_message)
+
     return {
         "message": dynamic_message,
         "session_summary": updated_summary
@@ -916,12 +918,14 @@ def update_quote_line_from_ui(user, user_message, session_data):
             if response.get("success") == True:
                 return {
                     "message": response.get("message"),
+                    "success": True,
                     "quote_details": get_quote_details(quote),
                     "hiddenMessage": True
                 }
             else:
                 return {
                     "message": response.get("message"),
+                    "success": response.get("success", False),
                     "original_value": original_value,
                     "hiddenMessage": True
                 }
@@ -952,6 +956,7 @@ def update_quote_from_ui(user,user_message, session_data):
             except Quote.DoesNotExist:
                 return {
                     "message": f"The quote with name '{quote_name}' could not be found.",
+                    "success": False,
                     "original_value": "original_value",
                     "hiddenMessage": True
                 }
@@ -976,16 +981,18 @@ def update_quote_from_ui(user,user_message, session_data):
 
             if response.get("success") == True:
                 return {
-                    "message": response.get("message"),
+                    "message": "✅ Quote updated successfully.",
+                    "success": True,
                     "quote_details": get_quote_details(quote),
                     "hiddenMessage": True
                 }
             else:
                 return {
                     "message": response.get("message"),
+                    "success": response.get("success", False),
                     "original_value": original_value,
                     "hiddenMessage": True
                 }
     except Exception as e:
         logging.warning(f"⚠️ Error updating quote: {str(e)}")
-        return {"message": f"⚠️ Error updating quote: {str(e)}"}
+        return {"message": f"⚠️ Error updating quote: {str(e)}", "success": False}

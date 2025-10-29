@@ -10,6 +10,7 @@ from agents.admin_agent import admin_agent
 from agents.approvals_agent import approval_agent
 from agents.custom_object_agent import custom_object_agent
 from agents.analytics_agent import analytics_agent
+from agents.record_agent import record_agent
 from agents.knowledge_agent import knowledge_agent
 from agents.action_trigger_agent import action_trigger_agent
 from dotenv import load_dotenv
@@ -28,6 +29,7 @@ def _decode_chat_text(text: str) -> str:
             pass
     return decoded
 from django.contrib.auth.models import User
+from django.utils import timezone
 from uuid import uuid4
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,10 @@ def handle_user_request(user,user_message, session_data):
     elif user_message.startswith("Update Quote:"):
         logging.info("Do NOT use GPT\n")
         response = orchestrate_request_trigger(user, user_message, session_data, decision="UpdateQuoteFromUI")
+
+    elif user_message.startswith("Update Record:"):
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(user, user_message, session_data, decision="UpdateSingleRecordFromUI")
 
     # 🧠 Shortcut manual: "generate pdf"
     elif any(message.startswith(trigger) for trigger in trigger_phrases):
@@ -205,7 +211,7 @@ def orchestrate_request(user, user_message, session_data):
         - "ApproveQuote"
         - "RejectQuote"
         - "RecallQuote"
-        - "ShowAccountDetails"
+        - "ShowSingleRecord"
         - "GeneralQuery"
         - "CreateValidationRule"
         - "CreateInclusionRule"
@@ -236,9 +242,14 @@ def orchestrate_request(user, user_message, session_data):
                     - "Display the current quote"
                     - "Open quote Q-2024-001"
                 Do NOT pick this label when the user mentions products, bundles, accounts, metrics, lists, or any non-quote record.
+        - "ShowSingleRecord" → Use when the user asks to open a specific record (Account, Product, Opportunity, Lead, Contact, Quote, or any custom object) and expects a detailed card view. 
+                Examples:
+                    - "Show account Acme Corp"
+                    - "Open product SKU-1001"
+                    - "Display the opportunity Renewal Q1"
         - "ShowMetrics" → Use when the user requests listings, summaries, or filtered searches 
                 involving one or more records (products, quotes, accounts, bundles, etc.).  
-                This includes plural forms ("quotes", "products"), specific record lookups ("show product record TEAM-BUNDLE"),
+                This includes plural forms ("quotes", "products"), aggregate/numeric comparisons,
                 date filters ("last 3 days", "this month"), or numerical filters ("top 5", "all", "recent").  
                 Examples:
                     - "Show me my quotes created in the last 3 days"
@@ -378,6 +389,20 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
             )
         except json.JSONDecodeError as e:
             logging.error(f" Error decoding JSON: {e}")
+    elif user_message.startswith("Update Record:"):
+        try:
+            json_str = user_message.replace("Update Record:", "")
+            update_data = json.loads(json_str)
+            hiddenMessage = update_data.get("hiddenMessage", False)
+            decoded_message = _decode_chat_text(user_message)
+            ChatMessage.objects.create(
+                session=chat_session,
+                sender="user",
+                content=decoded_message,
+                hiddenMessage=hiddenMessage
+            )
+        except json.JSONDecodeError as e:
+            logging.error(f" Error decoding JSON: {e}")
     else:
         decoded_message = _decode_chat_text(user_message)
         ChatMessage.objects.create(
@@ -391,12 +416,47 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
     if decision in action_map:
         result = action_map[decision](user,decision, user_message, session_data)
 
-        agent_message = result.get("message", "")
-
+        suppress_chat = result.get("suppress_chat", False)
         hiddenMessage = result.get("hiddenMessage", False)
 
+        sanitized_result = {key: _safe_serialize(value) for key, value in result.items() if key != "suppress_chat"}
+        sanitized_result["session_id"] = session_data["session_id"]
+
+        if suppress_chat:
+            agent_message = result.get("message", "")
+
+            for key, value in result.items():
+                if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat"):
+                    agent_message += f"\n\n📦 {key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
+
+            agent_message = _decode_chat_text(agent_message)
+
+            sanitized_result["message"] = agent_message
+
+            last_agent_message = ChatMessage.objects.filter(
+                session=chat_session,
+                sender="agent",
+                content__icontains="single_record"
+            ).order_by("-timestamp").first()
+
+            if last_agent_message:
+                last_agent_message.content = agent_message
+                last_agent_message.hiddenMessage = True
+                last_agent_message.save(update_fields=["content", "hiddenMessage"])
+            else:
+                ChatMessage.objects.create(
+                    session=chat_session,
+                    sender="agent",
+                    content=agent_message,
+                    hiddenMessage=True
+                )
+
+            return sanitized_result
+
+        agent_message = result.get("message", "")
+
         for key, value in result.items():
-            if key not in ("message", "session_id", "hiddenMessage", "original_value"):
+            if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat"):
                 agent_message += f"\n\n📦 {key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 
         agent_message = _decode_chat_text(agent_message)
@@ -408,9 +468,7 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
             hiddenMessage = hiddenMessage
         )
 
-        sanitized_result = {key: _safe_serialize(value) for key, value in result.items()}
         sanitized_result["message"] = agent_message
-        sanitized_result["session_id"] = session_data["session_id"]
 
         return sanitized_result
 
@@ -544,6 +602,10 @@ def get_action_map():
         "UpdateBundleOption": bundles_agent,
         "DeleteBundleOption": bundles_agent,
         "DeleteBundleComponentFromQuote": bundles_agent,
+
+        # Record detail cards
+        "ShowSingleRecord": record_agent,
+        "UpdateSingleRecordFromUI": record_agent,
 
         # Approval-related actions handled by approval_agent
         "SubmitForApproval": approval_agent,

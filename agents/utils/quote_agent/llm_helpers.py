@@ -16,6 +16,7 @@ from ..agents_utils import clean_llm_json
 
 # Models
 from cpq.models import Opportunity
+from .db_helpers import find_product_and_normalize_variables
 
 # ✅ Load environment variables
 load_dotenv()
@@ -303,17 +304,13 @@ def extract_products_to_add_with_llm(user_message, current_state, previous_summa
     }
 
     Requirements:
-    - For discounts, if the user specifies a percentage (e.g., "15% discount"), return field: "discount_percentage" and value: 15. If the user specifies a dollar amount (e.g., "$150 off", "150 dollars discount" or just a number like "150"), return field: "discount_amount" and value: 150. Always extract only the numeric value — remove symbols like % or $, and ignore words like "off", "discount", or "dollars".
-    - Always normalize discount values to plain numbers.
-    - If the user specifies a status value, always normalize it to match one of the following exact formats: "Draft", "Pending Approval", "Approved", "Rejected", or "Closed". Use title casing and ensure the value matches exactly (case-sensitive).
-    - If no quote name are found in the message, return null as quote_name.
-    - If no field are found in the message, return null as field.
-    - If no value are found in the message, return null as value.
-    - If the user specifies words like remove or delete discount, then set field as "discount_percentage" and value = 0.
-    - For expiration dates, always return the value as a string in ISO 8601 format (YYYY-MM-DD), which is compatible with Python and Django. For example, July 30, 2025 → "2025-07-30".
-    - For notes, always ensure the returned value ends with a period (.). If the user's note doesn't end with one, automatically add it to the end of the note.
-    - If a SKU is provided, treat it as the authoritative identifier even if the product name is missing. Never request or require the product name when a SKU is present, and do not mark the item as incomplete for that reason.
-    - When a SKU is present and quantity is determined, mark the item as completed and keep the name value as null unless the user provided it explicitly.
+    - Populate each product with: quote_name, sku, name, quantity, discount_type, discount_value, term.
+    - Accept either SKU or product name. If a SKU is present, store it under "sku" and leave "name" null unless a distinct product name was given. If only a product name is available, place it under "name" and set "sku" to null.
+    - Quantities must be integers. Default to 1 when the user does not specify a quantity.
+    - For discounts, set "discount_type" to "percentage" or "amount" and "discount_value" to the numeric value without symbols. If no discount applies, set discount_type to null and discount_value to 0.
+    - For requests to remove a discount, set "discount_type" to null and "discount_value" to 0.
+    - For subscription products, capture "term" as an integer when the user provides it; otherwise set it to null.
+    - When a SKU appears anywhere in the message, do not copy it into "name". Keep the SKU in the sku field.
     """
     system_prompt += f"""
     - The current date is {current_date}. Use this as the reference point when interpreting relative dates like "next Friday", "tomorrow", or "in two weeks".
@@ -326,9 +323,8 @@ def extract_products_to_add_with_llm(user_message, current_state, previous_summa
     - Do NOT include explanations.
     - Do NOT wrap the result in Markdown or use triple backticks.
     - Return only a single JSON object.
-    - Required fields: quote_name, field and value.
-    - completed=true if quote_name, field and value are present.
-    - If quote_name, field and value are provided by the user, mark completed as true.
+    - Mark an item as completed when quote_name, quantity, and at least one identifier (sku or name) are present.
+    - If a SKU is present, treat it as sufficient even when the name is missing or null.
     - If completed=false, agent_message must politely ask for missing information instead of confirming the addition.
     - NEVER say "quote has been updated" or similar; only acknowledge the user's request or attempt.
     - agent_message should be short, friendly, professionalz, and can ask follow-up questions.
@@ -336,6 +332,8 @@ def extract_products_to_add_with_llm(user_message, current_state, previous_summa
     - The message is sensitive to HTML tags, so if you want to make line breaks use the <br> tag.
     - Create a short, detailed summary that extends the previous summary with changes from this iteration.
     - The summary must always explain the current state + why completed is false (if false) OR confirm completeness (if true).
+    - SKU can be in the form of "1234" or "ABCD" or "1234-ABCD-1234" or "1234-ABCD-1234-ABCD" or "1234-ABCD-1234-ABCD-1234" or "1234-ABCD-1234-ABCD-1234-ABCD" or "1234-ABCD-1234-ABCD-1234-ABCD-1234" etc.
+    - When a SKU is present and quantity is determined, mark the item as completed and keep the name value as null unless the user provided it explicitly.
     """
 
     user_prompt = f"""
@@ -365,7 +363,7 @@ def extract_products_to_add_with_llm(user_message, current_state, previous_summa
     )
 
     raw_response = response.choices[0].message.content.strip()
-    logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+    logging.info(f"\n\n🔍 Raw GPT Response: - extract_products_to_add_with_llm {raw_response}\n\n")
 
     try:
         result_json = json.loads(raw_response)
@@ -373,18 +371,64 @@ def extract_products_to_add_with_llm(user_message, current_state, previous_summa
         logging.error(f"❌ JSON decode error: {str(e)}")
         return None, tokens_used, cost_est
 
-    # Normalize structure
+    # Normalize structure so downstream helpers can rely on consistent fields
     normalized_products = []
-    for prod in result_json.get("update_quote", []):
+    raw_products = result_json.get("add_product_to_quote", [])
+
+    if not isinstance(raw_products, list):
+        raw_products = []
+
+    for prod in raw_products:
+        prod_data = prod.get("data", {}) if isinstance(prod, dict) else {}
+
+        quote_name_value = prod_data.get("quote_name") or prod.get("quote_name") or active_quote_name
+        sku_value = prod_data.get("sku") or prod.get("sku")
+        name_value = prod_data.get("name") or prod.get("name")
+        quantity_value = prod_data.get("quantity") or prod.get("quantity") or 1
+        discount_type_value = prod_data.get("discount_type") or prod.get("discount_type")
+        discount_value_raw = prod_data.get("discount_value") or prod.get("discount_value")
+        term_value = prod_data.get("term") or prod.get("term")
+
+        # Normalize quantity
+        try:
+            quantity_value = int(quantity_value)
+        except (TypeError, ValueError):
+            quantity_value = None
+
+        # Normalize discount
+        if discount_type_value not in {"percentage", "amount"}:
+            discount_type_value = None
+
+        try:
+            discount_value = float(discount_value_raw) if discount_value_raw not in (None, "") else 0
+        except (TypeError, ValueError):
+            discount_value = 0
+
+        # Correct misplaced identifiers referencing the product DB if possible
+        product_match, matched_sku, matched_name = find_product_and_normalize_variables(sku_value, name_value)
+
+        normalized_sku = matched_sku if product_match else sku_value
+        normalized_name = name_value or (matched_name if product_match and name_value else None)
+
+        if normalized_sku and normalized_name and normalized_name.strip().lower() == normalized_sku.strip().lower():
+            normalized_name = None
+
+        is_completed = bool(quote_name_value and quantity_value and (normalized_sku or normalized_name))
+
         normalized_products.append({
             "data": {
-                "quote_name": prod.get("data", {}).get("quote_name") or prod.get("quote_name"),
-                "field": prod.get("data", {}).get("field") or prod.get("field"),
-                "value": prod.get("data", {}).get("value") or prod.get("value")
+                "quote_name": quote_name_value,
+                "sku": normalized_sku,
+                "name": normalized_name,
+                "quantity": quantity_value,
+                "discount_type": discount_type_value,
+                "discount_value": discount_value,
+                "term": term_value
             },
-            "completed": prod.get("data", {}).get("completed", prod.get("completed", False))
+            "completed": is_completed
         })
-    result_json["update_quote"] = normalized_products
+
+    result_json["add_product_to_quote"] = normalized_products
 
     return result_json, tokens_used, cost_est
 
