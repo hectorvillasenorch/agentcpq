@@ -29,10 +29,8 @@
 
 <div id="sidenav" class="sidenav sidenav-fixed" style="display: flex; flex-direction: column; height: 100vh;">
     <div style="flex-grow: 1;">
-        {% url 'dashboard' as dashboard_url %}
-        <a href="{{ dashboard_url }}?view=agents&new_chat=true">
-            <i class="material-icons">arrow_back</i>
-            <span class="nav-label">Back To AgentCPQ</span>
+        <a href="{% url 'dashboard' %}?view=agents">
+            <i class="material-icons">arrow_back</i> <span class="nav-label">Back To AgentCPQ</span>
         </a>
         <div class="brand">
           <img id="sidebar-logo" src="{% static 'img/logo-small.png' %}" alt="AgentCPQ Logo"style="width: 85%; margin: 0 auto;" />
@@ -44,9 +42,6 @@
         </a>
         <a href="{% url 'cpq:usage_dashboard' %}">
             <i class="material-icons">receipt_long</i> <span class="nav-label">Usage</span>
-        </a>
-        <a href="{% url 'cpq:billing_view' %}">
-            <i class="material-icons">credit_card</i> <span class="nav-label">Billing</span>
         </a>
 
         <div class="divider"></div>
@@ -90,19 +85,19 @@
     </div>
 
   <!-- Fixed Logout/Login Section -->
-    <div class="nav-footer">
+    <div style="padding: 16px;">
         {% if user.is_authenticated %}
-            <form method="post" action="{% url 'logout' %}" class="nav-action-form">
+            <form method="post" action="{% url 'logout' %}" style="padding: 16px;">
                 {% csrf_token %}
-                <button type="submit" class="nav-action-btn">
-                    <i class="material-icons">logout</i>
+                <button type="submit" class="btn-flat white-text" style="display: flex; align-items: center; background: none; border: none; cursor: pointer;">
+                    <i class="material-icons" style="margin-right: 8px;">logout</i>
                     <span class="nav-label">Logout</span>
                 </button>
             </form>
 
-            <button type="button" onclick="colapseSidebar()" class="nav-collapse-btn">
-                <i id="collapse-icon" class="material-icons">chevron_left</i>
-                <span class="nav-label">Collapse Sidebar</span>
+            <button onclick="colapseSidebar()" class="btn-flat white-text mt-4" style="display: flex; align-items: center; background: none; border: none; cursor: pointer;">
+                <i id="collapse-icon" class="material-icons" style="margin-right: 8px; font-weight: 800; font-size: 30px;">chevron_left</i>
+                <span class="nav-label">Collapse</span>
             </button>
         {% endif %}
     </div>

@@ -48,11 +48,6 @@ def set_or_create_custom_identifier_for_record(sender, instance, created, **kwar
 # 📧🔔 EMAIL NOTIFICATIONS SIGNALS
 from .utils import run_async
 # LEAD HAS BEEN CREATED
-@receiver(post_save, sender=Lead)
-def send_lead_created_email(objecto,sender, instance, created, **kwargs):
-    if created:
-        run_async(notify_lead_created, instance)
-
 # ACCOUNT HAS BEEN CREATE
 @receiver(post_save, sender=Account)
 def send_account_created_email(sender, instance, created, **kwargs):
