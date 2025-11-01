@@ -17,7 +17,7 @@
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js?plugins=TextPlugin,ScrollTrigger"></script>
 
   <!-- 3️⃣ Your login logic (deferred so DOM is ready) -->
-  
+
 </head>
 <body>
   <script src="{% static 'js/agents/login.js' %}" defer></script>
@@ -47,6 +47,9 @@
         </div>
         <div class="center-align" style="padding-top: 30px;">
           <span>Forgot your password? <a href="{% url 'password_reset' %}">Click here to reset it</a></span>
+        </div>
+        <div class="center-align" style="padding-top: 10px;">
+          <span>Need an account? <a href="{% url 'signup' %}">Sign up here</a></span>
         </div>
       </form>
     </section>

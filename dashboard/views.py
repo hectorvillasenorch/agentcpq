@@ -1,49 +1,80 @@
 from django.apps import apps
 from django.shortcuts import render, get_object_or_404, redirect
-from cpq.models import Product, Quote,QuoteLine, CustomObject, CustomField, CustomFieldValue, CustomRecord,Account, ActionUsage, Tenant, TenantUsageLog, Option
-from cpq.views import set_primary_quote
+from django.urls import reverse
+from django.utils.safestring import mark_safe
+from cpq.models import Product, Quote, CustomObject, CustomField, CustomFieldValue, CustomRecord, Account, ActionUsage, Tenant, TenantUsageLog, Option
+from cpq.views import set_primary_quote, build_account_quote_hierarchy_for_user
 from salesforce.models import SalesforceToken
 from hubspot.models import HubspotToken
+from quickbooks.models import QuickbooksToken
 from django.contrib.auth.models import User
 from agents.models import ChatSession, ChatMessage
 from django.utils.timezone import now
 import requests
 from cpq.forms import  generate_dynamic_form
-from django.db.models import Prefetch
 from django.contrib.contenttypes.models import ContentType
+from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponseForbidden, HttpResponseBadRequest
 from django.db.models import Count
 from django.utils.timezone import now
 from django.db.models.functions import TruncMonth
-from django.db.models import Prefetch
 import hmac
 import hashlib
 from datetime import date
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.utils.dateparse import parse_date
 from django.utils import timezone
 from django.db.models import Sum
 from cpq.models import Tenant, ActionUsage, TenantUsageReport
 from django.utils.dateparse import parse_datetime
 import logging
+import json
 logger = logging.getLogger(__name__)
 from datetime import datetime, timezone as dt_timezone
 from django.contrib.auth.views import PasswordResetView
-from django.core.mail import EmailMultiAlternatives
+from django.conf import settings
+from django.core.mail import EmailMessage, EmailMultiAlternatives
+import smtplib
 from django.template.loader import render_to_string
 import re
+from .forms import SignupForm
+from django.contrib.auth.views import LogoutView
+
+
+def _decode_message_content(raw: str) -> str:
+    if not raw:
+        return ""
+
+    decoded = raw
+    if "\\u" in decoded:
+        try:
+            decoded = decoded.encode("utf-8").decode("unicode_escape")
+        except UnicodeDecodeError:
+            pass
+
+    decoded = decoded.replace("\r\n", "\n")
+    if "\n" in decoded:
+        decoded = decoded.replace("\n", "<br>")
+
+    return decoded
 
 @login_required
 def dashboard(request):
     view = request.GET.get("view", "agents")
-    object_name = request.GET.get("object_name") 
+    object_name = request.GET.get("object_name")
     session_id = request.GET.get("session_id")
     user = request.user
     accounts = get_user_accounts(user)
-    
+
     custom_object = None
     form = None
+
+    new_chat = request.GET.get("new_chat") == "true"
+    if new_chat:
+        request.session.pop("session_data", None)
+        session_id = None
 
     if object_name:
         custom_object = get_object_or_404(CustomObject, name=object_name)
@@ -65,19 +96,38 @@ def dashboard(request):
     if view == "setup" and not user.is_staff:
         return HttpResponseForbidden("You do not have access to the setup view.")
     
-    products = Product.objects.all() if view == "products" else None
-    options = Option.objects.all() if view == "products" else None
-    bundles = Product.objects.filter(is_bundle=True) 
+    products = None
+    options = None
+    bundles = None
 
-    if products:
+    if view == "products":
+        product_queryset = Product.objects.all()
+        if not user.is_superuser:
+            product_queryset = product_queryset.filter(created_by=user)
+
+        products = list(product_queryset)
+        product_ids = [product.id for product in products]
+
+        if product_ids:
+            options = list(
+                Option.objects.filter(parent_product_id__in=product_ids)
+                .select_related("product_option", "parent_product")
+            )
+        else:
+            options = []
+
         for product in products:
-            product.bundle_options = [opt for opt in options if opt.parent_product == product]
+            product.bundle_options = [
+                opt for opt in options if opt.parent_product_id == product.id
+            ]
+
+        bundles = [product for product in products if product.is_bundle]
 
     custom_objects = CustomObject.objects.all()
 
-    # Fetch only this user's quotes, grouped by opportunity
-    grouped_quotes = get_grouped_user_quotes(user)
-    print("📦 Grouped quotes:", grouped_quotes)
+    # Fetch only this user's account/opportunity/quote hierarchy
+    account_groups = get_grouped_user_quotes(user)
+    print("📦 Account groups:", account_groups)
 
     is_authenticated = SalesforceToken.objects.exists()
     is_setup = view == "setup"
@@ -88,7 +138,11 @@ def dashboard(request):
     if session_id:
         try:
             chat_session = ChatSession.objects.get(session_id=session_id, user=user)
-            chat_messages = ChatMessage.objects.filter(session=chat_session).order_by("timestamp")
+            chat_messages = list(
+                ChatMessage.objects.filter(session=chat_session).order_by("timestamp")
+            )
+            for message in chat_messages:
+                message.rendered_content = mark_safe(_decode_message_content(message.content))
         except ChatSession.DoesNotExist:
             pass
 
@@ -104,7 +158,12 @@ def dashboard(request):
                 hubspot_connected = True
     except HubspotToken.DoesNotExist:
         pass
-    
+
+    quickbooks_connected = QuickbooksToken.objects.exists()
+
+    tenant = Tenant.objects.first()
+    tenant_version = tenant.version if tenant and tenant.version else ""
+
     records_custom_object, field_values_by_record = get_values_by_record(custom_object)
     lookup_options = get_lookup_data_for_form(custom_object)
 
@@ -113,10 +172,11 @@ def dashboard(request):
         "products": products,
         "options": options,
         "bundles": bundles,
-        "grouped_quotes": grouped_quotes.items(),
+        "account_groups": account_groups,
         "is_setup": is_setup,
         "is_authenticated": is_authenticated,
         "hubspot_connected": hubspot_connected,
+        "quickbooks_connected": quickbooks_connected,
         "chat_sessions": chat_sessions,
         "chat_messages": chat_messages,
         "selected_session_id": session_id,
@@ -128,7 +188,46 @@ def dashboard(request):
         "records_custom_object": records_custom_object,
         'field_values_by_record': field_values_by_record,
         'lookup_options': lookup_options,
+        'tenant_version': tenant_version,
 })
+
+
+@login_required
+@require_POST
+def update_chat_session_title(request, session_id):
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (json.JSONDecodeError, AttributeError, UnicodeDecodeError):
+        return JsonResponse({"error": "Invalid JSON payload."}, status=400)
+
+    new_title = (payload.get("title") or "").strip()
+    if not new_title:
+        new_title = "Untitled Session"
+
+    chat_session = get_object_or_404(ChatSession, session_id=session_id, user=request.user)
+    chat_session.title = new_title[:255]
+    chat_session.save(update_fields=["title"])
+
+    return JsonResponse({"title": chat_session.title})
+
+
+@login_required
+@require_POST
+def delete_chat_session(request, session_id):
+    chat_session = get_object_or_404(ChatSession, session_id=session_id, user=request.user)
+    existing_session_data = request.session.get("session_data")
+    active_session_id = existing_session_data.get("session_id") if existing_session_data else None
+
+    chat_session.delete()
+
+    if active_session_id == session_id:
+        request.session.pop("session_data", None)
+
+    return JsonResponse({
+        "success": True,
+        "deleted_session_id": session_id,
+        "was_active": active_session_id == session_id,
+    })
 
 def get_user_accounts(user):
     if user.is_superuser:
@@ -162,34 +261,7 @@ def get_lookup_data_for_form(custom_object):
 
 
 def get_grouped_user_quotes(user):
-
-    # Base queryset: if superuser, all quotes; otherwise only quotes
-    # whose opportunity.account.owner is this user
-    if user.is_superuser:
-        base_qs = Quote.objects.all()
-    else:
-        base_qs = Quote.objects.filter(
-            owner=user
-        )
-
-    # Eager-load opportunity → account and quote_lines → product,
-    # and stash lines in a .lines attribute
-    quotes = base_qs.select_related(
-        "opportunity__account"
-    ).prefetch_related(
-        Prefetch(
-            "quote_lines",
-            queryset=QuoteLine.objects.select_related("product"),
-            to_attr="lines"
-        )
-    )
-
-    # Group by opportunity
-    grouped_quotes = {}
-    for quote in quotes:
-        grouped_quotes.setdefault(quote.opportunity, []).append(quote)
-
-    return grouped_quotes
+    return build_account_quote_hierarchy_for_user(user)
 
 @require_GET
 def get_tenant_usage(request):
@@ -316,6 +388,81 @@ def get_tenant_usage(request):
         "overflow_actions": overflow,
     })
 
+
+@xframe_options_exempt
+def signup(request):
+    def _send_welcome_email(new_user):
+        if not new_user.email:
+            logger.debug("Signup welcome email skipped: no email for user %s", new_user.pk)
+            return
+
+        from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or getattr(settings, 'EMAIL_HOST_USER', None)
+        if not from_email:
+            logger.debug(
+                "Signup welcome email skipped: no from_email configured (user=%s)",
+                new_user.pk,
+            )
+            return
+
+        first_name = (new_user.first_name or new_user.username).replace('\xa0', ' ').strip()
+        last_name = (new_user.last_name or '').replace('\xa0', ' ').strip()
+        subject = "Welcome to AgentCPQ"
+        dashboard_url = request.build_absolute_uri(reverse('dashboard'))
+        message = render_to_string(
+            'auth/welcome_email.html',
+            {
+                'first_name': first_name,
+                'last_name': last_name,
+                'username': new_user.username,
+                'dashboard_url': dashboard_url,
+                'current_year': datetime.now().year,
+            },
+        )
+
+        reply_to = getattr(settings, 'DEFAULT_REPLY_TO', None) or from_email
+        email = EmailMessage(subject, message, from_email, [new_user.email], reply_to=[reply_to])
+        email.encoding = 'utf-8'
+        email.content_subtype = 'html'
+        email.extra_headers = email.extra_headers or {}
+        email.extra_headers.setdefault('Content-Transfer-Encoding', '8bit')
+
+        try:
+            sent_count = email.send(fail_silently=True)
+            logger.debug(
+                "Signup welcome email attempted: user=%s email=%s sent=%s",
+                new_user.pk,
+                new_user.email,
+                bool(sent_count),
+            )
+        except UnicodeEncodeError:
+            logger.exception(
+                "Signup welcome email failed due to Unicode error (user=%s, email=%s)",
+                new_user.pk,
+                new_user.email,
+            )
+        except smtplib.SMTPException:
+            logger.exception(
+                "Signup welcome email SMTP failure (user=%s, email=%s)",
+                new_user.pk,
+                new_user.email,
+            )
+
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+
+    if request.method == 'POST':
+        form = SignupForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            _send_welcome_email(user)
+            login(request, user)
+            return redirect('dashboard')
+    else:
+        form = SignupForm()
+
+    return render(request, 'auth/signup.html', {'form': form})
+
+
 class CustomPasswordResetView(PasswordResetView):
     def send_mail(self, subject_template_name, email_template_name,
                   context, from_email, to_email, html_email_template_name=None):
@@ -347,12 +494,19 @@ def get_next_custom_identifier(last_identifier):
     match = re.match(r"^([A-Z]+)-(\d{5})$", last_identifier)
     if not match:
         return None  # O manejar el error de formato
-    
+
     prefix = match.group(1)
     number = int(match.group(2))
-    
+
     next_number = number + 1
     next_number_str = str(next_number).zfill(5)
     
     return f"{prefix}-{next_number_str}"
 
+
+class CustomLogoutView(LogoutView):
+    def dispatch(self, request, *args, **kwargs):
+        # 🧹 Limpiar datos de sesión personalizados antes de cerrar sesión
+        for key in ['last_session_id', 'last_view', 'last_object_name']:
+            request.session.pop(key, None)
+        return super().dispatch(request, *args, **kwargs)

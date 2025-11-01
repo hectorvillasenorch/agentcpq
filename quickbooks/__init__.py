@@ -1,0 +1,2 @@
+"""QuickBooks integration app."""
+

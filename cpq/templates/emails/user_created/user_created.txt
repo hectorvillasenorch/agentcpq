@@ -1,0 +1,11 @@
+Hello{% if recipient %} {{ recipient.first_name|default:recipient.username }}{% endif %},
+
+A new user has been created in AgentCPQ.
+
+Username: {{ new_user.username }}
+Email: {{ new_user.email|default:"(not provided)" }}
+
+{% if new_user.date_joined %}Created on: {{ new_user.date_joined|date:"F j, Y, g:i a" }}{% endif %}
+
+Thanks,
+AgentCPQ

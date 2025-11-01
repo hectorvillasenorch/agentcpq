@@ -1,16 +1,5 @@
 {% load humanize %}
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Opportunity Created</title>
-</head>
-<body>
-    
-</body>
-</html>
-
-<!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
@@ -66,33 +55,41 @@
   <body>
     <div class="container">
       <div class="header-box">
-        <!-- Hardcore image link for now -->
         <img src="https://i.imgur.com/hPpLMOL.png" alt="AgentCPQ Logo" width="40%">
         <h2 class="reset-text">Opportunity Created</h2>
       </div>
       <div class="container-mail">
-        <p>Hello {{ user.first_name|default:user.username }},</p>
-        <p>A new <strong>{{ opportunity.name }}</strong> has been created by {{ opportunity.created_by.first_name|default:opportunity.created_by.username }}.</p>
+
+        <p>
+          Hello{% if user %} {{ user.first_name|default:user.username }}{% endif %},
+        </p>
+
+        <p>
+          A new <strong>{{ opportunity.name }}</strong> has been created
+          {% if opportunity.created_by %}
+           by {{ opportunity.created_by.first_name|default:opportunity.created_by.username }}.
+          {% endif %}
+        </p>
+
         <p>Opportunity Details:</p>
         <ul>
-            
-            {% if opportunity.amount %}
-              <li>Amount: ${{ opportunity.amount|floatformat:2|intcomma }}</li>
-            {% else %}
-              <li>Amount: $0.00</li>
-            {% endif %}
+          {% if opportunity.amount %}
+            <li>Amount: ${{ opportunity.amount|floatformat:2|intcomma }}</li>
+          {% else %}
+            <li>Amount: $0.00</li>
+          {% endif %}
 
-            {% if opportunity.stage %}
-              <li>Stage: {{ opportunity.stage }}</li>
-            {% endif %}
-            
+          {% if opportunity.stage %}
+            <li>Stage: {{ opportunity.stage }}</li>
+          {% endif %}
         </ul>
+
         <p>Created on: {{ opportunity.created_at|date:"F j, Y, g:i a" }}</p>
         <p>Thank you!</p>
       </div>
 
       <div class="footer">
-        This email was automatically sent by the AgentCPQ system — please do not reply.  
+        This email was automatically sent by the AgentCPQ system — please do not reply.
       </div>
     </div>
   </body>

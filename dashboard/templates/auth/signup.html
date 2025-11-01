@@ -1,0 +1,91 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sign Up | AgentCPQ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Materialize & Icons -->
+  <link rel="stylesheet" href="{% static 'materialize/materialize.min.css' %}" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+
+  <!-- Shared login/signup styling -->
+  <link rel="stylesheet" href="{% static 'css/login.css' %}" />
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js?plugins=TextPlugin,ScrollTrigger"></script>
+</head>
+<body>
+  <script src="{% static 'js/agents/login.js' %}" defer></script>
+  <div class="login-wrapper">
+    <section class="login-left z-depth-1">
+      <img src="{% static 'img/logo-bg-white.png' %}" alt="AgentCPQ Logo" class="login-logo" />
+      <form class="login-form" method="post" action="{% url 'signup' %}">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+
+        <div class="input-field">
+          {{ form.username }}
+          <label for="{{ form.username.id_for_label }}">Username</label>
+          {{ form.username.errors }}
+        </div>
+
+        <div class="input-field">
+          {{ form.first_name }}
+          <label for="{{ form.first_name.id_for_label }}">First Name</label>
+          {{ form.first_name.errors }}
+        </div>
+
+        <div class="input-field">
+          {{ form.last_name }}
+          <label for="{{ form.last_name.id_for_label }}">Last Name</label>
+          {{ form.last_name.errors }}
+        </div>
+
+        <div class="input-field">
+          {{ form.email }}
+          <label for="{{ form.email.id_for_label }}">Email</label>
+          {{ form.email.errors }}
+        </div>
+
+        <div class="input-field">
+          {{ form.password1 }}
+          <label for="{{ form.password1.id_for_label }}">Password</label>
+          {{ form.password1.errors }}
+        </div>
+
+        <div class="input-field">
+          {{ form.password2 }}
+          <label for="{{ form.password2.id_for_label }}">Confirm Password</label>
+          {{ form.password2.errors }}
+        </div>
+
+        <div class="input-field" style="margin-top: 20px;">
+          <p>
+            <label>
+              {{ form.email_consent }}
+              <span>{{ form.email_consent.label }}</span>
+            </label>
+          </p>
+          {{ form.email_consent.errors }}
+        </div>
+        <div class="center-align">
+          <button type="submit" class="btn login-btn waves-effect waves-light">
+            <i class="material-icons left">person_add</i> Sign Up Now
+          </button>
+        </div>
+        <div class="center-align" style="padding-top: 30px;">
+          <span>Already have an account? <a href="{% url 'login' %}">Log in here</a></span>
+        </div>
+      </form>
+    </section>
+    <section class="login-right">
+      <canvas id="node-canvas"></canvas>
+      <div class="robot-scene">
+        <img src="{% static 'img/botcpq.png' %}" id="robot" class="robot floating" />
+        <p class="takeover-text" id="takeover-message"></p>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

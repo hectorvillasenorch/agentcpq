@@ -1,0 +1,71 @@
+# ===========================
+# Estado base
+# ===========================
+def get_session_state(session_id: str):
+    """Obtiene el estado completo de una sesión desde Redis"""
+    data = r.get(f"session:{session_id}:state")
+    if data:
+        return json.loads(data)
+    else:
+        # Estado inicial mínimo
+        new_state = {
+            "pending_action": None,
+            "structured_data": {},   # Ej: productos, cotizaciones
+            "messages": [],          # para últimos N mensajes
+            "summary": ""            # resumen largo plazo
+        }
+        save_session_state(session_id, new_state)
+        return new_state
+
+def save_session_state(session_id: str, state: dict):
+    """Guarda estado en Redis"""
+    r.set(f"session:{session_id}:state", json.dumps(state))
+
+
+# ===========================
+# Mensajes recientes
+# ===========================
+def add_message_to_context(session_id: str, sender: str, content: str, max_messages: int = 10):
+    """Agrega un mensaje al historial (se limita a N mensajes)"""
+    state = get_session_state(session_id)
+
+    state["messages"].append({"sender": sender, "content": content})
+
+    # Mantener solo últimos N
+    if len(state["messages"]) > max_messages:
+        state["messages"] = state["messages"][-max_messages:]
+
+    save_session_state(session_id, state)
+
+
+# ===========================
+# Resumen
+# ===========================
+def update_summary(session_id: str, new_summary: str):
+    """Guarda/actualiza el resumen global de la sesión"""
+    state = get_session_state(session_id)
+    state["summary"] = new_summary
+    save_session_state(session_id, state)
+
+
+def get_existing_context(user, session_data):
+    """API que usas en orchestrator → devuelve estado actual"""
+    session_id = session_data.get("session_id")
+    if not session_id:
+        return None
+    return get_session_state(session_id)
+
+
+def build_context_prompt_json(context_data, intention, user_message):
+    """
+    Construye un JSON con contexto + mensaje.
+    (Hoy: usa solo datos estructurados.
+     Futuro: agregar summary + últimos N mensajes.)
+    """
+    return json.dumps({
+        "intention": intention,
+        "previous_data": context_data.get("structured_data", {}),
+        "summary": context_data.get("summary", ""),
+        "recent_messages": context_data.get("messages", []),
+        "new_message": user_message
+    }, indent=2)

@@ -8,12 +8,14 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from decimal import Decimal, ROUND_HALF_UP
 from django.contrib.postgres.fields import JSONField
 from django.db.models import JSONField
-from dateutil.relativedelta import relativedelta
+from dateutil.relativedelta import relativedelta # type: ignore
 from django.contrib.auth.models import User
 from django.conf import settings
 import os , uuid
 import secrets
 from django.utils.timezone import now
+
+from agents.utils.knowledge_agent.embedding_helpers import generate_embedding as generate_knowledge_embedding
 
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -49,10 +51,12 @@ class Lead(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
     notes = models.TextField(blank=True)
     assigned_to = models.CharField(max_length=100, blank=True)
-    created_at = models.DateTimeField(default=timezone.now)
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_leads')
+
+    created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_leads')
-    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_leads')
+
     def save(self, *args, **kwargs):
         if not self.leadId:
             self.leadId = generate_agentcpq_id()
@@ -72,7 +76,7 @@ class Lead(models.Model):
         return self.contact
     def __str__(self):
         return self.first_name + ' ' + self.last_name
-    
+
 
 class Account(models.Model):
     name = models.CharField(max_length=255)
@@ -83,8 +87,13 @@ class Account(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     accid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    quickbooks_customer_id = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        help_text="Identifier of the Customer in QuickBooks"
+    )
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='accounts')
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_accounts')
      # Address fields
     street = models.CharField(max_length=255, blank=True, null=True)
     city = models.CharField(max_length=100, blank=True, null=True)
@@ -92,13 +101,15 @@ class Account(models.Model):
     zip_code = models.CharField(max_length=20, blank=True, null=True)
     tenant_id = models.CharField(max_length=30, unique=False,null=True)
     # country = models.CharField(max_length=100, blank=True, null=True)
-    
+
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_accounts')
+
 
     def save(self, *args, **kwargs):
         if not self.accid:
             self.accid = generate_agentcpq_id()
         super().save(*args, **kwargs)
-    
+
     def __str__(self):
         return self.name
 
@@ -111,12 +122,13 @@ class Contact(models.Model):
     job_title = models.CharField(max_length=100, blank=True)
     notes = models.TextField(blank=True)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='contacts')
     contactId = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_contacts')
     is_primary = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_contacts')
 
     def save(self, *args, **kwargs):
         if not self.contactId:
@@ -156,17 +168,19 @@ class Opportunity(models.Model):
     stage = models.CharField(max_length=50, choices=STAGE_CHOICES, default='Prospecting')
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     expected_close_date = models.DateField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_opportunities')
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     primary_quote = models.ForeignKey(
-        "Quote", 
+        "Quote",
         on_delete=models.SET_NULL,  # Set to NULL if quote is deleted
         related_name="opportunity_primary_quote",
         null=True, blank=True
     )
     oppid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     hs_deal_id = models.CharField(max_length=18, unique=True, db_index=True, editable=False, null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_opportunities')
+
     class Meta:
         verbose_name = "Opportunity"
         verbose_name_plural = "Opportunities"
@@ -175,7 +189,7 @@ class Opportunity(models.Model):
         if not self.oppid:
             self.oppid = generate_agentcpq_id()
         super().save(*args, **kwargs)
-    
+
     def __str__(self):
         return self.name
 
@@ -202,10 +216,11 @@ class Activity(models.Model):
     opportunity = models.ForeignKey('Opportunity', on_delete=models.SET_NULL, null=True, blank=True, related_name='activities')
     contact = models.ForeignKey('Contact', on_delete=models.SET_NULL, null=True, blank=True, related_name='activities')
     notes = models.TextField(blank=True)
-    created_at = models.DateTimeField(default=timezone.now)
+    activityid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_activities')
-    activityid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Activity"
@@ -220,7 +235,7 @@ class Activity(models.Model):
         return f"{self.subject} ({self.get_activity_type_display()})"
 
 class Product(models.Model):
-    
+
     name = models.CharField(max_length=255)
     sku = models.CharField(max_length=100, unique=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -235,7 +250,7 @@ class Product(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_products')
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_products')
-    
+
     description = models.TextField(blank=True)
 
     def get_custom_fields(self):
@@ -273,6 +288,10 @@ class Option(models.Model):
     def __str__(self):
         return f"{self.parent_product.name}"
 
+# Default expiration date for Quote model
+def default_expiration_date():
+        return timezone.now().date() + relativedelta(months=1)
+
 class Quote(models.Model):
     """Now linked to an Opportunity instead of a Customer."""
     STATUS_CHOICES = [
@@ -283,33 +302,43 @@ class Quote(models.Model):
         ('Closed', 'Closed'),
     ]
 
-    def default_expiration_date():
-        return timezone.now().date() + relativedelta(months=1)
-
     name = models.CharField(max_length=255)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="quotes")
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, related_name="quotes")
     sf_opportunity_id = models.CharField(max_length=18, blank=True, null=True)
+    quickbooks_invoice_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Identifier of the Invoice created in QuickBooks"
+    )
+    quickbooks_invoice_number = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="QuickBooks customer-facing invoice number (DocNumber)"
+    )
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
     net_amount = models.DecimalField(max_digits=10, decimal_places=2)
     tax_percentage = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Draft')
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
     discount_type = models.CharField(max_length=20, choices=[("percentage", "Percentage"), ("amount", "Amount")], default="percentage")
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(Decimal("0.00"))])
     expiration_date = models.DateTimeField(default=default_expiration_date, blank=True, null=True)
-    notes = models.TextField(blank=True, null=True) 
+    notes = models.TextField(blank=True, null=True)
     qteid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     hs_deal_id = models.CharField(max_length=64,blank=True,null=True,help_text="The HubSpot Deal ID linked to this quote")
     hs_primary = models.BooleanField(default=False,help_text="Marks this quote as the primary quote for the HubSpot deal")
     synced = models.BooleanField(default=False)
     last_synced_at = models.DateTimeField(null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_quotes')
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quotes')
 
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quotes')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_quotes')
 
     def get_total_discount_percentage(self):
         """
@@ -329,7 +358,7 @@ class Quote(models.Model):
 
     def get_subtotal_amount(self):
         return self.quote_lines.filter(is_bundle_child=False).aggregate(subtotal=Sum("total_price"))["subtotal"] or 0
-    
+
     def update_discount_fields(self):
         self.discount_percentage = Decimal(str(self.discount_percentage or 0)).quantize(Decimal("0.01"))
         self.discount_amount = Decimal(str(self.discount_amount or 0)).quantize(Decimal("0.01"))
@@ -343,7 +372,7 @@ class Quote(models.Model):
                 self.discount_percentage = ((self.discount_amount / self.subtotal) * Decimal("100.00")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             else:
                 self.discount_percentage = Decimal("0.00")
-    
+
     def update_net_amount(self):
         discount = Decimal("0.00")
         subtotal = Decimal(str(self.subtotal or 0))
@@ -360,16 +389,18 @@ class Quote(models.Model):
         if self.tax_percentage != Decimal("0.00"):
             self.tax_amount = (self.net_amount * self.tax_percentage / Decimal("100.00")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             self.net_amount = (self.net_amount + self.tax_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        elif self.tax_percentage == Decimal("0.00"):
+            self.tax_amount = Decimal("0.00")
 
     def update_tax(self):
         try:
             settings = QuoteDocumentSettings.objects.first()
             if settings and settings.quote_tax:
-                self.tax_percentage = settings.quote_tax
+                self.tax_percentage = Decimal(str(settings.quote_tax))
             else:
-                self.tax_amount = Decimal("0.00")
+                self.tax_percentage = Decimal("0.00")
         except QuoteDocumentSettings.DoesNotExist:
-            self.tax_amount = Decimal("0.00")
+            self.tax_percentage = Decimal("0.00")
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -394,6 +425,9 @@ class Quote(models.Model):
             self.update_net_amount()
             super().save(*args, **kwargs)
 
+    def __str__(self):
+        return f"{self.name}"
+
 class QuoteLine(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="quote_lines")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="quote_lines")
@@ -414,7 +448,6 @@ class QuoteLine(models.Model):
     is_bundle_component_selected = models.BooleanField(default=False)
     parent_line = models.ForeignKey('self', null=True, blank=True, related_name="child_lines", on_delete=models.CASCADE)  # for nesting
     product_option = models.ForeignKey("Option", null=True, blank=True, on_delete=models.SET_NULL)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quote_lines')
     billing_frequency = models.CharField(
         max_length=20,
         choices=[("monthly", "monthly"), ("quarterly", "quarterly"), ("annual", "annual"), ("one_time", "one_time")],
@@ -429,6 +462,7 @@ class QuoteLine(models.Model):
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quote_lines')
     updated_at = models.DateTimeField(auto_now=True)
 
     def update_discount_fields(self):
@@ -465,7 +499,7 @@ class QuoteLine(models.Model):
         discount_per_unit = min(discount_per_unit, self.unit_price)
 
         self.subtotal = (self.unit_price - discount_per_unit).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    
+
     def update_total_price(self):
         """Calculate total_price = quantity * unit_price - discount according to discount_type"""
 
@@ -484,7 +518,7 @@ class QuoteLine(models.Model):
         base_price = unit_net_price * self.quantity
 
         if self.is_subscription:
-            term = self.term if self.term else 1 
+            term = self.term if self.term else 1
             self.total_price = (base_price * term).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         else:
             self.total_price = base_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -508,11 +542,11 @@ class QuoteLine(models.Model):
             for child in self.child_lines.filter(is_bundle_component_selected=True)
         )
         self.unit_price = total
-    
+
     def check_if_is_bundle_component_deselected(self):
         if self.is_bundle_child and self.is_bundle_component_selected == False:
             self.total_price = Decimal("0.00")
-        
+
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -569,28 +603,11 @@ class QuoteLine(models.Model):
         # Set total price to 0 if is a bundle component deselected
         if self.is_bundle_child:
             self.check_if_is_bundle_component_deselected()
-        
+
         super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.product.name} ({self.quantity}x)"
-
-class Subscription(models.Model):
-    quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="subscriptions")
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="subscriptions")
-    quote_line = models.OneToOneField(QuoteLine, on_delete=models.CASCADE, related_name="subscription")
-    start_date = models.DateField()
-    end_date = models.DateField()
-    billing_cycle = models.CharField(max_length=50, choices=[
-        ('Monthly', 'Monthly'),
-        ('Quarterly', 'Quarterly'),
-        ('Annually', 'Annually'),
-    ])
-    price_per_cycle = models.DecimalField(max_digits=10, decimal_places=2)
-    term = models.IntegerField()
-
-    def __str__(self):
-        return f"{self.product.name} Subscription ({self.term} months)"
 
 class Asset(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="assets")
@@ -642,7 +659,7 @@ class ApprovalRule(models.Model):
             if not condition.matches(quote):
                 return False
         return True
-    
+
 class BusinessRule(models.Model):
     RULE_TYPES = [
         ("validation", "Validation"),
@@ -663,12 +680,14 @@ class BusinessRule(models.Model):
     priority = models.IntegerField(default=0, help_text="Higher priority rules run first.")
     error_message = models.TextField(blank=True, help_text="Message shown when the rule is triggered.")
     active = models.BooleanField(default=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_business_rules')
     conditions = models.JSONField(default=list, blank=True, help_text="List of conditions for the rule.")
 
     def __str__(self):
         return f"{self.name} ({self.rule_type}, Priority {self.priority})"
-    
+
 class RuleCondition(models.Model):
     OPERATORS = [
         ('>=', 'Greater Than or Equal'),
@@ -682,7 +701,7 @@ class RuleCondition(models.Model):
     #rule = models.ForeignKey(
     #    'ApprovalRule',
     #    on_delete=models.CASCADE,
-    #    null=True, 
+    #    null=True,
     #    related_name='conditions'
     #)
     rule = models.ForeignKey(BusinessRule, on_delete=models.CASCADE)
@@ -736,7 +755,7 @@ class RuleCondition(models.Model):
             return quote.get_total_discount_percentage()
         elif field_name == "total_amount":
             return quote.get_total_amount()
-        
+
         # Fallback or dynamic attribute retrieval:
         return getattr(quote, field_name, 0)
 
@@ -793,9 +812,13 @@ class ProductRule(models.Model):
         return f"{self.product.name} {self.rule_type} {self.related_product.name}"
 
 class Contract(models.Model):
-    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="contract")
+    opportunity = models.ForeignKey(
+        Opportunity,
+        on_delete=models.CASCADE,
+        related_name="contracts",
+    )
     start_date = models.DateField()
-    end_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)
     contract_status = models.CharField(max_length=50, choices=[
         ('Active', 'Active'),
         ('Expired', 'Expired'),
@@ -803,7 +826,30 @@ class Contract(models.Model):
     ])
 
     def __str__(self):
-        return f"Contract for {self.subscription.product.name} ({self.contract_status})"
+        return f"Contract for {self.opportunity} ({self.contract_status})"
+    
+class Subscription(models.Model):
+    quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="subscriptions")
+    quote_line = models.OneToOneField(QuoteLine, on_delete=models.CASCADE, related_name="subscription")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="subscriptions")
+    contract = models.ForeignKey(Contract, on_delete=models.CASCADE, related_name="subscriptions")
+    start_date = models.DateField()
+    end_date = models.DateField()
+    billing_cycle = models.CharField(
+        max_length=50,
+        choices=[
+            ('monthly', 'monthly'),
+            ('quarterly', 'quarterly'),
+            ('annual', 'annual'),
+            ('one_time', 'one_time')
+        ],
+        default='monthly'
+    )
+    price_per_cycle = models.DecimalField(max_digits=10, decimal_places=2)
+    term = models.IntegerField()
+
+    def __str__(self):
+        return f"{self.product.name} Subscription ({self.term} months)"
 
 class Usage(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="usage_records")
@@ -841,7 +887,7 @@ class SystemFieldMapping(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('crm', 'field_type', 'local_field', 'crm_field') 
+        unique_together = ('crm', 'field_type', 'local_field', 'crm_field')
 
     def __str__(self):
         return f"{self.crm} - {self.field_type} - {self.local_field} → {self.crm_field}"
@@ -926,10 +972,38 @@ class Tenant(models.Model):
             saved_path = default_storage.save(new_path, ContentFile(logo_content))
             self.logo.name = saved_path
             self.save(update_fields=["logo"])
-    
+
 def temp_file_path(instance, filename):
     return f"temp/quotes/{filename}"
-    
+
+
+def quote_attachment_upload_path(instance, filename):
+    base_name = os.path.basename(filename)
+    name, ext = os.path.splitext(base_name)
+    ext = ext or ""
+    random_suffix = uuid.uuid4().hex[:12]
+    tenant = instance.quote.account.tenant_id if instance.quote and instance.quote.account else "shared"
+    return f"tenant_{tenant}/quote_uploads/{instance.quote_id}/{name}_{random_suffix}{ext}"
+
+
+class QuotePendingAttachment(models.Model):
+    quote = models.ForeignKey('Quote', on_delete=models.CASCADE, related_name='pending_attachments')
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='quote_pending_attachments')
+    file = models.FileField(upload_to=quote_attachment_upload_path)
+    original_name = models.CharField(max_length=255, blank=True)
+    mime_type = models.CharField(max_length=100, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    consumed = models.BooleanField(default=False)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["quote", "consumed"]),
+        ]
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return f"Attachment for quote {self.quote.name} ({self.original_name or self.file.name})"
+
 class QuoteDocument(models.Model):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name='documents')
     version = models.PositiveIntegerField()
@@ -957,8 +1031,9 @@ class QuoteDocument(models.Model):
 
 class CustomObject(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    label = models.CharField(max_length=255)              
+    label = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_custom_objects')
     updated_at = models.DateTimeField(auto_now=True)
@@ -966,21 +1041,22 @@ class CustomObject(models.Model):
 
     def __str__(self):
         return self.label or self.name
-    
+
     class Meta:
         verbose_name = "Custom Object"
         verbose_name_plural = "Custom Objects"
-        
+
 #dummy model for all custom objects
 class CustomRecord(models.Model):
     custom_identifier = models.CharField(max_length=10, unique=True, blank=True, null=True)
     object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE, related_name='records')
     record_id = models.UUIDField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_custom_records')
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_records')
-    
+
     def __str__(self):
         label = f"{self.object_type.name} record"
         try:
@@ -1002,10 +1078,6 @@ class CustomField(models.Model):
     object_type = models.CharField(max_length=50)
     data_type = models.CharField(max_length=50)  # text, number, date, etc.
     required = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='creted_custom_fields')
-    updated_at = models.DateTimeField(auto_now=True)
-    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_fields')
     custom_object = models.ForeignKey(CustomObject, on_delete=models.CASCADE, null=True, blank=True, related_name='custom_fields')
     lookup_model = models.CharField(
         max_length=100,
@@ -1014,53 +1086,57 @@ class CustomField(models.Model):
         help_text="Format: 'app_label.ModelName' (e.g., 'cpq.Account')"
     )
     options = models.JSONField(blank=True, null=True, help_text="Used for Dropdown data_type. List of options.")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='creted_custom_fields')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_fields')
+
     class Meta:
         verbose_name = "Custom Field"
         verbose_name_plural = "Custom Fields"
 
     def __str__(self):
         return f"{self.crm}.{self.object_type}.{self.name}"
-    
+
 
 class CustomFieldValue(models.Model):
     field = models.ForeignKey(CustomField, on_delete=models.CASCADE, related_name="values")
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)  # Generic relation
     object_id = models.PositiveIntegerField(null=True, blank=True)
     content_object = GenericForeignKey("content_type", "object_id")
-    value = models.TextField()
+    value = models.TextField(blank=True)
     record = models.ForeignKey(CustomRecord, null=True, blank=True, on_delete=models.CASCADE, related_name="custom_field_values")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_by_user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="updated_custom_field_values")
 
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-
-        if hasattr(self, 'updated_by_user') and self.updated_by_user and hasattr(self.field, 'updated_by'):
-            self.field.updated_by = self.updated_by_user
-            self.field.save(update_fields=['updated_by', 'updated_at'])
-
-    updated_by_user = None  # Temporary field (part of django admin view)
-
-    def save(self, *args, **kwargs):
-        is_changed = False
+        is_changed = True
         if self.pk:
             try:
                 original = CustomFieldValue.objects.get(pk=self.pk)
                 is_changed = original.value != self.value
             except CustomFieldValue.DoesNotExist:
                 is_changed = True
-        else:
-            is_changed = True
 
         super().save(*args, **kwargs)
 
-        if is_changed and self.updated_by_user:
-            self.field.updated_by = self.updated_by_user
-            self.field.save(update_fields=['updated_by', 'updated_at'])
+        updated_by_user = getattr(self, 'updated_by_user', None)
+        if is_changed and updated_by_user:
+            if hasattr(self.field, 'updated_by'):
+                self.field.updated_by = updated_by_user
+                self.field.save(update_fields=['updated_by', 'updated_at'])
 
     def __str__(self):
         return f"{self.content_object} - {self.field.label}: {self.value}"
-    
-    
+
+
+
+def default_rendered_fields_for_quote_document_settings():
+        return ['Product And SKU', 'Description', 'Quantity', 'Unit Price', 'Total Price']
+
+def default_omitted_fields_for_quote_document_settings():
+    return ['Product', 'SKU', 'Discount']
 
 class QuoteDocumentSettings(models.Model):
     DESIGN_CHOICES = [
@@ -1072,13 +1148,7 @@ class QuoteDocumentSettings(models.Model):
         ('short', 'Short'),
         ('long', 'Modern'),
     ]
-    
-    def default_rendered_fields():
-        return ['Product And SKU', 'Description', 'Quantity', 'Unit Price', 'Total Price']
 
-    def default_omitted_fields():
-        return ['Product', 'SKU', 'Discount']
-    
 
     # Company information
     show_company_name = models.BooleanField(default=True)
@@ -1104,14 +1174,14 @@ class QuoteDocumentSettings(models.Model):
     show_quote_tax_percentage = models.BooleanField(default=True)
     show_quote_tax_amount = models.BooleanField(default=True)
 
-    quote_tax = models.DecimalField(max_digits=10, decimal_places=2, default=7.25)
+    quote_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     # Quote Line Items
     show_line_discount_percentage = models.BooleanField(default=False)
     show_line_discount_amount = models.BooleanField(default=False)
     show_line_discount = models.BooleanField(default=True)
-    rendered_fields = JSONField(default=default_rendered_fields, blank=True)
-    omitted_fields = JSONField(default=default_omitted_fields, blank=True)
+    rendered_fields = JSONField(default=default_rendered_fields_for_quote_document_settings, blank=True)
+    omitted_fields = JSONField(default=default_omitted_fields_for_quote_document_settings, blank=True)
 
     #Quote Line Description
     line_description_detail_level = models.CharField(
@@ -1141,14 +1211,14 @@ class QuoteDocumentSettings(models.Model):
 
     def __str__(self):
         return f"PDF Settings"
-    
-class QuoteUIRender(models.Model):
 
-    def default_rendered_fields():
+def default_rendered_fields_for_quote_ui_render():
         return ['sku_product', 'quantity', 'unit_price', 'discount_percentage', 'discount_amount', 'subscription', 'term', 'total_price']
 
-    def default_omitted_fields():
-        return []
+def default_omitted_fields_for_quote_ui_render():
+    return []
+
+class QuoteUIRender(models.Model):
 
     # Quote information
     show_quote_account = models.BooleanField(default=True)
@@ -1158,8 +1228,8 @@ class QuoteUIRender(models.Model):
     show_quote_discount = models.BooleanField(default=True)
 
     # Line items information
-    rendered_fields = JSONField(default=default_rendered_fields, blank=True)
-    omitted_fields = JSONField(default=default_omitted_fields, blank=True)
+    rendered_fields = JSONField(default=default_rendered_fields_for_quote_ui_render, blank=True)
+    omitted_fields = JSONField(default=default_omitted_fields_for_quote_ui_render, blank=True)
 
     # Subtotal and net amount information
     show_quote_subtotal = models.BooleanField(default=True)
@@ -1235,19 +1305,19 @@ class TenantUsageReport(models.Model):
 
     def __str__(self):
         return f"{self.tenant.tenant_id} – {self.billing_period:%Y-%m}"
-    
+
 class TenantUsageLog(models.Model):
     tenant_id = models.CharField(max_length=50, db_index=True)
     billing_period = models.DateField()
-    
+
     status = models.CharField(max_length=20, choices=[
         ("success", "Success"),
         ("failure", "Failure")
     ])
-    
+
     http_status = models.IntegerField(null=True, blank=True)
     message = models.TextField(blank=True, help_text="Response body or error message")
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1259,11 +1329,324 @@ class TenantUsageLog(models.Model):
     def __str__(self):
         return f"{self.tenant_id} ({self.billing_period}) – {self.status}"
 
+class EmailAlert(models.Model):
+    TRIGGER_CHOICES = [
+        ("lead_created", "New Lead Created"),
+        ("account_created", "New Account Created"),
+        ("opportunity_created", "New Opportunity Created"),
+        ("opportunity_closed_won", "Opportunity Closed Won"),
+        ("opportunity_closed_lost", "Opportunity Closed Lost"),
+        ("quote_sent_for_approval", "Quote Sent for Approval"),
+        ("quote_approved", "Quote Approved"),
+        ("quote_rejected", "Quote Rejected"),
+        ("quote_expiring", "Quote Expiring Soon"),
+        ("subscription_renewal", "Subscription Renewal Reminder"),
+        ("user_created", "New User Created"),
+        ("opportunity_greater_than_10k", "Opportunity Amount > $10K"),
+        ("quote_discount_greater_than_50", "Quote Discount > 50%"),
+    ]
 
-class EmailNotification(models.Model):
-    recipient = models.EmailField()
-    subject = models.CharField(max_length=255)
-    template_name = models.CharField(max_length=100)
-    context = models.JSONField()
+    NATIVE_OBJECT_CHOICES = [
+        ("Lead", "Lead"),
+        ("Account", "Account"),
+        ("Opportunity", "Opportunity"),
+        ("Quote", "Quote"),
+        ("Subscription", "Subscription"),
+        ("Product", "Product"),
+        ("QuoteLine", "Quote Line"),
+        ("User", "User"),
+        ("Contract", "Contract"),
+        ("Contact", "Contact"),
+        ("Activity", "Activity"),
+    ]
+
+    ROLE_CHOICES = [
+        ("all_superusers", "All Superusers"),
+        ("all_admins", "All Admins"),
+        ("all_staff", "All Staff"),
+        ("creator", "Creator"),
+    ]
+
+    name = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True, null=True)
+
+    # Trigger that fires the workflow
+    trigger = models.CharField(max_length=50, choices=TRIGGER_CHOICES)
+
+    # Object this alert applies to
+    native_object = models.CharField(
+        max_length=50,
+        choices=NATIVE_OBJECT_CHOICES,
+        blank=True,
+        null=True,
+        help_text="Select a native object"
+    )
+    custom_object = models.ForeignKey(
+        CustomObject,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        help_text="Select a custom object"
+    )
+
+    # Recipients
+    recipients_users = models.ManyToManyField(User, blank=True, through="EmailAlertRecipient", related_name="email_alerts")
+    recipients_roles = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="Select the role of the recipients"
+    )
+    recipients_external = models.TextField(
+        blank=True, null=True,
+        help_text="External emails separated by commas"
+    )
+
+    # Additional configuration
+    offset_days = models.IntegerField(
+        blank=True, null=True,
+        help_text="E.g., send 7 days before the expiration date (for subscriptions, quotes, etc.)"
+    )
+    scheduled_cron = models.CharField(
+        max_length=100, blank=True, null=True,
+        help_text="Cron format or text like 'every other Friday at noon'"
+    )
+
+    active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='email_alerts_created')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='email_alerts_updated')
+
+    def _str_(self):
+        return f"Email Alert: {self.description}, when: {self.trigger}, options: {self.offset_days if self.offset_days else self.scheduled_cron}"
+
+class EmailAlertRecipient(models.Model):
+    email_alert = models.ForeignKey("EmailAlert", on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ("email_alert", "user")
+
+class EmailAlertLog(models.Model):
+    email_alert = models.ForeignKey("EmailAlert", on_delete=models.CASCADE)
+    instance_type = models.CharField(max_length=50)  # 'Quote' o 'Subscription'
+    instance_id = models.BigIntegerField()
     sent_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        unique_together = ("email_alert", "instance_type", "instance_id")
+        ordering = ["-sent_at"]
+
+    def __str__(self):
+        return f"{self.email_alert} sent to {self.instance_type} {self.instance_id} at {self.sent_at}"
+
+
+class Knowledge(models.Model):
+    title = models.CharField(max_length=255)
+    content_text = models.TextField()
+    video_url = models.URLField(null=True, blank=True)
+    image_url = models.URLField(null=True, blank=True)
+    image_file = models.ImageField(upload_to="sympletech/knowledge/images/", null=True, blank=True)
+    embedding = models.JSONField(null=True, blank=True)
+    has_video = models.BooleanField(default=False)
+    tags = models.CharField(max_length=255, blank=True)
+    language = models.CharField(max_length=10, default='en')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='knowledge_created')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='knowledge_updated')
+    updated_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['-updated_at', 'title']
+
+    def save(self, *args, **kwargs):
+        self.has_video = bool(self.video_url)
+
+        update_fields = kwargs.get("update_fields")
+        update_field_set = set(update_fields) if update_fields is not None else None
+
+        content_for_embedding = " \n".join(
+            filter(None, [self.title, self.tags, self.content_text])
+        ).strip()
+
+        refresh_embedding = bool(content_for_embedding)
+        previous = None
+        if self.pk:
+            previous = type(self).objects.filter(pk=self.pk).values(
+                "title", "content_text", "tags", "embedding"
+            ).first()
+            if previous:
+                refresh_embedding = (
+                    refresh_embedding
+                    and (
+                        previous.get("embedding") is None
+                        or previous.get("title") != self.title
+                        or previous.get("content_text") != self.content_text
+                        or previous.get("tags") != self.tags
+                    )
+                )
+
+        if refresh_embedding and content_for_embedding:
+            embedding = generate_knowledge_embedding(content_for_embedding)
+            if embedding:
+                self.embedding = embedding
+                if update_field_set is not None:
+                    update_field_set.add("embedding")
+
+        if update_field_set is not None:
+            kwargs["update_fields"] = list(update_field_set)
+
+        super().save(*args, **kwargs)
+
+        if self.image_file:
+            image_url = getattr(self.image_file, "url", None)
+            if image_url and image_url != self.image_url:
+                type(self).objects.filter(pk=self.pk).update(image_url=image_url)
+                self.image_url = image_url
+
+    def __str__(self):
+        return self.title
+    
+class ActionTrigger(models.Model):
+    """
+    Represents a trigger (event) and the action to execute on a specific object.
+    The combination of action and object will determine the function to call in the backend.
+    """
+
+    # Trigger choices
+    TRIGGER_CHOICES = [
+        ("opportunity_closed_won", "Opportunity Closed Won"),
+        # Add more triggers in the future
+    ]
+
+    # Action choices
+    ACTION_CHOICES = [
+        ("create", "Create"),
+        ("update", "Update"),
+        ("delete", "Delete"),
+    ]
+
+    # Object choices
+    OBJECT_CHOICES = [
+        ("renewal_task", "Renewal Task"),
+        # Add more objects in the future
+    ]
+
+    trigger = models.CharField(
+        max_length=100,
+        choices=TRIGGER_CHOICES,
+        verbose_name="Trigger (event)",
+        help_text="Select the event that will trigger the action."
+    )
+
+    action = models.CharField(
+        max_length=20,
+        choices=ACTION_CHOICES,
+        verbose_name="Action",
+        help_text="Select the action to perform: Create, Update, or Delete."
+    )
+
+    object_name = models.CharField(
+        max_length=50,
+        choices=OBJECT_CHOICES,
+        verbose_name="Object",
+        help_text="Select the object on which the action will be performed."
+    )
+
+    action_params = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Action Parameters",
+        help_text="Optional. JSON with parameters for the action/function."
+    )
+
+    active = models.BooleanField(
+        default=True,
+        verbose_name="Active",
+        help_text="Indicates whether the trigger is active and will execute when the event occurs."
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Created At",
+        help_text="The date and time when this record was created (read-only)."
+    )
+
+    def __str__(self):
+        return f"{self.trigger} -> {self.action} {self.object_name} (id={self.id})"
+
+class ScheduledTask(models.Model):
+    """
+    Scheduled task.
+    It is linked to an Opportunity (which already contains relationships with Quote, Contract, Subscription, etc.)
+    """
+
+    opportunity = models.ForeignKey(
+        Opportunity,
+        on_delete=models.CASCADE,
+        related_name="renewal_tasks",
+        verbose_name="Opportunity",
+        help_text="The Opportunity associated with this renewal task."
+    )
+    execute_at = models.DateTimeField(
+        verbose_name="Execution Date",
+        help_text="The date and time when this renewal task should be executed."
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=(
+            ("pending", "Pending"),
+            ("done", "Done"),
+            ("failed", "Failed"),
+        ),
+        default="pending",
+        verbose_name="Status",
+        help_text="Current status of the renewal task: Pending, Done, or Failed."
+    )
+    attempts = models.IntegerField(
+        default=0,
+        verbose_name="Attempts",
+        help_text="Number of times this task has been attempted."
+    )
+    last_error = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Last Error",
+        help_text="If the task failed, this field stores the last error message."
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Created At",
+        help_text="The date and time when this task was created (read-only)."
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Updated At",
+        help_text="The date and time when this task was last updated (read-only)."
+    )
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "execute_at"]),
+        ]
+        verbose_name = "Scheduled Task"
+        verbose_name_plural = "Scheduled Tasks"
+
+    def __str__(self):
+        return f"ScheduledTask (opp={self.opportunity.name}, exec={self.execute_at}, status={self.status})"
+
+    # ---- Convenience Methods ----
+    def mark_done(self):
+        """Marks the task as completed."""
+        self.status = "done"
+        self.save(update_fields=["status", "updated_at"])
+
+    def mark_failed(self, error_text):
+        """Marks the task as failed and saves the error."""
+        self.attempts += 1
+        self.last_error = error_text
+        self.status = "failed"
+        self.save(update_fields=["attempts", "last_error", "status", "updated_at"])

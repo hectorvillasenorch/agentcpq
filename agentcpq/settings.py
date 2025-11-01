@@ -15,41 +15,36 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config('SECRET_KEY')
-DEBUG = False
+DEBUG = True
 
 
 ALLOWED_HOSTS = [
-    '.herokuapp.com', 
-    'sympletech.agentcpq.ai'
+    '.herokuapp.com',
+    'sympletech.agentcpq.ai',
+    '127.0.0.1',
+    'localhost'
     ]
 
+# Allow Django to be embedded in an IFrame (required for Salesforce)
+# X_FRAME_OPTIONS = 'ALLOWALL'
 
-    # ✅ Ensure cookies are secure for HTTPS
+
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_AGE = 86400
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+
+CORS_ALLOWED_ORIGINS = [
+    NGROK_FULL_URL
+]
+
+# ✅ Allow all domains in development (Use only for testing)
+CSRF_COOKIE_DOMAIN = None
 CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
 
-# ✅ Allow cookies in cross-site iframes (Chrome Extension)
-CSRF_COOKIE_SAMESITE = 'None'
-SESSION_COOKIE_SAMESITE = 'None'  # Optional but recommended for login sessions
-
-# ✅ Set cookie domain to default
-CSRF_COOKIE_DOMAIN = None  # Let Django determine based on request
-
-# ✅ Session control
-SESSION_COOKIE_AGE = 86400  # 1 day
-SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Keep session until timeout
-
-# ✅ Allow Chrome Extension and Ngrok/Heroku as trusted CSRF origins
 CSRF_TRUSTED_ORIGINS = [
-    "https://agentcpq-staging-60c9c1a8f187.herokuapp.com",
-    "chrome-extension://cijelopfcdehkcadcjmbjehppoocjknh",
-    NGROK_FULL_URL  # Replace with actual URL at runtime
-]
-
-# ✅ Allow CORS from frontend tools (if using JS-based chat or React apps)
-CORS_ALLOWED_ORIGINS = [
-    NGROK_FULL_URL,
-    "chrome-extension://cijelopfcdehkcadcjmbjehppoocjknh"
+    NGROK_FULL_URL
 ]
 
 # Application definition
@@ -66,6 +61,7 @@ INSTALLED_APPS = [
     "dashboard",
     "salesforce",
     "hubspot",
+    "quickbooks",
     'django.contrib.humanize',
     'storages',
     'api',
@@ -231,7 +227,7 @@ AWS_S3_ADDRESSING_STYLE = "virtual"
 AWS_QUERYSTRING_AUTH = False
 AWS_S3_CUSTOM_DOMAIN = "media.agentcpq.com"
 
-# ⚠️ Must come after AWS_* settings
+# ⚠ Must come after AWS_* settings
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
 
@@ -240,7 +236,13 @@ SALESFORCE_CLIENT_ID = os.getenv("SF_CID")
 SALESFORCE_CLIENT_SECRET = os.getenv("SF_SECRET")
 SALESFORCE_REDIRECT_URI = "https://b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.ngrok-free.app/salesforce/callback"
 SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/authorize"
-SALESFORCE_TOKEN_URL = "https://login.salesforce.com/services/oauth2/token"
+SALESFORCE_TOKEN_URL = os.getenv("SALESFORCE_TOKEN_URL", "https://login.salesforce.com/services/oauth2/token")
+
+def _clean_mail_credential(value):
+    if value is None:
+        return None
+    value = value.replace('\xa0', ' ').strip()
+    return value or None
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # For reset password
@@ -248,6 +250,36 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.getenv("GMAIL_USER")
-EMAIL_HOST_PASSWORD = os.getenv("GMAIL_APP_PW")
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+EMAIL_HOST_USER = _clean_mail_credential(os.getenv("GMAIL_USER"))
+EMAIL_HOST_PASSWORD = _clean_mail_credential(os.getenv("GMAIL_APP_PW"))
+_default_reply_address = _clean_mail_credential(os.getenv("DEFAULT_FROM_EMAIL")) or "noreply@sympletechsolutions.com"
+DEFAULT_FROM_EMAIL = f"Symple Tech Solutions <{_default_reply_address}>"
+DEFAULT_REPLY_TO = _default_reply_address
+
+HUBSPOT_TOKEN_URL = os.getenv("HUBSPOT_TOKEN_URL", "https://api.hubapi.com/oauth/v1/token")
+
+# QuickBooks Online OAuth/client settings
+QUICKBOOKS_CLIENT_ID = os.getenv("QUICKBOOKS_CLIENT_ID", "")
+QUICKBOOKS_CLIENT_SECRET = os.getenv("QUICKBOOKS_CLIENT_SECRET", "")
+QUICKBOOKS_BASE_URL = os.getenv(
+    "QUICKBOOKS_BASE_URL",
+    "https://sandbox-quickbooks.api.intuit.com/v3/company",
+)
+QUICKBOOKS_TOKEN_URL = os.getenv(
+    "QUICKBOOKS_TOKEN_URL",
+    "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
+)
+QUICKBOOKS_AUTH_URL = os.getenv(
+    "QUICKBOOKS_AUTH_URL",
+    "https://appcenter.intuit.com/connect/oauth2",
+)
+QUICKBOOKS_REDIRECT_URI = os.getenv(
+    "QUICKBOOKS_REDIRECT_URI",
+    "http://localhost:8000/quickbooks/callback/",
+)
+QUICKBOOKS_MINOR_VERSION = os.getenv("QUICKBOOKS_MINOR_VERSION", "70")
+QUICKBOOKS_DEFAULT_ITEM_ID = os.getenv("QUICKBOOKS_DEFAULT_ITEM_ID", "")
+
+# Stripe keys
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")

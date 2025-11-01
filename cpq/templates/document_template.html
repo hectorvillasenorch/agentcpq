@@ -3,6 +3,16 @@
 {% block content %}
 <script src="{% static 'js/agents/agent_main.js' %}" defer></script>
 <style>
+  .main-content {
+    height: auto !important;
+    min-height: 100vh;
+    overflow: auto !important;
+  }
+
+  #content-area {
+    width: 78%;
+  }
+
   input:hover,
   textarea:hover,
   select:hover {
@@ -93,10 +103,10 @@ input[type="checkbox"] + span {
   padding: 24px;
   background: #fff;
   border-radius: 16px;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.08);
   max-width: none !important;
   width: 100%;
-  
+  border: 1px solid #e0e0e0;
 }
 .card-panel {
   padding: 24px;
@@ -345,7 +355,7 @@ input[type="checkbox"]:checked + span:before{
         </div>
 
         <!-- Description Detail Level -->
-        
+
           <div class="col s12">
             <h6 class="option-title">Description Detail Level</h6>
 
@@ -361,7 +371,7 @@ input[type="checkbox"]:checked + span:before{
               </label>
             </div>
           </div>
-        
+
 
         <!--  Responsive grid: Show Discount / Term / Sign  -->
         <div class="row line-display-options">
@@ -413,7 +423,7 @@ input[type="checkbox"]:checked + span:before{
           </div>
         </div>
       </div>
-  
+
       <!-- ✅ Contenedor que se muestra/oculta -->
       <div id="tax_info_section" style="display: none;">
 
@@ -429,7 +439,7 @@ input[type="checkbox"]:checked + span:before{
         <div class="row line-display-options">
           <div class="col s12 m6 l4">
             <label class="checkbox-label">
-              <input type="checkbox" name="show_quote_tax_percentage" 
+              <input type="checkbox" name="show_quote_tax_percentage"
                 {% if settings.show_quote_tax_percentage %} checked {% endif %}/>
               <span>Show Tax as Percentage</span>
             </label>
@@ -524,7 +534,7 @@ input[type="checkbox"]:checked + span:before{
 
       <input type="hidden" name="rendered_fields" id="rendered_fields_input" />
       <input type="hidden" name="omitted_fields" id="omitted_fields_input" />
-    
+
       <div class="right-align">
         <button type="submit" id="save-button" class="btn orange darken-2">
           <i class="material-icons left">save</i> Save
@@ -537,7 +547,7 @@ input[type="checkbox"]:checked + span:before{
       Tenant information is missing. Please complete the "Company Information" section.
     </p>
     {% endif %}
-    
+
   </div>
 
   {% if company %}

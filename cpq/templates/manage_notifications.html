@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<script src="{% static 'js/agents/agent_main.js' %}" defer></script>
+<style>
+  input:hover,
+  textarea:hover,
+  select:hover {
+    background-color: transparent !important;
+  }
+
+  input,
+  textarea,
+  select {
+    cursor: pointer;
+  }
+  input:focus,
+textarea:focus,
+select:focus {
+  border-bottom: 1px solid #fc6a3d !important;
+  box-shadow: 0 1px 0 0 #fc6a3d !important;
+}
+
+input:focus + label,
+textarea:focus + label,
+select:focus + label {
+  color: #fc6a3d !important;
+}
+
+.drag-icon {
+  color: #9e9e9e;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.green-highlight {
+  background-color: #d4edda !important;
+  transition: background-color 0.3s ease;
+}
+
+.red-highlight {
+  background-color: #f8d7da !important;
+  transition: background-color 0.3s ease;
+}
+
+/* Change checkboxes color when it is activated */
+input[type="checkbox"]:checked + span:before {
+  border-bottom: 2px solid {{ company.secondary_color }} !important;
+  border-right: 2px solid {{ company.secondary_color }} !important;
+}
+
+/* Switch color when it is activated */
+#template_style_switch:checked + .lever {
+  background-color: {{ company.secondary_color }};
+}
+#template_style_switch:checked + .lever:after {
+  background-color: {{ company.secondary_color }};
+}
+
+/* Switch color when it is activated */
+#description_detail_level_switch:checked + .lever {
+  background-color: {{ company.secondary_color }};
+}
+#description_detail_level_switch:checked + .lever:after {
+  background-color: {{ company.secondary_color }};
+}
+
+
+/* Change the span color for checkbox */
+input[type="checkbox"] + span {
+  color: #212121 !important;  /* o el color que prefieras */
+}
+
+.card-panel {
+  padding: 24px;
+  margin: .5rem 0 1rem 0;
+  border-radius: 10px;
+  background-color: #fff;
+  border: 1px solid #e0e0e0;
+  box-shadow: none !important;
+  overflow: hidden !important;
+  max-height: none !important;
+  height: auto !important;
+}
+
+.custom-table {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.custom-table th {
+  background-color: #f5f5f5; /* (Opcional) darle color al header */
+}
+
+.object-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.object-nav__link {
+  padding: 6px 14px;
+  border-radius: 16px;
+  border: 1px solid #e0e0e0;
+  color: #333;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.object-nav__link:hover,
+.object-nav__link:focus {
+  border-color: #fc6a3d;
+  color: #fc6a3d;
+  outline: none;
+}
+
+
+
+</style>
+
+<div class="container">
+  <div style="display: flex;">
+    <i class="material-icons left" style="vertical-align: middle;">notifications</i>
+    <b><h3 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
+      Notifications Management
+    </h3></b>
+  </div>
+
+  <br>
+
+  <!-- Notifications -->
+  {% for group in alert_groups  %}
+    <div class="card-panel white z-depth-1" id="{{ group.slug }}">
+      <i class="material-icons left" style="vertical-align: middle;">{{ group.icon }}</i>
+      <b><h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">{{ group.title }}</h6></b>
+
+      <!-- Contenedor principal -->
+      <div class="p-6">
+
+        {% if group.alerts %}
+          <table class="striped highlight responsive-table custom-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Trigger</th>
+                <th>Recipients</th>
+                <th>Status</th>
+                <th>Last Modified By</th>
+                <th>Created By</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for alert in group.alerts %}
+                <tr>
+                  <td>{{ alert.name }}</td>
+                  <td>{{ alert.trigger }}</td>
+                  <td>
+                    {% for user in alert.recipients_users.all %}
+                      <span class="chip blue white-text">{{ user.username }}</span>
+                    {% endfor %}
+
+                    {% for role in alert.roles_list %}
+                      <span class="chip deep-purple white-text">{{ role }}</span>
+                    {% endfor %}
+
+                    {% for email in alert.external_list %}
+                      <span class="chip green white-text">{{ email }}</span>
+                    {% endfor %}
+
+                    {% if not alert.recipients_users.all and not alert.roles_list and not alert.external_list %}
+                      <span class="grey-text">None</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if alert.active %}
+                      <span class="new badge green" data-badge-caption="Active"></span>
+                    {% else %}
+                      <span class="new badge red" data-badge-caption="Inactive"></span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <small class="updated-at">{{ alert.updated_by }} - {{ alert.updated_at|date:"Y-m-d H:i:s" }}</small>
+                  </td>
+                  <td>
+                    <small class="created-at">{{ alert.created_by }} - {{ alert.created_at|date:"Y-m-d H:i:s" }}</small>
+                  </td>
+                  <td>
+                    <a href="{% url 'cpq:edit_notification' alert.name %}" class="btn-flat">
+                      <i class="material-icons">edit</i>
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="grey-text">No alerts configured.</p>
+        {% endif %}
+
+      </div>
+
+
+    </div>
+  {% endfor %}
+
+
+</div>
+
+
+<script>
+  // Función para convertir fecha UTC a local con formato MM/DD/YYYY HH:MM AM/PM
+  function convertUTCToLocal(element) {
+      const text = element.innerText;
+      // Suponiendo que el formato es "username - YYYY-MM-DD HH:mm:ss"
+      const parts = text.split(' - ');
+      if(parts.length < 2) return;
+
+      const username = parts[0];
+      const utcString = parts[1];
+
+      // Crear objeto Date en UTC
+      const utcDate = new Date(utcString + 'Z'); // Z indica UTC
+
+      // Opciones de formato
+      const options = {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+      };
+
+      // Convertir a local
+      const localString = utcDate.toLocaleString('en-US', options);
+
+      // Reemplazar el contenido del elemento
+      element.innerText = `${username} - ${localString}`;
+  }
+
+  // Aplicar a todos los elementos
+  document.querySelectorAll('.updated-at, .created-at').forEach(el => {
+      convertUTCToLocal(el);
+  });
+
+
+</script>
+{% endblock %}

@@ -86,7 +86,7 @@ input:not([type]):focus:not([readonly])+label, input[type=text]:not(.browser-def
 
 /* keep hover state consistent */
 .login-form .login-btn:hover {
-  background-color: #fc6a3d; 
+  background-color: #fc6a3d;
 }
 
 
@@ -105,7 +105,7 @@ input:not([type]):focus:not([readonly])+label, input[type=text]:not(.browser-def
   overflow: hidden;             /* hides the “backspacing” effect if you want */
   /* border-right: 2px solid #fff; */
   width: 2px;
-  font-size: 1.5rem;  
+  font-size: 1.5rem;
   text-shadow: 1px 1px 1.5px #1f1f1f;
 }
 
@@ -116,4 +116,24 @@ input:not([type]):focus:not([readonly])+label, input[type=text]:not(.browser-def
 @media(max-width:992px){
   .login-wrapper{flex-direction:column}
   .login-right{display:none}
+}
+
+@media(max-width:600px){
+  .login-wrapper{
+    height:auto;
+    min-height:100vh;
+    overflow:auto;
+    padding-bottom:32px;
+  }
+
+  .login-left{
+    justify-content:flex-start;
+    padding:24px 16px 48px;
+  }
+
+  .login-form .login-btn{
+    width:100%;
+    margin:1.5rem 0 0;
+    padding:0.75rem 2rem;
+  }
 }

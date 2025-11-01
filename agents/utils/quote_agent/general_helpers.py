@@ -9,9 +9,19 @@ from reportlab.lib.colors import HexColor, red
 from io import BytesIO
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
-from cpq.models import CustomFieldValue, CustomField, QuoteDocumentSettings, Tenant, Quote, QuoteLine, QuoteDocument
+from cpq.models import (
+    CustomFieldValue,
+    CustomField,
+    QuoteDocumentSettings,
+    Tenant,
+    Quote,
+    QuoteLine,
+    QuoteDocument,
+    QuotePendingAttachment,
+)
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.db.utils import OperationalError, ProgrammingError
 # ReportLab imports
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Paragraph
@@ -24,6 +34,7 @@ from .db_helpers import get_or_create_quote_ui_render, log_action_usage
 from datetime import datetime, timezone
 import boto3
 from botocore.config import Config
+from typing import Set
 
 
 logger = logging.getLogger(__name__)
@@ -108,7 +119,7 @@ DESC_PARAGRAPH_STYLE = ParagraphStyle(
 
 def normalize_term_for_product(product, term):
     if product.is_subscription:
-        term = 1 if term is None else int(term)
+        term = 12 if term is None else int(term)
     else:
         term = None
 
@@ -126,7 +137,7 @@ def get_quote_details(quote):
     quote_details_settings, quote_document_settings = get_or_create_quote_ui_render()
     if quote_document_settings is None:
         return{
-            "error": True, 
+            "error": True,
             "message": "⚠️ The quote data can’t be rendered because there’s no quote template available. Please create one in <b>Admin > Manage Document</b>"
         }
     print(f"\nRendered fields on UI Quote Details: {quote_details_settings.rendered_fields}")
@@ -252,6 +263,11 @@ def get_active_quote(user_message, session_data):
         try:
             quote = Quote.objects.get(name=quote_name)
             logging.info(f"🟢 Found and set active quote: {quote.name}")
+
+            # 🔑 Save active_quote on session_data
+            set_active_quote_to_session_data(session_data, quote)
+
+
             for quote_line in QuoteLine.objects.filter(quote=quote):
                 # If Product has custom fields, then create custom fields to QuoteLine
                 copy_custom_fields_values_from_product_to_quote_line(quote_line)
@@ -288,18 +304,27 @@ def get_backup_value_from_quote_line(json_payload, quote):
     return float(value)
 
 def get_backup_value_from_quote(json_payload, quote):
-    # Transform to valid JSON
-    update_quote = json.loads(json_payload)
+    """Return the persisted value for the field being edited so the UI can revert if needed."""
 
-    # Get quote line item from db
+    update_quote = json.loads(json_payload)
     quote = Quote.objects.get(id=quote.id)
 
     field = update_quote["field"]
+    value = getattr(quote, field, None)
+
+    if value is None:
+        return None
 
     if field in {"discount_percentage", "discount_amount"}:
-        value = getattr(quote, field)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
 
-    return float(value)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+
+    return value
 
 def format_currency(value):
     """Formats a Decimal value into currency format with commas and two decimal places."""
@@ -362,7 +387,7 @@ def set_custom_fields_into_quote_document_settings(object_types: list):
     si no estaban en rendered_fields.
     """
     # 1. Obtener todos los CustomFields válidos para los object_types
-    valid_custom_field_labels = set()
+    valid_custom_field_labels: Set[str] = set()
     for obj_type in object_types:
         custom_fields = CustomField.objects.filter(object_type=obj_type)
         valid_custom_field_labels.update(f"{obj_type}.{cf.label}" for cf in custom_fields)
@@ -397,7 +422,7 @@ def set_custom_fields_into_quote_document_settings(object_types: list):
 
 
 
-def get_document_pdf(quote):
+def get_document_pdf(quote, session_data=None):
     try:
         # ✅ Fetch related quote lines
         quote_lines = QuoteLine.objects.filter(quote=quote)
@@ -411,6 +436,27 @@ def get_document_pdf(quote):
         # ✅ Fetch related account
         account = quote.account
 
+        # ✅ Pending attachments to merge after main content
+        try:
+            pending_attachments_db = list(
+                quote.pending_attachments.filter(consumed=False).order_by("uploaded_at")
+            )
+        except (ProgrammingError, OperationalError) as exc:
+            logger.warning(
+                "QuotePendingAttachment table unavailable while generating PDF for quote %s: %s",
+                quote.id,
+                exc,
+            )
+            pending_attachments_db = []
+
+        session_pending_entries = []
+        if session_data:
+            session_map = session_data.get("session_pending_attachments", {})
+            session_pending_entries = list(session_map.get(str(quote.id), []))
+
+        embedded_attachment_ids: list[int] = []
+        session_consumed_ids: list[str] = []
+
         # ✅ Generate file name
         last_doc = QuoteDocument.objects.filter(quote=quote).order_by('-version').first()
         next_version = (last_doc.version if last_doc else 0) + 1
@@ -423,7 +469,7 @@ def get_document_pdf(quote):
         pdf = canvas.Canvas(buffer, pagesize=letter)
         pdf.setTitle(f"Quote {quote.name}")
         CBLACK = "#000000"
-        
+
 
         # MODERN TEMPLATE
         if template.template_style == 'modern':
@@ -436,7 +482,7 @@ def get_document_pdf(quote):
 
         # ✅ Letterhead
         pdf.setFont("Helvetica", 8)
-        pdf.drawString(20, 770, f"{datetime.now().strftime("%m/%d/%Y, %H:%M:%S")}")
+        pdf.drawString(20, 770, f"{datetime.now().strftime('%m/%d/%Y, %H:%M:%S')}")
 
         # ✅ Quote Header
         pdf.setFont("Helvetica-Bold", 26)
@@ -461,14 +507,14 @@ def get_document_pdf(quote):
         # ------------------------------------
         pdf.setStrokeColor(HexColor(SCOLOR))
         pdf.setLineWidth(2)
-        pdf.line(32, 700, 580, 700) 
+        pdf.line(32, 700, 580, 700)
 
         # ✅ Set Y and X position for Company Information
         y_position = 660
         x_position = 50
         company_count = 0
         pdf.setFont("Helvetica-Bold", 12)
-        
+
         # ✅ Company Information
         if template.show_company_name and company.name:
             pdf.drawString(x_position, y_position, f"{company.name}")
@@ -496,7 +542,7 @@ def get_document_pdf(quote):
             pdf.setFillColor(HexColor(CBLACK))
             company_count += 1
             y_position -= 15
-        
+
         # ✅ Company phone
         if template.show_company_phone and company.phone_number:
             pdf.setFillColor(HexColor("#888888"))
@@ -517,7 +563,7 @@ def get_document_pdf(quote):
         y_position = 660
         x_position = 350
         account_count = 0
-    
+
         # ✅ Account Name
         if template.show_account_name and account.name:
             pdf.setFillColor(HexColor(CBLACK))
@@ -606,12 +652,12 @@ def get_document_pdf(quote):
 
                     new_page_bool = True
                     lines_before_new_page = index
-                    
+
                     lines_count = 15
                 else:
                     pdf.drawString(left_margin, y_position, line)
                     y_position -= line_spacing
-            
+
             #-----------------
             if new_page_bool:
                 lines_count += line_spacing * (len(lines) - lines_before_new_page)
@@ -626,7 +672,7 @@ def get_document_pdf(quote):
             # Set all up back again
             pdf.setFont("Helvetica-Bold", 12)
             pdf.setFillColor(HexColor(CBLACK))
-        
+
         x_position = 50
         y_position -= 30
         font_name = "Helvetica-Bold"
@@ -713,7 +759,7 @@ def get_document_pdf(quote):
                     y_position += 15
                     pdf.setStrokeColor(HexColor(SCOLOR))
                     pdf.setLineWidth(1)
-                    pdf.line(50, y_position, right_margin, y_position) 
+                    pdf.line(50, y_position, right_margin, y_position)
                     pdf.showPage()
                     y_position = letter[1] - 50  # Reinicia desde arriba con margen
 
@@ -743,14 +789,14 @@ def get_document_pdf(quote):
 
                         # Imprimir el texto del encabezado
                         pdf.drawString(aligned_x, y_position, display_field)
-                    
+
                     y_position -= 15
                     # ------------------------------------
                     pdf.setStrokeColor(HexColor(SCOLOR))
                     pdf.setLineWidth(1)
-                    pdf.line(50, y_position, 562, y_position) 
+                    pdf.line(50, y_position, 562, y_position)
                     y_position -= 27
-            
+
                 # Configuramos una variable para saber el tamaño maximo en el eje Y del texto mas grande de la linea
                 max_text_height = 0
                 for index, field_title in enumerate(template.rendered_fields):
@@ -771,33 +817,29 @@ def get_document_pdf(quote):
                         sku = line.sku or ""
                         product = line.product_name or ""
 
-                        max_width = column_spacing - 6 # Definimos el tamaño maximo que puede ocupar el texto
-                        sku_font_size = 9 # Tamaño de fuente del texto SKU
-                        product_font_size = 11 # Tamaño de fuente del texto Product Name
+                        max_width = column_spacing - 6
+                        sku_font_size = 9
+                        product_font_size = 10
 
-                        # Comparamos que el valor del texto SKU no sea mas grande que el tamaño maximo de la columna
                         sku_text_width = pdf.stringWidth(sku, "Helvetica-Bold", sku_font_size)
                         if sku_text_width > max_width:
                             sku_font_size = max(6, int(sku_font_size * max_width / sku_text_width))
                             sku_text_width = pdf.stringWidth(sku, "Helvetica-Bold", sku_font_size)
 
-                        # Comparamos que el valor del texto Product Name no sea mas grande que el tamaño maximo de la columna
                         product_text_width = pdf.stringWidth(product, "Helvetica", product_font_size)
                         if product_text_width > max_width:
                             product_font_size = max(6, int(product_font_size * max_width / product_text_width))
                             product_text_width = pdf.stringWidth(product, "Helvetica", product_font_size)
 
-                        # Si Product And SKU está al inicio
                         if index == 0:
                             aligned_x = column_x
                             pdf.setFont("Helvetica-Bold", sku_font_size)
                             pdf.setFillColor(HexColor("#000000"))
                             pdf.drawString(aligned_x, y_position, sku)
                             pdf.setFont("Helvetica", product_font_size)
-                            pdf.setFillColor(HexColor("#666666"))  
-                            pdf.drawString(aligned_x, y_position - 10, product)
+                            pdf.setFillColor(HexColor("#666666"))
+                            pdf.drawString(aligned_x, y_position - 12, product)
 
-                        # Si Product And SKU está al final
                         elif index == last_index:
                             sku_aligned_x = column_x + column_spacing - sku_text_width
                             pdf.setFont("Helvetica-Bold", sku_font_size)
@@ -806,19 +848,22 @@ def get_document_pdf(quote):
 
                             name_aligned_x = column_x + column_spacing - product_text_width
                             pdf.setFont("Helvetica", product_font_size)
-                            pdf.setFillColor(HexColor("#666666"))  
-                            pdf.drawString(name_aligned_x, y_position - 10, product)
-                        
-                        # Si Product And SKU está en medio
+                            pdf.setFillColor(HexColor("#666666"))
+                            pdf.drawString(name_aligned_x, y_position - 12, product)
+
                         else:
                             sku_aligned_x = column_x + (column_spacing - sku_text_width) / 2
                             pdf.setFont("Helvetica-Bold", sku_font_size)
                             pdf.setFillColor(HexColor("#000000"))
                             pdf.drawString(sku_aligned_x, y_position, sku)
+
                             name_aligned_x = column_x + (column_spacing - product_text_width) / 2
                             pdf.setFont("Helvetica", product_font_size)
-                            pdf.setFillColor(HexColor("#666666"))  
-                            pdf.drawString(name_aligned_x, y_position - 10, product)
+                            pdf.setFillColor(HexColor("#666666"))
+                            pdf.drawString(name_aligned_x, y_position - 12, product)
+
+                        max_text_height = max(max_text_height, 18)
+                        continue
 
                     # === Description column: render inline HTML with ReportLab Paragraph ===
                     if field_title == "Description":
@@ -887,7 +932,7 @@ def get_document_pdf(quote):
                             try:
                                 # Buscar el CustomField correspondiente
                                 custom_field = CustomField.objects.get(object_type=model_name, label=field_label)
-                                
+
                                 # Buscar el CustomFieldValue en la línea de cotización
                                 ct = ContentType.objects.get_for_model(line)
                                 custom_value = CustomFieldValue.objects.get(
@@ -964,7 +1009,7 @@ def get_document_pdf(quote):
                             pdf.drawString(aligned_x, y, wrapped_line)
 
                         text_height = len(wrapped_lines) * line_spacing + 5
-                        
+
                         # Imprimir term y discount en caso que el campo sea Total Price
                         #print(f"Field: {field_title}")
                         if field_title == "Total Price":
@@ -1141,7 +1186,7 @@ def get_document_pdf(quote):
             y_position -= 30
             x_position = 50
 
-        
+
 
         if template.terms_and_conditions:
             if y_position < 50:  # Si nos acercamos al final de la hoja
@@ -1152,7 +1197,7 @@ def get_document_pdf(quote):
             value_font = "Helvetica-Bold"
             value_size = 12
             terms_and_conditions_width = pdf.stringWidth(tac_value, value_font, value_size)
-            
+
             left_margin = 50
             right_margin = 50
             usable_width = letter[0] - left_margin - right_margin  # 612 - 100 = 512
@@ -1179,12 +1224,12 @@ def get_document_pdf(quote):
                     y_position = letter[1] - 50  # Reinicia desde arriba con margen
                     pdf.setFont(font_name, font_size)
                     pdf.setFillColor(HexColor(CBLACK))
-                
+
                 pdf.drawString(left_margin, y_position, line)
                 y_position -= line_spacing
-            
+
             y_position -= 18
-            
+
         #Show sign
         x_position = 50
         if template.show_sign:
@@ -1223,10 +1268,87 @@ def get_document_pdf(quote):
             pdf.setFont("Helvetica", 10)
             pdf.setFillColor(HexColor(CBLACK))
             pdf.drawString(x_position, y_position, "Name")
-                
+
+
+        # ✅ Append attachments as additional pages (if any)
+        attachment_sources = []
+
+        for attachment in pending_attachments_db:
+            attachment_sources.append(
+                {
+                    "source": "db",
+                    "id": attachment.id,
+                    "path": attachment.file.name,
+                    "label": attachment.original_name or os.path.basename(attachment.file.name),
+                }
+            )
+
+        for entry in session_pending_entries:
+            path = entry.get("stored_path")
+            if not path:
+                continue
+            attachment_sources.append(
+                {
+                    "source": "session",
+                    "id": entry.get("id"),
+                    "path": path,
+                    "label": entry.get("original_name") or os.path.basename(path),
+                }
+            )
+
+        if attachment_sources:
+            pdf.showPage()
+            page_width, page_height = letter
+            margin = 36
+
+            for index, attachment in enumerate(attachment_sources):
+                try:
+                    with default_storage.open(attachment["path"], "rb") as attachment_file:
+                        img = ImageReader(attachment_file)
+                        img_width, img_height = img.getSize()
+
+                    scale = min(
+                        (page_width - margin * 2) / img_width,
+                        (page_height - margin * 2) / img_height,
+                    )
+                    scale = min(scale, 1)  # Never upscale above 100%
+                    render_width = img_width * scale
+                    render_height = img_height * scale
+                    x_position = (page_width - render_width) / 2
+                    y_position = (page_height - render_height) / 2
+
+                    pdf.drawImage(
+                        img,
+                        x_position,
+                        y_position,
+                        width=render_width,
+                        height=render_height,
+                        preserveAspectRatio=True,
+                        mask='auto'
+                    )
+
+                    pdf.setFont("Helvetica", 10)
+                    pdf.setFillColor(HexColor("#555555"))
+                    label = attachment.get("label") or "Attachment"
+                    pdf.drawString(margin, margin - 6, f"Attachment: {label}")
+                    pdf.setFillColor(HexColor(CBLACK))
+
+                    if attachment["source"] == "db" and attachment.get("id") is not None:
+                        embedded_attachment_ids.append(attachment["id"])
+                    elif attachment["source"] == "session" and attachment.get("id"):
+                        session_consumed_ids.append(str(attachment["id"]))
+
+                    if index < len(attachment_sources) - 1:
+                        pdf.showPage()
+                except Exception as attachment_error:
+                    logger.warning(
+                        "Failed to embed attachment for quote %s: %s",
+                        quote.id,
+                        attachment_error,
+                        exc_info=True,
+                    )
 
         # ✅ Save PDF to buffer
-        pdf.showPage()
         pdf.save()
 
         # 2. Create ContentFile
@@ -1261,19 +1383,84 @@ def get_document_pdf(quote):
             quote=quote,
             version=next_version,
             name=pdf_filename,
-            file=saved_path,  
+            file=saved_path,
             generated_by="system"
         )
+
+        if embedded_attachment_ids:
+            try:
+                QuotePendingAttachment.objects.filter(id__in=embedded_attachment_ids).update(consumed=True)
+            except (ProgrammingError, OperationalError) as exc:
+                logger.warning(
+                    "Failed to mark attachments consumed for quote %s: %s",
+                    quote.id,
+                    exc,
+                )
+
         logger.debug(f"Saved to R2: {saved_path}")
         logger.debug(f"File size: {file_content.size} bytes")
+
+        total_embedded = len(embedded_attachment_ids) + len(session_consumed_ids)
+        attachment_suffix = ""
+        if total_embedded:
+            plural = "s" if total_embedded != 1 else ""
+            attachment_suffix = f" Added {total_embedded} attachment{plural}."
+
         return {
-            "message": f"📄 Quote PDF (v{next_version}) generated successfully!",
+            "message": f"📄 Quote PDF (v{next_version}) generated successfully!{attachment_suffix}",
             "download_url": download_url,
             "document_version": next_version,
             "success": True,
+            "session_consumed_ids": session_consumed_ids,
             }
     except Exception as e:
         return {
             "message": f"⚠️ Error generating PDF: {str(e)}",
             "success": False
             }
+
+
+def extract_line_items_from_user_message(user_message: str, quote=None):
+    """
+    Extracts the line items mentioned in the user's message.
+
+    Args:
+        user_message (str): The user's message.
+        quote (Quote, optional): Active Quote object. If provided, only its line items will be searched.
+
+    Returns:
+        list[dict]: List of line items found with editable fields.
+    """
+    if quote is None:
+        print("No active quote provided.")
+        return []
+
+    # Get only the line items associated with the quote
+    quote_lines = quote.quote_lines.all()
+    if not quote_lines.exists():
+        print("No line items found in the active quote.")
+        return []
+
+    user_message_lower = user_message.lower()
+    matched_items = []
+
+    for line in quote_lines:
+        # Normalize SKU and name to compare in a case-insensitive way
+        sku = (line.sku or "").lower()
+        name = (line.product_name or "").lower()
+
+        # Check if SKU or name appears in the user's message
+        if (sku and sku in user_message_lower) or (name and name in user_message_lower):
+            matched_items.append({
+                "sku": line.sku,
+                "name": line.product_name,
+                "fields": {
+                    "quantity": line.quantity,
+                    "discount_percentage": float(line.discount_percentage or 0),
+                    "discount_amount": float(line.discount_amount or 0),
+                    "term": line.term,
+                    "unit_price": float(line.unit_price or 0)
+                }
+            })
+
+    return matched_items

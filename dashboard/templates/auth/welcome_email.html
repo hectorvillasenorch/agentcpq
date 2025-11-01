@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Welcome to AgentCPQ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #f4f4f4;
+        font-family: 'Space Grotesk', sans-serif;
+        color: #233049;
+      }
+      .container {
+        max-width: 800px;
+        margin: 2rem auto;
+        background: #ffffff;
+        border-radius: 12px;
+        border: 1px solid #e0e0e0;
+        overflow: hidden;
+        box-shadow: 0 12px 30px rgba(4, 21, 48, 0.12);
+      }
+      .header {
+        background: linear-gradient(135deg, #041530, #233049);
+        text-align: center;
+        padding: 2.5rem 1.5rem 2rem;
+        color: #ffffff;
+      }
+      .header img {
+        max-width: 160px;
+        margin-bottom: 1.5rem;
+      }
+      .content {
+        padding: 2rem 2.5rem;
+        line-height: 1.6;
+      }
+      .content h1 {
+        color: #041530;
+        font-size: 26px;
+        margin: 0 0 1rem;
+        font-weight: 600;
+      }
+      .content p {
+        margin: 0 0 1rem;
+        font-size: 16px;
+        color: #4a5568;
+      }
+      .cta {
+        text-align: center;
+        margin: 2rem 0 1rem;
+      }
+      .cta a {
+        display: inline-block;
+        background-color: #fc6a3d;
+        color: #ffffff;
+        padding: 0.85rem 2.25rem;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+      .footer {
+        padding: 1.5rem 2rem 2rem;
+        background-color: #f8fafc;
+        text-align: center;
+        font-size: 13px;
+        color: #718096;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <img src="https://i.imgur.com/hPpLMOL.png" alt="AgentCPQ Logo" />
+        <h2>Welcome to AgentCPQ™</h2>
+      </div>
+      <div class="content">
+        <h1>Hello {{ first_name }} {{ last_name }}!</h1>
+        <p>We're excited to have you on board. AgentCPQ™ is ready to help you streamline quoting, automate product bundles, and keep your revenue teams in sync.</p>
+        <p>Use the button below to jump right into your dashboard and start building quotes in seconds.</p>
+        <div class="cta">
+          <a href="{{ dashboard_url }}" target="_blank">Open AgentCPQ™</a>
+        </div>
+        <p>If you weren't expecting this email, feel free to ignore it—no action is required.</p>
+        <p>Your Username is: <strong>{{ username }}</strong></p>
+        <p>Welcome aboard,<br />The AgentCPQ™ Team</p>
+      </div>
+      <div class="footer">
+        You're receiving this email because an account was created for you on AgentCPQ™.<br />
+        &copy; {{ current_year }} AgentCPQ™. All rights reserved.
+      </div>
+    </div>
+  </body>
+</html>

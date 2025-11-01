@@ -4,6 +4,16 @@
 {% block content %}
 <script src="{% static 'js/agents/agent_main.js' %}" defer></script>
 <style>
+  .main-content {
+    height: auto !important;
+    min-height: 100vh;
+    overflow: auto !important;
+  }
+
+  #content-area {
+    width: 78%;
+  }
+
  #monthlyChart {
   aspect-ratio: 2 / 1;
   width: 100%;
@@ -18,15 +28,31 @@
   padding: 2rem;
   margin-top: 2rem;
 }
+
+.usage-bar {
+  width: 100%;
+  height: 10px;
+  background-color: #e0e0e0;
+  border-radius: 9999px;
+  overflow: hidden;
+  margin-top: 0.5rem;
+}
+
+.usage-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #fc6a3d, #ff8f5a);
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
 </style>
 
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
     <!-- Limit Summary -->
     <div class="bg-white p-4 rounded shadow">
       <h3 class="text-xl font-semibold mb-2">Limit Summary</h3>
       <p><strong>Monthly Limit:</strong> {{ limit }}</p>
       <p><strong>Current Usage (This Month):</strong> {{ monthly_count }}</p>
-      <p><strong>Overflow:</strong> 
+      <p><strong>Overflow:</strong>
         {% if overflow > 0 %}
           <span class="text-red-600 font-bold">{{ overflow }}</span>
         {% else %}
@@ -57,6 +83,32 @@
         </tbody>
       </table>
     </div>
+
+    <div class="bg-white p-4 rounded shadow">
+      <h3 class="text-xl font-semibold mb-2">Database Usage</h3>
+      <p><strong>Total Storage:</strong> {{ storage_mb }} MB</p>
+      <p class="text-sm text-gray-600">Combined size of records and stored documents for this tenant.</p>
+
+      <div class="mt-4">
+        <p class="text-sm font-semibold text-gray-700">Records (limit 10 MB)</p>
+        <div class="usage-bar">
+          <div class="usage-bar-fill" style="width: {{ records_percent }}%;"></div>
+        </div>
+        <p class="text-xs text-gray-600 mt-1">{{ records_mb }} MB of 10 MB</p>
+      </div>
+
+      <div class="mt-4">
+        <p class="text-sm font-semibold text-gray-700">Documents (limit 50 MB)</p>
+        <div class="usage-bar">
+          <div class="usage-bar-fill" style="width: {{ documents_percent }}%;"></div>
+        </div>
+        <p class="text-xs text-gray-600 mt-1">{{ files_mb }} MB of 50 MB</p>
+      </div>
+
+      <a href="{% url 'cpq:usage_documents' %}" class="btn-flat" style="margin-top: 16px; padding-left: 0;">
+        <i class="material-icons left">cloud</i>Manage Documents
+      </a>
+    </div>
   </div>
 
   <!-- Charts -->
@@ -69,29 +121,7 @@
     <h3 class="text-xl font-semibold mb-4">Actions by User</h3>
     <canvas id="userChart"></canvas>
   </div>
-  <section class="tenants_usage">
-    <h2>Tenants Usage</h2>
-    <table class="table">
-      <thead>
-        <tr>
-          <th>Tenant Name</th>
-          <th>Billing Period</th>
-          <th>Total Actions</th>
-          <th>Overflow</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for usage in tenants_usage %}
-          <tr>
-            <td>{{ usage.tenant.name }}</td>
-            <td>{{ usage.billing_period }}</td>
-            <td>{{ usage.total_actions }}</td>
-            <td>{{ usage.overflow_actions }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </section>
+  
 <script>
   const actionsByMonth = {{ actions_by_month_json|safe }};
 </script>

@@ -1,15 +1,4 @@
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Account Created</title>
-</head>
-<body>
-    
-</body>
-</html>
-
-<!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
@@ -65,41 +54,46 @@
   <body>
     <div class="container">
       <div class="header-box">
-        <!-- Hardcore image link for now -->
         <img src="https://i.imgur.com/hPpLMOL.png" alt="AgentCPQ Logo" width="40%">
         <h2 class="reset-text">Account Created</h2>
       </div>
       <div class="container-mail">
-        <p>Hello {{ user.first_name|default:user.username }},</p>
-        <p>A new account <strong>{{ account.name }}</strong> has been created by {{ account.created_by.first_name|default:account.created_by.username }}.</p>
+
+        <p>
+          Hello{% if user %} {{ user.first_name|default:user.username }}{% endif %},
+        </p>
+
+        <p>
+          A new account <strong>{{ account.name }}</strong> has been created
+          {% if account.created_by %}
+            by {{ account.created_by.first_name|default:account.created_by.username }}.
+          {% endif %}
+        </p>
+
         {% if account.industry or account.website or account.phone or account.address %}
-            <p>Account Details:</p>
-        {% endif %}
-        <ul>
-            
+          <p>Account Details:</p>
+          <ul>
             {% if account.industry %}
                 <li>Industry: {{ account.industry }}</li>
             {% endif %}
-
             {% if account.website %}
                 <li>Website: {{ account.website }}</li>
             {% endif %}
-
             {% if account.phone %}
                 <li>Phone: {{ account.phone }}</li>
             {% endif %}
-
             {% if account.address %}
                 <li>Address: {{ account.street }}, {{ account.city }}, {{ account.state }}, {{ account.zip_code }}</li>
             {% endif %}
-            
-        </ul>
+          </ul>
+        {% endif %}
+
         <p>Created on: {{ account.created_at|date:"F j, Y, g:i a" }}</p>
         <p>Thank you!</p>
       </div>
 
       <div class="footer">
-        This email was automatically sent by the AgentCPQ system — please do not reply.  
+        This email was automatically sent by the AgentCPQ system — please do not reply.
       </div>
     </div>
   </body>

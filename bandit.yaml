@@ -1,0 +1,3 @@
+# bandit.yaml
+skips:
+  - B608

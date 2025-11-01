@@ -7,6 +7,7 @@ import logging
 
 # Session Context Helpers
 from ..orchestrator.context_handle_helpers import save_or_update_conversation_context
+from ..message_formatters import SUCCESS_ICON, ERROR_ICON, WARNING_ICON, INFO_ICON
 
 # General Helpers
 from .general_helpers import validate_and_cast_value
@@ -29,17 +30,17 @@ def save_custom_object(request, user=None):
             )
 
         return {
-            "message": f"✅ Custom object '{label}' created successfully. Would you like to add fields to it now? Just let me know the field names and details! 🛠️",
+            "message": f"{SUCCESS_ICON} Custom object '{label}' created successfully. Would you like to add fields to it now? Just let me know the field names and details!",
             "success": True
         }
 
     except Exception as e:
-        logging.warning(f"⚠️ Error creating custom object: {str(e)}")
+        logging.warning(f"Error creating custom object: {str(e)}")
         return {
-            "message": f"❌ Error creating custom object: {str(e)}",
+            "message": f"{ERROR_ICON} Error creating custom object: {str(e)}",
             "success": False
         }
-    
+
 def update_custom_object(request, user=None):
     try:
         data = json.loads(request)
@@ -55,14 +56,14 @@ def update_custom_object(request, user=None):
 
             fields = custom_object.custom_fields.all()
 
-            
+
             if label_to_update:
                 custom_object.label = label_to_update
             if name_to_update:
                 custom_object.name = name_to_update
             if description_to_update:
                 custom_object.description = description_to_update
-        
+
             custom_object.updated_by = user
 
             custom_object.save()
@@ -71,20 +72,20 @@ def update_custom_object(request, user=None):
                 field.custom_object = custom_object
                 field.object_type = custom_object.name
                 field.save()
-                
- 
+
+
         return {
-            "message": f"✅ Custom object '{custom_object.label}' updated successfully. 🛠️",
+            "message": f"{SUCCESS_ICON} Custom object '{custom_object.label}' updated successfully.",
             "success": True
         }
 
     except Exception as e:
-        logging.warning(f"⚠️ Error updating custom object: {str(e)}")
+        logging.warning(f"Error updating custom object: {str(e)}")
         return {
-            "message": f"❌ Error updating custom object: {str(e)}",
+            "message": f"{ERROR_ICON} Error updating custom object: {str(e)}",
             "success": False
         }
-    
+
 def delete_custom_object(request):
     try:
         data = json.loads(request)
@@ -96,20 +97,20 @@ def delete_custom_object(request):
             custom_object = CustomObject.objects.get(name=name)
 
             custom_object.delete()
-                
- 
+
+
         return {
-            "message": f"✅ Custom object '{custom_object.label}' was successfully deleted. 🗑️",
+            "message": f"{SUCCESS_ICON} Custom object '{custom_object.label}' was successfully deleted.",
             "success": True
         }
 
     except Exception as e:
-        logging.warning(f"⚠️ Error deleting custom object: {str(e)}")
+        logging.warning(f"Error deleting custom object: {str(e)}")
         return {
-            "message": f"❌ Error deleting custom object: {str(e)}",
+            "message": f"{ERROR_ICON} Error deleting custom object: {str(e)}",
             "success": False
         }
-    
+
 def save_custom_field(request, user=None):
     try:
         data = json.loads(request)
@@ -147,17 +148,17 @@ def save_custom_field(request, user=None):
             )
 
         return {
-            "message": f"✅ Custom field '{label}' created successfully for the {custom_object.label if custom_object else object_type} object. Would you like to create another field for it? 🛠️",
+            "message": f"{SUCCESS_ICON} Custom field '{label}' created successfully for the {custom_object.label if custom_object else object_type} object. Would you like to create another field for it?",
             "success": True
         }
 
     except Exception as e:
-        logging.warning(f"⚠️ Error creating custom field: {str(e)}")
+        logging.warning(f"Error creating custom field: {str(e)}")
         return {
-            "message": f"❌ Error creating custom field: {str(e)}",
+            "message": f"{ERROR_ICON} Error creating custom field: {str(e)}",
             "success": False
         }
-    
+
 
 def update_custom_field(request, user=None):
     try:
@@ -184,7 +185,7 @@ def update_custom_field(request, user=None):
             else:
                 custom_field = CustomField.objects.get(name=target_field_label, object_type=target_default_object)
 
-            
+
             if label_to_update:
                 custom_field.label = label_to_update
 
@@ -205,24 +206,24 @@ def update_custom_field(request, user=None):
             if options_to_update is not None:  # Por si la lista está vacía a propósito
                 custom_field.options = options_to_update
 
-        
+
             custom_field.updated_by = user
 
             custom_field.save()
-                
- 
+
+
         return {
-            "message": f"✅ Custom field '{custom_field.label}' updated successfully. 🛠️",
+            "message": f"{SUCCESS_ICON} Custom field '{custom_field.label}' updated successfully.",
             "success": True
         }
 
     except Exception as e:
-        logging.warning(f"⚠️ Error updating custom field: {str(e)}")
+        logging.warning(f"Error updating custom field: {str(e)}")
         return {
-            "message": f"❌ Error updating custom field: {str(e)}",
+            "message": f"{ERROR_ICON} Error updating custom field: {str(e)}",
             "success": False
         }
-    
+
 def delete_custom_field(request):
     try:
         data = json.loads(request)
@@ -241,17 +242,17 @@ def delete_custom_field(request):
                 custom_field = CustomField.objects.get(name=name, object_type=default_object_name)
 
             custom_field.delete()
-                
- 
+
+
         return {
-            "message": f"✅ Custom object '{custom_field.label}' was successfully deleted. 🗑️",
+            "message": f"{SUCCESS_ICON} Custom field '{custom_field.label}' was successfully deleted.",
             "success": True
         }
 
     except Exception as e:
-        logging.warning(f"⚠️ Error deleting custom field: {str(e)}")
+        logging.warning(f"Error deleting custom field: {str(e)}")
         return {
-            "message": f"❌ Error deleting custom field: {str(e)}",
+            "message": f"{ERROR_ICON} Error deleting custom field: {str(e)}",
             "success": False
         }
 
@@ -279,8 +280,8 @@ def create_custom_record_and_values(user, response_message, custom_object, value
             missing_required_fields.append(field.label or field.name)
 
     if missing_required_fields:
-        message = f"⚠️ Missing required fields: {', '.join(missing_required_fields)}. The record wasn’t created.<br><br>"
-        response_message += f"⚠️ Missing required fields: {', '.join(missing_required_fields)}. The record wasn’t created.<br><br>"
+        message = f"{WARNING_ICON} Missing required fields: {', '.join(missing_required_fields)}. The record wasn’t created.<br><br>"
+        response_message += message
         return None, None, response_message, message
 
     # Create CustomRecord
@@ -298,7 +299,7 @@ def create_custom_record_and_values(user, response_message, custom_object, value
             agent_response = f"The field is null, LLM didn't extract the field or user didn't specify. Request omitted."
             save_or_update_conversation_context(session_context, agent_response)
             response_message += (
-                f"⚠️ It looks like the value <strong>{value}</strong> doesn’t have a matching field name. "
+                f"{WARNING_ICON} It looks like the value <strong>{value}</strong> doesn’t have a matching field name. "
                 "Could you clarify which field this value should be assigned to?<br>"
             )
             continue
@@ -307,7 +308,7 @@ def create_custom_record_and_values(user, response_message, custom_object, value
             agent_response = f"The value is null, LLM didn't extract the value or user didn't specify. Request omitted."
             save_or_update_conversation_context(session_context, agent_response)
             response_message += (
-                f"⚠️ I noticed the field <strong>{field_name}</strong> was mentioned, but no value was provided for it. "
+                f"{WARNING_ICON} I noticed the field <strong>{field_name}</strong> was mentioned, but no value was provided for it. "
                 "Could you let me know what value you'd like to assign to this field?<br>"
             )
             continue
@@ -316,7 +317,7 @@ def create_custom_record_and_values(user, response_message, custom_object, value
             agent_response = f"The value and field is null, LLM didn't extract the value and field or user didn't specify. Request omitted."
             save_or_update_conversation_context(session_context, agent_response)
             response_message += (
-                "⚠️ It seems you want to update a field, but I couldn’t identify which field or what value to use. "
+                f"{WARNING_ICON} It seems you want to update a field, but I couldn’t identify which field or what value to use. "
                 "Could you clarify what field you’d like to update and the value you want to set?<br>"
             )
             continue
@@ -324,9 +325,9 @@ def create_custom_record_and_values(user, response_message, custom_object, value
         field = fields_by_name.get(field_name)
 
         if not field:
-            agent_response = f"⚠️ I couldn't find a matching field for <strong>{field_name}</strong>. Request omitted."
+            agent_response = f"{WARNING_ICON} I couldn't find a matching field for <strong>{field_name}</strong>. Request omitted."
             save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"⚠️ I couldn’t find a field named <strong>{field_name}</strong> in the object.<br>"
+            response_message += f"{WARNING_ICON} I couldn’t find a field named <strong>{field_name}</strong> in the object.<br>"
             continue
 
         # ✅ Validate data type
@@ -337,10 +338,10 @@ def create_custom_record_and_values(user, response_message, custom_object, value
             if field.data_type.lower() == "dropdown" and field.options:
                 expected += f" and one of: {', '.join(field.options)}"
                 print(f"\n\nExpected: {expected}")
-            agent_response = f"⚠️ Invalid value for field <strong>{field.name}</strong> {expected}. Request omitted."
+            agent_response = f"{WARNING_ICON} Invalid value for field <strong>{field.name}</strong> {expected}. Request omitted."
             save_or_update_conversation_context(session_context, agent_response)
             response_message += (
-                f"⚠️ The value <b>{value}</b> is not valid for the field <b>{field.label}</b>. "
+                f"{WARNING_ICON} The value <b>{value}</b> is not valid for the field <b>{field.label}</b>. "
                 f"The value must be one of: {', '.join(field.options)}.<br>"
             )
             continue
@@ -387,7 +388,7 @@ def update_custom_record_and_values(user, response_message, custom_record, value
             )
             save_or_update_conversation_context(session_context, agent_response)
             response_message += (
-                f"⚠️ It looks like the value <strong>{value}</strong> doesn’t have a matching field name. "
+                f"{WARNING_ICON} It looks like the value <strong>{value}</strong> doesn’t have a matching field name. "
                 "Could you clarify which field this value should be assigned to?<br>"
             )
             continue
@@ -398,7 +399,7 @@ def update_custom_record_and_values(user, response_message, custom_record, value
             )
             save_or_update_conversation_context(session_context, agent_response)
             response_message += (
-                f"⚠️ I noticed the field <strong>{field_name}</strong> was mentioned, "
+                f"{WARNING_ICON} I noticed the field <strong>{field_name}</strong> was mentioned, "
                 "but no value was provided for it.<br>"
                 "Could you let me know what value you'd like to assign?<br>"
             )
@@ -410,16 +411,16 @@ def update_custom_record_and_values(user, response_message, custom_record, value
             )
             save_or_update_conversation_context(session_context, agent_response)
             response_message += (
-                "⚠️ It seems you want to update a field, but I couldn’t identify which field or what value to use.<br>"
+                f"{WARNING_ICON} It seems you want to update a field, but I couldn’t identify which field or what value to use.<br>"
             )
             continue
 
         field = fields_by_name.get(field_name)
 
         if not field:
-            agent_response = f"⚠️ I couldn't find a matching field for <strong>{field_name}</strong>. Request omitted."
+            agent_response = f"{WARNING_ICON} I couldn't find a matching field for <strong>{field_name}</strong>. Request omitted."
             save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"⚠️ I couldn’t find a field named <strong>{field_name}</strong> in this object.<br>"
+            response_message += f"{WARNING_ICON} I couldn’t find a field named <strong>{field_name}</strong> in this object.<br>"
             continue
 
         # Validar tipo de dato
@@ -430,11 +431,11 @@ def update_custom_record_and_values(user, response_message, custom_record, value
             if field.data_type.lower() == "dropdown" and field.options:
                 expected += f" and one of: {', '.join(field.options)}"
             agent_response = (
-                f"⚠️ Invalid value for field <strong>{field.name}</strong> {expected}. Request omitted."
+                f"{WARNING_ICON} Invalid value for field <strong>{field.name}</strong> {expected}. Request omitted."
             )
             save_or_update_conversation_context(session_context, agent_response)
             response_message += (
-                f"⚠️ The value <b>{value}</b> is not valid for the field <b>{field.label}</b>. "
+                f"{WARNING_ICON} The value <b>{value}</b> is not valid for the field <b>{field.label}</b>. "
                 f"The value must be one of: {', '.join(field.options)}.<br>"
             )
             continue
@@ -486,7 +487,7 @@ def update_custom_record_and_values(user, response_message, custom_record, value
     else:
         # No hubo actualizaciones, retorna error_message para evitar éxito falso
         return custom_record, updated_field_values, response_message, (
-            f"⚠️ No valid fields were updated for record <b>{custom_record.custom_identifier}</b>.<br><br>"
+            f"{WARNING_ICON} No valid fields were updated for record <b>{custom_record.custom_identifier}</b>.<br><br>"
         )
 
 
@@ -501,16 +502,16 @@ def delete_custom_record(request):
             custom_record = CustomRecord.objects.get(custom_identifier=record_identifier)
 
             custom_record.delete()
-                
- 
+
+
         return {
-            "message": f"✅ Custom record '{record_identifier}' was successfully deleted. 🗑️",
+            "message": f"{SUCCESS_ICON} Custom record '{record_identifier}' was successfully deleted.",
             "success": True
         }
 
     except Exception as e:
-        logging.warning(f"⚠️ Error deleting custom record: {str(e)}")
+        logging.warning(f"Error deleting custom record: {str(e)}")
         return {
-            "message": f"❌ Error deleting custom record: {str(e)}",
+            "message": f"{ERROR_ICON} Error deleting custom record: {str(e)}",
             "success": False
         }

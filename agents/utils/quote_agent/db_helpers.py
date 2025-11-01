@@ -7,80 +7,143 @@ from django.db import transaction
 from ..orchestrator.context_handle_helpers import save_or_update_conversation_context
 
 
+def _clean_identifier(value):
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
 def find_product_and_normalize_variables(sku, name):
+    """Return a product matching either SKU or name (case-insensitive)."""
+
+    sku_clean = _clean_identifier(sku)
+    name_clean = _clean_identifier(name)
+
+    if not sku_clean and not name_clean:
+        return None, sku, name
+
+    filters = Q()
+
+    if sku_clean:
+        filters |= Q(sku__iexact=sku_clean) | Q(name__iexact=sku_clean)
+
+    if name_clean:
+        filters |= Q(sku__iexact=name_clean) | Q(name__iexact=name_clean)
+
     try:
-        product = Product.objects.get(Q(sku=sku) | Q(name=sku) | Q(sku=name) | Q(name=name))
-    except Product.DoesNotExist:
+        product = Product.objects.filter(filters).first()
+    except Product.DoesNotExist:  # pragma: no cover - `.first()` will not raise
+        product = None
+
+    if not product:
         return None, sku, name
 
     return product, product.sku, product.name
 
-
-def get_or_create_account_and_opportunity(user, extracted_details, session_data, session_context):
-
-    session_context["item_index"] = 1
-    session_context["extracted"] = extracted_details
+def get_or_create_account_and_opportunity(user, extracted_details, session_data):
+    """
+    Retrieves or creates an Account and Opportunity based on extracted details and session.
+    Returns either:
+      - A dict with a 'message' key if user input is incomplete or a pending action is required
+      - A tuple (account, opportunity) if both are resolved correctly
+    """
 
     if not extracted_details:
         logging.error("❌ extracted_details is None")
         return None, None
     account_name = extracted_details.get("account", session_data.get("account", "")).strip()
-    # opportunity_name = extracted_details.get("opportunity", session_data.get("opportunity", "")).strip()
-    opportunity_name = (extracted_details.get("opportunity") or session_data.get("opportunity") or "").strip()
+    opportunity_name = (extracted_details.get("opportunity") or "").strip()
+
 
     if not account_name:
-        agent_response = "Error: Could not determine the accounte. Please specify an account name."
-        save_or_update_conversation_context(session_context, agent_response)
         return {
             "message": "🚫 Error: Could not determine the account. Please specify an account name."
         }
-
-    # Search and opportunity with name and account
-    opportunity = Opportunity.objects.filter(name=opportunity_name, account__name=account_name).first()
-
-    # If not found, use name by default
-    if not opportunity:
-        opportunity_name = f"Opportunity {account_name}"
-
-    if session_data.get("pending_action") == "confirm_opportunity":
-        session_data["opportunity"] = opportunity_name
-        session_data["pending_action"] = "add_product"
-        return {
-            "message": f"✅ Opportunity {opportunity_name} added. Would you like to add more products now?"
-        }
-
-    if not opportunity_name:
-        agent_response = "Please provide an opportunity name before creating the quote. Saving extracted data."
-        save_or_update_conversation_context(session_context, agent_response)
-        return {
-            "message": "📝 Please provide an opportunity name before creating the quote."
-        }
-
+    
     # Create or get Account and Opportunity
-    account, created = Account.objects.get_or_create(
+    account, acc_created = Account.objects.get_or_create(
         name=account_name,
-        defaults={
-            'created_by': user
-        }
+        defaults={'created_by': user}
     )
 
-    if created is False and not account.created_by:
+    if acc_created is False and not account.created_by:
         account.created_by = user
         account.save()
 
-    opportunity, created = Opportunity.objects.get_or_create(
+    if not opportunity_name:
+        existing_opps = Opportunity.objects.filter(account=account)
+
+        # 🧠 Caso 1: El account ya tiene oportunidades, pero el usuario no indicó ninguna
+        if existing_opps.exists():
+            opp_names = [opp.name for opp in existing_opps]
+            opp_list_html = "<br>".join([f"• {name}" for name in opp_names])
+
+            # 🔢 Buscar el número más alto existente con el patrón Opportunity {account_name}__N
+            base_name = f"Opportunity {account_name}"
+            max_num = 0
+            for name in opp_names:
+                if name == base_name:
+                    max_num = max(max_num, 1)
+                elif name.startswith(base_name + "__"):
+                    try:
+                        suffix_num = int(name.split("__")[-1])
+                        max_num = max(max_num, suffix_num)
+                    except ValueError:
+                        pass  # Ignorar si no es número
+
+            # Crear el siguiente nombre sugerido
+            suggested_opportunity_name = (
+                f"{base_name}__{max_num + 1}" if max_num > 0 else f"{base_name}__1"
+            )
+
+            opportunity_message = (
+                f"🔍 An attempt was made to create a quote for the account {account_name}, "
+                f"but this account already has existing opportunities:<br>"
+                f"{opp_list_html}<br><br>"
+                f"Would you like to use one of these opportunities, "
+                f"create a new one named <b>{suggested_opportunity_name}</b>, "
+                f"or specify a custom opportunity name?"
+            )
+        
+            return account, suggested_opportunity_name, opportunity_message
+
+        # 🧠 Caso 2: El account no tiene oportunidades → crear una por defecto
+        else:
+            # Nombre base
+            base_name = f"Opportunity {account_name}"
+            opportunity_name = base_name
+
+            # Si ya existe (por alguna razón) una con ese nombre, se crea con sufijo incremental
+            suffix = 1
+            while Opportunity.objects.filter(name=opportunity_name).exists():
+                opportunity_name = f"{base_name}__{suffix}"
+                suffix += 1
+
+            opportunity = Opportunity.objects.create(
+                name=opportunity_name,
+                account=account,
+                created_by=user
+            )
+
+            logging.info(f"🆕 Created new opportunity '{opportunity_name}' for account '{account_name}' (no previous opportunities).")
+
+            # Guardar para uso posterior en la creación de la Quote
+            session_data["opportunity"] = opportunity_name
+
+            return account, opportunity, None
+
+    opportunity, opp_created = Opportunity.objects.get_or_create(
         name=opportunity_name,
         account=account,
-        defaults={
-            'created_by': user
-        }
+        defaults={'created_by': user}
     )
 
-    if created is False and not opportunity.created_by:
+    if not opp_created and not opportunity.created_by:
         opportunity.created_by = user
         opportunity.save()
 
-    return account, opportunity
+    return account, opportunity, None
 
 def update_opportunity_net_amount(opportunity):
     """Recalculate and update the opportunity's total amount from all related quotes."""
@@ -139,5 +202,5 @@ def get_or_create_quote_ui_render():
         quote_render_settings.rendered_fields = rendered_fields
         quote_render_settings.omitted_fields = omitted_fields
         quote_render_settings.save()
-    
+
     return quote_render_settings, quote_document_settings

@@ -1,0 +1,91 @@
+{% load humanize %}
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Opportunity Closed Won</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Space Grotesk', sans-serif;
+        background-color: #f4f4f4;
+        margin: 0;
+        padding: 0;
+        color: #333;
+      }
+      .container {
+        max-width: 600px;
+        margin: 2rem auto;
+        background: #fff;
+        padding: 2rem;
+        border-radius: 10px;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
+      }
+      p {
+        font-size: 16px;
+        line-height: 1.6;
+      }
+      .button {
+        display: inline-block;
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+        background-color: #28a745;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        text-decoration: none;
+        border-radius: 6px;
+        font-weight: 600;
+        text-align: center;
+      }
+      .footer {
+        margin-top: 2rem;
+        font-size: 14px;
+        color: #777;
+        text-align: center;
+      }
+      .header-box {
+        background: linear-gradient(135deg, #041530, #233049);
+        width: 100%;
+        color: white;
+        text-align: center;
+        padding-bottom: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header-box">
+        <img src="https://i.imgur.com/hPpLMOL.png" alt="AgentCPQ Logo" width="40%">
+        <h2 class="reset-text">Opportunity Closed Won ✅</h2>
+      </div>
+      <div class="container-mail">
+
+        <p>
+          Hello{% if user %} {{ user.first_name|default:user.username }}{% endif %},
+        </p>
+
+        <p>
+          Congratulations, {{ opportunity.name }} has been <strong>Closed Won</strong>!
+        </p>
+
+        <p>Opportunity Details:</p>
+        <ul>
+          {% if opportunity.amount %}
+            <li>Amount: ${{ opportunity.amount|floatformat:2|intcomma }}</li>
+          {% else %}
+            <li>Amount: $0.00</li>
+          {% endif %}
+
+          <li>Stage: {{ opportunity.stage }}</li>
+        </ul>
+
+        <p>Closed on: {{ opportunity.updated_at|date:"F j, Y, g:i a" }}</p>
+        <p>Congratulations!</p>
+      </div>
+
+      <div class="footer">
+        This email was automatically sent by the AgentCPQ system — please do not reply.
+      </div>
+    </div>
+  </body>
+</html>

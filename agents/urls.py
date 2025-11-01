@@ -1,6 +1,7 @@
 from django.urls import path
-from .views import chat_with_gpt
+from .views import chat_with_gpt, upload_quote_attachment
 
 urlpatterns = [
-    path("chat/", chat_with_gpt, name="chat_with_gpt"), 
+    path("chat/", chat_with_gpt, name="chat_with_gpt"),
+    path("upload-attachment/", upload_quote_attachment, name="upload_quote_attachment"),
 ]

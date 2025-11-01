@@ -9,6 +9,7 @@ from ..orchestrator.context_handle_helpers import save_or_update_conversation_co
 from .record_helpers import create_custom_record_and_values, update_custom_record_and_values, delete_custom_record
 
 from .record_helpers import save_custom_object, update_custom_object, delete_custom_object, save_custom_field, update_custom_field, delete_custom_field
+from ..message_formatters import SUCCESS_ICON, ERROR_ICON, WARNING_ICON, INFO_ICON
 
 def handle_custom_object_creation(user, extracted_custom_objects, response_message, session_context):
 
@@ -33,6 +34,26 @@ def handle_custom_object_creation(user, extracted_custom_objects, response_messa
             response_message += f"⚠️ Oops! It looks like you didn’t provide a label for the custom object. Could you tell me what you’d like to name this field?<br><br>"
             continue
 
+        sanitized_label = label.strip()
+        if sanitized_label == "":
+            agent_response = "Label provided is empty."
+            save_or_update_conversation_context(session_context, agent_response)
+            response_message += (
+                "⚠️ I noticed the label you provided is empty. What should we call this custom object?<br><br>"
+            )
+            continue
+
+        if sanitized_label.lower() in {"custom object", "customobject", "custom-object"}:
+            agent_response = "Label defaulted to 'Custom Object'."
+            save_or_update_conversation_context(session_context, agent_response)
+            response_message += (
+                "⚠️ To create this custom object I need a unique name. What label would you like to use instead of "
+                "<strong>Custom Object</strong>?<br><br>"
+            )
+            continue
+
+        name = sanitized_label.lower().replace(" ", "_") + "__c"
+
         # Check if custom object exists
         if CustomObject.objects.filter(name=name).exists():
             agent_response = f"A custom object with the label '{label}' already exists."
@@ -44,7 +65,7 @@ def handle_custom_object_creation(user, extracted_custom_objects, response_messa
             continue
 
         object_payload = {
-            "label": label,
+            "label": sanitized_label,
             "name": name,
             "description": description
         }
@@ -53,7 +74,7 @@ def handle_custom_object_creation(user, extracted_custom_objects, response_messa
         response = save_custom_object(json.dumps(object_payload), user=user)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             objects_created.append(object_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
@@ -89,7 +110,7 @@ def handle_custom_object_updates(user, extracted_custom_objects_updates, respons
             continue
 
         # Check if custom object exists
-        try: 
+        try:
             custom_object = CustomObject.objects.get(name=name)
         except CustomObject.DoesNotExist:
             agent_response = f"A custom object with the label '{label}' does not exist."
@@ -145,7 +166,7 @@ def handle_custom_object_updates(user, extracted_custom_objects_updates, respons
         response = update_custom_object(json.dumps(object_payload), user=user)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             objects_updated.append(object_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
@@ -180,7 +201,7 @@ def handle_custom_object_deletes(user, extracted_custom_objects_deletes, respons
             continue
 
         # Check if custom object exists
-        try: 
+        try:
             custom_object = CustomObject.objects.get(name=name)
         except CustomObject.DoesNotExist:
             agent_response = f"A custom object with the label '{label}' does not exist."
@@ -202,7 +223,7 @@ def handle_custom_object_deletes(user, extracted_custom_objects_deletes, respons
         response = delete_custom_object(json.dumps(object_payload))
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             objects_deleted.append(object_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
@@ -232,72 +253,96 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
 
         label = label.title()
 
-        if not custom_object_name:
-            agent_response = "Since the user didn't specify the custom object, reprocess the previously extracted data as new, including the custom object mentioned in the latest message."
-            save_or_update_conversation_context(session_context, agent_response)
+        if not custom_object_name and not object_type:
             response_message += f"<b>🔄 Custom Field Request #{index} 🔄</b><br>"
             response_message += (
-                "⚠️ Oops! It looks like you didn’t specify which custom object this field belongs to. "
-                "Could you please let me know the name of the custom object so I can proceed?<br><br>"
+                "⚠️ Oops! It looks like you didn’t specify which custom or standard object this field belongs to. "
+                "Could you please let me know the name of the object so I can proceed?<br><br>"
             )
             continue
 
-        if not custom_object_name.endswith('__c'):
-            custom_object_name.lower().replace(" ", "_") + "__c" if custom_object_name else None
+        response_message += f"<b>{INFO_ICON} Custom Field Request #{index}</b><br>"
 
-        # Add full item for session context
-        session_context["item_index"] = index
-        session_context["extracted"] = custom_field
+        if custom_object_name:
+
+            if not custom_object_name.endswith('__c'):
+                custom_object_name.lower().replace(" ", "_") + "__c" if custom_object_name else None
 
 
-        # Validate if user specify an custom object name
-        try:
-            co_obj = CustomObject.objects.get(name=custom_object_name)
-        except CustomObject.DoesNotExist:
-            agent_response = "Since the user didn't specify the custom object, reprocess the previously extracted data as new, including the custom object mentioned in the latest message."
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"<b>🔄 Custom Field Request #{index} 🔄</b><br>"
-            response_message += f"⚠️ Oops! It looks like you didn’t specify a custom object for this custom field(s). Could you tell me which object it should belong to?<br><br>"
-            continue
+            # Validate if user specify an custom object name
+            try:
+                co_obj = CustomObject.objects.get(name=custom_object_name)
+            except CustomObject.DoesNotExist:
+                response_message += f"⚠️ Oops! It looks like you didn’t specify a custom object for this custom field(s). Could you tell me which object it should belong to?<br><br>"
+                continue
 
-        # ✅ Format response message
-        if index == 1 and custom_object_name:
-            response_message += f"<b>🧩 <u>Fields for {co_obj.label}</u>🧩</b><br><br>"
+            # ✅ Format response message
+            if index == 1 and custom_object_name:
+                response_message += f"<b>{INFO_ICON}<u>Fields for {co_obj.label}</u></b><br><br>"
 
-        response_message += f"<b>🔄 Custom Field Request #{index} 🔄</b><br>"
+            if custom_object_name and not CustomObject.objects.filter(name=custom_object_name).exists():
+                response_message += (
+                    f"⚠️ Oops! The custom object <strong>{custom_object_name}</strong> doesn't exist yet. "
+                    "Please create it first or check for typos before adding fields to it.<br><br>"
+                )
+                continue
+
+            # Check if custom field exists for this specific custom object
+            if CustomField.objects.filter(name=name, custom_object=co_obj).exists():
+                response_message += (
+                    f"⚠️ Heads up! A custom field named <strong>{name}</strong> already exists for {co_obj.label} custom object. "
+                    "Please choose a different name for this new field.<br><br>"
+                )
+                continue
+
+        elif object_type:
+            valid_object_types = [
+                "Activity", "Lead", "Contact", "Account",
+                "Opportunity", "Product", "Quote", "QuoteLine"
+            ]
+
+            if object_type not in valid_object_types:
+                response_message += (
+                    "⚠️ The object type must be one of: "
+                    "<strong>Activity</strong>, <strong>Lead</strong>, "
+                    "<strong>Contact</strong>, <strong>Account</strong>, "
+                    "<strong>Opportunity</strong>, <strong>Product</strong>, "
+                    "<strong>Quote</strong>, or <strong>QuoteLine</strong>."
+                )
+
+             # Check if custom field exists for this specific custom object
+            if CustomField.objects.filter(name=name, object_type=object_type).exists():
+                response_message += (
+                    f"⚠️ Heads up! A custom field named <strong>{name}</strong> already exists for {object_type} standard object. "
+                    "Please choose a different name for this new field.<br><br>"
+                )
+                continue
+
 
         if label is None:
-            agent_response = "Label is not specify on user message."
-            save_or_update_conversation_context(session_context, agent_response)
             response_message += f"⚠️ Oops! It looks like you didn’t provide a label for the custom field. Could you tell me what you’d like to name this field?<br><br>"
             continue
 
-        # Check if custom field exists
-        if CustomField.objects.filter(name=name).exists():
+        if not crm:
+            crm = "AgentCPQ"
+
+        if crm and crm not in ["AgentCPQ", "HubSpot", "Salesforce"]:
             response_message += (
-                f"⚠️ Heads up! A custom field named <strong>{name}</strong> already exists. "
-                "Please choose a different name for this new field.<br><br>"
+                "⚠️ The CRM must be <strong>AgentCPQ</strong>, "
+                "<strong>HubSpot</strong>, or <strong>Salesforce</strong>."
             )
             continue
 
-
-        if custom_object_name and not CustomObject.objects.filter(name=custom_object_name).exists():
-            agent_response = f"There's no custom object named '{custom_object_name}' in the system."
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += (
-                f"⚠️ Oops! The custom object <strong>{custom_object_name}</strong> doesn't exist yet. "
-                "Please create it first or check for typos before adding fields to it.<br><br>"
-            )
-            continue
 
         if data_type == "dropdown" and options is None:
-            agent_response = f"The dropdown field '{label}' is missing its options. Extract the previous data and add to options key the options that user mentionated on his message."
-            save_or_update_conversation_context(session_context, agent_response)
             response_message += (
                 f"⚠️ The dropdown field <strong>{label}</strong> doesn't include any options. "
                 "Please specify the choices you'd like to include.<br><br>"
             )
             continue
+
+        if not required:
+            required = False
 
         field_payload = {
             "label": label,
@@ -306,7 +351,7 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
             "data_type": data_type if data_type else "text",
             "object_type": object_type if custom_object_name is None else custom_object_name,
             "required": required if required else False,
-            "custom_object_name": custom_object_name if object_type is None else None,
+            "custom_object_name": custom_object_name if custom_object_name else None,
             "lookup_model": lookup_model if lookup_model else "admin.Logentry",
             "options": options if options else None
         }
@@ -315,7 +360,7 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
         response = save_custom_field(json.dumps(field_payload), user=user)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             objects_created.append(field_payload)
             agent_response = f"The custom field was or were created successfully, but the user wants to create a new one. You can see the custom object on previous extracted data."
             session_context["extracted"] = {"custom_object_name": custom_object_name}
@@ -335,7 +380,7 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
     objects_updated = []
 
     for index, custom_field in enumerate(extracted_custom_fields_updates, start=1):
-        
+
         target_field_label = custom_field.get("target_field_label", None)
         target_custom_object = custom_field.get("target_custom_object", None)
         target_default_object = custom_field.get("target_default_object", None)
@@ -449,7 +494,7 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
 
         allowed_crm_values = ["AgentCPQ", "HubSpot", "Salesforce"]
 
-    
+
         if crm_to_update and crm_to_update not in allowed_crm_values:
             agent_response = (
                 f"Invalid CRM value: '{crm_to_update}'. Must be one of: {', '.join(allowed_crm_values)}."
@@ -600,7 +645,7 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
             response_message += f"🔣 Data Type: {data_type_to_update}<br>"
         if options_to_update:
             response_message += f"🧾 Options: {options_to_update}<br>"
-        
+
         response_message += "<br>"
 
         field_payload = {
@@ -622,7 +667,7 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
         response = update_custom_field(json.dumps(field_payload), user=user)
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             objects_updated.append(field_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
@@ -740,7 +785,7 @@ def handle_custom_field_deletes(user, extracted_custom_fields_deletes, response_
         response = delete_custom_field(json.dumps(field_payload))
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             fields_deleted.append(field_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
@@ -782,7 +827,7 @@ def handle_custom_object_records(user, extracted_custom_objects_records, respons
             agent_response = f"Values for custom object {custom_object_name} is not specify on user message. Request omitted."
             save_or_update_conversation_context(session_context, agent_response)
             response_message += (
-                f"⚠️ Got it — you’d like to create a record for <strong>{custom_object_name.replace("__c", "")}</strong>, "
+                f"⚠️ Got it — you’d like to create a record for <strong>{custom_object_name.replace('__c', '')}</strong>, "
                 "but I didn’t see any details to include in the record. <br>"
                 "Could you share the fields and values you'd like to set?<br><br>"
             )
@@ -815,10 +860,13 @@ def handle_custom_object_records(user, extracted_custom_objects_records, respons
 
         # Safety: ensure modified_by is stamped on the parent record
         try:
-            record.modified_by = user
-            record.save(update_fields=["modified_by", "updated_at"])
-        except Exception:
-            pass
+            if hasattr(record, "modified_by"):
+                record.modified_by = user
+                record.save(update_fields=["modified_by", "updated_at"])
+            else:
+                record.save(update_fields=["updated_at"])
+        except Exception as exc:
+            logging.warning("Failed to update modified_by on record %s: %s", record.id, exc)
 
         records_created.append(record)
         response_message += (
@@ -949,7 +997,7 @@ def handle_custom_record_deletes(user, extracted_custom_records_deletes, respons
         response = delete_custom_record(json.dumps(field_payload))
 
         if response.get("success"):
-            response_message += f"{response.get("message")}<br><br>"
+            response_message += f"{response.get('message')}<br><br>"
             records_deleted.append(field_payload)
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:

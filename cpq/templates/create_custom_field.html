@@ -2,9 +2,9 @@
 {% block title %}Custom Fields - AgentCPQ{% endblock %}
 
 {% block content %}
-  <h2 class="text-2xl font-semibold mb-4">Custom Fields</h2>
-<div class="card-panel white" style="border:1px solid #e0e0e0;border-radius:10px;">
   
+<div class="card-panel white" style="border:1px solid #e0e0e0;border-radius:10px;">
+
 
 <div class="max-w-4xl mx-auto py-10">
   <h4 class="text-center text-xl font-semibold text-orange-600 mb-6">
@@ -41,7 +41,7 @@
         {{ form.object_type }}
       </div>
 
-      <!-- 
+      <!--
       ject (optional) -->
       <div>
         {{ form.custom_object.label_tag }}
@@ -61,6 +61,19 @@
           <option value="lookup">Look Up</option>
         </select>
       </div>
+
+      <!-- Dropdown Options (hidden by default) -->
+      <div id="dropdown-options-field" style="display:none;" class="mt-4">
+        <label class="block text-sm font-medium text-gray-700">Dropdown Options</label>
+        <div id="options-container" class="space-y-2 mt-2">
+          <!-- Aquí se insertarán inputs dinámicamente -->
+        </div>
+        <button type="button" id="add-option" class="btn-small orange darken-2 white-text mt-2">
+          + Add Option
+        </button>
+      </div>
+
+
      <div id="lookup-model-field" style="display: none;">
       <label for="id_lookup_model" class="block text-sm font-medium text-gray-700">Lookup Model</label>
         {{ form.lookup_model }}
@@ -68,15 +81,18 @@
 
       <!-- Required -->
       <div class="flex items-center space-x-2">
-        {{ form.required }}
-        <span class="text-sm">Required</span>
+        <label>
+          {{ form.required }}
+          <span class="text-sm">Required</span>
+        </label>
       </div>
+
     </div>
 
     <div class="flex justify-end space-x-4 pt-6">
       <a href="{% url 'cpq:custom_fields' %}" class="px-4 py-2 text-gray-600">Cancel</a>
-     <button class="btn orange darken-2 white-text" type="submit">
-      Save
+      <button class="btn orange darken-2 white-text" type="submit">
+        Save
       </button>
     </div>
   </form>
@@ -86,15 +102,19 @@
 
 
 <script>
+
   document.addEventListener('DOMContentLoaded', function () {
     // Init materialize selects
     const selects = document.querySelectorAll('select');
     M.FormSelect.init(selects);
 
-    // Removes labels from being on the field.
-    const labels = document.querySelectorAll('label');
-    labels.forEach(label => label.classList.add('active'));
-    
+    // Poner 'active' solo en labels de inputs que NO sean checkboxes
+    const inputs = document.querySelectorAll('input, select, textarea');
+    inputs.forEach(input => {
+      if (input.type === 'checkbox') return; // 🚫 saltar checkboxes
+      const label = document.querySelector(`label[for="${input.id}"]`);
+      if (label) label.classList.add('active');
+    });
 
     // Auto-generate API name from label
     const labelInput = document.getElementById("id_label");
@@ -111,6 +131,7 @@
       });
     }
   });
+
   document.addEventListener('DOMContentLoaded', function () {
     const dataTypeSelect = document.getElementById('id_data_type');
     const lookupField = document.getElementById('lookup-model-field');
@@ -125,6 +146,48 @@
 
     dataTypeSelect.addEventListener('change', toggleLookupField);
     toggleLookupField();  // Run on load in case "lookup" is pre-selected
+  });
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const dataTypeSelect = document.getElementById('id_data_type');
+    const dropdownField = document.getElementById('dropdown-options-field');
+    const optionsContainer = document.getElementById('options-container');
+    const addOptionBtn = document.getElementById('add-option');
+
+    function toggleDropdownField() {
+      if (dataTypeSelect.value === 'dropdown') {
+        dropdownField.style.display = 'block';
+      } else {
+        dropdownField.style.display = 'none';
+        optionsContainer.innerHTML = ''; // limpiar si cambia de tipo
+      }
+    }
+
+    function addOptionInput(value = '') {
+      const wrapper = document.createElement('div');
+      wrapper.classList.add('flex', 'items-center', 'space-x-2');
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.name = 'options[]';  // Django recibirá lista con request.POST.getlist("options[]")
+      input.value = value;
+      input.classList.add('border', 'rounded-lg', 'p-2', 'flex-1');
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.textContent = 'x';
+      removeBtn.classList.add('btn-small', 'red', 'white-text');
+      removeBtn.onclick = () => wrapper.remove();
+
+      wrapper.appendChild(input);
+      wrapper.appendChild(removeBtn);
+      optionsContainer.appendChild(wrapper);
+    }
+
+    addOptionBtn.addEventListener('click', () => addOptionInput());
+
+    dataTypeSelect.addEventListener('change', toggleDropdownField);
+    toggleDropdownField(); // ejecutar al cargar la página
   });
 </script>
 {% endblock %}

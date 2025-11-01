@@ -1,19 +1,43 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from .models import Product, SystemFieldMapping,Quote,CustomField,Tenant,QuoteDocumentSettings,CustomObject,BusinessRule,CustomRecord,CustomFieldValue, ActionUsage, Option, TenantUsageReport, Account
+from django.urls import reverse
+from .models import (
+    Product,
+    SystemFieldMapping,
+    Quote,
+    QuoteLine,
+    CustomField,
+    Tenant,
+    QuoteDocumentSettings,
+    CustomObject,
+    BusinessRule,
+    CustomRecord,
+    CustomFieldValue,
+    ActionUsage,
+    Option,
+    TenantUsageReport,
+    Account,
+    Opportunity,
+    QuoteDocument,
+    QuotePendingAttachment,
+    Contact,
+    Lead,
+    Activity,
+)
 from django.http import JsonResponse, HttpResponseForbidden
-from django.views.decorators.csrf import csrf_exempt 
+from django.views.decorators.csrf import csrf_exempt
 from django.apps import apps
 from salesforce.models import SalesforceToken
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.exceptions import ObjectDoesNotExist
 import json
-from .forms import CustomFieldForm, CustomObjectForm, generate_dynamic_form
+from .forms import CustomFieldForm, CustomObjectForm, EmailAlertForm, generate_dynamic_form
 from django.contrib.auth.decorators import login_required
 from django.contrib.contenttypes.models import ContentType
 from django.contrib import messages
 import logging
-from django.db.models import Count
+from django.db.models import Count, Prefetch
 from django.utils.timezone import now
+from django.utils.text import slugify
 from django.db.models.functions import TruncMonth
 from datetime import datetime
 from django.utils.timezone import make_aware
@@ -23,9 +47,18 @@ from django.utils.safestring import mark_safe
 import uuid, os
 from django.views.decorators.http import require_POST
 from decimal import Decimal, InvalidOperation
-from collections import defaultdict
-from django.contrib.auth.models import User
+from collections import defaultdict, OrderedDict
+from django.contrib.auth.models import User, Group
+from django.conf import settings
 from django.utils import timezone
+from .models import EmailAlert
+from cpq.models import default_rendered_fields_for_quote_document_settings, default_omitted_fields_for_quote_document_settings
+from django.utils.html import escape
+from django.urls import reverse
+from django.utils.http import urlencode
+import boto3
+from botocore.config import Config
+import stripe
 
 # HubSpot sync
 from hubspot.views import sync_opportunity_to_hubspot
@@ -34,10 +67,264 @@ from hubspot.views import sync_opportunity_to_hubspot
 from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
 
 
+def _estimate_queryset_size(qs, field_names=None, chunk_size=250):
+    """Approximate the size in bytes of all rows returned by a queryset."""
+
+    if field_names is None:
+        field_names = [f.name for f in qs.model._meta.concrete_fields]
+
+    total = 0
+    for row in qs.values(*field_names).iterator(chunk_size=chunk_size):
+        total += len(json.dumps(row, default=str))
+    return total
+
+
+def _sum_file_field_sizes(qs, field_name):
+    from django.core.files.storage import default_storage
+
+    total = 0
+    for instance in qs.iterator(chunk_size=100):
+        file_field = getattr(instance, field_name, None)
+        if not file_field or not getattr(file_field, "name", None):
+            continue
+        try:
+            total += default_storage.size(file_field.name)
+        except (OSError, FileNotFoundError):
+            continue
+    return total
+
+
+def _get_r2_client():
+    required_settings = (
+        getattr(settings, "AWS_S3_ENDPOINT_URL", None),
+        getattr(settings, "AWS_ACCESS_KEY_ID", None),
+        getattr(settings, "AWS_SECRET_ACCESS_KEY", None),
+        getattr(settings, "AWS_STORAGE_BUCKET_NAME", None),
+    )
+
+    if not all(required_settings):
+        return None
+
+    try:
+        client = boto3.client(
+            "s3",
+            endpoint_url=settings.AWS_S3_ENDPOINT_URL,
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            config=Config(signature_version="s3v4"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logging.warning("Unable to create R2 client: %s", exc)
+        return None
+
+    return client
+
+
+def _get_r2_storage_usage(tenant):
+    if not tenant or not getattr(tenant, "tenant_id", None):
+        return 0
+
+    client = _get_r2_client()
+    if client is None:
+        return 0
+
+    prefix = f"tenant_{tenant.tenant_id}/"
+    total = 0
+
+    try:
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(
+            Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+            Prefix=prefix,
+        ):
+            for obj in page.get("Contents", []):
+                total += obj.get("Size", 0)
+
+    except Exception as exc:  # noqa: BLE001
+        logging.warning(
+            "Unable to fetch R2 usage for tenant %s: %s",
+            tenant.tenant_id,
+            exc,
+        )
+        return 0
+
+    return total
+
+
+def _list_r2_objects(tenant):
+    if not tenant or not getattr(tenant, "tenant_id", None):
+        return []
+
+    client = _get_r2_client()
+    if client is None:
+        return []
+
+    prefix = f"tenant_{tenant.tenant_id}/"
+    objects = []
+
+    try:
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(
+            Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+            Prefix=prefix,
+        ):
+            for obj in page.get("Contents", []):
+                key = obj.get("Key")
+                item = {
+                    "key": key,
+                    "size": obj.get("Size", 0),
+                    "last_modified": obj.get("LastModified"),
+                }
+
+                if key:
+                    try:
+                        item["preview_url"] = client.generate_presigned_url(
+                            "get_object",
+                            Params={
+                                "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
+                                "Key": key,
+                            },
+                            ExpiresIn=300,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logging.warning("Unable to generate preview URL for %s: %s", key, exc)
+                        item["preview_url"] = None
+                else:
+                    item["preview_url"] = None
+
+                objects.append(item)
+    except Exception as exc:  # noqa: BLE001
+        logging.warning(
+            "Unable to list R2 objects for tenant %s: %s",
+            tenant.tenant_id,
+            exc,
+        )
+
+    return objects
+
+
+def _delete_r2_objects(tenant, keys):
+    if not tenant or not keys:
+        return False, "No tenant or keys provided"
+
+    client = _get_r2_client()
+    if client is None:
+        return False, "Cloudflare R2 is not configured"
+
+    deleted = 0
+    errors = []
+
+    for key in keys:
+        try:
+            client.delete_object(
+                Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+                Key=key,
+            )
+            deleted += 1
+        except Exception as exc:  # noqa: BLE001
+            logging.warning("Failed to delete R2 object %s: %s", key, exc)
+            errors.append(key)
+
+    if errors:
+        return False, f"Failed to delete {len(errors)} object(s)."
+
+    return True, f"Deleted {deleted} object(s)."
+
+
+def _calculate_tenant_storage_usage(tenant):
+    if not tenant:
+        return None
+
+    tenant_id = getattr(tenant, "tenant_id", None)
+
+    account_qs = Account.objects.all()
+    if tenant_id:
+        tenant_accounts = account_qs.filter(tenant_id=tenant_id)
+        if tenant_accounts.exists():
+            account_qs = tenant_accounts
+
+    contact_qs = Contact.objects.filter(account__in=account_qs)
+    opportunity_qs = Opportunity.objects.filter(account__in=account_qs)
+    quote_qs = Quote.objects.filter(account__in=account_qs)
+    quote_line_qs = QuoteLine.objects.filter(quote__in=quote_qs)
+
+    document_qs = QuoteDocument.objects.filter(quote__in=quote_qs)
+    attachment_qs = QuotePendingAttachment.objects.filter(quote__in=quote_qs)
+    activity_qs = Activity.objects.filter(opportunity__in=opportunity_qs)
+
+    lead_qs = Lead.objects.all()
+    if tenant_id:
+        tenant_leads = lead_qs.filter(contact__account__tenant_id=tenant_id)
+        if tenant_leads.exists():
+            lead_qs = tenant_leads
+
+    records_bytes = 0
+    records_bytes += _estimate_queryset_size(account_qs)
+    records_bytes += _estimate_queryset_size(contact_qs)
+    records_bytes += _estimate_queryset_size(opportunity_qs)
+    records_bytes += _estimate_queryset_size(quote_qs)
+    records_bytes += _estimate_queryset_size(quote_line_qs)
+    records_bytes += _estimate_queryset_size(document_qs)
+    records_bytes += _estimate_queryset_size(
+        attachment_qs,
+        field_names=[
+            "id",
+            "quote_id",
+            "original_name",
+            "mime_type",
+            "uploaded_at",
+            "consumed",
+        ],
+    )
+    records_bytes += _estimate_queryset_size(activity_qs)
+    records_bytes += _estimate_queryset_size(lead_qs)
+
+    files_bytes_local = _sum_file_field_sizes(document_qs, "file")
+    files_bytes_local += _sum_file_field_sizes(attachment_qs, "file")
+    files_bytes_r2 = _get_r2_storage_usage(tenant)
+    files_bytes = files_bytes_local + files_bytes_r2
+
+    total_bytes = records_bytes + files_bytes
+
+    mb_divisor = 1024 * 1024
+    records_mb = round(records_bytes / mb_divisor, 2) if records_bytes else 0.0
+    files_mb = round(files_bytes / mb_divisor, 2) if files_bytes else 0.0
+    storage_mb = round(total_bytes / mb_divisor, 2) if total_bytes else 0.0
+
+    records_percent = 0.0
+    documents_percent = 0.0
+    if records_bytes:
+        records_percent = min((records_bytes / (10 * mb_divisor)) * 100, 100)
+    if files_bytes:
+        documents_percent = min((files_bytes / (50 * mb_divisor)) * 100, 100)
+
+    return {
+        "tenant": tenant,
+        "storage_bytes": total_bytes,
+        "storage_mb": storage_mb,
+        "records_bytes": records_bytes,
+        "files_bytes": files_bytes,
+        "records_mb": records_mb,
+        "files_mb": files_mb,
+        "records_percent": round(records_percent, 2),
+        "documents_percent": round(documents_percent, 2),
+    }
+
+
 def root_redirect(request):
     if request.user.is_authenticated:
         return redirect('dashboard')  # or any logged-in home view
     return redirect('login')
+
+
+def _redirect_to_custom_fields(object_name=None):
+    base_url = reverse('cpq:custom_fields')
+
+    if object_name:
+        view_param = 'custom' if CustomObject.objects.filter(name=object_name).exists() else 'standard'
+        return redirect(f"{base_url}?view={view_param}&object_name={object_name}")
+
+    return redirect(base_url)
 
 def product_list(request):
     """Fetch all products and display them in a table."""
@@ -52,19 +339,63 @@ def product_detail(request, product_id):
     return render(request, "product_detail.html", {"product": product})
 
 def settings_view(request):
-    return render(request, "cpq/settings.html") 
+    return render(request, "cpq/settings.html")
 
-def quotes_view(request):
-    """Render the list of Quotes."""
-    
-    quotes = Quote.objects.select_related("opportunity__account").all()
-    
+def build_account_quote_hierarchy_for_user(user):
+    """Return Account → Opportunity → Quote hierarchy for the given user."""
+
+    if user.is_superuser:
+        base_qs = Quote.objects.all()
+    else:
+        base_qs = Quote.objects.filter(owner=user)
+
+    quotes = (
+        base_qs.select_related("account", "opportunity__account")
+        .prefetch_related(
+            Prefetch(
+                "quote_lines",
+                queryset=QuoteLine.objects.select_related("product"),
+                to_attr="lines",
+            )
+        )
+        .order_by("account__name", "opportunity__name", "name")
+    )
+
+    hierarchy = OrderedDict()
+    for quote in quotes:
+        account_entry = hierarchy.setdefault(
+            quote.account_id,
+            {"account": quote.account, "opportunities": OrderedDict()},
+        )
+        opportunity_entry = account_entry["opportunities"].setdefault(
+            quote.opportunity_id,
+            {"opportunity": quote.opportunity, "quotes": []},
+        )
+        opportunity_entry["quotes"].append(quote)
+
+    return [
+        {
+            "account": data["account"],
+            "opportunities": list(data["opportunities"].values()),
+        }
+        for data in hierarchy.values()
+    ]
+
+
+def accounts_view(request):
+    """Render the account-organized hierarchy for the current user."""
+
+    account_groups = build_account_quote_hierarchy_for_user(request.user)
     is_authenticated = SalesforceToken.objects.exists()
 
-    return render(request, "quotes.html", {
-        "quotes": quotes,
-        "is_authenticated": is_authenticated,  # ✅ Used to show Sync button conditionally
-    })
+    return render(
+        request,
+        "accounts.html",
+        {
+            "account_groups": account_groups,
+            "is_authenticated": is_authenticated,  # ✅ Used to show Sync button conditionally
+        },
+    )
 
 MODEL_CHOICES = {
     "Opportunity": "Opportunity",  # ✅ Use class name, not table name
@@ -79,12 +410,12 @@ def field_mapping_view(request):
     """Dynamically fetch schema fields for the selected CRM and object type."""
 
     # ✅ Get the selected CRM and Object Type from request
-    selected_crm = request.GET.get("crm", "AgentCPQ")  
+    selected_crm = request.GET.get("crm", "AgentCPQ")
     selected_model = request.GET.get("object_type", "Opportunity")
 
     if selected_model not in MODEL_CHOICES:
         return JsonResponse({"error": "Invalid object type"}, status=400)
-    
+
     print("🔍 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> selected_model =", selected_model)
 
     # ✅ Get the correct model class dynamically
@@ -133,8 +464,8 @@ def save_field_mappings(request):
             crm_field = value.strip()
             if crm_field:  # ✅ Ensure it's not empty
                 mapping, created = SystemFieldMapping.objects.update_or_create(
-                    crm=crm,  
-                    local_field=key,  
+                    crm=crm,
+                    local_field=key,
                     field_type=object_type,  # ✅ Ensure object type is saved correctly
                     defaults={"crm_field": crm_field}
                 )
@@ -183,41 +514,43 @@ def set_primary_quote(request, quote_id):
 
 
 # Maybe it is not used
-def create_custom_field(request):
-    if request.method == "POST":
-        crm = request.POST["crm"]
-        object_type = request.POST["object_type"]
-        name = request.POST["name"]
-        label = request.POST["label"]
-        data_type = request.POST["data_type"]
-        required = "required" in request.POST
+#def create_custom_field(request):
+#    if request.method == "POST":
+#        crm = request.POST["crm"]
+#        object_type = request.POST["object_type"]
+#        name = request.POST["name"]
+#        label = request.POST["label"]
+#        data_type = request.POST["data_type"]
+#        required = "required" in request.POST
+#        options = request.POST.getlist("options[]")
 
         # ✅ Save to DB
-        field = CustomField.objects.create(
-            crm=crm,
-            object_type=object_type,
-            name=name,
-            label=label,
-            data_type=data_type,
-            required=required,
-            created_by=request.user
-        )
-
-        if field:
-            quote_document_settings = QuoteDocumentSettings.objects.first()
-            if quote_document_settings:
-                # Add label at the end of omitted_fields
-                omitted = quote_document_settings.omitted_fields or []
-                
-                if label not in omitted:  # Avoid duplicated
-                    omitted.append(label)
-                    quote_document_settings.omitted_fields = omitted
-                    quote_document_settings.save()
-
-        return redirect("custom_fields")
-
-    fields = CustomField.objects.all().order_by("-created_at")
-    return render(request, "custom_fields.html", {"fields": fields})
+#        field = CustomField.objects.create(
+#            crm=crm,
+#            object_type=object_type,
+#            name=name,
+#            label=label,
+#            data_type=data_type,
+#            required=required,
+#            options=options if options else None,
+#            created_by=request.user
+#        )
+#
+#        if field:
+#            quote_document_settings = QuoteDocumentSettings.objects.first()
+#            if quote_document_settings:
+#                # Add label at the end of omitted_fields
+#                omitted = quote_document_settings.omitted_fields or []
+#
+#                if label not in omitted:  # Avoid duplicated
+#                    omitted.append(label)
+#                    quote_document_settings.omitted_fields = omitted
+#                    quote_document_settings.save()
+#
+#        return redirect("custom_fields")
+#
+#    fields = CustomField.objects.all().order_by("-created_at")
+#    return render(request, "custom_fields.html", {"fields": fields})
 
 def get_standard_fields(model_name):
     mapping = {
@@ -242,7 +575,7 @@ def custom_fields_view(request):
             custom_object.updated_by = request.user
             custom_object.save()
             request.session['custom_object_success'] = True
-            return redirect('cpq:custom_fields')
+            return _redirect_to_custom_fields(custom_object.name)
     else:
         form = CustomObjectForm()
 
@@ -323,7 +656,7 @@ def edit_custom_object(request, object_name):
             updated_object = form.save(commit=False)
             updated_object.updated_by = request.user
             updated_object.save()
-            return redirect('cpq:custom_fields')  # O donde quieras regresar
+            return _redirect_to_custom_fields(object_name)
     else:
         form = CustomObjectForm(instance=custom_object)
 
@@ -335,7 +668,7 @@ def edit_custom_object(request, object_name):
         for custom_field in related_customfields:
             related_values = custom_field.values.all()
             related_data[custom_field.label].extend(related_values)
-        
+
         related_data = dict(related_data)
 
     return render(request, 'edit_custom_object.html', {
@@ -352,7 +685,7 @@ def delete_custom_object(request, object_name):
         return HttpResponseForbidden("You do not have permission to delete this custom object.")
 
     custom_object.delete()
-    return redirect('cpq:custom_fields')
+    return _redirect_to_custom_fields(object_name)
 
 def create_custom_field(request, object_name):
     if request.method == 'POST':
@@ -364,6 +697,11 @@ def create_custom_field(request, object_name):
             field = form.save(commit=False)
             field.created_by = request.user
             field.updated_by = request.user
+
+            # Get options if exists
+            options = request.POST.getlist("options[]")
+            field.options = options if options else None
+
             field.save()
 
             # 🔧 Lógica personalizada aquí
@@ -376,8 +714,8 @@ def create_custom_field(request, object_name):
             #        omitted.append(full_label)
             #        quote_document_settings.omitted_fields = omitted
             #        quote_document_settings.save()
-            
-            return redirect('cpq:custom_fields')  # or wherever you want to go after save
+
+            return _redirect_to_custom_fields(field.object_type)
         else:
             print("Form errors:", form.errors)
     else:
@@ -399,20 +737,33 @@ def edit_custom_field(request, field_id):
         if form.is_valid():
             updated_field = form.save(commit=False)
             updated_field.updated_by = request.user
+
+            # Guardar las opciones del dropdown si el tipo es 'dropdown'
+            if form.cleaned_data['data_type'] == 'dropdown':
+                # request.POST.getlist('options[]') obtiene todos los inputs de opciones
+                options = request.POST.getlist('options[]')
+                # Filtrar valores vacíos
+                updated_field.options = [opt for opt in options if opt.strip()]
+            else:
+                updated_field.options = []  # Limpiar si ya no es dropdown
+
             updated_field.save()
-            return redirect('cpq:custom_fields')
+            return _redirect_to_custom_fields(updated_field.object_type)
     else:
         form = CustomFieldForm(instance=custom_field)
-        # Get related values
         related_values = custom_field.values.all()
 
-        print(f"\n\nRelated Values: {related_values}\n\n")
+    object_name = custom_field.object_type
+    object_view = 'custom' if CustomObject.objects.filter(name=object_name).exists() else 'standard'
 
     return render(request, 'edit_custom_field.html', {
         'form': form,
         'field_id': field_id,
-        'related_values': related_values
+        'related_values': related_values,
+        'object_name': object_name,
+        'object_view': object_view,
     })
+
 
 @require_POST
 def delete_custom_field(request, field_id):
@@ -421,10 +772,11 @@ def delete_custom_field(request, field_id):
     # Only admins can delete custom fields
     if not request.user.is_superuser and not request.user.is_staff:
         return HttpResponseForbidden("You do not have permission to delete this custom field.")
-    
-    
+
+
+    object_name = custom_field.object_type
     custom_field.delete()
-    return redirect('cpq:custom_fields')
+    return _redirect_to_custom_fields(object_name)
 
 
 @login_required
@@ -443,7 +795,7 @@ def get_company_information(request):
         company.street_address = request.POST.get('street_address', '')
         company.city = request.POST.get('city', '')
         company.state = request.POST.get('state', '')
-        
+
         # company.plan = request.POST.get('plan', '')
 
         # actions_limit_raw = request.POST.get('actions_limit', '')
@@ -466,7 +818,7 @@ def get_company_information(request):
 
     return render(request, 'company_information.html', {
         'company': company or Tenant(),
-        'logo_url': logo_url,
+        'logo_url': logo_url
     })
 
 
@@ -482,7 +834,7 @@ def create_custom_object(request):
             return redirect('cpq:custom_object_list')  # or some success view
     else:
         form = CustomObjectForm()
-    
+
     return render(request, 'create_custom_object.html', {'form': form})
 
 @login_required
@@ -550,10 +902,10 @@ def get_document_template(request):
             'rendered_fields': [],
             'ommited_fields': [],
         })
-    
+
     try:
         document_settings = QuoteDocumentSettings.objects.first()
-        
+
     except ObjectDoesNotExist:
         document_settings = None
 
@@ -577,7 +929,7 @@ def get_document_template(request):
             'show_quote_expires_at', 'show_quote_notes',
             'show_line_discount', 'show_subscription_term', 'show_sign', 'show_quote_tax_percentage', 'show_quote_tax_amount'
         ]
-        
+
         for field in boolean_fields:
             setattr(settings, field, field in request.POST)
 
@@ -597,7 +949,7 @@ def get_document_template(request):
 
         # Tax Rate
         settings.quote_tax = request.POST.get("tax_rate", "")
-        
+
         # Terms and conditions
         settings.terms_and_conditions = request.POST.get("terms_conditions", "")
 
@@ -608,13 +960,13 @@ def get_document_template(request):
             quote.update_tax()
             quote.save()
         return redirect('cpq:get_document_template')
-    
+
     if document_settings is None:
         document_settings = QuoteDocumentSettings.objects.create(
-            rendered_fields=QuoteDocumentSettings.default_rendered_fields(),
-            omitted_fields=QuoteDocumentSettings.default_omitted_fields()
+            rendered_fields=default_rendered_fields_for_quote_document_settings(),
+            omitted_fields=default_omitted_fields_for_quote_document_settings()
         )
-    
+
     # Hardcore for now
     set_custom_fields_into_quote_document_settings(["Product", "Quote"])
     document_settings.refresh_from_db()
@@ -644,6 +996,167 @@ def business_rules_view(request):
         'company': company,
         "rules_by_type": rules_by_type
     })
+
+def manage_notifications_view(request):
+    email_alerts = EmailAlert.objects.all()
+
+    # Preparamos helper para "roles" y "external"
+    alerts_with_lists = []
+    for alert in email_alerts:
+        # Convierte roles a lista
+        roles_list = []
+        if alert.recipients_roles:
+            roles_list = [r.strip() for r in alert.recipients_roles.split(",") if r.strip()]
+
+        # Convierte CSV de external en lista
+        external_list = []
+        if alert.recipients_external:
+            external_list = [e.strip() for e in alert.recipients_external.split(",") if e.strip()]
+
+        # Inyectamos atributos extra al objeto
+        alert.roles_list = roles_list
+        alert.external_list = external_list
+
+        alerts_with_lists.append(alert)
+
+    # Filtrado por objeto
+
+    icon_map = {
+        "Lead": "person_add",
+        "Account": "account_circle",
+        "Opportunity": "trending_up",
+        "Quote": "request_quote",
+        "Subscription": "autorenew",
+        "Product": "inventory_2",
+        "QuoteLine": "format_list_bulleted",
+        "User": "person",
+        "Contract": "description",
+        "Contact": "contact_mail",
+        "Activity": "history",
+    }
+
+    alert_groups = []
+    native_objects = dict(EmailAlert.NATIVE_OBJECT_CHOICES)
+
+    for native_key, native_label in native_objects.items():
+        alert_groups.append({
+            "title": f"{native_label} Notifications",
+            "icon": icon_map.get(native_key, "notifications"),
+            "alerts": [a for a in alerts_with_lists if a.native_object == native_key],
+            "slug": slugify(native_label) or native_key.lower(),
+        })
+
+    remaining_alerts = [
+        a for a in alerts_with_lists
+        if a.native_object and a.native_object not in native_objects
+    ]
+    for native_key in sorted({a.native_object for a in remaining_alerts}):
+        alert_groups.append({
+            "title": f"{native_key} Notifications",
+            "icon": "notifications",
+            "alerts": [a for a in remaining_alerts if a.native_object == native_key],
+            "slug": slugify(native_key) or native_key.lower(),
+        })
+
+    return render(request, 'manage_notifications.html', {
+        'alert_groups': alert_groups
+    })
+
+def edit_notification(request, alert_name):
+    notification = get_object_or_404(EmailAlert, name=alert_name)
+
+    if request.method == "POST":
+        post_data = request.POST.copy()
+
+        # Convertimos los hidden inputs de chips a listas
+        if 'recipients_users' in post_data and post_data['recipients_users']:
+            post_data.setlist('recipients_users', post_data['recipients_users'].split(','))
+
+        # recipients_roles lo dejamos como JSON enviado desde JS
+        form = EmailAlertForm(post_data, instance=notification)
+
+        if form.is_valid():
+            notification = form.save(commit=False)
+
+            # recipients_roles ya viene como string limpio desde clean_recipients_roles
+            # recipients_external convertimos a string limpio
+            notification.recipients_external = ",".join([
+                e.strip() for e in form.cleaned_data.get("recipients_external", "").split(",") if e.strip()
+            ])
+
+            notification.offset_days = form.cleaned_data.get("offset_days")
+            notification.scheduled_cron = form.cleaned_data.get("scheduled_cron")
+
+            if not form.cleaned_data.get("custom_object"):
+                notification.custom_object = None
+
+
+            notification.updated_by = request.user
+
+            notification.save()
+            form.save_m2m()  # guarda recipients_users
+
+            return redirect("cpq:manage_notifications")
+        else:
+            print("Form errors:", form.errors)
+
+    else:
+        form = EmailAlertForm(instance=notification)
+
+    # Preparar roles para chips JS
+    role_dict = dict(EmailAlert.ROLE_CHOICES)
+    initial_roles = []
+
+    if notification.recipients_roles:
+        role_keys = [r.strip() for r in notification.recipients_roles.split(",") if r.strip()]
+        initial_roles = [{"tag": role_dict.get(key, key), "value": key} for key in role_keys]
+
+    context = {
+        "notification": notification,
+        "form": form,
+        "roles_choices": EmailAlert.ROLE_CHOICES,
+        "initial_roles": initial_roles,
+        "users": User.objects.all(),
+        "emails_external": notification.recipients_external.split(",") if notification.recipients_external else [],
+    }
+
+    return render(request, "edit_email_alert.html", context)
+
+def delete_email_alert(request, alert_name):
+    """Eliminar un EmailAlert por id"""
+    alert = get_object_or_404(EmailAlert, name=alert_name)
+
+    if request.method == "POST":
+        try:
+            alert.delete()
+            messages.success(request, "Email alert deleted successfully.")
+            return redirect("cpq:manage_notifications")  # Ajusta a tu vista/listado principal
+        except Exception as e:
+            print(f"Error: {e}")
+
+    # Si alguien intenta acceder por GET directo, lo regresamos al listado
+    return redirect("cpq:manage_notifications")
+
+
+@require_POST
+def create_notification(request):
+    notification_type = request.POST.get('notification_type')  # 'account', 'lead', etc.
+    when = request.POST.get('account_when')  # coincide con el name del select
+    recipient = request.POST.get('account_recipient')  # coincide con el name del select
+
+    print(f"Informacion: {notification_type}")
+    print(f"When: {when}")
+    print(f"Recipient: {recipient}")
+
+    # Guardar en el modelo
+    #Notification.objects.create(
+    #    notification_type=notification_type,
+    #    when=when,
+    #    recipient=recipient,
+    #    options={}  # opciones extra si las necesitas
+    #)
+
+    return JsonResponse({'status': 'ok'})
 
 def create_business_rule(request):
     rule_type = request.GET.get("type", "validation")
@@ -681,9 +1194,9 @@ def create_business_rule(request):
         "form": form,
         "formset": formset,
         "rule_type": rule_type,
-        "QUOTE_FIELDS": mark_safe(json.dumps(QUOTE_FIELDS)),
-        "QUOTE_LINE_FIELDS": mark_safe(json.dumps(QUOTE_LINE_FIELDS)),
-        "PRODUCT_FIELDS": mark_safe(json.dumps(PRODUCT_FIELDS)),
+        "QUOTE_FIELDS": mark_safe(json.dumps(QUOTE_FIELDS)), # nosec B703 B308
+        "QUOTE_LINE_FIELDS": mark_safe(json.dumps(QUOTE_LINE_FIELDS)), # nosec B703 B308
+        "PRODUCT_FIELDS": mark_safe(json.dumps(PRODUCT_FIELDS)), # nosec B703 B308
     })
 
 
@@ -691,7 +1204,7 @@ def create_custom_record(request, object_name, user_id):
 
     custom_object = get_object_or_404(CustomObject, name=object_name)
     DynamicForm = generate_dynamic_form(custom_object)
-    
+
     if request.method == 'POST':
         form = DynamicForm(request.POST)
         if form.is_valid():
@@ -717,7 +1230,7 @@ def create_custom_record(request, object_name, user_id):
                         content_type=content_type,
                         object_id=record.id
                     )
-                
+
                 except CustomField.DoesNotExist:
                     print(f"Field not found: {field_name}")
             messages.success(request, f"{custom_object.label} record created successfully.")
@@ -753,13 +1266,14 @@ def search_accounts(request):
 
     return JsonResponse({"results": results})
 
-
+@login_required
 def usage_dashboard(request):
     current_tenant = Tenant.objects.first()
     usage_logs = ActionUsage.objects.all()
 
     tenants_usage = TenantUsageReport.objects.select_related('tenant')
- 
+    tenant_storage_usage = _calculate_tenant_storage_usage(current_tenant)
+
 
     # ---- Total Actions by Month ----
     actions_by_month = (
@@ -785,40 +1299,138 @@ def usage_dashboard(request):
         .annotate(count=Count("id"))
         .order_by("-count")
     )
-    print(actions_by_user)
     # ---- Overflow Metric (Current Month Only) ----
     start_of_month = make_aware(datetime(now().year, now().month, 1))
     monthly_count = usage_logs.filter(timestamp__gte=start_of_month).count()
     action_limit = current_tenant.actions_limit or 1000
     overflow = monthly_count - action_limit
 
-
     actions_by_month_serialized = [
-    {
-        "month": entry["month"].strftime("%Y-%m"),  # or "%b %Y" for readable labels
-        "total": entry["total"]
-    }
-    for entry in actions_by_month
+        {
+            "month": entry["month"].strftime("%Y-%m"),
+            "total": entry["total"]
+        }
+        for entry in actions_by_month
     ]
 
     actions_by_user_serialized = [
         {
-            "user": entry.get("user__username") or "Unknown",
+            "user": escape(entry.get("user__username") or "Unknown"),
             "total": entry["count"]
         }
         for entry in actions_by_user
     ]
 
 
+    storage_info = tenant_storage_usage or {}
+
     context = {
         "tenant": current_tenant,
-        "actions_by_month_json": mark_safe(json.dumps(list(actions_by_month_serialized))),
-        "actions_by_user_json": mark_safe(json.dumps(list(actions_by_user_serialized))),
+        "actions_by_month_json": json.dumps(actions_by_month_serialized),
+        "actions_by_user_json": json.dumps(actions_by_user_serialized),
         "top_actions": top_actions,
         "monthly_count": monthly_count,
         "limit": action_limit,
         "overflow": max(0, overflow),
         "tenants_usage": tenants_usage,
+        "storage_mb": storage_info.get("storage_mb", 0.0),
+        "records_mb": storage_info.get("records_mb", 0.0),
+        "files_mb": storage_info.get("files_mb", 0.0),
+        "records_percent": storage_info.get("records_percent", 0.0),
+        "documents_percent": storage_info.get("documents_percent", 0.0),
     }
 
     return render(request, "usage.html", context)
+
+
+@login_required
+def usage_documents(request):
+    current_tenant = Tenant.objects.first()
+    documents = []
+    total_size = 0
+
+    if current_tenant:
+        raw_documents = _list_r2_objects(current_tenant)
+        for item in raw_documents:
+            size_bytes = item.get("size", 0) or 0
+            item["size_mb"] = round(size_bytes / (1024 * 1024), 2) if size_bytes else 0.0
+        documents = raw_documents
+        total_size = sum(item.get("size", 0) for item in documents)
+
+    if request.method == "POST":
+        action = request.POST.get("action")
+        keys = []
+
+        if action == "delete_all":
+            keys = [item.get("key") for item in documents if item.get("key")]
+        elif action == "delete_selected":
+            keys = request.POST.getlist("keys")
+        elif action == "delete_single":
+            key = request.POST.get("key")
+            if key:
+                keys = [key]
+
+        if keys:
+            success, message_text = _delete_r2_objects(current_tenant, keys)
+            if success:
+                messages.success(request, message_text)
+            else:
+                messages.error(request, message_text)
+        else:
+            messages.warning(request, "No documents selected for deletion.")
+
+        return redirect("cpq:usage_documents")
+
+    total_mb = round(total_size / (1024 * 1024), 2) if total_size else 0.0
+
+    context = {
+        "tenant": current_tenant,
+        "documents": documents,
+        "documents_total_bytes": total_size,
+        "documents_total_mb": total_mb,
+    }
+
+    return render(request, "usage_documents.html", context)
+
+
+@login_required
+def billing_view(request):
+    current_tenant = Tenant.objects.first()
+    publishable_key = settings.STRIPE_PUBLISHABLE_KEY or ""
+
+    context = {
+        "tenant": current_tenant,
+        "stripe_publishable_key": publishable_key,
+    }
+
+    return render(request, "billing.html", context)
+
+
+@login_required
+@require_POST
+def billing_create_setup_intent(request):
+    if not settings.STRIPE_SECRET_KEY or not settings.STRIPE_PUBLISHABLE_KEY:
+        return JsonResponse({"error": "Stripe is not configured."}, status=400)
+
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+
+    tenant = Tenant.objects.first()
+    metadata = {}
+    if tenant:
+        if tenant.tenant_id:
+            metadata["tenant_id"] = tenant.tenant_id
+        if tenant.name:
+            metadata["tenant_name"] = tenant.name
+
+    try:
+        intent = stripe.SetupIntent.create(
+            payment_method_types=["card"],
+            metadata=metadata or None,
+        )
+        return JsonResponse({"clientSecret": intent.client_secret})
+    except stripe.error.StripeError as exc:
+        logging.error("Stripe error creating setup intent: %s", exc)
+        return JsonResponse({"error": str(exc)}, status=400)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Unexpected error creating setup intent")
+        return JsonResponse({"error": "Unexpected error creating setup intent."}, status=500)

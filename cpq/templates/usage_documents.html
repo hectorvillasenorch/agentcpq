@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="container">
+  <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
+    <i class="material-icons left" style="vertical-align: middle;">cloud</i>
+    Tenant Documents
+  </h4>
+
+  <p class="grey-text text-darken-1">
+    Review documents stored in Cloudflare R2 for this tenant. Preview links expire after 5 minutes. You can remove individual files, selected files, or clear everything.
+  </p>
+
+  {% if messages %}
+    <ul class="collection">
+      {% for message in messages %}
+        <li class="collection-item {{ message.tags }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <div class="card-panel white z-depth-1">
+    <div class="row" style="margin-bottom: 0;">
+      <div class="col s12 m6">
+        <p><strong>Tenant:</strong> {{ tenant.name }}{% if tenant.tenant_id %} ({{ tenant.tenant_id }}){% endif %}</p>
+      </div>
+      <div class="col s12 m6 right-align">
+        <p><strong>Total Storage:</strong> {{ documents_total_mb|floatformat:"2" }} MB</p>
+      </div>
+    </div>
+
+    {% if documents %}
+    <form method="post" id="documents-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" id="documents-action" value="delete_selected">
+      <input type="hidden" name="key" id="documents-key" value="">
+
+      <div class="table-responsive">
+        <table class="striped highlight">
+          <thead>
+            <tr>
+              <th style="width: 50px;">
+                <label>
+                  <input type="checkbox" id="select-all" />
+                  <span></span>
+                </label>
+              </th>
+              <th>File</th>
+              <th class="right-align">Size (MB)</th>
+              <th class="right-align">Last Modified</th>
+              <th class="right-align">Preview</th>
+              <th class="right-align">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for doc in documents %}
+            <tr>
+              <td>
+                <label>
+                  <input type="checkbox" name="keys" value="{{ doc.key }}" class="filled-in" />
+                  <span></span>
+                </label>
+              </td>
+              <td><code>{{ doc.key }}</code></td>
+              <td class="right-align">{{ doc.size_mb|floatformat:"2" }} MB</td>
+              <td class="right-align">
+                {% if doc.last_modified %}
+                  {{ doc.last_modified|date:"Y-m-d H:i" }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td class="right-align">
+                {% if doc.preview_url %}
+                  <a href="{{ doc.preview_url }}" target="_blank" rel="noopener" class="btn-flat">
+                    <i class="material-icons">search</i>
+                  </a>
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td class="right-align">
+                <button type="button" class="btn-flat red-text" onclick="deleteSingleDocument('{{ doc.key }}')">
+                  <i class="material-icons">delete</i>
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="right-align" style="margin-top: 16px; display: flex; gap: 12px; justify-content: flex-end;">
+        <button type="button" class="btn grey lighten-1 black-text" onclick="submitDocumentsForm('delete_selected')">
+          <i class="material-icons left">delete_sweep</i>
+          Delete Selected
+        </button>
+        <button type="button" class="btn red darken-1" onclick="confirmDeleteAll()">
+          <i class="material-icons left">delete_forever</i>
+          Delete All
+        </button>
+      </div>
+    </form>
+    {% else %}
+      <p class="grey-text">No documents found for this tenant.</p>
+    {% endif %}
+  </div>
+
+  <a href="{% url 'cpq:usage_dashboard' %}" class="btn-flat" style="margin-top: 12px;">
+    <i class="material-icons left">arrow_back</i> Back to Usage Dashboard
+  </a>
+</div>
+
+<script>
+  document.getElementById('select-all')?.addEventListener('change', function (event) {
+    const checked = event.target.checked;
+    document.querySelectorAll("input[name='keys']").forEach(cb => cb.checked = checked);
+  });
+
+  function submitDocumentsForm(action) {
+    const form = document.getElementById('documents-form');
+    if (!form) return;
+    document.getElementById('documents-action').value = action;
+    document.getElementById('documents-key').value = '';
+    if (action === 'delete_selected') {
+      const anyChecked = Array.from(form.querySelectorAll("input[name='keys']")).some(cb => cb.checked);
+      if (!anyChecked) {
+        alert('Please select at least one document.');
+        return;
+      }
+    }
+    form.submit();
+  }
+
+  function confirmDeleteAll() {
+    if (confirm('Are you sure you want to delete all documents for this tenant? This cannot be undone.')) {
+      const form = document.getElementById('documents-form');
+      if (!form) return;
+      document.getElementById('documents-action').value = 'delete_all';
+      document.getElementById('documents-key').value = '';
+      form.submit();
+    }
+  }
+
+  function deleteSingleDocument(key) {
+    if (!key) return;
+    if (!confirm('Delete this document? This cannot be undone.')) {
+      return;
+    }
+    const form = document.getElementById('documents-form');
+    if (!form) return;
+    document.getElementById('documents-action').value = 'delete_single';
+    document.getElementById('documents-key').value = key;
+    form.submit();
+  }
+</script>
+{% endblock %}

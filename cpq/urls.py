@@ -1,7 +1,22 @@
 from django.http import HttpResponse
 from django.urls import path
-from .views import quotes_view, settings_view, product_list, product_detail,field_mapping_view,save_field_mappings,set_primary_quote, custom_fields_view,create_custom_field, get_company_information, create_custom_object, get_document_template, business_rules_view
-from .views import create_business_rule, create_custom_record, search_accounts,create_custom_field, usage_dashboard, edit_custom_object, edit_custom_field, delete_custom_field, delete_custom_object
+from .views import accounts_view, settings_view, product_list, product_detail,field_mapping_view,save_field_mappings,set_primary_quote, custom_fields_view,create_custom_field, get_company_information, create_custom_object, get_document_template, business_rules_view,create_business_rule
+from .views import (
+    create_notification,
+    create_custom_record,
+    search_accounts,
+    create_custom_field,
+    usage_dashboard,
+    usage_documents,
+    billing_view,
+    edit_custom_object,
+    edit_custom_field,
+    delete_custom_field,
+    delete_custom_object,
+    manage_notifications_view,
+    edit_notification,
+    delete_email_alert,
+)
 from hubspot.views import get_hubspot_schema
 from django.conf import settings
 from django.conf.urls.static import static
@@ -12,7 +27,7 @@ app_name = "cpq"  # ✅ Namespacing the app
 
 urlpatterns = [
     path('', RedirectView.as_view(url='dashboard/')),  # <--- redirige '/' a '/dashboard/'
-    path('quotes/', quotes_view, name='quotes'),
+    path('accounts/', accounts_view, name='accounts'),
     path('settings/', settings_view, name='settings'),
     path("products/", product_list, name="product_list"),
     path("products/<int:product_id>/", product_detail, name="product_detail"),
@@ -40,9 +55,16 @@ urlpatterns = [
     path('admin/custom-fields/delete-custom-object/<str:object_name>', delete_custom_object, name='delete_custom_object'),
     path('admin/manage-document', get_document_template, name='get_document_template'),
     path('admin/manage-rules', business_rules_view, name='business_rules'),
+    path('admin/manage-notifications', manage_notifications_view, name='manage_notifications'),
+    path('admin/manage-notifications/edit/<str:alert_name>/', edit_notification, name='edit_notification'),
+    path("admin/manage-notifications/delete/<str:alert_name>/", delete_email_alert, name="delete_email_alert"),
+    path('admin/create-notification', create_notification, name='create_notification'),
     path("admin/manage-rules/create/", create_business_rule, name="create_business_rule"),
     path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote'),
     path('admin/usage/', usage_dashboard, name='usage_dashboard'),
+    path('admin/usage/documents/', usage_documents, name='usage_documents'),
+    path('admin/billing/', billing_view, name='billing_view'),
+    path('admin/billing/create-setup-intent/', views.billing_create_setup_intent, name='billing_create_setup_intent'),
 ]
 
 

@@ -4,9 +4,7 @@ import logging
 import json
 from dotenv import load_dotenv
 from cpq.models import CustomObject, CustomField, CustomRecord
-from decimal import Decimal
 from django.db.models import Q
-from django.forms.models import model_to_dict
 
 #LLM helpers
 from agents.utils.custom_object_agent.llm_helpers import extract_custom_object_data, extract_custom_objects, extract_custom_objects_updates, extract_custom_objects_deletes, extract_custom_fields, extract_custom_fields_updates, extract_custom_fields_deletes, extract_custom_records_updates, extract_custom_records_deletes
@@ -17,6 +15,8 @@ from .utils.orchestrator.context_handle_helpers import save_or_update_conversati
 # Handle Helpers
 from .utils.custom_object_agent.handle_helpers import handle_custom_object_creation, handle_custom_object_updates, handle_custom_object_deletes, handle_custom_fields_creation, handle_custom_fields_updates, handle_custom_field_deletes, handle_custom_object_records, handle_custom_records_updates, handle_custom_record_deletes
 
+from .utils.session_context_helpers.session_context_helpers import get_session_context
+from .utils.message_formatters import SUCCESS_ICON, ERROR_ICON, INFO_ICON, WARNING_ICON
 
 # ✅ Load environment variables
 load_dotenv()
@@ -52,9 +52,11 @@ def create_custom_object(user, user_message, session_data):
 
     logging.info("🔧 Creating custom object...\n\n")
 
+    current_state, previous_summary = get_session_context("create_custom_object", session_data)
+
 
     # ✅ Extract custom object details with LLM
-    extracted_custom_objects = extract_custom_objects(user_message)
+    extracted_custom_objects = extract_custom_objects(user_message, previous_summary)
 
     if not extracted_custom_objects:
         session_context["item_index"] = 1
@@ -62,7 +64,7 @@ def create_custom_object(user, user_message, session_data):
         agent_response = f"An error occurred while extracting your custom objects data. Please try again."
         save_or_update_conversation_context(session_context, agent_response)
         return {
-        "message": "⚠️ AgentCPQ: An error occurred while extracting your custom objects data. Please try again."
+        "message": f"{WARNING_ICON} AgentCPQ: An error occurred while extracting your custom objects data. Please try again."
         }
 
     response_message = ""
@@ -73,10 +75,10 @@ def create_custom_object(user, user_message, session_data):
     # ✅ Return
     if not custom_objects_created:
         return {
-            "message": f"No custom objects were created. <br><br>{response_message}",
+            "message": f"{WARNING_ICON} No custom objects were created.<br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -101,7 +103,7 @@ def update_custom_object(user, user_message, session_data):
         agent_response = f"An error occurred while extracting your custom objects data. Please try again."
         save_or_update_conversation_context(session_context, agent_response)
         return {
-        "message": "⚠️ AgentCPQ: An error occurred while extracting your custom objects data to update. Please try again."
+        "message": f"{WARNING_ICON} AgentCPQ: An error occurred while extracting your custom objects data to update. Please try again."
         }
 
     response_message = ""
@@ -112,10 +114,10 @@ def update_custom_object(user, user_message, session_data):
     # ✅ Return
     if not custom_objects_updated:
         return {
-            "message": f"No custom objects were updated. <br><br>{response_message}",
+            "message": f"{WARNING_ICON} No custom objects were updated.<br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -140,7 +142,7 @@ def delete_custom_object(user, user_message, session_data):
         agent_response = f"An error occurred while extracting your custom objects data. Please try again."
         save_or_update_conversation_context(session_context, agent_response)
         return {
-        "message": "⚠️ AgentCPQ: An error occurred while extracting your custom objects data to delete. Please try again."
+        "message": f"{WARNING_ICON} AgentCPQ: An error occurred while extracting your custom objects data to delete. Please try again."
         }
 
     response_message = ""
@@ -151,10 +153,10 @@ def delete_custom_object(user, user_message, session_data):
     # ✅ Return
     if not custom_objects_deleted:
         return {
-            "message": f"No custom objects were deleted. <br><br>{response_message}",
+            "message": f"{WARNING_ICON} No custom objects were deleted.<br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -174,12 +176,8 @@ def create_custom_field(user, user_message, session_data):
     extracted_custom_fields = extract_custom_fields(user_message, custom_objects)
 
     if not extracted_custom_fields:
-        session_context["item_index"] = 1
-        session_context["extracted"] = "Something went wrong when LLM trying to extract custom fields data."
-        agent_response = f"An error occurred while extracting your custom fields data. Please try again."
-        save_or_update_conversation_context(session_context, agent_response)
         return {
-        "message": "⚠️ AgentCPQ: An error occurred while extracting your custom fields data. Please try again."
+        "message": f"{WARNING_ICON} AgentCPQ: An error occurred while extracting your custom fields data. Please try again."
         }
 
     response_message = ""
@@ -192,8 +190,8 @@ def create_custom_field(user, user_message, session_data):
         return {
             "message": f"No custom fields were created. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -218,7 +216,7 @@ def update_custom_field(user, user_message, session_data):
         agent_response = f"An error occurred while extracting your custom fields data. Please try again."
         save_or_update_conversation_context(session_context, agent_response)
         return {
-        "message": "⚠️ AgentCPQ: An error occurred while extracting your custom fields data to update. Please try again."
+        "message": f"{WARNING_ICON} AgentCPQ: An error occurred while extracting your custom fields data to update. Please try again."
         }
 
     response_message = ""
@@ -231,8 +229,8 @@ def update_custom_field(user, user_message, session_data):
         return {
             "message": f"No custom fields were updated. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -258,7 +256,7 @@ def delete_custom_field(user, user_message, session_data):
         agent_response = f"An error occurred while extracting your custom fields data. Please try again."
         save_or_update_conversation_context(session_context, agent_response)
         return {
-        "message": "⚠️ AgentCPQ: An error occurred while extracting your custom fields data to delete. Please try again."
+        "message": f"{WARNING_ICON} AgentCPQ: An error occurred while extracting your custom fields data to delete. Please try again."
         }
 
     response_message = ""
@@ -271,8 +269,8 @@ def delete_custom_field(user, user_message, session_data):
         return {
             "message": f"No custom fields were deleted. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -316,7 +314,7 @@ def create_custom_record(user, user_message, session_data):
         agent_response = f"An error occurred while extracting your custom objects data. Please try again."
         save_or_update_conversation_context(session_context, agent_response)
         return {
-            "message": "⚠️ Hmm, something went wrong while processing your request. Mind trying again?"
+            "message": f"{WARNING_ICON} Hmm, something went wrong while processing your request. Mind trying again?"
         }
 
     response_message = ""
@@ -329,8 +327,8 @@ def create_custom_record(user, user_message, session_data):
         return {
             "message": f"No custom records were created. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -376,7 +374,7 @@ def update_custom_record(user, user_message, session_data):
         agent_response = f"An error occurred while extracting your custom records data. Please try again."
         save_or_update_conversation_context(session_context, agent_response)
         return {
-            "message": "⚠️ Hmm, something went wrong while processing your request. Mind trying again?"
+            "message": f"{WARNING_ICON} Hmm, something went wrong while processing your request. Mind trying again?"
         }
 
     response_message = ""
@@ -389,8 +387,8 @@ def update_custom_record(user, user_message, session_data):
         return {
             "message": f"No custom records were updated. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
@@ -415,7 +413,7 @@ def delete_custom_record(user, user_message, session_data):
         agent_response = f"An error occurred while extracting your custom records data. Please try again."
         save_or_update_conversation_context(session_context, agent_response)
         return {
-        "message": "⚠️ AgentCPQ: An error occurred while extracting your custom records data to delete. Please try again."
+        "message": f"{WARNING_ICON} AgentCPQ: An error occurred while extracting your custom records data to delete. Please try again."
         }
 
     response_message = ""
@@ -428,8 +426,8 @@ def delete_custom_record(user, user_message, session_data):
         return {
             "message": f"No custom records were deleted. <br><br>{response_message}",
             "temporaryMessage": True
-        } 
-    
+        }
+
     return {
         "message": response_message,
         "temporaryMessage": True
