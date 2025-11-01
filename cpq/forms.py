@@ -381,14 +381,31 @@ def get_dynamic_form(model_class, crm, object_type):
 
                     # --- Lookup (FK) ---
                     elif field.data_type == "lookup" and field.lookup_model:
-                        qs = field.lookup_model.objects.all()
-                        self.fields[field_name] = field_class(
-                            label=field.label or field.name,
-                            required=field.required,
-                            initial=value,
-                            queryset=qs,
-                            widget=widget
-                        )
+                        lookup_model = field.lookup_model
+                        if isinstance(lookup_model, str):
+                            try:
+                                app_label, model_name = lookup_model.split(".", 1)
+                                lookup_model = apps.get_model(app_label, model_name)
+                            except (ValueError, LookupError):
+                                lookup_model = None
+
+                        if lookup_model is not None:
+                            qs = lookup_model.objects.all()
+                            self.fields[field_name] = field_class(
+                                label=field.label or field.name,
+                                required=field.required,
+                                initial=value,
+                                queryset=qs,
+                                widget=widget
+                            )
+                        else:
+                            # Fallback to a simple text field if the model cannot be resolved
+                            self.fields[field_name] = forms.CharField(
+                                label=field.label or field.name,
+                                required=field.required,
+                                initial=value,
+                                widget=forms.TextInput(attrs={"class": "w-full border rounded p-2"})
+                            )
 
                     # --- Textarea ---
                     elif field.data_type == "textarea":
@@ -457,7 +474,12 @@ def get_dynamic_form(model_class, crm, object_type):
                     object_id=instance.id,
                     field=field,
                 )
-                cfv.value = value
+                if field.data_type == "lookup" and value:
+                    value_to_store = str(value.pk)
+                else:
+                    value_to_store = value or ""
+
+                cfv.value = value_to_store
                 if hasattr(cfv, 'updated_by_user'):
                     cfv.updated_by_user = self.user
                 cfv.save()
