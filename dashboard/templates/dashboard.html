@@ -18,15 +18,15 @@
 <div class="playground-banner" role="region" aria-label="Playground announcement">
   <span class="banner-icon material-icons" aria-hidden="true">science</span>
   <div class="banner-text">
-    <span class="banner-title">Playground</span>
+    <span class="banner-title">Staging</span>
   </div>
 </div>
 <div class="dashboard-container">
         <!-- Sidebar -->
 <div class="sidebar-toggle" onclick="toggleSidebar()">☰</div>
-<div class="sidenav sidenav-fixed" style="display: flex; flex-direction: column; height: 100vh;" data-selected-session-id="{{ selected_session_id|default:'' }}">
+<div class="sidenav sidenav-fixed" data-selected-session-id="{{ selected_session_id|default:'' }}">
 
-    <div style="flex-grow: 1;">
+    <div class="nav-body">
         <div class="brand">
             <img class="brand-logo" src="{% static 'img/logo-small.png' %}" width="80%" alt="AgentCPQ Logo"/>
             <img class="brand-logo-collapsed" src="{% static 'img/agent-white.png' %}" alt="Agent icon">
@@ -81,8 +81,9 @@
         </div>
     </div>
    <!-- Fixed Logout/Login Section -->
-    <div class="nav-footer">
-        {% if user.is_authenticated %}
+    {% if user.is_authenticated %}
+    <div class="nav-bottom-fixed" aria-label="Sidebar account actions">
+        <div class="nav-footer">
             <button onclick="colapseSidebar()" class="btn-flat white-text nav-collapse-btn">
                 <i id="collapse-icon" class="material-icons">chevron_left</i>
                 <span class="nav-label">Collapse</span>
@@ -95,12 +96,7 @@
                     <span class="nav-label">Logout</span>
                 </button>
             </form>
-
-        {% endif %}
-    </div>
-
-    {% if user.is_authenticated %}
-    <div class="nav-user-fixed" aria-label="Current user">
+        </div>
         <div class="nav-user-card" aria-hidden="false">
             <div class="nav-user-card__avatar" aria-hidden="true">
                 <span>{{ request.user.first_name|default:request.user.username|first|upper }}</span>
