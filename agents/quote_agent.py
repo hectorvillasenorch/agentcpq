@@ -30,7 +30,7 @@ from .utils.quote_agent.llm_helpers import extract_quote_details_with_llm, gener
 from .utils.quote_agent.llm_helpers import extract_quote_updates_with_llm
 
 # Record Helpers (add products)
-from .utils.quote_agent.record_helpers import save_quote_products, save_quote_line_update, handle_quote_update_request, save_quote_update
+from .utils.quote_agent.record_helpers import save_quote_line_update, handle_quote_update_request, save_quote_update
 
 # DB Helpers (products exists)
 from .utils.quote_agent.db_helpers import get_or_create_account_and_opportunity, update_opportunity_net_amount, log_action_usage
@@ -157,11 +157,14 @@ def create_quote(user,user_message, session_data):
         created_by=user
     )
 
+    #print(f"\n\nEsto es el quote cuando se crea despues de refresh from db: {json.dumps(model_to_dict(quote), indent=4, default=str)}\n\n")
+
     clear_session_state("create_quote", session_data)
 
     # ✅ Assign formatted name after creation using quote.id
     quote.name = f"Q-{quote.id:05d}"
     quote.save()
+    
     log_action_usage("CreateQuote", user, "Quote", quote.name)
 
     if opportunity and hasattr(opportunity, "primary_quote"):
@@ -228,8 +231,7 @@ def create_quote(user,user_message, session_data):
     result.append("{INFO_ICON} Products provided in initial quote creation.")
 
     # ✅ Save quote products
-    #quote, response_message, added_products = save_quote_products(user, extracted_products, quote, response_message)
-    result = handle_products_to_add(user, extracted_products, quote, allow_updates=True)
+    result = handle_products_to_add(user, extracted_products, quote, allow_updates=False)
 
     successful_results = []
     failed_results = []
@@ -245,12 +247,14 @@ def create_quote(user,user_message, session_data):
             else:
                 failed_results.append(prod)
 
-    print(f"\n\nEsto es result de quote products: {result}\n\n")
+    #print(f"\n\nEsto es result de quote products: {result}\n\n")
 
-    print(f"Esto es response message de quote: {response_message}\n\n")
+    #print(f"Esto es response message de quote: {response_message}\n\n")
 
     # ✅ Update quote (subtotal, discounts fields and net amount)
+    #print(f"\n\nEsto es el quote antes de hacer save: {json.dumps(model_to_dict(quote), indent=4, default=str)}\n\n")
     quote.save()
+    #print(f"\n\nEsto es el quote despues de hacer save: {json.dumps(model_to_dict(quote), indent=4, default=str)}\n\n")
 
     # ✅ Update amount in Opportunity
     update_opportunity_net_amount(quote.opportunity)

@@ -572,9 +572,7 @@ class QuoteLine(models.Model):
             if self.product.is_bundle:
                 print(f"{self.product_name} is a bundle")
                 self.update_unit_price_bundle_post_created()
-                print(f"Unit Price before update: {self.unit_price}")
-            else:
-                self.unit_price = self.product.price
+                print(f"Unit Price after update: {self.unit_price}")
 
         # Initialize subscription flags and billing frequency based on Product when creating the line
         if is_new and self.product:
@@ -599,6 +597,16 @@ class QuoteLine(models.Model):
 
         #Chech term for subscriptions:
         self.check_term_is_not_null_for_subscriptions()
+
+        # Detectar cambios en discount_* antes de recalcular
+        if not is_new:
+            old = QuoteLine.objects.get(pk=self.pk)
+
+            if old.discount_percentage != self.discount_percentage:
+                self.discount_type = "percentage"
+
+            if old.discount_amount != self.discount_amount:
+                self.discount_type = "amount"
 
         #Update discount fields
         self.update_discount_fields()
@@ -1523,19 +1531,42 @@ class ActionTrigger(models.Model):
     when certain conditions are met after a specific event (e.g. quote_line.updated).
     """
 
+    SIGNAL_TIMING_CHOICES = [
+        ("pre_save", "Before Save"),
+        ("post_save", "After Save"),
+        ("pre_delete", "Before Delete"),
+        ("post_delete", "After Delete"),
+    ]
+
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
-    event_type = models.TextField(blank=True, null=True)
+    event_type = models.JSONField(blank=True, null=True)
+
+    # ⚙️ Timing for the trigger (default: post_save)
+    signal_timing = models.CharField(
+        max_length=20,
+        choices=SIGNAL_TIMING_CHOICES,
+        default="post_save",
+        help_text=_("Defines whether the trigger runs before or after saving/deleting.")
+    )
+
     active = models.BooleanField(default=True)
 
     # Conditions and actions stored as JSON for flexibility
     conditions = models.JSONField(
+        null=True,           # ✅ permitir NULL en la base de datos
+        blank=True,          # ✅ permitir que los formularios/modelos lo dejen vacío
         help_text=_("Logical structure for evaluating conditions (with AND/OR, items, etc.)")
     )
 
     actions = models.JSONField(
         default=dict,
         help_text=_("List of actions to execute if conditions are met.")
+    )
+
+    priority = models.IntegerField(
+        default=100,
+        help_text=_("Lower number = higher priority. Triggers run in ascending priority order.")
     )
 
     created_by = models.ForeignKey(
@@ -1557,9 +1588,21 @@ class ActionTrigger(models.Model):
     def __str__(self):
         return f"{self.name} ({self.event_type})"
 
-    def is_applicable(self, event_type: str) -> bool:
-        """Check if this trigger applies to a given event type."""
-        return self.active and self.event_type == event_type
+    def is_applicable(self, incoming_event: str, signal_timing: str) -> bool:
+        """
+        Returns True if this trigger matches both the event type and the signal timing.
+        """
+        if not self.active or not self.event_type:
+            return False
+
+        # Match the timing (pre/post save/delete)
+        if self.signal_timing != signal_timing:
+            return False
+
+        # Match event type (object_type.action)
+        if isinstance(self.event_type, dict):
+            return incoming_event == f"{self.event_type.get('object_type')}.{self.event_type.get('action')}"
+        return self.event_type == incoming_event
 
     def execute(self, context: dict):
         """
@@ -1643,3 +1686,87 @@ class ScheduledTask(models.Model):
         self.last_error = error_text
         self.status = "failed"
         self.save(update_fields=["attempts", "last_error", "status", "updated_at"])
+
+
+class CustomAction(models.Model):
+    METHOD_CHOICES = [("CREATE","Create"), ("UPDATE","Update"), ("DELETE","Delete")]
+    name = models.CharField(max_length=200)
+    method = models.CharField(max_length=10, choices=METHOD_CHOICES)
+    target_content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)  # apunta al modelo objetivo
+    target_lookup = models.JSONField(null=True, blank=True)  # ej: {"pk": 5} o {"sku": "ABC"}
+    data = models.JSONField(null=True, blank=True)  # datos para create/update
+    is_active = models.BooleanField(default=True)
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_custom_actions"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Custom Action"
+        verbose_name_plural = "Custom Actions"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.name} [{self.method}]"
+    
+class ActionLog(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("success", "Success"),
+        ("failed", "Failed"),
+    ]
+
+    OPERATION_CHOICES = [
+        ("CREATE", "Create"),
+        ("UPDATE", "Update"),
+        ("DELETE", "Delete"),
+    ]
+
+    SIGNAL_TIMING_CHOICES = [
+        ("pre_save", "Before Save"),
+        ("post_save", "After Save"),
+        ("pre_delete", "Before Delete"),
+        ("post_delete", "After Delete"),
+    ]
+
+    trigger_name = models.CharField(max_length=255)
+    operation = models.CharField(max_length=20, choices=OPERATION_CHOICES)
+    target_model = models.CharField(max_length=255)
+    target_pk = models.CharField(max_length=100, null=True, blank=True)
+
+    # 💡 Nuevo campo — tipo de evento, p.ej. quote_line.update
+    event_type = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Event type that fired the trigger (e.g., quote_line.update)",
+    )
+
+    # 💡 Nuevo campo — momento de ejecución
+    signal_timing = models.CharField(
+        max_length=20,
+        choices=SIGNAL_TIMING_CHOICES,
+        default="post_save",
+        help_text="Indicates whether this action was triggered pre/post save/delete.",
+    )
+
+    payload = models.JSONField(default=dict, blank=True)
+    result = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+
+    executed_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = "Action Log"
+        verbose_name_plural = "Action Logs"
+        ordering = ["-executed_at"]
+
+    def __str__(self):
+        return f"[{self.executed_at.strftime('%Y-%m-%d %H:%M')}] {self.operation} → {self.target_model} ({self.status})"

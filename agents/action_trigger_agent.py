@@ -44,6 +44,8 @@ def create_action_trigger(user, user_message, session_data):
         previous_summary=previous_summary
     )
 
+    print(f"\n\nLLM result: {llm_result}\n\n")
+
     completed_action_triggers = []
     remaining_action_triggers = []
 
@@ -58,13 +60,14 @@ def create_action_trigger(user, user_message, session_data):
 
     # Return if not any completed products
     if not completed_action_triggers:
-        print("Si entra aqui")
         return {
             "message": llm_result["agent_message"],
             "session_summary": llm_result["summary"]
         }
     
     response_message = ""
+
+    print(f"\n\nCompleted action triggers: {completed_action_triggers}\n\n")
 
     # ✅ Handle create inclusion rule
     response_message, action_triggers_created = handle_create_action_trigger(user, completed_action_triggers, response_message)

@@ -8,6 +8,9 @@ from dotenv import load_dotenv
 
 from ..prompts_helpers.system_prompt_helpers import make_system_prompt
 
+# Agents Helpers
+from ..agents_utils import clean_llm_json
+
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -297,13 +300,13 @@ def extract_custom_fields(user_message, custom_objects):
 
 
 # FUNCTION TO EXTRACT CUSTOM FIELDS UPDATES (UPDATE_CUSTOM_FIELDS)
-def extract_custom_fields_updates(user_message, custom_objects, custom_fields):
+def extract_custom_fields_updates(user_message, custom_objects, custom_fields, previous_summary):
     """Uses GPT to extract custom field name, label, and new values to update custom fields."""
 
-    system_prompt, temperature = make_system_prompt("custom_object_agent", "update", "")
+    system_prompt, temperature = make_system_prompt("custom_object_agent", "update", "extract_custom_fields_updates", previous_summary)
 
-    system_prompt += "Here are the current custom fields: " + custom_fields
-    system_prompt += "One of the current custom objects: " + custom_objects
+    system_prompt += "Here are the current custom fields: " + str(list(custom_fields.values()))
+    system_prompt += "One of the current custom objects: " + str(list(custom_objects.values()))
 
     user_prompt = user_message
 
@@ -316,27 +319,28 @@ def extract_custom_fields_updates(user_message, custom_objects, custom_fields):
             ]
         )
 
-        # ✅ Extract raw response
         raw_response = response.choices[0].message.content.strip()
-        logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
+        logging.info(f"\n\n🔍 Raw GPT Response (original):\n{raw_response}\n")
 
-        # ✅ Ensure valid JSON response
-        try:
-            extracted_updates = json.loads(raw_response)
-            if isinstance(extracted_updates, list) and all(
-                all(k in p for k in ["target_field_label", "target_custom_object", "target_default_object", "updates"])
-                for p in extracted_updates
-            ):
-                return extracted_updates
-            else:
-                logging.warning("⚠️ GPT response is not in expected format.")
-                return None
-        except json.JSONDecodeError:
-            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
+        # ✅ Clean and parse using reusable helper
+        result_json = clean_llm_json(raw_response)
+        if result_json is None:
+            logging.error("❌ Failed to clean/parse LLM JSON response.")
+            return None
+
+        # ✅ Validate structure: must be a list with required keys
+        if isinstance(result_json, list) and all(
+            all(k in p for k in ["target_field_label", "target_custom_object", "target_default_object", "updates"])
+            for p in result_json
+        ):
+            logging.info("✅ LLM response validated successfully.")
+            return result_json
+        else:
+            logging.warning("⚠️ GPT response is not in expected format.")
             return None
 
     except Exception as e:
-        logging.error(f"❌ Error extracting discount details: {str(e)}")
+        logging.error(f"❌ Error extracting custom field updates: {str(e)}")
         return None
 
 # FUNCTION TO EXTRACT CUSTOM FIELDS DELETES (DELETE_CUSTOM_FIELD)

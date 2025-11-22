@@ -1,6 +1,7 @@
 from cpq.models import CustomObject, CustomField, CustomRecord
 import json
 import logging
+from django.db.models import Q
 
 # Session Context Helpers
 from ..orchestrator.context_handle_helpers import save_or_update_conversation_context
@@ -228,6 +229,14 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
         lookup_model = custom_field.get("lookup_model", None)
         options = custom_field.get("options", None)
 
+        if not label:
+            response_message += f"<b>🔄 Custom Field Request #{index} 🔄</b><br>"
+            response_message += (
+                "⚠️ Oops! You didn’t specify the label for your custom field, or AgentCPQ couldn’t extract it from your message."
+                "Could you please send your request again and include the label?<br><br>"
+            )
+            continue
+
         name = label.lower().replace(" ", "_") + "__c" if label else None
 
         label = label.title()
@@ -250,7 +259,9 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
 
             # Validate if user specify an custom object name
             try:
-                co_obj = CustomObject.objects.get(name=custom_object_name)
+                co_obj = CustomObject.objects.get(
+                    Q(name=custom_object_name) | Q(label=custom_object_name)
+                )
             except CustomObject.DoesNotExist:
                 response_message += f"⚠️ Oops! It looks like you didn’t specify a custom object for this custom field(s). Could you tell me which object it should belong to?<br><br>"
                 continue
@@ -331,7 +342,7 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
             "object_type": object_type if custom_object_name is None else custom_object_name,
             "required": required if required else False,
             "custom_object_name": custom_object_name if custom_object_name else None,
-            "lookup_model": lookup_model if lookup_model else "admin.Logentry",
+            "lookup_model": lookup_model if lookup_model else "",
             "options": options if options else None
         }
 
@@ -354,7 +365,7 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
 
     return response_message, objects_created
 
-def handle_custom_fields_updates(user, extracted_custom_fields_updates, response_message, session_context):
+def handle_custom_fields_updates(user, extracted_custom_fields_updates, response_message):
 
     objects_updated = []
 
@@ -365,18 +376,14 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
         target_default_object = custom_field.get("target_default_object", None)
         updates = custom_field.get("updates", None)
 
-        # Add full item for session context
-        session_context["item_index"] = index
-        session_context["extracted"] = target_custom_object
-
         # ✅ Format response message
         response_message += f"<b>🔄 <u>Custom Field Update Request #{index}</u> 🔄</b><br>"
 
         target_field_name = target_field_label.lower().replace(" ", "_") + "__c" if target_field_label else None
 
+        print(f"\n\nTarget field name: {target_field_name}\n\n")
+
         if target_field_label is None:
-            agent_response = "Target field label was not specified in the user message."
-            save_or_update_conversation_context(session_context, agent_response)
             response_message += (
                 "⚠️ Oops! It looks like you didn’t provide the name of the field you want to update. "
                 "Could you tell me which field you'd like to modify?<br><br>"
@@ -384,8 +391,6 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
             continue
 
         if target_custom_object is None and target_default_object is None:
-            agent_response = "Target object was not specified in the user message."
-            save_or_update_conversation_context(session_context, agent_response)
             response_message += (
                 "⚠️ Oops! It looks like you didn’t specify which object this field belongs to. "
                 "Could you let me know the name of the object?<br><br>"
@@ -400,8 +405,6 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
             try:
                 custom_object = CustomObject.objects.get(name=target_custom_object)
             except CustomObject.DoesNotExist:
-                agent_response = f"A custom object with the label '{target_custom_object}' does not exist."
-                save_or_update_conversation_context(session_context, agent_response)
                 response_message += (
                     f"⚠️ Heads up! A custom object named <b>{target_custom_object}</b> does not exist. "
                     "Please make sure you're referencing a valid custom object to update the field.<br><br>"
@@ -412,8 +415,6 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
             try:
                 custom_field = CustomField.objects.get(name=target_field_name, custom_object=custom_object)
             except CustomField.DoesNotExist:
-                agent_response = f"A custom field with the label '{target_field_label}' does not exist."
-                save_or_update_conversation_context(session_context, agent_response)
                 response_message += (
                     f"⚠️ Heads up! A custom field named <b>{target_field_label}</b> does not exist in custom object {custom_object.label}. "
                     "Please make sure you're referencing a valid custom field to update.<br><br>"
@@ -426,10 +427,9 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
         ]
 
         if target_default_object:
+            target_default_object = target_default_object.lower()
 
             if target_default_object not in allowed_object_types:
-                agent_response = f"A default object with the label '{target_default_object}' does not exist."
-                save_or_update_conversation_context(session_context, agent_response)
                 allowed_list_str = ", ".join([obj.capitalize() for obj in allowed_object_types])
                 response_message += (
                     f"⚠️ Heads up! A default object named <strong>{target_default_object}</strong> does not exist. "
@@ -442,8 +442,6 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
             try:
                 custom_field = CustomField.objects.get(name=target_field_name, object_type=target_default_object)
             except CustomField.DoesNotExist:
-                agent_response = f"A custom field with the label '{target_field_label}' does not exist."
-                save_or_update_conversation_context(session_context, agent_response)
                 response_message += (
                     f"⚠️ Heads up! A custom field named <b>{target_field_label}</b> does not exist in default object <b>{target_default_object}</b>. "
                     "Please make sure you're referencing a valid custom field to update.<br><br>"
@@ -452,11 +450,12 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
 
 
         # ✅ Format response message
-        response_message += f"<b>🧩 <b>{custom_field.label}</b> in <b>{custom_object.label if custom_object else target_default_object}</b> object. 🧩</b><br>"
+        if target_custom_object and custom_object:
+            response_message += f"<b>🧩 <b>{custom_field.label}</b> in <b>{custom_object.label}</b> object. 🧩</b><br>"
+        else:
+            response_message += f"<b>🧩 <b>{custom_field.label}</b> in <b>{target_default_object}</b> object. 🧩</b><br>"
 
         if updates is None:
-            agent_response = f"No update data provided for field '{custom_field.label}' in object '{custom_object.label if custom_object else target_default_object}'."
-            save_or_update_conversation_context(session_context, agent_response)
             response_message += (
                 f"⚠️ It looks like you didn’t include any data to update the field <b>{custom_field.label}</b>. "
                 f"Please tell me what values you'd like to change (e.g., label, crm, object type, required.).<br><br>"
@@ -475,10 +474,6 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
 
 
         if crm_to_update and crm_to_update not in allowed_crm_values:
-            agent_response = (
-                f"Invalid CRM value: '{crm_to_update}'. Must be one of: {', '.join(allowed_crm_values)}."
-            )
-            save_or_update_conversation_context(session_context, agent_response)
             response_message += (
                 f"⚠️ The value <b>{crm_to_update}</b> is not valid for the field <b>CRM</b>. "
                 f"Please choose one of the following: <b>{', '.join(allowed_crm_values)}</b>.<br><br>"
@@ -489,11 +484,6 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
         if object_type_to_update:
             object_type_normalized = object_type_to_update.lower()
             if object_type_normalized not in allowed_object_types:
-                agent_response = (
-                    f"Invalid object type: '{object_type_to_update}'. "
-                    f"Must be one of: {', '.join(ot.title() for ot in allowed_object_types)}."
-                )
-                save_or_update_conversation_context(session_context, agent_response)
                 response_message += (
                     f"⚠️ The value <b>{object_type_to_update}</b> is not valid for the field <b>Object Type</b>. "
                     f"Please choose one of the following: "
@@ -509,20 +499,12 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
                 elif normalized_required == "false":
                     required_to_update = False
                 else:
-                    agent_response = (
-                        f"Invalid value for 'required': '{required_to_update}'. Must be either 'true' or 'false'."
-                    )
-                    save_or_update_conversation_context(session_context, agent_response)
                     response_message += (
                         f"⚠️ The value <b>{required_to_update}</b> is not valid for the field <b>Required</b>. "
                         f"Please use either <b>true</b> or <b>false</b>.<br><br>"
                     )
                     continue
             elif not isinstance(required_to_update, bool):
-                agent_response = (
-                    f"Invalid type for 'required': {required_to_update}. Must be a boolean value."
-                )
-                save_or_update_conversation_context(session_context, agent_response)
                 response_message += (
                     f"⚠️ The value for <b>Required</b> must be either <b>true</b> or <b>false</b>.<br><br>"
                 )
@@ -539,11 +521,6 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
                 available_objects = CustomObject.objects.values_list("label", flat=True)
                 available_objects_display = ", ".join(available_objects)
 
-                agent_response = (
-                    f"The destination custom object '{custom_object_to_update}' does not exist. "
-                    f"Available objects: {available_objects_display}."
-                )
-                save_or_update_conversation_context(session_context, agent_response)
 
                 response_message += (
                     f"⚠️ The custom object <b>{custom_object_to_update}</b> does not exist. "
@@ -560,11 +537,6 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
         if data_type_to_update and data_type_to_update not in allowed_data_types:
             valid_types_display = ", ".join(allowed_data_types)
 
-            agent_response = (
-                f"The data type '{data_type_to_update}' is not valid. "
-                f"It must be one of: {valid_types_display}."
-            )
-            save_or_update_conversation_context(session_context, agent_response)
 
             response_message += (
                 f"⚠️ The value <b>{data_type_to_update}</b> is not valid for the field type. "
@@ -574,11 +546,6 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
 
         if data_type_to_update and data_type_to_update in ["Dropdown", "Look Up"]:
             if not isinstance(options_to_update, list):
-                agent_response = (
-                    f"When the data type is '{data_type_to_update}', the <strong>options</strong> field must be a list "
-                    "containing the allowed values for the field."
-                )
-                save_or_update_conversation_context(session_context, agent_response)
 
                 response_message += (
                     f"⚠️ Since the data type is <b>{data_type_to_update}</b>, you must provide a valid list of options. "
@@ -599,8 +566,6 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
                 options_to_update,
             ]
         ):
-            agent_response = f"No update data provided for field '{custom_field.label}' in object '{custom_object.label}'."
-            save_or_update_conversation_context(session_context, agent_response)
             response_message += (
                 f"⚠️ There are no data to update for the custom field <b>{custom_field.label}</b>.<br><br>"
             )
@@ -629,7 +594,7 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
 
         field_payload = {
             "target_field_label": custom_field.name,
-            "target_custom_object": custom_object.name if custom_object else None,
+            "target_custom_object": custom_object.name if target_custom_object else None,
             "target_default_object": target_default_object if target_default_object else None,
             "updates": {
                 "label_to_update": label_to_update,
@@ -651,8 +616,6 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> {response.get('message')}")
         else:
             error_msg = response.get("message", "Unknown error.")
-            agent_response = f"Something were wrong when trying to update custom field. Error: {error_msg}"
-            save_or_update_conversation_context(session_context, agent_response)
             response_message += f"{error_msg}<br>"
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
 

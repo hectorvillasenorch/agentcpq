@@ -4,70 +4,93 @@ import logging
 def handle_create_action_trigger(user, completed_action_triggers, response_message):
     from cpq.models import ActionTrigger
     import logging
+    import re
 
     action_triggers_created = []
 
+    # 🧮 Obtener el número más alto actual (ej. AT-087 → 87)
+    existing_names = (
+        ActionTrigger.objects.values_list("name", flat=True)
+        .filter(name__startswith="AT-")
+    )
+
+    max_number = 0
+    pattern = re.compile(r"AT-(\d+)")
+    for name in existing_names:
+        match = pattern.match(name)
+        if match:
+            num = int(match.group(1))
+            max_number = max(max_number, num)
+
     for trigger_data in completed_action_triggers:
         try:
-            data = trigger_data.get("data", {})
-            description = data.get("description")
-            event_type = data.get("event_type")
-            conditions = data.get("conditions", {})
-            actions = data.get("actions", [])
-            active = data.get("active", True)
+            print(f"\n\nTrigger Data: {trigger_data}\n\n")
 
-            # --- 🔍 Validations ---
+            description = trigger_data.get("description") or trigger_data.get("name")
+            event_type = trigger_data.get("event_type", {})
+            conditions = trigger_data.get("conditions", {})
+            actions = trigger_data.get("actions", [])
+            active = trigger_data.get("active", True)
+            priority = trigger_data.get("priority", 100)
 
-            # 1. Required fields
+            # --- 🔍 VALIDACIONES ---
             if not description:
-                response_message += "❌ Missing description for Action Trigger.<br>"
+                response_message += "❌ Missing description or name for Action Trigger.<br>"
                 continue
 
-            if not event_type:
-                response_message += "❌ Missing event_type (e.g. 'quote_line.updated').<br>"
+            if not isinstance(event_type, dict):
+                response_message += f"❌ event_type must be a dictionary, got {type(event_type).__name__}.<br>"
                 continue
 
-            if not isinstance(conditions, dict) or not conditions.get("items"):
-                response_message += f"❌ Invalid or empty conditions: {conditions}.<br>"
+            object_type = event_type.get("object_type")
+            action_name = event_type.get("action")
+
+            if not object_type or not action_name:
+                response_message += "❌ event_type must contain 'object_type' and 'action'.<br>"
                 continue
+
+            if not isinstance(object_type, str) or not isinstance(action_name, str):
+                response_message += f"❌ object_type and action must be strings. Got {event_type}.<br>"
+                continue
+
+            if not object_type.isidentifier() or not action_name.isidentifier():
+                response_message += f"❌ Invalid identifiers in event_type: {event_type}.<br>"
+                continue
+
+            # ✅ If conditions is None → skip this validation (valid)
+            if conditions is not None:
+                if not isinstance(conditions, dict):
+                    response_message += "❌ conditions must be null or a dictionary.<br>"
+                    continue
+
+                valid_logic = ["AND", "OR"]
+                logic_val = conditions.get("logic", "AND").upper()
+                if logic_val not in valid_logic:
+                    response_message += f"❌ Invalid logic '{logic_val}'. Must be 'AND' or 'OR'.<br>"
+                    continue
 
             if not isinstance(actions, list) or len(actions) == 0:
                 response_message += f"❌ No actions defined for trigger '{description}'.<br>"
                 continue
 
-            # 2. Validate event_type format
-            if "." not in event_type:
-                response_message += f"❌ Invalid event_type format: {event_type}. Must be like 'quote_line.updated'.<br>"
-                continue
+            # --- 🆕 GENERAR NOMBRE SECUENCIAL ---
+            max_number += 1
+            new_name = f"AT-{max_number:03d}"  # Formato con ceros: AT-001, AT-087, etc.
 
-            event_parts = event_type.split(".")
-            if len(event_parts) != 2:
-                response_message += f"❌ Invalid event_type: {event_type}. Expected format '<object>.<action>'.<br>"
-                continue
-
-            object_part, action_part = event_parts
-            if not object_part.isidentifier() or not action_part.isidentifier():
-                response_message += f"❌ Invalid object or action in event_type: {event_type}.<br>"
-                continue
-
-            # 3. Validate conditions logic
-            valid_logic = ["AND", "OR"]
-            if conditions.get("logic", "AND").upper() not in valid_logic:
-                response_message += f"❌ Invalid logic '{conditions.get('logic')}'. Must be 'AND' or 'OR'.<br>"
-                continue
-
-            # --- ✅ Create ActionTrigger record ---
+            # --- ✅ CREAR TRIGGER ---
             new_trigger = ActionTrigger.objects.create(
+                name=new_name,
                 description=description,
                 event_type=event_type,
                 conditions=conditions,
                 actions=actions,
                 active=active,
-                created_by=user  # si tu modelo tiene este campo
+                created_by=user,
+                priority=priority
             )
 
             action_triggers_created.append(new_trigger)
-            response_message += f"✅ Action Trigger '{description}' created successfully.<br>"
+            response_message += f"✅ Action Trigger '{new_name}' created successfully.<br>"
 
         except Exception as e:
             logging.error(f"❌ Error creating Action Trigger: {str(e)}")

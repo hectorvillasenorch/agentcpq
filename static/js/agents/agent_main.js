@@ -2843,58 +2843,525 @@ function renderExclusionRuleDetails(message, rules, read_only=false) {
 
 function renderActionTriggersDetails(message, action_triggers, read_only=false) {
   let html = "";
-  //console.log(action_triggers);
 
-  // Agregar mensaje si viene
   if (message) {
     const idx = message.indexOf("action_triggers_details:");
     if (idx !== -1) {
-      message = message.slice(0, idx).trim(); // cortar antes del JSON
+      message = message.slice(0, idx).trim();
     }
-
     if (message) {
       html += `<p style="margin-bottom:10px;">${message}</p><br>`;
     }
   }
 
-  action_triggers.forEach((action_trigger) => {
-    var head_text = `✅ New action trigger created ✅`;
-    html +=
-      `<div class="rule-container">
+  action_triggers.forEach((trigger) => {
+    html += `
+      <div class="rule-container">
         <div class="rule-header">
-            <h5>${head_text}</h3>
-            <span style="margin-left: 10px; font-weight: bold; color: ${action_trigger.active ? 'green' : 'red'};">
-              ${action_trigger.active ? '🟢 Active' : '🔴 Inactive'}
+            <h5>✅ New action trigger ${trigger.name} created ✅</h5>
+            <span style="margin-left: 10px; font-weight: bold; color: ${trigger.active ? 'green' : 'red'};">
+              ${trigger.active ? '🟢 Active' : '🔴 Inactive'}
             </span>
         </div>
-        <div class="rule-details">
-            <div class="name">
-              <label for="rule-name"><strong>Opportunity:</strong></label>
-              <input id="rule-name" type="text" value="${action_trigger.trigger}" readonly/>
-            </div>
 
-            <div class="rule_type">
-              <label for="rule-type"><strong>Action:</strong></label>
-              <input id="rule-type" type="text" value="${action_trigger.action}" readonly/>
-            </div>
+        <div class="action-trigger-details">
 
-            <div class="target_type">
-              <label for="target-type"><strong>Object Name:</strong></label>
-              <input id="target-type" type="text" value="${action_trigger.object_name}" readonly/>
-            </div>
+          <!-- ✅ DESCRIPTION -->
+          <div class="description">
+            <label><strong>Description:</strong></label>
+            <input type="text" value="${trigger.description}" readonly/>
+          </div>
 
-            <div class="error_message">
-              <label for="error-message"><strong>Action Parameters:</strong></label>
-              <textarea id="error-message" class="materialize-textarea" rows="3" readonly>${JSON.stringify(action_trigger.action_params, null, 2)}</textarea>
-            </div>
+          <!-- ✅ EVENT TYPE -->
+          <div class="event_type">
+            <label><strong>Event Type:</strong></label>
+            ${renderEventTypeReadable(trigger.event_type)}
+          </div>
+
+          <!-- ✅ CONDITIONS -->
+          <div class="conditions-details">
+            <label><strong>Conditions:</strong></label>
+            ${renderConditionsReadable(trigger.conditions)}
+          </div>
+
+          <!-- ✅ ACTIONS -->
+          <div class="actions">
+            <label><strong>Actions:</strong></label>
+            ${renderActionsReadable(trigger.actions)}
+          </div>
+
         </div>
-
       </div>`;
-
   });
 
+  setTimeout(() => setupCollapsibles(), 50);
+
+  return html;
+  
+}
+
+function prettyName(str) {
+  if (!str) return "";
+
+  let clean = str
+    .replace(/__/g, " ")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, c => c.toUpperCase());
+
+  // ✅ Campos personalizados (__c)
+  if (str.endsWith("__c")) {
+    return `<span style="color:#7b1fa2; font-style:italic;">${clean}</span>`;
+  }
+
+  // ✅ Objetos custom (terminan en "__c" también)
+  if (str.includes("__c")) {
+    return `<span style="color:#9c27b0; font-style:italic;">${clean}</span>`;
+  }
+
+  return clean;
+}
+
+function renderEventTypeReadable(ev) {
+  if (!ev) return "<em>No event type defined</em>";
+
+  const obj = prettyName(ev.object_type);
+  const action = ev.action === "create" ? "created"
+               : ev.action === "update" ? "updated"
+               : "deleted";
+
+  return `
+
+    <li style="margin-bottom:14px;">
+
+        <div style="
+          display:flex;
+          justify-content:space-between;
+          align-items:center;
+          width:100%;
+        ">
+          
+          <!-- ✅ MAIN READABLE CONDITION -->
+          <div style="
+            padding:6px 10px;
+            background:#f0f0f0;
+            border-radius:6px;
+            display:inline-block;
+            ">
+            Runs when <strong>${obj}</strong> is <strong>${action}</strong>
+          </div>
+      </li>
+  `;
+}
+
+function renderConditionsReadable(conditions) {
+  if (!conditions || !conditions.items || conditions.items.length === 0)
+    return "<em>No conditions</em>";
+
+  const logic = conditions.logic || "AND";
+  let html = "<ul>";
+
+  conditions.items.forEach((cond, idx) => {
+
+    const left = buildReadableObjectPath(cond.left);
+    const right = buildReadableObjectPath(cond.right);
+    const op = operatorColored(cond.operator);
+
+    html += `
+      <li style="margin-bottom:14px;">
+
+        <div style="
+          display:flex;
+          align-items:center;
+          width:100%;
+        ">
+          
+          <!-- ✅ MAIN READABLE CONDITION -->
+          <div style="
+            padding:6px 10px;
+            background:#f0f0f0;
+            border-radius:6px;
+            display:inline-block;
+            ">
+            <strong>If</strong> ${left} ${op} ${right}
+          </div>
+
+        </div>
+
+        <!-- ✅ SHOW TECHNICAL RIGHT ALIGNED -->
+          <a href="#"
+            style="font-size:0.85rem; margin-top:6px; display:inline-block;"
+            onclick="this.nextElementSibling.style.display=
+              this.nextElementSibling.style.display==='none'?'block':'none'; return false;">
+            (Show technical)
+          </a>
+
+          <!-- ✅ TECHNICAL -->
+        <pre class="tech-box" style="display:none; margin-left:5px;">
+${buildTechnicalCondition(cond)}
+        </pre>
+
+        
+
+      </li>
+    `;
+
+    // ✅ Insert AND / OR between conditions
+    if (idx < conditions.items.length - 1) {
+      html += `
+        <div style="
+          margin: 8px 0 14px 55px;
+          display: inline-block;
+          background: #e0e0e0;
+          padding: 4px 14px;
+          border-radius: 10px;
+          font-weight: 600;
+          color: #444;
+          font-size: 0.85rem;
+          letter-spacing: 1px;
+        ">
+          ${logic}
+        </div>
+      `;
+    }
+  });
+
+  html += "</ul>";
   return html;
 }
+
+function buildReadableObjectPath(ref) {
+  if (!ref) return "";
+
+  if (ref.type === "static") return `"${ref.data}"`;
+
+  // ✅ FIELD
+  if (ref.type === "field" && ref.object && ref.path) {
+    const obj = prettyName(ref.object);
+    const path = ref.path.split(".").map(p => prettyName(p)).join(" → ");
+    return `${obj} → ${path}`;
+  }
+
+  // ✅ LEFT SIDE
+  if (!ref.type && ref.object && ref.path) {
+    const obj = prettyName(ref.object);
+    const path = ref.path.split(".").map(p => prettyName(p)).join(" → ");
+    return `${obj} → ${path}`;
+  }
+
+  return `<em style="color:#b00;">Unsupported ref</em>`;
+}
+
+function operatorLabel(op) {
+  const ops = {
+    "==": "equals",
+    "=": "equals",
+    "!=": "does not equal",
+    ">": "is greater than",
+    "<": "is less than",
+    ">=": "is greater or equal to",
+    "<=": "is less or equal to",
+    "contains": "contains"
+  };
+  return ops[op] || op;
+}
+
+function buildTechnicalCondition(cond) {
+  const left = cond.left?.object && cond.left?.path
+    ? `${cond.left.object}.${cond.left.path}`
+    : cond.left?.path || cond.left?.alias || "<?>";
+  
+  const right = cond.right?.object && cond.right?.path
+    ? `${cond.right.object}.${cond.right.path}`
+    : cond.right?.data !== undefined
+      ? JSON.stringify(cond.right.data)
+      : cond.right?.alias || "<?>";
+
+  return `${left} ${cond.operator} ${right}`;
+}
+
+function renderActionsReadable(actions) {
+  if (!actions || actions.length === 0) return "<em>No actions</em>";
+
+  let html = "<ul>";
+
+  actions.forEach(a => {
+    const obj = prettyName(a.target.object);
+
+    // ✅ Colores según operación
+    const opColor =
+      a.operation === "CREATE" ? "#2e7d32" :
+      a.operation === "UPDATE" ? "#ef6c00" :
+      "#c62828";
+
+    // ✅ Mostrar qué hace la acción
+    let actionLabel = `
+      <div style="
+        padding:6px 10px;
+        background:#f0f0f0;
+        border-radius:6px;
+        display:inline-block;
+        margin-bottom:6px;
+      ">
+        <span style="color:${opColor}; font-weight:700;">${a.operation}</span>
+        <span style="color:#444;">${obj}</span>
+      </div>
+    `;
+
+    let fieldsHtml = "";
+
+    // ✅ CASE 1: CREATE (value.fields)
+    if (a.operation === "CREATE" && a.value?.fields) {
+      for (const [fieldName, fv] of Object.entries(a.value.fields)) {
+        const fieldPretty = prettyName(fieldName);
+
+        if (fv.type === "static") {
+          fieldsHtml += `<li>${fieldPretty} = "${fv.data}"</li>`;
+        } else if (fv.type === "field") {
+          fieldsHtml += `<li>${fieldPretty} = ${prettyName(fv.object)} → ${prettyName(fv.path)}</li>`;
+        }
+      }
+    }
+
+    // ✅ CASE 2: UPDATE (value type "field" or "static")
+    else if (a.operation === "UPDATE" && a.value) {
+      const fieldPretty = prettyName(a.target.path);
+
+      if (a.value.type === "field") {
+        fieldsHtml += `
+          <li>${fieldPretty} = ${prettyName(a.value.object)} → ${prettyName(a.value.path)}</li>
+        `;
+      } else if (a.value.type === "static") {
+        fieldsHtml += `
+          <li>${fieldPretty} = "${a.value.data}"</li>
+        `;
+      }
+    }
+
+    // ✅ CASE 3: DELETE (no fields)
+    else if (a.operation === "DELETE") {
+      fieldsHtml += `<li>Record will be deleted.</li>`;
+    }
+
+    // ✅ Technical details formatted
+    const techDetails = JSON.stringify(a, null, 2);
+
+    html += `
+      <li style="margin-bottom:20px;">
+        ${actionLabel}
+
+        <ul style="margin-left:10px;">${fieldsHtml}</ul>
+
+        <a href="#"
+           onclick="this.nextElementSibling.style.display=
+             this.nextElementSibling.style.display==='none'?'block':'none'; return false;"
+           style="font-size:0.85rem; margin-top:6px; display:block;">
+           (Show technical)
+        </a>
+
+        <pre class="tech-box" style="display:none;">${techDetails}</pre>
+      </li>
+    `;
+  });
+
+  html += "</ul>";
+  return html;
+}
+
+function renderActionFields(valueDef) {
+  if (!valueDef || !valueDef.fields) return "";
+
+  let html = "";
+  for (const [fieldName, fieldValue] of Object.entries(valueDef.fields)) {
+    let prettyField = prettyName(fieldName);
+
+    if (fieldValue.type === "static") {
+      html += `<li>${prettyField} = "${fieldValue.data}"</li>`;
+    } 
+    else if (fieldValue.type === "field") {
+      html += `<li>${prettyField} = ${prettyName(fieldValue.object)} → ${prettyName(fieldValue.path)}</li>`;
+    } 
+    else {
+      html += `<li>${prettyField} = <em>Unsupported type</em></li>`;
+    }
+  }
+  return html;
+}
+
+function setupCollapsibles() {
+  document.querySelectorAll(".toggle-arrow").forEach(arrow => {
+    arrow.onclick = () => {
+      const content = arrow.parentElement.nextElementSibling;
+      const open = content.style.display === "block";
+
+      content.style.display = open ? "none" : "block";
+      arrow.classList.toggle("open", !open);
+    };
+  });
+}
+
+function renderDescriptionBlock(description) {
+  return `
+    <div class="action-block">
+      <div class="action-block-title">
+        <span class="toggle-arrow">►</span> Description
+      </div>
+      <div class="collapsible-content">
+        <input class="details-input" type="text" value="${description}" readonly />
+      </div>
+    </div>
+  `;
+}
+
+function renderEventTypeBlock(event_type) {
+  if (!event_type) return "";
+
+  const objPretty = prettyName(event_type.object_type);
+  const actionPretty = event_type.action === "create" ? "Created"
+                      : event_type.action === "update" ? "Updated"
+                      : "Deleted";
+
+  const technical = `${event_type.object_type}.${event_type.action}`;
+
+  return `
+    <div class="action-block">
+      <div class="action-block-title">
+        <span class="toggle-arrow">►</span> Event Type
+      </div>
+      <div class="collapsible-content">
+        <div>
+          Runs when <strong>${objPretty}</strong> is <strong>${actionPretty}</strong>
+        </div>
+
+        <a href="#" onclick="this.nextElementSibling.style.display =
+          this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; return false;"
+          style="margin-top:6px; display:block;">
+          Show technical
+        </a>
+
+        <pre class="tech-box" style="display:none;">${technical}</pre>
+      </div>
+    </div>
+  `;
+}
+
+function renderConditionsBlock(conditions) {
+  if (!conditions || !conditions.items || conditions.items.length === 0)
+    return `
+      <div class="action-block">
+        <div class="action-block-title">
+          <span class="toggle-arrow">►</span> Conditions
+        </div>
+        <div class="collapsible-content"><em>No conditions</em></div>
+      </div>`;
+
+  let list = "<ul>";
+  let technical = "";
+
+  conditions.items.forEach((c) => {
+    const left = buildReadableObjectPath(c.left);
+    const right = buildReadableObjectPath(c.right);
+    const op = operatorLabel(c.operator);
+
+    list += `<li>${left} <strong>${op}</strong> ${right}</li>`;
+
+    technical += buildTechnicalCondition(c) + "\n";
+  });
+
+  list += "</ul>";
+
+  return `
+    <div class="action-block">
+      <div class="action-block-title">
+        <span class="toggle-arrow">►</span> Conditions
+      </div>
+      <div class="collapsible-content readable-list">
+        ${list}
+
+        <a href="#" onclick="this.nextElementSibling.style.display =
+          this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; return false;">
+          Show technical details
+        </a>
+
+        <pre class="tech-box" style="display:none;">${technical}</pre>
+      </div>
+    </div>`;
+}
+
+function renderActionsBlock(actions) {
+  if (!actions || actions.length === 0)
+    return `
+      <div class="action-block">
+        <div class="action-block-title">
+          <span class="toggle-arrow">►</span> Actions
+        </div>
+        <div class="collapsible-content"><em>No actions found</em></div>
+      </div>`;
+
+  let html = "<ul>";
+
+  actions.forEach((a) => {
+    const objPretty = prettyName(a.target.object);
+    const opPretty = a.operation;
+
+    let fields = "";
+    for (const [fieldName, fv] of Object.entries(a.value.fields || {})) {
+      const prettyField = prettyName(fieldName);
+
+      if (fv.type === "static") {
+        fields += `<li>${prettyField} = "${fv.data}"</li>`;
+      } else if (fv.type === "field") {
+        fields += `<li>${prettyField} = ${prettyName(fv.object)} → ${prettyName(fv.path)}</li>`;
+      }
+    }
+
+    html += `
+      <li>
+        <strong>${opPretty} ${objPretty}</strong>
+        <ul>${fields}</ul>
+
+        <a href="#" onclick="this.nextElementSibling.style.display =
+          this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; return false;">
+          Show technical
+        </a>
+        <pre class="tech-box" style="display:none;">${JSON.stringify(a, null, 2)}</pre>
+      </li>`;
+  });
+
+  html += "</ul>";
+
+  return `
+    <div class="action-block">
+      <div class="action-block-title">
+        <span class="toggle-arrow">►</span> Actions
+      </div>
+      <div class="collapsible-content readable-list">
+        ${html}
+      </div>
+    </div>
+  `;
+}
+
+function operatorColored(op) {
+  const map = {
+    "==": { label: "equals", color: "#0073e6" },
+    "!=": { label: "does not equal", color: "#e63946" },
+    ">":  { label: "is greater than", color: "#8d39e6" },
+    "<":  { label: "is less than", color: "#8d39e6" },
+    ">=": { label: "is greater or equal", color: "#c77d1a" },
+    "<=": { label: "is less or equal", color: "#c77d1a" },
+    "contains": { label: "contains", color: "#009688" },
+    "in": { label: "in", color: "#5c6bc0" },
+    "not in": { label: "not in", color: "#5c6bc0" },
+  };
+  const info = map[op] || { label: op, color: "#222" };
+  return `<span style="color:${info.color}; font-weight:600;">${info.label}</span>`;
+}
+
+
+
+
+
+
 
 function renderRules(group_rules) {
   let html = "";

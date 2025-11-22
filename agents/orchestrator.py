@@ -259,7 +259,8 @@ def orchestrate_request(user, user_message, session_data):
             temperature=0
         )
 
-        decision = response.choices[0].message.content.strip().replace('"', '')
+        raw_decision = response.choices[0].message.content.strip()
+        decision = clean_llm_label(raw_decision)
         #decision = re.sub(r'[^\w\s\-\_\.\,]', '', decision)
         logging.info(f"\n🟢 AI Decision Received: {decision} \n")
 
@@ -581,3 +582,17 @@ def get_trigger_phrases():
         "generate pdf",
         "create quote pdf",
     ]
+
+
+def clean_llm_label(text: str) -> str:
+    """
+    Limpia la respuesta del LLM y deja únicamente letras A-Z / a-z.
+    No números, no guiones, no símbolos, no emojis.
+    """
+    if not text:
+        return ""
+
+    # Quitar todo lo que no sea A-Z
+    cleaned = re.sub(r'[^A-Za-z]', '', text)
+
+    return cleaned
