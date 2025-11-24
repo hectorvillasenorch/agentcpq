@@ -1,6 +1,8 @@
-import time
 import logging
 from django.db import transaction
+
+from .helpers_filters import apply_filters
+from .helpers_values import resolve_value_fields
 
 logger = logging.getLogger(__name__)
 
@@ -10,67 +12,97 @@ class BaseHandler:
         raise NotImplementedError
 
 
+# ==========================================================
+#  CREATE HANDLER (single + bulk)
+# ==========================================================
+
 class CreateHandler(BaseHandler):
     def execute(self, *, action, payload):
         model = action.target_content_type.model_class()
-        values = action.data or payload.get("data", {})
+
+        value_fields = action.data.get("fields", {})
+        filters = action.target_filters  # lista de dicts si bulk
+
+        # BULK CREATE
+        if filters:
+            queryset = apply_filters(model.objects.all(), filters)
+            created = []
+            with transaction.atomic():
+                for source in queryset:
+                    final_values = resolve_value_fields(value_fields, source)
+                    inst = model.objects.create(**final_values)
+                    created.append(inst.pk)
+            return {"created_count": len(created), "pks": created}
+
+        # NORMAL CREATE
         with transaction.atomic():
-            instance = model.objects.create(**values)
-        return {"pk": instance.pk, "created": True}
+            final_values = resolve_value_fields(value_fields)
+            inst = model.objects.create(**final_values)
+
+        return {"pk": inst.pk, "created": True}
 
 
-def _enforce_discount_type(values: dict) -> dict:
-    """
-    Si en un UPDATE vienen campos de descuento, forzar discount_type coherente.
-    """
-    if "discount_percentage" in values:
-        values["discount_type"] = "percentage"
-    elif "discount_amount" in values:
-        values["discount_type"] = "amount"
-    return values
-
+# ==========================================================
+#  UPDATE HANDLER (single + bulk)
+# ==========================================================
 
 class UpdateHandler(BaseHandler):
-    """
-    ✅ Update seguro: respeta la lógica de save() y evita loops.
-    """
+
     def execute(self, *, action, payload):
         model = action.target_content_type.model_class()
-        lookup = action.target_lookup or payload.get("lookup")
-        values = action.data or payload.get("data", {})
+        filters = action.target_filters
 
+        value = action.data  # {"type": "...", "...": ...}
+
+        # BULK UPDATE
+        if filters:
+            queryset = apply_filters(model.objects.all(), filters)
+            updated = 0
+
+            with transaction.atomic():
+                for obj in queryset:
+                    setattr(obj, "_skip_trigger", True)
+                    try:
+                        # value for bulk update is ONE field update
+                        final = resolve_value_fields({"value": value}, obj)
+                        obj.value = final["value"]
+                        obj.save()
+                        updated += 1
+                    finally:
+                        delattr(obj, "_skip_trigger")
+
+            return {"updated_count": updated}
+
+        # SINGLE UPDATE
+        lookup = action.target_lookup
         if not lookup:
-            raise ValueError("Falta lookup para UPDATE")
-
-        # ✅ Enforce discount_type si corresponde
-        values = _enforce_discount_type(values)
+            raise ValueError("Falta lookup para UPDATE single")
 
         try:
-            instance = model.objects.get(**lookup)
+            inst = model.objects.get(**lookup)
         except model.DoesNotExist:
             return {"updated_count": 0}
 
-        # ✅ Evitar loops
-        setattr(instance, "_skip_trigger", True)
-
+        setattr(inst, "_skip_trigger", True)
         try:
-            for field, value in values.items():
-                setattr(instance, field, value)
-
-            instance.save()
+            # resolve dynamic value
+            resolved = resolve_value_fields({"value": value}, inst)
+            inst.value = resolved["value"]
+            inst.save()
         finally:
-            if hasattr(instance, "_skip_trigger"):
-                delattr(instance, "_skip_trigger")
+            delattr(inst, "_skip_trigger")
 
-        return {"updated_count": 1, "pk": instance.pk, "updated": True}
+        return {"updated_count": 1, "pk": inst.pk}
 
+
+# ==========================================================
+#  DELETE (same as before)
+# ==========================================================
 
 class DeleteHandler(BaseHandler):
     def execute(self, *, action, payload):
         model = action.target_content_type.model_class()
-        lookup = action.target_lookup or payload.get("lookup")
-        if not lookup:
-            raise ValueError("Falta lookup para DELETE")
+        lookup = action.target_lookup
         with transaction.atomic():
             deleted, _ = model.objects.filter(**lookup).delete()
-        return {"deleted_count": deleted, "deleted": True}
+        return {"deleted_count": deleted}

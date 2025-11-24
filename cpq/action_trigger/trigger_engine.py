@@ -653,173 +653,158 @@ class TriggerEngine:
     # Ejecución de acciones
     # -------------------------------------------------------------------------
     def _execute_trigger_actions(self, trigger, instance, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Ejecuta las acciones de un ActionTrigger.
+        CREATE → manejado por el Action Trigger Engine (directo).
+        UPDATE / DELETE → manejado por CustomActionExecutor.
+        BULK actions → manejadas por funciones dedicadas.
+        """
         results = []
         executor = CustomActionExecutor()
 
         for action in (trigger.actions or []):
             op = (action.get("operation") or "").upper()
-            if op not in ("CREATE", "UPDATE", "DELETE"):
-                logger.debug(f"⚠️ Acción {op} no es CRUD soportado por el executor.")
+            target = action.get("target", {})
+            value_def = action.get("value", {})
+
+            # ------------------------------------------------------------------
+            # 🔁 BULK CREATE
+            # ------------------------------------------------------------------
+            if op == "CREATE" and target.get("filters"):
+                result = self._handle_bulk_create(action, instance, context)
+                results.append({"action": action, "status": "ok", "result": result})
                 continue
 
-            try:
-                target_def = action.get("target", {})
-                value_def = action.get("value", {})
+            # ------------------------------------------------------------------
+            # 🔁 BULK UPDATE
+            # ------------------------------------------------------------------
+            if op == "UPDATE" and target.get("filters"):
+                result = self._handle_bulk_update(action, instance, context)
+                results.append({"action": action, "status": "ok", "result": result})
+                continue
 
-                # ---------------------------------------------
-                # BULK CREATE
-                # ---------------------------------------------
-                if op == "CREATE" and target_def.get("filters"):
-                    result = self._handle_bulk_create(action, instance, context)
-                    results.append({"action": action, "status": "ok", "result": result})
-                    continue
+            # ------------------------------------------------------------------
+            # 🔁 BULK DELETE
+            # ------------------------------------------------------------------
+            if op == "DELETE" and target.get("filters"):
+                result = self._handle_delete(action, instance, context)
+                results.append({"action": action, "status": "ok", "result": result})
+                continue
 
-                # ---------------------------------------------
-                # BULK UPDATE
-                # ---------------------------------------------
-                if op == "UPDATE" and target_def.get("filters"):
-                    result = self._handle_bulk_update(action, instance, context)
-                    results.append({"action": action, "status": "ok", "result": result})
-                    continue
+            # ==================================================================
+            # 🟩 SIMPLE CREATE (NO executor, no doble creación)
+            # ==================================================================
+            if op == "CREATE":
+                model_name = target.get("object")
+                ModelClass = apps.get_model("cpq", self._to_camel_case(model_name))
 
-                # ------------------------------------------------------------------
-                # ✅ CREATE — NO DEBE PASAR POR _resolve_target_instance_and_field()
-                # ------------------------------------------------------------------
-                if op == "CREATE":
-                    model_name = target_def.get("object")
-                    ModelClass = apps.get_model("cpq", self._to_camel_case(model_name))
-
-                    # Para CREATE no existe instancia objetivo, solo modelo
-                    target_inst = ModelClass
-                    target_field = None
-
-                    # Para el executor
-                    target_ct = ContentType.objects.get_for_model(ModelClass)
-
-                    # Guardar info del modelo en contexto
-                    context["_current_action"] = {
-                        "target_object": model_name,
-                        "target_model": ModelClass,
-                    }
-
-                    # Resolver datos
-                    fields = self._resolve_value_for_action(value_def, instance, context)
-                    if not isinstance(fields, dict):
-                        fields = {}
-
-                    # Coerción FK automática
-                    final_fields = {}
-                    for field_name, raw_value in fields.items():
-                        coerced = self._coerce_fk(ModelClass, field_name, raw_value, context=context, instance=instance)
-                        final_fields[field_name] = coerced
-
-                    logger.debug(f"🚀 CREATE simple {model_name} with data={final_fields}")
-
-                    # Crear instancia
-                    created_instance = ModelClass.objects.create(**final_fields)
-
-                    # ----------------------------------------------
-                    # 🔁 Recalcular quote si se creó quote_line
-                    # ----------------------------------------------
-                    if model_name == "quote_line":
-                        self._recalc_quote_after_create_quoteline(created_instance)
-
-                    lookup = {}  # CREATE nunca usa lookup
-                    data = final_fields
-
-                else:
-                    # ------------------------------------------------------------------
-                    # ✅ UPDATE / DELETE
-                    # ------------------------------------------------------------------
-                    # 🟢 FIX: si es DELETE con filters, ejecutar directamente el handler
-                    if op == "DELETE" and target_def.get("filters"):
-                        result = self._handle_delete(action, instance, context)
-                        results.append({"action": action, "status": "ok", "result": result})
-                        continue
-
-                    # En cualquier otro caso, resolver la instancia objetivo
-                    target_inst, target_field = self._resolve_target_instance_and_field(
-                        target_def, instance, context
-                    )
-
-                    if target_inst is None:
-                        logger.debug("⚠️ No se pudo resolver instancia objetivo para acción %s", op)
-                        continue
-
-                    target_obj_name = self._normalize_model_name(target_inst.__class__.__name__)
-                    target_model = target_inst.__class__
-                    target_ct = ContentType.objects.get_for_model(target_model)
-
-                    lookup = {"pk": target_inst.pk}
-                    data = {}
-
-                    # ✅ UPDATE
-                    if op == "UPDATE":
-                        value = self._resolve_value_for_action(value_def, instance, context)
-                        if value is None:
-                            logger.debug(f"⚠️ Valor no resuelto para {value_def}, acción omitida.")
-                            continue
-
-                        if target_field.endswith("__c"):
-                            logger.debug("🔁 Derivando actualización de campo __c a _handle_set()")
-                            self._handle_set(action, instance, context)
-                            continue
-
-                        data[target_field] = value
-
-                    # ✅ DELETE (sin filters) → borrar instancia individual
-                    elif op == "DELETE":
-                        data = {}
-                # ------------------------------------------------------------------
-                # ✅ LOG para auditoría
-                # ------------------------------------------------------------------
-                target_model_name = (
-                    self._normalize_model_name(target_inst.__name__)
-                    if op == "CREATE" else
-                    self._normalize_model_name(target_inst.__class__.__name__)
-                )
-
-                safe_payload = {
-                    "lookup": self._make_json_safe(lookup),
-                    "data": self._make_json_safe(data),
+                # Guardar info del modelo para resoluciones internas
+                context["_current_action"] = {
+                    "target_object": model_name,
+                    "target_model": ModelClass,
                 }
 
-                log = ActionLog.objects.create(
-                    trigger_name=trigger.name,
-                    operation=op,
-                    target_model=target_model_name,
-                    target_pk=str(lookup.get("pk", "")),
-                    event_type=f"{self._normalize_model_name(instance.__class__.__name__)}.{op.lower()}",
-                    signal_timing=getattr(trigger, "signal_timing", "post_save"),
-                    payload=safe_payload,
-                    status="pending",
-                )
+                # Resolver campos
+                fields = self._resolve_value_for_action(value_def, instance, context)
+                if not isinstance(fields, dict):
+                    fields = {}
 
-                # ------------------------------------------------------------------
-                # ✅ Acción temporal para el executor
-                # ------------------------------------------------------------------
-                action_stub = type("TempAction", (), {
-                    "pk": f"temp-{uuid.uuid4().hex[:8]}",
-                    "method": op,
+                # Coercer FK
+                final_fields = {
+                    fname: self._coerce_fk(ModelClass, fname, raw, context=context, instance=instance)
+                    for fname, raw in fields.items()
+                }
+
+                logger.debug(f"🚀 CREATE {model_name} with data={final_fields}")
+
+                created_instance = ModelClass.objects.create(**final_fields)
+
+                # Recalcular quote si aplica
+                if model_name == "quote_line":
+                    self._recalc_quote_after_create_quoteline(created_instance)
+
+                results.append({
+                    "action": action,
+                    "status": "ok",
+                    "result": {"pk": created_instance.pk, "created": True},
+                })
+                continue
+
+            # ==================================================================
+            # 🟦 UPDATE / DELETE individuales → usar EXECUTOR
+            # ==================================================================
+
+            # Resolver target instance & field
+            target_inst, target_field = self._resolve_target_instance_and_field(
+                target, instance, context
+            )
+
+            if target_inst is None:
+                logger.debug("⚠️ No se pudo resolver instancia objetivo para acción %s", op)
+                continue
+
+            target_model = target_inst.__class__
+            target_ct = ContentType.objects.get_for_model(target_model)
+            target_model_snake = self._normalize_model_name(target_model.__name__)
+
+            # -----------------------------------
+            # UPDATE
+            # -----------------------------------
+            if op == "UPDATE":
+                if not target_field:
+                    logger.debug("⚠️ UPDATE sin target_field válido, acción saltada")
+                    continue
+
+                # Resolver VALUE
+                value = self._resolve_value_for_action(value_def, instance, context)
+                if value is None:
+                    logger.debug("⚠️ Valor no resuelto, UPDATE omitido.")
+                    continue
+
+                # Campo custom → redirigir a _handle_set()
+                if target_field.endswith("__c"):
+                    logger.debug("🔁 UPDATE para campo __c → redirigiendo a _handle_set()")
+                    self._handle_set(action, instance, context)
+                    continue
+
+                # Construir action temporal para executor
+                update_stub = type("TempAction", (), {
+                    "pk": f"temp-{uuid.uuid4().hex[:6]}",
+                    "method": "UPDATE",
                     "target_content_type": target_ct,
-                    "target_lookup": lookup,
-                    "data": data,
+                    "target_lookup": {"pk": target_inst.pk},
+                    "data": {target_field: value},
                     "is_active": True,
                 })()
 
-                logger.debug(f"🚀 Ejecutando CustomAction {op} sobre {target_model_name} con data={data}")
-                result = executor.dispatch(action_stub, payload={"lookup": lookup, "data": data})
-
-                log.result = result
-                log.status = "success"
-                log.save(update_fields=["result", "status"])
-
-                logger.debug(f"✅ Acción {op} completada: {result}")
+                logger.debug(f"🔥 UPDATE {target_model_snake}.{target_field} = {value}")
+                result = executor.dispatch(update_stub)
                 results.append({"action": action, "status": "ok", "result": result})
+                continue
 
-            except Exception as exc:
-                logger.exception(f"❌ Error ejecutando acción {op}: {exc}")
-                results.append({"action": action, "status": "failed", "error": str(exc)})
+            # -----------------------------------
+            # DELETE individual
+            # -----------------------------------
+            if op == "DELETE":
+                delete_stub = type("TempAction", (), {
+                    "pk": f"temp-{uuid.uuid4().hex[:6]}",
+                    "method": "DELETE",
+                    "target_content_type": target_ct,
+                    "target_lookup": {"pk": target_inst.pk},
+                    "data": {},
+                    "is_active": True,
+                })()
+
+                logger.debug(f"🔥 DELETE {target_model_snake}(pk={target_inst.pk})")
+                result = executor.dispatch(delete_stub)
+                results.append({"action": action, "status": "ok", "result": result})
+                continue
+
+            # -----------------------------------
+            # Operación no soportada
+            # -----------------------------------
+            logger.debug(f"⚠️ Acción {op} no soportada.")
+            continue
 
         return results
     
