@@ -20,11 +20,13 @@ def get_action_triggers_details(action_triggers):
     trigger_details = []
     for trigger in triggers_qs:
         trigger_details.append({
-            "trigger": trigger.get_trigger_display(),  # Mostrar label legible
-            "action": trigger.get_action_display(),    # Mostrar label legible
-            "object_name": trigger.get_object_name_display(),  # Mostrar label legible
-            "action_params": trigger.action_params or {},
+            "name": trigger.name,
+            "description": trigger.description,    # Mostrar label legible
+            "event_type": trigger.event_type,  # Mostrar label legible
+            "conditions": trigger.conditions or {},
+            "actions": trigger.actions or {},
             "active": trigger.active,
+            "created_by": trigger.created_by.username,
             "created_at": trigger.created_at.strftime("%Y-%m-%d %H:%M:%S"),
         })
 

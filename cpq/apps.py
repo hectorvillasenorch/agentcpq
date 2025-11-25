@@ -13,5 +13,7 @@ class CpqConfig(AppConfig):
         import cpq.signals
 
         from .tasks.renewals_scheduler import start_renewal_scheduler
+        from cpq.action_trigger.trigger_engine import engine
+        engine.register_signals()
         # t = threading.Thread(target=start_renewal_scheduler, daemon=True)
         # t.start()

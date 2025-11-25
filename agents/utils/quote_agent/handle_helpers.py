@@ -3,6 +3,7 @@ from decimal import Decimal
 from .db_helpers import find_product_and_normalize_variables
 from cpq.models import QuoteLine
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+from django.forms.models import model_to_dict
 
 #
 from .record_helpers import update_quote_line_record, save_quote_line_update
@@ -31,7 +32,7 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
     - The updated quote instance
     - A message string summarizing the result
     """
-    logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🛠️ Adding products to quote 🛠️ (Esta es la function)")
+    logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🛠️ Adding products to quote 🛠️ ")
 
     # ✅ Add products to the quote if provided
     result = []
@@ -43,7 +44,7 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
             "error": None
         }
 
-        print(f"\n\nProduct Data: {product_data}\n\n")
+        #print(f"\n\nProduct Data: {product_data}\n\n")
 
         # ✅ Set up variables
         sku = product_data.get("sku")
@@ -300,13 +301,21 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
                     is_subscription=product.is_subscription,
                 )
 
+                #print(f"\n\n1 | Esto es quote line: {json.dumps(model_to_dict(quote_line), indent=4, default=str)}\n1 | Esto es quote: {json.dumps(model_to_dict(quote), indent=4, default=str)}\n\n")
+
+            #print(f"\n\n1.5 | Esto es quote line: {json.dumps(model_to_dict(quote_line), indent=4, default=str)}\n1.5 | Esto es quote: {json.dumps(model_to_dict(quote), indent=4, default=str)}\n\n")
             # If Product has custom fields, then create custom fields to QuoteLine
             copy_custom_fields_values_from_product_to_quote_line(quote_line)
 
 
             # ✅ Force saving and reloading from DB to verify
             quote_line.refresh_from_db()
-            logging.info(f"=>>>>>>>>>>>>>>>>>>>> Saved Total Price in DB: {quote_line.total_price}")
+            #print(f"\n\n2 | Esto es quote line despues del refresh from db: {json.dumps(model_to_dict(quote_line), indent=4, default=str)}\n2 | Esto es quote: {json.dumps(model_to_dict(quote), indent=4, default=str)}\n\n")
+            
+            quote_line.save()
+            #print(f"\n\n3 | Esto es quote line despues del save: {json.dumps(model_to_dict(quote_line), indent=4, default=str)}\n3 | Esto es quote: {json.dumps(model_to_dict(quote), indent=4, default=str)}\n\n")
+            
+            logging.info(f"=>>>>>>>>>>>>>>>>>>>> Saved Total Price in DB11111: {quote_line.total_price}")
 
             if discount_type == "percentage":
                 discount_message = f"✅ Added {quantity}x {sku}/{name} to quote {quote.name} with a {discount_value}% discount.<br>"

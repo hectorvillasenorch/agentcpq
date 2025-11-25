@@ -192,11 +192,11 @@ def get_session_context(action, session_data):
                 "create_action_trigger": [
                     {
                         "data": {
-                            "trigger": None,
-                            "action": None,
-                            "object_name": None,
-                            "action_params": {},
+                            "description": None,
+                            "event_type": None,
                             "active": None,
+                            "conditions": {},
+                            "actions": {}
 
                         },
                         "completed": False
@@ -227,24 +227,22 @@ def get_session_context(action, session_data):
                 "summary": None
             }
 
-        if action == "create_custom_object":
+        if action == "update_custom_field":
             context_data = {
-                "create_custom_object": [
+                "update_custom_field": [
                     {
                         "data": {
-                            "description": None,
-                            "rule_type": "exclusion",
-                            "target_type": None,
-                            "priority": 10,
-                            "error_message": None,
-                            "active": True,
-                            "conditions": {
-                                "trigger_product": {
-                                    "sku": None,
-                                    "name": None
-                                },
-                                "excluded_products": [],
-                                "options": [],
+                            "target_field_label": None,
+                            "target_custom_object": None,
+                            "target_default_object": None,
+                            "updates": {
+                                "label": None,
+                                "crm": None,
+                                "object_type": None,
+                                "data_type": None,
+                                "required": True,
+                                "custom_object": None,
+                                "options": None
                             }
 
                         },
@@ -253,6 +251,7 @@ def get_session_context(action, session_data):
                 ],
                 "summary": None
             }
+            
         if action == "show_quote_details":
             context_data = {
                 "show_quote_details": [

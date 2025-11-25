@@ -69,7 +69,7 @@ def extract_quote_details_with_llm(user_message, current_state, previous_summary
         If name is not mentioned or not found, set it to null (not the string "null").
     - "quantity" (integer): Quantity of the product. If quantity is not mentioned but products exist, set quantity to 1 by default (as an integer, not a string).
     - "discount_type" (string): Discount type, either "percentage" or "amount".
-    - "discount_value" (integer): Discount value without any dollar signs, percent signs, or text; only the numeric value.
+    - "discount_value" (number): Discount value as a number (integers or decimals).
     - "term" (integer or null): If term is mentioned, return it as an integer (not a string). If term is not mentioned, set term to null (not a string).
 
     For discounts:

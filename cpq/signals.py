@@ -25,7 +25,7 @@ from .notifications.notifications import (
 from .renewals.renewals import create_contract_after_closed_won
 
 # Action Trigger Helpers
-from .action_trigger.action_trigger import dispatch_trigger
+#from .action_trigger.expression_evaluator import dispatch_trigger
 
 @receiver(post_save, sender=Quote)
 def handle_primary_quote_sync(sender, instance, **kwargs):
@@ -67,27 +67,27 @@ def send_opportunity_created_email(sender, instance, created, **kwargs):
         run_async(notify_opportunity_created, instance)
 
 # OPPORTUNITY HAS CHANGE STAGE TO CLOSED WON OR CLOSED LOST
-@receiver(pre_save, sender=Opportunity)
-def check_opportunity_stage_change(sender, instance, **kwargs):
-    if not instance.pk:
-        return
-    try:
-        old_instance = Opportunity.objects.get(pk=instance.pk)
-    except Opportunity.DoesNotExist:
-        return
-
-    if old_instance.stage != instance.stage:
-        if instance.stage == "closedwon":
-            print(f"\n{instance.name} moved to Closed Won ✅.\n")
-            create_contract_after_closed_won(instance)
-            run_async(notify_opportunity_closed_won, instance)
-
-            # Action Trigger
-            dispatch_trigger("opportunity_closed_won", {"opportunity": instance})
-
-        elif instance.stage == "closedlost":
-            print(f"Opportunity {instance.name} moved to Closed Lost ❌")
-            run_async(notify_opportunity_closed_lost, instance)
+#@receiver(pre_save, sender=Opportunity)
+#def check_opportunity_stage_change(sender, instance, **kwargs):
+#    if not instance.pk:
+#        return
+#    try:
+#        old_instance = Opportunity.objects.get(pk=instance.pk)
+#    except Opportunity.DoesNotExist:
+#        return
+#
+#    if old_instance.stage != instance.stage:
+#        if instance.stage == "closedwon":
+#            print(f"\n{instance.name} moved to Closed Won ✅.\n")
+#            create_contract_after_closed_won(instance)
+#            run_async(notify_opportunity_closed_won, instance)
+#
+#            # Action Trigger
+#            dispatch_trigger("opportunity_closed_won", {"opportunity": instance})
+#
+#        elif instance.stage == "closedlost":
+#            print(f"Opportunity {instance.name} moved to Closed Lost ❌")
+#            run_async(notify_opportunity_closed_lost, instance)
 
 
 # QUOTE IS SENT FOR APPROVAL

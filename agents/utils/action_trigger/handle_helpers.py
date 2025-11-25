@@ -2,49 +2,99 @@ from cpq.models import ActionTrigger
 import logging
 
 def handle_create_action_trigger(user, completed_action_triggers, response_message):
+    from cpq.models import ActionTrigger
+    import logging
+    import re
+
     action_triggers_created = []
 
-    for action_trigger in completed_action_triggers:
-        trigger = action_trigger.get("trigger", None)
-        action = action_trigger.get("action", None)
-        object_name = action_trigger.get("object_name", None)
-        action_params = action_trigger.get("action_params", {})
-        active = action_trigger.get("active", True)  # default True
+    # 🧮 Obtener el número más alto actual (ej. AT-087 → 87)
+    existing_names = (
+        ActionTrigger.objects.values_list("name", flat=True)
+        .filter(name__startswith="AT-")
+    )
 
+    max_number = 0
+    pattern = re.compile(r"AT-(\d+)")
+    for name in existing_names:
+        match = pattern.match(name)
+        if match:
+            num = int(match.group(1))
+            max_number = max(max_number, num)
+
+    for trigger_data in completed_action_triggers:
         try:
-            # --- Validations ---
-            if trigger not in ["opportunity_closed_won"]:
-                response_message += f"❌ Invalid trigger: {trigger}. Must be 'opportunity_closed_won'.<br>"
+            print(f"\n\nTrigger Data: {trigger_data}\n\n")
+
+            description = trigger_data.get("description") or trigger_data.get("name")
+            event_type = trigger_data.get("event_type", {})
+            conditions = trigger_data.get("conditions", {})
+            actions = trigger_data.get("actions", [])
+            active = trigger_data.get("active", True)
+            priority = trigger_data.get("priority", 100)
+
+            # --- 🔍 VALIDACIONES ---
+            if not description:
+                response_message += "❌ Missing description or name for Action Trigger.<br>"
                 continue
 
-            if action not in ["create", "update", "delete"]:
-                response_message += f"❌ Invalid action: {action}. Must be 'create', 'update', or 'delete'.<br>"
+            if not isinstance(event_type, dict):
+                response_message += f"❌ event_type must be a dictionary, got {type(event_type).__name__}.<br>"
                 continue
 
-            if object_name not in ["renewal_task"]:
-                response_message += f"❌ Invalid object_name: {object_name}. Must be 'renewal_task'.<br>"
+            object_type = event_type.get("object_type")
+            action_name = event_type.get("action")
+
+            if not object_type or not action_name:
+                response_message += "❌ event_type must contain 'object_type' and 'action'.<br>"
                 continue
 
-            if object_name == "renewal_task":
-                months_before = action_params.get("months_before")
-                if months_before not in ["immediately", 3, 6]:
-                    response_message += f"❌ Invalid months_before for renewal_task: {months_before}. Must be 'immediately', 3, or 6.<br>"
+            if not isinstance(object_type, str) or not isinstance(action_name, str):
+                response_message += f"❌ object_type and action must be strings. Got {event_type}.<br>"
+                continue
+
+            if not object_type.isidentifier() or not action_name.isidentifier():
+                response_message += f"❌ Invalid identifiers in event_type: {event_type}.<br>"
+                continue
+
+            # ✅ If conditions is None → skip this validation (valid)
+            if conditions is not None:
+                if not isinstance(conditions, dict):
+                    response_message += "❌ conditions must be null or a dictionary.<br>"
                     continue
 
-            # --- Create ActionTrigger record ---
+                valid_logic = ["AND", "OR"]
+                logic_val = conditions.get("logic", "AND").upper()
+                if logic_val not in valid_logic:
+                    response_message += f"❌ Invalid logic '{logic_val}'. Must be 'AND' or 'OR'.<br>"
+                    continue
+
+            if not isinstance(actions, list) or len(actions) == 0:
+                response_message += f"❌ No actions defined for trigger '{description}'.<br>"
+                continue
+
+            # --- 🆕 GENERAR NOMBRE SECUENCIAL ---
+            max_number += 1
+            new_name = f"AT-{max_number:03d}"  # Formato con ceros: AT-001, AT-087, etc.
+
+            # --- ✅ CREAR TRIGGER ---
             new_trigger = ActionTrigger.objects.create(
-                trigger=trigger,
-                action=action,
-                object_name=object_name,
-                action_params=action_params,
-                active=active
+                name=new_name,
+                description=description,
+                event_type=event_type,
+                conditions=conditions,
+                actions=actions,
+                active=active,
+                created_by=user,
+                priority=priority
             )
 
             action_triggers_created.append(new_trigger)
-            response_message += f"✅ Action trigger '{trigger} -> {action} {object_name}' created successfully.<br>"
+            response_message += f"✅ Action Trigger '{new_name}' created successfully.<br>"
 
         except Exception as e:
-            logging.error(f"❌ Error creating action trigger: {str(e)}")
-            response_message += f"❌ Error creating action trigger: {str(e)}<br>"
+            logging.error(f"❌ Error creating Action Trigger: {str(e)}")
+            response_message += f"❌ Error creating Action Trigger: {str(e)}<br>"
+            continue
 
     return response_message, action_triggers_created

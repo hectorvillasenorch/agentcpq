@@ -200,7 +200,7 @@ def create_custom_field(user, user_message, session_data):
 def update_custom_field(user, user_message, session_data):
     """Edit custom field"""
     # 🧠 Make the session context
-    session_context = make_session_context(user, "EditCustomField", "custom_object_agent", session_data, user_message)
+    current_state, previous_summary = get_session_context("update_custom_field", session_data)
 
     logging.info("🔧 Editing custom field...\n\n")
 
@@ -208,13 +208,9 @@ def update_custom_field(user, user_message, session_data):
     custom_objects = CustomObject.objects.values_list("name", flat=True)
     custom_fields = CustomField.objects.values_list("name", flat=True)
 
-    extracted_custom_fields_updates = extract_custom_fields_updates(user_message, custom_objects, custom_fields)
+    extracted_custom_fields_updates = extract_custom_fields_updates(user_message, custom_objects, custom_fields, previous_summary)
 
     if not extracted_custom_fields_updates:
-        session_context["item_index"] = 1
-        session_context["extracted"] = "Something went wrong when LLM trying to extract custom fields data."
-        agent_response = f"An error occurred while extracting your custom fields data. Please try again."
-        save_or_update_conversation_context(session_context, agent_response)
         return {
         "message": f"{WARNING_ICON} AgentCPQ: An error occurred while extracting your custom fields data to update. Please try again."
         }
@@ -222,7 +218,7 @@ def update_custom_field(user, user_message, session_data):
     response_message = ""
 
     # ✅ Handle rules deletes
-    response_message, custom_fields_updated = handle_custom_fields_updates(user, extracted_custom_fields_updates, response_message, session_context)
+    response_message, custom_fields_updated = handle_custom_fields_updates(user, extracted_custom_fields_updates, response_message)
 
     # ✅ Return
     if not custom_fields_updated:

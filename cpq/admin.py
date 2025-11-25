@@ -26,6 +26,8 @@ from .models import (
     ScheduledTask,
     ActionTrigger,
     EmailAlert,
+    CustomAction,
+    ActionLog
 )
 from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession, AgentPrompt
@@ -198,14 +200,6 @@ class SubscriptionAdmin(DynamicCustomFieldAdmin):
         return [(None, {'fields': list(self.form().fields.keys())})]
 admin.site.register(Subscription, SubscriptionAdmin)
 
-
-class ActionTriggerAdmin(DynamicCustomFieldAdmin):
-    form = get_dynamic_form(ActionTrigger, crm="AgentCPQ", object_type="ActionTrigger")
-    list_display = ('trigger','action','object_name', 'action_params', 'active')
-    def get_fieldsets(self, request, obj=None):
-        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
-        return [(None, {'fields': fields})]
-admin.site.register(ActionTrigger, ActionTriggerAdmin)
 
 class ScheduledTaskAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(ScheduledTask, crm="AgentCPQ", object_type="ScheduledTask")
@@ -395,10 +389,10 @@ class ProductAdmin(DynamicCustomFieldAdmin):
         # Keep custom fields (CustomFieldValue)
         for field in CustomField.objects.filter(crm="AgentCPQ", object_type="Product"):
             field_name = field.name
-            print(f"\n\n Field Name: {field_name} \n\n")
+            #print(f"\n\n Field Name: {field_name} \n\n")
             if field_name in form.cleaned_data:
                 value = form.cleaned_data[field_name]
-                print(f"\n\n Value for {field_name}: {value}\n\n")
+                #print(f"\n\n Value for {field_name}: {value}\n\n")
                 cf_value, _ = CustomFieldValue.objects.get_or_create(
                     content_type=ContentType.objects.get_for_model(obj),
                     object_id=obj.id,
@@ -571,7 +565,7 @@ class BusinessRuleAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
 class QuoteLineAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(QuoteLine, crm="AgentCPQ", object_type="QuoteLine")
 
-    list_display = ('product_name', 'unit_price', 'subtotal', 'total_price', 'created_at_js', 'updated_at_js')
+    list_display = ('product_name', 'unit_price', 'quantity', 'discount_type', 'discount_percentage', 'discount_amount', 'subtotal', 'total_price', 'created_at_js', 'updated_at_js')
 
     def get_fieldsets(self, request, obj=None):
         fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
@@ -680,3 +674,28 @@ class AgentPromptAdmin(admin.ModelAdmin):
         """Muestra solo las primeras 80 letras de agent_message para la tabla."""
         return (obj.agent_message[:80] + "...") if obj.agent_message else ""
     short_agent_message.short_description = "Agent Message"
+
+
+class ActionTriggerAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
+    form = get_dynamic_form(ActionTrigger, crm="AgentCPQ", object_type="ActionTrigger")
+    list_display = ('name', 'description', 'event_type', 'conditions', 'actions', 'priority', 'active', 'created_by', 'created_at_js', 'updated_at_js')
+    def get_fieldsets(self, request, obj=None):
+        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
+        return [(None, {'fields': fields})]
+admin.site.register(ActionTrigger, ActionTriggerAdmin)
+
+class ActionLogAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
+    form = get_dynamic_form(ActionLog, crm="AgentCPQ", object_type="ActionLog")
+    list_display = ('trigger_name', 'operation', 'target_model', 'result', 'status', 'created_at_js')
+    def get_fieldsets(self, request, obj=None):
+        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
+        return [(None, {'fields': fields})]
+admin.site.register(ActionLog, ActionLogAdmin)
+
+class CustomActionAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
+    form = get_dynamic_form(CustomAction, crm="AgentCPQ", object_type="CustomAction")
+    list_display = ('name', 'method', 'target_lookup', 'data', 'is_active', 'target_content_type_id')
+    def get_fieldsets(self, request, obj=None):
+        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
+        return [(None, {'fields': fields})]
+admin.site.register(CustomAction, CustomActionAdmin)
