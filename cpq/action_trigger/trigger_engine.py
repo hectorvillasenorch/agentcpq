@@ -10,6 +10,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Model
 from django.contrib.contenttypes.models import ContentType
+from datetime import datetime, date
 from decimal import Decimal
 
 from cpq.actions.executor import CustomActionExecutor
@@ -610,43 +611,121 @@ class TriggerEngine:
             self._next_custom_field = None
 
         return current
+    
+    # -------------------------------------------------------------------------
+    # ✅ NORMALIZACIÓN GLOBAL DE VALORES (ARQUITECTURA BASE)
+    # -------------------------------------------------------------------------
+    def _normalize_value(self, value):
+        """
+        Convierte automáticamente strings a su tipo real cuando sea posible:
+        - "2025-12-30" → date
+        - "10" → int
+        - "10.5" → Decimal
+        - "true" → True
+        """
+        if value is None:
+            return None
+
+        # Ya es tipo correcto → devolver directo
+        if isinstance(value, (int, float, bool, Decimal, date, datetime)):
+            return value
+
+        if isinstance(value, str):
+            v = value.strip()
+
+            # -----------------------
+            # Fecha ISO (YYYY-MM-DD)
+            # -----------------------
+            try:
+                if "T" in v:
+                    return datetime.fromisoformat(v)
+                return datetime.fromisoformat(v).date()
+            except Exception:
+                pass
+
+            # -----------------------
+            # Booleanos
+            # -----------------------
+            if v.lower() in ("true", "1", "yes", "y", "t"):
+                return True
+            if v.lower() in ("false", "0", "no", "n", "f"):
+                return False
+
+            # -----------------------
+            # Entero
+            # -----------------------
+            try:
+                return int(v)
+            except Exception:
+                pass
+
+            # -----------------------
+            # Decimal
+            # -----------------------
+            try:
+                return Decimal(v)
+            except Exception:
+                pass
+
+        return value
+
+    def _normalize_pair(self, left, right):
+        """
+        Normaliza ambos lados de una comparación SIEMPRE.
+        Esta función es la que te blinda todo el engine.
+        """
+        left = self._normalize_value(left)
+        right = self._normalize_value(right)
+        return left, right
 
     # -------------------------------------------------------------------------
-    # Comparadores
+    # ✅ COMPARADOR NORMALIZADO (BLINDA TODO EL ENGINE)
     # -------------------------------------------------------------------------
     def _compare(self, left, right, operator: str) -> bool:
-        left = self._normalize_number(left)
-        right = self._normalize_number(right)
+        # ✅ Normalización GLOBAL (fechas, números, strings, bool)
+        left, right = self._normalize_pair(left, right)
 
         if operator in ("==", "="):
             return left == right
+
         if operator == "!=":
             return left != right
+
         if operator == ">":
             try:
                 return left > right
-            except Exception:
+            except Exception as e:
+                logger.debug(f"⚠️ Error '>' comparando {left} ({type(left)}) y {right} ({type(right)}): {e}")
                 return False
+
         if operator == "<":
             try:
                 return left < right
-            except Exception:
+            except Exception as e:
+                logger.debug(f"⚠️ Error '<' comparando {left} ({type(left)}) y {right} ({type(right)}): {e}")
                 return False
+
         if operator == ">=":
             try:
                 return left >= right
-            except Exception:
+            except Exception as e:
+                logger.debug(f"⚠️ Error '>=' comparando {left} ({type(left)}) y {right} ({type(right)}): {e}")
                 return False
+
         if operator == "<=":
             try:
                 return left <= right
-            except Exception:
+            except Exception as e:
+                logger.debug(f"⚠️ Error '<=' comparando {left} ({type(left)}) y {right} ({type(right)}): {e}")
                 return False
+
         if operator == "contains":
             try:
                 return right in left
-            except Exception:
+            except Exception as e:
+                logger.debug(f"⚠️ Error 'contains' comparando {left} y {right}: {e}")
                 return False
+
         return False
 
     # -------------------------------------------------------------------------
@@ -654,68 +733,73 @@ class TriggerEngine:
     # -------------------------------------------------------------------------
     def _execute_trigger_actions(self, trigger, instance, context: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Ejecuta las acciones de un ActionTrigger.
-        CREATE → manejado por el Action Trigger Engine (directo).
-        UPDATE / DELETE → manejado por CustomActionExecutor.
-        BULK actions → manejadas por funciones dedicadas.
+        Ejecuta acciones del trigger.
+        TODO pasa por aquí:
+        - CREATE simple
+        - CREATE bulk (con action.filters)
+        - UPDATE simple (SET / UPDATE de un campo)
+        - UPDATE bulk (con target.filters)
+        - DELETE simple
+        - DELETE bulk (con target.filters)
+        - EMAIL / WEBHOOK
         """
         results = []
-        executor = CustomActionExecutor()
 
         for action in (trigger.actions or []):
             op = (action.get("operation") or "").upper()
-            target = action.get("target", {})
-            value_def = action.get("value", {})
+            target = action.get("target") or {}
+            value_def = action.get("value") or {}
+            action_filters = action.get("filters")  # usado solo en BULK CREATE
+            target_filters = target.get("filters")  # usado en BULK UPDATE / DELETE
 
-            # ------------------------------------------------------------------
-            # 🔁 BULK CREATE
-            # ------------------------------------------------------------------
-            if op == "CREATE" and target.get("filters"):
+            # ==================================================================
+            # 🔁 BULK CREATE (usa action.filters → source_object + items[])
+            # ==================================================================
+            if op == "CREATE" and action_filters:
                 result = self._handle_bulk_create(action, instance, context)
                 results.append({"action": action, "status": "ok", "result": result})
                 continue
 
-            # ------------------------------------------------------------------
-            # 🔁 BULK UPDATE
-            # ------------------------------------------------------------------
-            if op == "UPDATE" and target.get("filters"):
+            # ==================================================================
+            # 🔁 BULK UPDATE (usa target.filters)
+            # ==================================================================
+            if op == "UPDATE" and target_filters:
                 result = self._handle_bulk_update(action, instance, context)
                 results.append({"action": action, "status": "ok", "result": result})
                 continue
 
-            # ------------------------------------------------------------------
-            # 🔁 BULK DELETE
-            # ------------------------------------------------------------------
-            if op == "DELETE" and target.get("filters"):
+            # ==================================================================
+            # 🔁 BULK DELETE (usa target.filters)
+            # ==================================================================
+            if op == "DELETE" and target_filters:
                 result = self._handle_delete(action, instance, context)
                 results.append({"action": action, "status": "ok", "result": result})
                 continue
 
             # ==================================================================
-            # 🟩 SIMPLE CREATE (NO executor, no doble creación)
+            # 🟩 CREATE SIMPLE (sin filtros, igual que AT-001)
             # ==================================================================
             if op == "CREATE":
                 model_name = target.get("object")
+                if not model_name:
+                    continue
+
                 ModelClass = apps.get_model("cpq", self._to_camel_case(model_name))
 
-                # Guardar info del modelo para resoluciones internas
+                # contexto para resolver fields
                 context["_current_action"] = {
                     "target_object": model_name,
                     "target_model": ModelClass,
                 }
 
-                # Resolver campos
                 fields = self._resolve_value_for_action(value_def, instance, context)
                 if not isinstance(fields, dict):
                     fields = {}
 
-                # Coercer FK
                 final_fields = {
-                    fname: self._coerce_fk(ModelClass, fname, raw, context=context, instance=instance)
-                    for fname, raw in fields.items()
+                    f: self._coerce_fk(ModelClass, f, v, context=context, instance=instance)
+                    for f, v in fields.items()
                 }
-
-                logger.debug(f"🚀 CREATE {model_name} with data={final_fields}")
 
                 created_instance = ModelClass.objects.create(**final_fields)
 
@@ -731,183 +815,130 @@ class TriggerEngine:
                 continue
 
             # ==================================================================
-            # 🟦 UPDATE / DELETE individuales → usar EXECUTOR
+            # 📝 UPDATE SIMPLE (SET) → TODO pasa por _handle_set
             # ==================================================================
-
-            # Resolver target instance & field
-            target_inst, target_field = self._resolve_target_instance_and_field(
-                target, instance, context
-            )
-
-            if target_inst is None:
-                logger.debug("⚠️ No se pudo resolver instancia objetivo para acción %s", op)
-                continue
-
-            target_model = target_inst.__class__
-            target_ct = ContentType.objects.get_for_model(target_model)
-            target_model_snake = self._normalize_model_name(target_model.__name__)
-
-            # -----------------------------------
-            # UPDATE
-            # -----------------------------------
             if op == "UPDATE":
-                if not target_field:
-                    logger.debug("⚠️ UPDATE sin target_field válido, acción saltada")
-                    continue
-
-                # Resolver VALUE
-                value = self._resolve_value_for_action(value_def, instance, context)
-                if value is None:
-                    logger.debug("⚠️ Valor no resuelto, UPDATE omitido.")
-                    continue
-
-                # Campo custom → redirigir a _handle_set()
-                if target_field.endswith("__c"):
-                    logger.debug("🔁 UPDATE para campo __c → redirigiendo a _handle_set()")
-                    self._handle_set(action, instance, context)
-                    continue
-
-                # Construir action temporal para executor
-                update_stub = type("TempAction", (), {
-                    "pk": f"temp-{uuid.uuid4().hex[:6]}",
-                    "method": "UPDATE",
-                    "target_content_type": target_ct,
-                    "target_lookup": {"pk": target_inst.pk},
-                    "data": {target_field: value},
-                    "is_active": True,
-                })()
-
-                logger.debug(f"🔥 UPDATE {target_model_snake}.{target_field} = {value}")
-                result = executor.dispatch(update_stub)
+                result = self._handle_set(action, instance, context)
                 results.append({"action": action, "status": "ok", "result": result})
                 continue
 
-            # -----------------------------------
-            # DELETE individual
-            # -----------------------------------
+            # ==================================================================
+            # 🗑️ DELETE SIMPLE (sin filtros) → borrar UNA instancia
+            # ==================================================================
             if op == "DELETE":
-                delete_stub = type("TempAction", (), {
-                    "pk": f"temp-{uuid.uuid4().hex[:6]}",
-                    "method": "DELETE",
-                    "target_content_type": target_ct,
-                    "target_lookup": {"pk": target_inst.pk},
-                    "data": {},
-                    "is_active": True,
-                })()
+                target_inst, _ = self._resolve_target_instance_and_field(target, instance, context)
+                if not target_inst:
+                    continue
 
-                logger.debug(f"🔥 DELETE {target_model_snake}(pk={target_inst.pk})")
-                result = executor.dispatch(delete_stub)
+                result = self._handle_single_delete(target_inst)
                 results.append({"action": action, "status": "ok", "result": result})
                 continue
 
-            # -----------------------------------
-            # Operación no soportada
-            # -----------------------------------
-            logger.debug(f"⚠️ Acción {op} no soportada.")
-            continue
+            # ==================================================================
+            # 📧 / 🌐 EMAIL / WEBHOOK
+            # ==================================================================
+            if op == "EMAIL":
+                result = self._handle_email(action, instance, context)
+                results.append({"action": action, "status": "ok", "result": result})
+                continue
+
+            if op == "WEBHOOK":
+                result = self._handle_webhook(action, instance, context)
+                results.append({"action": action, "status": "ok", "result": result})
+                continue
 
         return results
     
     def _handle_bulk_create(self, action, instance, context):
         """
-        CREATE with filters → Bulk Create.
-        For each record matched by filters, create ONE new record.
+        BULK CREATE (CORREGIDO)
+        - Filtra sobre source_object (NO sobre target)
+        - Resuelve filtros desde action["filters"]
+        - Crea un registro del target por cada source record
         """
+        filters = action.get("filters") or {}
+        source_model_name = filters.get("source_object")
+        items = filters.get("items", [])
 
-        from django.db.models import Model
-        from django.apps import apps
+        if not source_model_name:
+            return {"created": False, "reason": "source_object missing in filters"}
 
-        target = action.get("target", {})
-        value_def = action.get("value", {})
+        SourceModel = self._get_model_class(source_model_name)
+        if SourceModel is None:
+            return {"created": False, "reason": f"Source model '{source_model_name}' not found"}
 
-        model_name = target.get("object")
-        if not model_name:
-            return {"created": False, "reason": "object missing in target"}
-
-        ModelClass = self._get_model_class(model_name)
-        if ModelClass is None:
-            return {"created": False, "reason": f"Model '{model_name}' not found"}
+        target_obj_name = action.get("target", {}).get("object")
+        TargetModel = self._get_model_class(target_obj_name)
+        if TargetModel is None:
+            return {"created": False, "reason": f"Target model '{target_obj_name}' not found"}
 
         # ----------------------------------------------------------------------
-        # 1. Build ORM filters
+        # 1. Build ORM filters for SourceModel
         # ----------------------------------------------------------------------
         orm_filters = {}
 
-        for f in (target.get("filters") or []):
+        for f in items:
             field = f.get("field")
-            operator = f.get("operator", "==")
+            op = f.get("operator", "==")
             val_block = f.get("value", {})
 
-            if not field:
-                continue
-
-            resolved_value = self._resolve_value_for_action(val_block, instance, context)
+            resolved = self._resolve_value_for_action(val_block, instance, context)
             orm_key = field.replace(".", "__")
 
-            if operator == "!=":
+            if op == "!=":
                 orm_key = f"{orm_key}__ne"
-            elif operator == ">":
+            elif op == ">":
                 orm_key = f"{orm_key}__gt"
-            elif operator == "<":
+            elif op == "<":
                 orm_key = f"{orm_key}__lt"
-            elif operator == ">=":
+            elif op == ">=":
                 orm_key = f"{orm_key}__gte"
-            elif operator == "<=":
+            elif op == "<=":
                 orm_key = f"{orm_key}__lte"
-            elif operator == "contains":
+            elif op == "contains":
                 orm_key = f"{orm_key}__icontains"
-            elif operator == "in":
+            elif op == "in":
                 orm_key = f"{orm_key}__in"
 
-            orm_filters[orm_key] = resolved_value
+            orm_filters[orm_key] = resolved
 
-        logger.debug(f"🧩 BULK CREATE filters ORM: {orm_filters}")
+        qs = SourceModel.objects.filter(**orm_filters)
 
-        queryset = ModelClass.objects.filter(**orm_filters)
-
-        count = queryset.count()
-        logger.debug(f"📌 BULK CREATE matched {count} record(s) in {model_name}")
-
-        created_objects = []
+        created_pks = []
 
         # ----------------------------------------------------------------------
-        # 2. Loop through each matched record → create new record
+        # 2. For each matched source record → create a target
         # ----------------------------------------------------------------------
-        for matched in queryset:
-            # Extend context for field resolution
+        for source_record in qs:
+            # EXTENDED CONTEXT: use exact object name for LLM paths
             local_context = dict(context)
-            inst_name = self._normalize_model_name(matched.__class__.__name__)
-            local_context[inst_name] = matched
+            local_context[source_model_name] = source_record  # CORRECCIÓN CRÍTICA
 
-            # Resolve fields to insert
-            fields = self._resolve_value_for_action(value_def, instance, local_context)
+            # Store action for FK coercion
+            local_context["_current_action"] = {
+                "target_object": target_obj_name,
+                "target_model": TargetModel,
+            }
 
-            # Coerce FKs
+            # Resolve CREATE fields
+            fields = self._resolve_value_for_action(action.get("value", {}), instance, local_context)
+
             final_fields = {}
-            for field_name, raw_value in fields.items():
-                coerced = self._coerce_fk(ModelClass, field_name, raw_value, context=local_context, instance=instance)
-                final_fields[field_name] = coerced
+            for fname, raw in fields.items():
+                final_fields[fname] = self._coerce_fk(TargetModel, fname, raw, context=local_context, instance=instance)
 
-            # Create the record
-            obj = ModelClass.objects.create(**final_fields)
-            created_objects.append(obj.pk)
+            obj = TargetModel.objects.create(**final_fields)
+            created_pks.append(obj.pk)
 
-            logger.debug(f"🆕 BULK CREATE: created {model_name}(pk={obj.pk}) with fields={final_fields}")
-
-            # ----------------------------------------------------------
-            # 🔁 Recalcular quote si BULK CREATE creó quote_line
-            # ----------------------------------------------------------
-            if model_name == "quote_line":
+            # Recalc if needed
+            if target_obj_name == "quote_line":
                 self._recalc_quote_after_create_quoteline(obj)
 
-        # ----------------------------------------------------------------------
-        # Return summary
-        # ----------------------------------------------------------------------
         return {
             "bulk_created": True,
-            "count": len(created_objects),
-            "object": model_name,
-            "pks": created_objects
+            "count": len(created_pks),
+            "object": target_obj_name,
+            "pks": created_pks,
         }
 
     
@@ -1227,6 +1258,59 @@ class TriggerEngine:
             "model": model_name,
             "affected_quotes": list(set(quote_ids)),
         }
+    
+    def _handle_single_delete(self, obj):
+        """
+        DELETE de un solo registro (sin filters).
+        Soporta recalcular Quote si borras una QuoteLine.
+        """
+        from django.apps import apps
+
+        model_name = self._normalize_model_name(obj.__class__.__name__)
+        pk = obj.pk
+
+        affected_quotes = []
+
+        # Si estamos borrando una quote_line → marcar quote para recalcular
+        if model_name == "quote_line" and getattr(obj, "quote_id", None):
+            affected_quotes.append(obj.quote_id)
+
+        obj.delete()
+        logger.debug(f"🗑️ DELETE single {model_name}(pk={pk})")
+
+        # 🔁 Recalcular quotes afectadas (igual idea que en _handle_delete)
+        if affected_quotes:
+            Quote = apps.get_model("cpq", "Quote")
+            unique_qids = set(affected_quotes)
+            logger.debug(f"🔁 Recalculando {len(unique_qids)} quote(s) afectadas por DELETE single...")
+
+            for qid in unique_qids:
+                q = Quote.objects.filter(pk=qid).first()
+                if not q:
+                    continue
+                try:
+                    setattr(q, "_skip_trigger", True)
+                    q.subtotal = q.get_subtotal_amount()
+                    q.update_discount_fields()
+                    q.update_net_amount()
+                    q.save(update_fields=[
+                        "subtotal", "discount_percentage", "discount_amount",
+                        "net_amount", "tax_amount", "tax_percentage", "updated_at"
+                    ])
+                    logger.debug(f"✅ Quote(pk={q.pk}) recalculada tras DELETE single")
+                except Exception as e:
+                    logger.exception(f"❌ Error recalculando Quote(pk={qid}) tras DELETE single: {e}")
+                finally:
+                    if hasattr(q, "_skip_trigger"):
+                        delattr(q, "_skip_trigger")
+
+        return {
+            "deleted": True,
+            "deleted_count": 1,
+            "model": model_name,
+            "pk": pk,
+            "affected_quotes": list(set(affected_quotes)),
+        }
 
     def _handle_email(self, action, instance, context):
         return {"emailed": True}
@@ -1236,149 +1320,89 @@ class TriggerEngine:
 
     def _resolve_value_for_action(self, value_def: Dict[str, Any], instance: Model, context: Dict[str, Any]):
         """
-        Ahora soporta:
-            - FK como ID
-            - FK como instancia
-            - Sin path → usar instancia del evento
+        Resolución completa para CREATE / UPDATE:
+        - Soporta path="" → usar instancia completa
+        - Respeta source_object en bulk
+        - Coerce FK correctamente
         """
         if not value_def:
             return None
 
         # ----------------------------------------------------------------------
-        # ✅ CASE 1: CREATE → value.fields {...}
+        # CASE 1: CREATE → fields{}
         # ----------------------------------------------------------------------
         if "fields" in value_def:
-            resolved_fields = {}
+            resolved = {}
 
-            for field_name, field_def in value_def["fields"].items():
+            for fname, field_def in value_def["fields"].items():
                 ftype = field_def.get("type")
+                obj = field_def.get("object")
+                path = field_def.get("path", "")
+                alias = field_def.get("alias")
 
-                # ---------------------------------------------
                 # STATIC
-                # ---------------------------------------------
                 if ftype == "static":
-                    resolved_fields[field_name] = field_def.get("data")
+                    resolved[fname] = field_def.get("data")
                     continue
 
-                # ---------------------------------------------
-                # FIELD → puede ser ID, path vacío o instancia
-                # ---------------------------------------------
+                # FIELD
                 if ftype == "field":
-                    obj = field_def.get("object")
-                    path = field_def.get("path", "")
-                    alias = field_def.get("alias")
+                    base = None
 
-                    # --- Caso: custom object
-                    if self._is_custom_object(obj):
-                        rec = None
-                        if alias and alias in context:
-                            rec = context[alias]
-                        else:
-                            rec = self._fallback_custom_record_from_alias_map(context, obj)
+                    # PRIORIDAD ALTA → contexto directo
+                    if obj in context:
+                        base = context[obj]
 
-                        if rec:
-                            resolved_fields[field_name] = self._resolve_custom_field_value(rec, path)
-                        else:
-                            resolved_fields[field_name] = None
+                    # Instancia principal
+                    inst_name = self._normalize_model_name(instance.__class__.__name__)
+                    if base is None and obj == inst_name:
+                        base = instance
 
+                    # path vacío → usar instancia completa del obj
+                    if path == "":
+                        resolved[fname] = base
                         continue
 
-                    # 1) Si tiene path, resolverlo
-                    if path:
-                        raw_value = self._resolve_path(
-                            context.get(obj, instance),
-                            path
-                        )
-                    else:
-                        # 2) Sin path → usar instancia directa (Case B)
-                        if obj in context:
-                            raw_value = context[obj]
-                        else:
-                            inst_name = self._normalize_model_name(instance.__class__.__name__)
-                            raw_value = instance if obj == inst_name else None
+                    if base is None:
+                        resolved[fname] = None
+                        continue
 
-                    # 3) Convertir automáticamente ForeignKeys
-                    target_model_name = value_def.get("target_model_override") or None
-                    # Si no existe target_model_override, usamos el objeto del CREATE:
-                    if not target_model_name:
-                        # Lo sacamos del action (necesita estar en stack caller)
-                        # Para CREATE, esto siempre está arriba
-                        pass
-
-                    # Como alternativa simple (y robusta):
-                    # Re-resolver desde el action actual:
-                    # (Necesita estar dentro de _execute_trigger_actions)
-                    # Mejor lo hacemos así:
-                    try:
-                        # Recuperar Model desde context de CREATE
-                        action = context.get("_current_action", {})
-                        model_name = action.get("target_object")
-                        ModelClass = apps.get_model("cpq", self._to_camel_case(model_name))
-                    except Exception:
-                        ModelClass = None
-
-                    if ModelClass is not None:
-                        coerced = self._coerce_fk(
-                            ModelClass,
-                            field_name,
-                            raw_value,
-                            context=context,
-                            instance=instance
-                        )
-                    else:
-                        coerced = raw_value
-
-                    resolved_fields[field_name] = coerced
+                    raw_value = self._resolve_path(base, path)
+                    resolved[fname] = raw_value
                     continue
 
-                # ---------------------------------------------
                 # EXPRESSION
-                # ---------------------------------------------
                 if ftype == "expression":
-                    formula = field_def.get("formula", "")
-                    resolved_fields[field_name] = self._evaluate_expression(formula, instance, context)
+                    resolved[fname] = self._evaluate_expression(field_def.get("formula", ""), instance, context)
                     continue
 
-                # ---------------------------------------------
                 # DATE
-                # ---------------------------------------------
                 if ftype == "date":
-                    formula = field_def.get("formula", "")
-                    resolved_fields[field_name] = self._evaluate_date_formula(formula, instance, context)
+                    resolved[fname] = self._evaluate_date_formula(field_def.get("formula", ""), instance, context)
                     continue
 
-                # Default
-                resolved_fields[field_name] = None
+                # ✅ SEQUENCE (NEXT_SEQUENCE)
+                if ftype == "sequence":
+                    resolved[fname] = self._resolve_sequence(field_def)
+                    continue
 
-            return resolved_fields
+            return resolved
 
         # ----------------------------------------------------------------------
-        # ✅ CASE 2: UPDATE / SET / DELETE → usan "value.type"
+        # CASE 2: UPDATE / DELETE → simple value.type
         # ----------------------------------------------------------------------
         ftype = value_def.get("type")
 
-        # STATIC
         if ftype == "static":
             return value_def.get("data")
 
-        # FIELD
         if ftype == "field":
             obj = value_def.get("object")
             path = value_def.get("path", "")
-            alias = value_def.get("alias")
 
-            # custom object
-            if self._is_custom_object(obj):
-                rec = None
-                if alias and alias in context:
-                    rec = context[alias]
-                else:
-                    rec = self._fallback_custom_record_from_alias_map(context, obj)
-
-                return self._resolve_custom_field_value(rec, path) if rec else None
-
-            # nativo
             if obj in context:
+                if path == "":
+                    return context[obj]
                 return self._resolve_path(context[obj], path)
 
             inst_name = self._normalize_model_name(instance.__class__.__name__)
@@ -1391,13 +1415,14 @@ class TriggerEngine:
 
             return None
 
-        # EXPRESSION
         if ftype == "expression":
             return self._evaluate_expression(value_def.get("formula", ""), instance, context)
 
-        # DATE
         if ftype == "date":
             return self._evaluate_date_formula(value_def.get("formula", ""), instance, context)
+        
+        if ftype == "sequence":
+            return self._resolve_sequence(value_def)
 
         return None
 
@@ -1578,13 +1603,12 @@ class TriggerEngine:
     
     def _evaluate_expression(self, formula: str, instance: Model, context: Dict[str, Any]):
         """
-        Evaluador completo de expresiones CPQ:
-        - Aritmética: + - * / ()
-        - Funciones: ROUND, FLOOR, CEIL, ABS, MAX, MIN
-        - Condicional: IF(cond, a, b)
-        - Strings: CONCAT, UPPER, LOWER, LEFT, RIGHT, TRIM, REPLACE
-        - Colecciones: SUM(obj.field), MAX, MIN, AVG, COUNT
-        - Resolución de referencias: quote_line.quantity, quote.account.tier__c
+        Evaluador completo de expresiones CPQ con BLINDAJE TOTAL DE FECHAS:
+        - Aritmética
+        - IF(cond, a, b)
+        - Strings
+        - Fechas coherentes (date vs date)
+        - Colecciones
         """
 
         import re
@@ -1598,22 +1622,34 @@ class TriggerEngine:
         expr = formula.strip()
 
         # -----------------------------------------------------
-        # 1) Reemplazar referencias tipo quote_line.quantity
+        # ✅ 1) Reemplazar referencias NORMALIZADAS
         # -----------------------------------------------------
         def replace_refs(match):
             ref = match.group(0)
-            val = self._resolve_expression_reference(ref, instance, context)
+            raw_val = self._resolve_expression_reference(ref, instance, context)
+
+            # ✅ NORMALIZACIÓN GLOBAL
+            val = self._normalize_value(raw_val)
 
             if val is None:
                 return "0"
 
-            # Convertir Decimal → float para el eval, luego regresamos a Decimal al final
             if isinstance(val, Decimal):
                 return str(float(val))
-            if isinstance(val, str):
-                return f"'{val}'"
-            if isinstance(val, (int, float, bool)):
+
+            if isinstance(val, bool):
+                return "True" if val else "False"
+
+            if isinstance(val, (int, float)):
                 return str(val)
+
+            # ✅ ✅ AQUÍ ESTÁ LA CLAVE DEL BUG
+            # Forzamos datetime → date dentro del eval
+            if isinstance(val, datetime):
+                return f"datetime.fromisoformat('{val.isoformat()}').date()"
+
+            if isinstance(val, date):
+                return f"date.fromisoformat('{val.isoformat()}')"
 
             return f"'{str(val)}'"
 
@@ -1624,7 +1660,7 @@ class TriggerEngine:
         )
 
         # -----------------------------------------------------
-        # 2) Registrar funciones seguras
+        # ✅ 2) Entorno seguro con FECHAS COHERENTES
         # -----------------------------------------------------
         safe_env = {
             # Aritmética
@@ -1647,20 +1683,39 @@ class TriggerEngine:
             "TRIM": lambda s: str(s).strip(),
             "REPLACE": lambda s, a, b: str(s).replace(a, b),
 
-            # Fechas
+            # Fechas BASE
             "TODAY": lambda: date.today(),
             "TOMORROW": lambda: date.today() + timedelta(days=1),
-            "NOW": lambda: datetime.now(),
+            "NOW": lambda: datetime.now().date(),
+
+            # ✅ ✅ DATEADD COHERENTE (date entra → date sale)
             "DATEADD": lambda base, n, unit: (
-                base + timedelta(days=int(n)) if "day" in unit.lower() else
-                base + relativedelta(months=int(n)) if "month" in unit.lower() else
-                base + relativedelta(years=int(n))
+                (
+                    base + timedelta(days=int(n))
+                    if "day" in unit.lower()
+                    else base + relativedelta(months=int(n))
+                    if "month" in unit.lower()
+                    else base + relativedelta(years=int(n))
+                ).date()
+                if isinstance(base, datetime)
+                else (
+                    base + timedelta(days=int(n))
+                    if "day" in unit.lower()
+                    else base + relativedelta(months=int(n))
+                    if "month" in unit.lower()
+                    else base + relativedelta(years=int(n))
+                )
             ),
+
+            # Necesario para fechas ISO
+            "datetime": datetime,
+            "date": date,
         }
 
-        # -------- Colecciones (SUM, AVG, COUNT) ----------
+        # -----------------------------------------------------
+        # ✅ 3) Colecciones NORMALIZADAS
+        # -----------------------------------------------------
         def resolve_collection(expr_path):
-            # Ej: quote.quote_line.quantity
             parts = expr_path.split(".")
             if len(parts) < 2:
                 return []
@@ -1670,16 +1725,14 @@ class TriggerEngine:
 
             for v in context.values():
                 if hasattr(v, "all") and obj_name in str(v.model).lower():
-                    return [getattr(item, field, 0) for item in v.all()]
+                    return [self._normalize_value(getattr(item, field, 0)) for item in v.all()]
 
             return []
 
-        safe_env["SUM"] = lambda lst: (
-            sum(resolve_collection(lst)) if isinstance(lst, str) else sum(lst)
-        )
+        safe_env["SUM"] = lambda lst: sum(resolve_collection(lst)) if isinstance(lst, str) else sum(lst)
         safe_env["AVG"] = lambda lst: (
             (sum(resolve_collection(lst)) / len(resolve_collection(lst)))
-            if isinstance(lst, str)
+            if isinstance(lst, str) and resolve_collection(lst)
             else (sum(lst) / len(lst) if lst else 0)
         )
         safe_env["COUNT"] = lambda lst: (
@@ -1687,7 +1740,7 @@ class TriggerEngine:
         )
 
         # -----------------------------------------------------
-        # 3) Ejecutar eval() seguro
+        # ✅ 4) Ejecutar eval seguro
         # -----------------------------------------------------
         try:
             result = eval(expr, {"__builtins__": {}}, safe_env)
@@ -1696,12 +1749,119 @@ class TriggerEngine:
             return None
 
         # -----------------------------------------------------
-        # 4) 🔥 Conversion final: si eval retorna float → Decimal
+        # ✅ 5) NORMALIZACIÓN FINAL
         # -----------------------------------------------------
-        if isinstance(result, float):
-            return Decimal(str(result))
+        return self._normalize_value(result)
+    
+    # -------------------------------------------------------------------------
+    # ✅ GENERIC SEQUENCE RESOLVER (NEXT_SEQUENCE)
+    # -------------------------------------------------------------------------
+    def _resolve_sequence(self, seq_def: Dict[str, Any]):
+        """
+        Generic NEXT_SEQUENCE resolver.
 
-        return result
+        Strategies:
+        - auto → intenta detectar si usar ID o MAX+1
+        - id_based → usa el siguiente ID de Django
+        - max_plus_one → usa MAX(field) + 1
+        - scoped_max_plus_one → MAX(field) + 1 con filtros
+
+        Ejemplo:
+        {
+            "type": "sequence",
+            "strategy": "auto",
+            "model": "quote",
+            "field": "name",
+            "prefix": "Q-",
+            "padding": 5,
+            "scope": { "account": 10 }
+        }
+        """
+
+        strategy = seq_def.get("strategy", "auto")
+        model_name = seq_def.get("model")
+        field_name = seq_def.get("field")
+        prefix = seq_def.get("prefix") or ""
+        padding = int(seq_def.get("padding") or 0)
+        scope = seq_def.get("scope")
+
+        if not model_name or not field_name:
+            logger.warning("⚠️ Invalid sequence definition (missing model/field)")
+            return None
+
+        ModelClass = self._get_model_class(model_name)
+        if ModelClass is None:
+            logger.warning(f"⚠️ Sequence model '{model_name}' not found")
+            return None
+
+        # ----------------------------------------------------------
+        # ✅ AUTO STRATEGY
+        # ----------------------------------------------------------
+        if strategy == "auto":
+            # Si el campo es 'name' o tiene prefijo → usar MAX+1
+            field_obj = ModelClass._meta.get_field(field_name)
+            if field_obj.get_internal_type() in ("CharField", "TextField"):
+                strategy = "max_plus_one"
+            else:
+                strategy = "id_based"
+
+        # ----------------------------------------------------------
+        # ✅ ID BASED
+        # ----------------------------------------------------------
+        if strategy == "id_based":
+            next_id = (ModelClass.objects.order_by("-id").first().id + 1) if ModelClass.objects.exists() else 1
+            num = next_id
+
+        # ----------------------------------------------------------
+        # ✅ MAX + 1 GLOBAL
+        # ----------------------------------------------------------
+        elif strategy == "max_plus_one":
+            existing = (
+                ModelClass.objects
+                .filter(**{f"{field_name}__startswith": prefix})
+                .values_list(field_name, flat=True)
+            )
+
+            nums = []
+            for v in existing:
+                try:
+                    clean = str(v).replace(prefix, "")
+                    nums.append(int(clean))
+                except Exception:
+                    continue
+
+            num = max(nums) + 1 if nums else 1
+
+        # ----------------------------------------------------------
+        # ✅ MAX + 1 CON SCOPE
+        # ----------------------------------------------------------
+        elif strategy == "scoped_max_plus_one":
+            qs = ModelClass.objects.all()
+
+            if isinstance(scope, dict):
+                qs = qs.filter(**scope)
+
+            existing = qs.values_list(field_name, flat=True)
+
+            nums = []
+            for v in existing:
+                try:
+                    clean = str(v).replace(prefix, "")
+                    nums.append(int(clean))
+                except Exception:
+                    continue
+
+            num = max(nums) + 1 if nums else 1
+
+        else:
+            logger.warning(f"⚠️ Unknown sequence strategy '{strategy}'")
+            return None
+
+        # ----------------------------------------------------------
+        # ✅ FORMATEO FINAL
+        # ----------------------------------------------------------
+        num_str = str(num).zfill(padding) if padding else str(num)
+        return f"{prefix}{num_str}"
 
     
     def _resolve_expression_reference(self, ref: str, instance: Model, context: Dict[str, Any]):
@@ -1792,7 +1952,7 @@ class TriggerEngine:
                 max(model.field)
                 min(model.field)
             - Operaciones encadenadas
-            - Altamente extensible
+            - 🔒 NORMALIZACIÓN GLOBAL incluida
         """
         import re
         from datetime import date, datetime, timedelta
@@ -1809,12 +1969,14 @@ class TriggerEngine:
         literal_match = re.match(r'^["\'](\d{4}-\d{2}-\d{2})["\']$', f)
         if literal_match:
             try:
-                return datetime.strptime(literal_match.group(1), "%Y-%m-%d").date()
-            except:
+                return self._normalize_value(
+                    datetime.strptime(literal_match.group(1), "%Y-%m-%d").date()
+                )
+            except Exception:
                 return None
 
         # =============================================================
-        # 2) FUNCIONES BASE (dinámicas y extensibles)
+        # 2) FUNCIONES BASE
         # =============================================================
         today = date.today()
         now = datetime.now()
@@ -1824,7 +1986,6 @@ class TriggerEngine:
             r"^tomorrow(\(\))?$"       : lambda: today + timedelta(days=1),
             r"^now(\(\))?$"            : lambda: now,
 
-            # Funciones avanzadas
             r"^start_of_month(\(\))?$" : lambda: today.replace(day=1),
             r"^end_of_month(\(\))?$"   : lambda: (today.replace(day=1) + relativedelta(months=1) - timedelta(days=1)),
             r"^start_of_year(\(\))?$"  : lambda: date(today.year, 1, 1),
@@ -1836,17 +1997,16 @@ class TriggerEngine:
 
         base_date = None
 
-        # Intentar match directo con función base
+        # Match directo
         for pattern, func in base_function_map.items():
             if re.match(pattern, f):
                 base_date = func()
                 break
 
-        # Si no hubo match directo, detectar inicio de fórmula tipo:
-        # today() + 3 days - 1 month + max(...)
+        # Match al inicio de una cadena
         if base_date is None:
             for pattern, func in base_function_map.items():
-                if re.match(pattern, f.split()[0]):  
+                if re.match(pattern, f.split()[0]):
                     base_date = func()
                     break
 
@@ -1856,25 +2016,16 @@ class TriggerEngine:
         current = base_date
 
         # =============================================================
-        # 3) AGREGACIONES: max(opportunity.primary_quote.quote_line.term)
+        # 3) AGREGACIONES: max(...) / min(...)
         # =============================================================
         agg_pattern = r"(max|min)\(([a-zA-Z0-9_\.]+)\)"
-
-        from django.db.models import Max, Min
-
         aggs = re.findall(agg_pattern, f)
 
         for agg_func, full_path in aggs:
-            # full_path: ej. "opportunity.primary_quote.quote_line.term"
             parts = full_path.split(".")
-
-            # Última parte = el campo del cual sacamos max/min
             field = parts[-1]
-
-            # Todas las partes menos la última = cadena de modelos
             model_chain = parts[:-1]
 
-            # Primer modelo = raíz (ej: "opportunity")
             base_model_name = model_chain[0]
             base_model_snake = self._normalize_model_name(base_model_name)
 
@@ -1885,10 +2036,8 @@ class TriggerEngine:
 
             if base_model_name in context:
                 root_obj = context[base_model_name]
-
             elif base_model_snake == self._normalize_model_name(instance.__class__.__name__):
                 root_obj = instance
-
             else:
                 for cand in context.values():
                     if isinstance(cand, Model) and self._normalize_model_name(cand.__class__.__name__) == base_model_snake:
@@ -1902,43 +2051,38 @@ class TriggerEngine:
             # -------------------------
             # Navegar la ruta anidada
             # -------------------------
-            current = root_obj
-            for attr in model_chain[1:]:  # saltamos el primero (ya lo resolvimos)
+            current_obj = root_obj
+            for attr in model_chain[1:]:
                 try:
-                    current = getattr(current, attr)
+                    current_obj = getattr(current_obj, attr)
                 except Exception:
-                    current = None
+                    current_obj = None
                     break
 
-            # current puede ser un related manager o un objeto
-            if hasattr(current, "all"):
-                items = list(current.all())
+            if hasattr(current_obj, "all"):
+                items = list(current_obj.all())
             else:
-                items = [current]
+                items = [current_obj]
 
             # -------------------------
-            # Extraer valores
+            # Extraer y NORMALIZAR valores
             # -------------------------
             values = []
             for item in items:
                 if item is None:
                     continue
                 try:
-                    values.append(getattr(item, field))
+                    raw_val = getattr(item, field)
+                    norm_val = self._normalize_value(raw_val)   # ✅ NORMALIZACIÓN AQUÍ
+                    values.append(norm_val)
                 except Exception:
                     pass
 
             if not values:
                 continue
 
-            # -------------------------
-            # Ejecutar el max o min
-            # -------------------------
             agg_value = max(values) if agg_func == "max" else min(values)
 
-            # -------------------------
-            # Reemplazar en la fórmula final
-            # -------------------------
             f = f.replace(f"{agg_func}({full_path})", str(agg_value))
 
         # =============================================================
@@ -1952,32 +2096,29 @@ class TriggerEngine:
             if sign == "-":
                 n = -n
 
-            # business days
             if unit == "business_days":
                 step = 1 if n > 0 else -1
                 count = abs(n)
                 while count > 0:
                     current = current + timedelta(days=step)
-                    if current.weekday() < 5:  # 0=Mon, 6=Sun
+                    if current.weekday() < 5:
                         count -= 1
                 continue
 
-            # days
             if "day" in unit:
                 current = current + timedelta(days=n)
                 continue
 
-            # months
             if "month" in unit:
                 current = current + relativedelta(months=n)
                 continue
 
-            # years
             if "year" in unit:
                 current = current + relativedelta(years=n)
                 continue
 
-        return current
+        # ✅ NORMALIZACIÓN FINAL DEL RESULTADO
+        return self._normalize_value(current)
     
     def _recalc_quote_after_create_quoteline(self, quote_line_instance):
         """

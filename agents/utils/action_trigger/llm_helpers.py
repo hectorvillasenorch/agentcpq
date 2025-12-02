@@ -390,6 +390,18 @@ def _normalize_value_block(v):
     if not t and "formula" in v:
         t = "expression"
 
+    # ✅ SEQUENCE SUPPORT
+    if t == "sequence":
+        return {
+            "type": "sequence",
+            "strategy": v.get("strategy", "auto"),
+            "model": v.get("model"),
+            "field": v.get("field"),
+            "prefix": v.get("prefix"),
+            "padding": v.get("padding", 0),
+            "scope": v.get("scope"),
+        }
+
     out = {"type": t}
 
     if t == "field":
@@ -487,6 +499,17 @@ def normalize_create_value_fields(fields, schema):
                 "type": "expression",
                 "formula": spec.get("formula"),
             }
+        
+        elif t == "sequence":
+            out[fname] = {
+                "type": "sequence",
+                "strategy": spec.get("strategy", "auto"),
+                "model": spec.get("model"),
+                "field": spec.get("field"),
+                "prefix": spec.get("prefix"),
+                "padding": spec.get("padding", 0),
+                "scope": spec.get("scope"),
+            }
 
         elif t == "date":
             out[fname] = {
@@ -536,8 +559,8 @@ def _normalize_filter_list(filters, target_obj, schema):
         if not isinstance(val, dict):
             continue
 
-        # Filters DO NOT allow expression or date values
-        if val.get("type") in ["expression", "date"]:
+        # ❌ Filters DO NOT allow expression, date, or sequence
+        if val.get("type") in ["expression", "date", "sequence"]:
             continue
 
         # Normalize field refs in value
@@ -756,6 +779,53 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
     "type": "date",
     "formula": "<DATE_EXPRESSION>"
     }}
+    
+    SEQUENCE (FOR AUTO NUMBERING):
+    {{
+        "type": "sequence",
+        "strategy": "auto" | "id_based" | "max_plus_one" | "scoped_max_plus_one",
+        "model": "<target_model>",
+        "field": "<field_name>",
+        "prefix": "<string or empty>",
+        "padding": <integer>,
+        "scope": {{ optional }}
+    }}
+
+    RULES:
+    - SEQUENCE is ONLY allowed inside CREATE.value.fields
+    - SEQUENCE is ONLY allowed for NON-FK scalar fields
+    - NEVER use type="expression" for sequences
+
+
+    ========================================================
+    DATE FUNCTION RULES (STRICT)
+    ========================================================
+
+    ⚠️ DATEADD MUST ALWAYS BE USED AS AN EXPRESSION ⚠️
+    - ANY use of DATEADD() MUST be placed inside:
+        {{ "type": "expression", "formula": "DATEADD(...)" }}
+
+    - NEVER output:
+        "type": "date"
+        when the formula contains DATEADD() or any function.
+
+    - NEVER convert "1 year", "12 months", "30 days" into arithmetic like:
+        TODAY() + 365
+        TODAY() + 12
+        TODAY() + 30
+
+    Instead ALWAYS convert them into:
+        DATEADD(<base>, <amount>, 'years' | 'months' | 'days')
+
+    RULE:
+    DATE formulas MUST ONLY be used for simple cases:
+    - TODAY()
+    - TOMORROW()
+    - NOW()
+    - TODAY() + N days/months/years 
+    WITHOUT functions or nesting.
+
+    If the formula contains functions → use EXPRESSION instead.
 
     ========================================================
     ✅ CREATE ACTION RULES (NORMAL CREATE — NO FILTERS)
@@ -810,25 +880,61 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
     ========================================================
     NORMAL UPDATE:
     {{
-    "operation": "UPDATE",
-    "target": {{ "object": "<event_root>", "path": "<field>" }},
-    "value": {{ <VALUE BLOCK> }}
+        "operation": "UPDATE",
+        "target": {{ "object": "<event_root>", "path": "<field>" }},
+        "value": {{ <VALUE BLOCK> }}
     }}
 
     BULK UPDATE:
     {{
-    "operation": "UPDATE",
-    "filters": {{
-        "source_object": "<SOURCE_MODEL>",
-        "items": [ ... ]
-    }},
-    "target": {{ "object": "<TARGET_MODEL>", "path": "<field>" }},
-    "value": {{ <VALUE BLOCK> }}
+        "operation": "UPDATE",
+        "filters": {{
+            "source_object": "<SOURCE_MODEL>",
+            "items": [ ... ]
+        }},
+        "target": {{ "object": "<TARGET_MODEL>", "path": "<field>" }},
+        "value": {{ <VALUE BLOCK> }}
     }}
 
     RULES:
     - NEVER use target.path = null in UPDATE.
     - Bulk update MUST update exactly ONE field.
+
+    ========================================================
+    🔥 BULK CREATE — ULTRA COMPACT STRICT RULES
+    ========================================================
+
+    1️⃣ FOREIGN KEYS (FK)
+    - Check FK using MODEL_SCHEMA[target]["relations"].
+    - If field is FK:
+    → MUST use: {{ "type": "field", "object": "<obj>", "path": "<path_or_empty>" }}
+    - NEVER use static/expression/date/raw IDs for FK fields.
+    - FK values MUST come from:
+    • source_object (bulk loop instance)
+    • reachable relations via MODEL_SCHEMA
+    • alias defined in conditions
+
+    2️⃣ EMPTY PATH ("path": "")
+    - Means: “use the FULL INSTANCE of the referenced object.”
+    - ONLY allowed when:
+    • target field is FK
+    • referenced object exists in context (source_object, filter object, alias)
+    - NOT allowed for scalar fields, filters, UPDATE targets, or unrelated objects.
+    - If unsure, use normal path (e.g. "quote", "product", "id").
+
+    3️⃣ BULK CREATE VALUE SOURCING
+    - Bulk CREATE uses: source_object → filters → target → value.fields.
+    - All value.fields MUST come from:
+    • source_object
+    • relations reachable from source_object
+    • static/expression/date ONLY if target field is NOT FK.
+    - Do NOT reference unrelated objects unless reachable or used in filters.
+    - source_object is the DEFAULT data root.
+
+    ========================================================
+    END
+    ========================================================
+
 
     ========================================================
     ✅ DELETE RULES
@@ -869,6 +975,55 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
     - "%" → discount_percentage + discount_type="percentage"
     - "$" → discount_amount + discount_type="amount"
     - ALWAYS generate TWO updates.
+
+    ========================================================
+    ✅ SEQUENCE RULES (AUTO NUMBERING)
+    ========================================================
+
+    When the user says ANY of the following:
+
+    - "next sequence"
+    - "next number"
+    - "next quote number"
+    - "auto increment name"
+    - "next folio"
+    - "next code"
+
+    You MUST generate:
+
+    {{
+    "type": "sequence",
+    "strategy": "auto",
+    "model": "<target_model>",
+    "field": "<field_name>",
+    "prefix": "<PREFIX>",
+    "padding": <INTEGER>
+    }}
+
+    EXAMPLES:
+
+    Quote name:
+    "name": {{
+    "type": "sequence",
+    "strategy": "auto",
+    "model": "quote",
+    "field": "name",
+    "prefix": "Q-",
+    "padding": 5
+    }}
+
+    Purchase request:
+    "name": {{
+    "type": "sequence",
+    "strategy": "auto",
+    "model": "purchase_request",
+    "field": "name",
+    "prefix": "PR-",
+    "padding": 5
+    }}
+
+    Rules:
+    - ALWAYS use prefix "Q-" for quote names
 
     ========================================================
     ✅ REQUIRED KEYS
@@ -1050,6 +1205,16 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
                                     new_fields[fname] = {
                                         "type": "date",
                                         "formula": spec.get("formula"),
+                                    }
+                                elif t == "sequence":
+                                    new_fields[fname] = {
+                                        "type": "sequence",
+                                        "strategy": spec.get("strategy", "auto"),
+                                        "model": spec.get("model"),
+                                        "field": spec.get("field"),
+                                        "prefix": spec.get("prefix"),
+                                        "padding": spec.get("padding", 0),
+                                        "scope": spec.get("scope"),
                                     }
 
                             a["value"]["fields"] = new_fields
