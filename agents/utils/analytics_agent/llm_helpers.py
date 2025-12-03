@@ -135,7 +135,7 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
     Rules:
     1. Only use the fields in 'filters' for conditions.
     2. Only use the fields in 'sort' for sorting.
-    3. If user specifies a limit, use it; otherwise default to 10.
+    3. If user specifies a limit, use it; otherwise default to 100.
     4. Operators must be standardized: equals, not_equals, contains, starts_with, ends_with, greater_than, greater_or_equal, less_than, less_or_equal, within_last, within_range, before_date, after_date, in, not_in, is_true, is_false.
     5. Modify only the field mentioned by the user.
     6. If the user attempts to do anything other than show metrics, do not modify/add any data and indicate in the agent_message that this agent can only show metrics.
@@ -284,7 +284,7 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
             "data": {
                 "object": data.get("object"),
                 "method": data.get("method", "read"),
-                "limit": data.get("limit", 10),
+                "limit": data.get("limit", 100),
                 "conditions": [
                     {
                         "field": cond.get("field"),

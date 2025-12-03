@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django import forms
+import json
 from .models import (
     Quote,
     QuoteLine,
@@ -37,6 +38,25 @@ from django.urls import reverse
 from django.http import HttpResponseRedirect
 from django.utils.timezone import localtime
 from django.utils.text import slugify
+
+
+class JSONPrettyTextarea(forms.Textarea):
+    """
+    Monospace textarea with sensible defaults for editing JSON.
+    """
+    def __init__(self, rows=10, **kwargs):
+        attrs = {
+            "rows": rows,
+            "style": (
+                "font-family:Menlo,Consolas,monospace;"
+                "white-space:pre;tab-size:2;"
+                "background:#0d1117;color:#c9d1d9;"
+                "border:1px solid #30363d;border-radius:6px;"
+                "padding:10px;"
+            ),
+        }
+        attrs.update(kwargs.pop("attrs", {}))
+        super().__init__(attrs=attrs, **kwargs)
 
 # admin.site.register(Subscription)
 # admin.site.register(Asset)
@@ -677,8 +697,110 @@ class AgentPromptAdmin(admin.ModelAdmin):
 
 
 class ActionTriggerAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
-    form = get_dynamic_form(ActionTrigger, crm="AgentCPQ", object_type="ActionTrigger")
-    list_display = ('name', 'description', 'event_type', 'conditions', 'actions', 'priority', 'active', 'created_by', 'created_at_js', 'updated_at_js')
+    class ActionTriggerAdminForm(forms.ModelForm):
+        event_type = forms.CharField(
+            required=False,
+            widget=JSONPrettyTextarea(rows=10),
+            help_text="JSON: e.g. {\"object_type\": \"quote\", \"action\": \"updated\"}",
+        )
+        conditions = forms.CharField(
+            required=False,
+            widget=JSONPrettyTextarea(rows=12),
+            help_text="JSON structure for conditions",
+        )
+        actions = forms.CharField(
+            required=False,
+            widget=JSONPrettyTextarea(rows=14),
+            help_text="JSON list of actions",
+        )
+
+        class Meta:
+            model = ActionTrigger
+            fields = "__all__"
+
+        def __init__(self, *args, **kwargs):
+            # DynamicCustomFieldAdmin injects `user`; ignore it to avoid ModelForm errors.
+            kwargs.pop("user", None)
+            # Prefill JSON as pretty-printed text for easier editing
+            super().__init__(*args, **kwargs)
+            for field_name in ("event_type", "conditions", "actions"):
+                value = self.initial.get(field_name) or getattr(self.instance, field_name, None)
+                if isinstance(value, (dict, list)):
+                    self.initial[field_name] = json.dumps(value, indent=2)
+                elif isinstance(value, str) and value.strip():
+                    # keep existing string but pretty print if valid JSON
+                    try:
+                        self.initial[field_name] = json.dumps(json.loads(value), indent=2)
+                    except Exception:
+                        self.initial[field_name] = value
+
+        def _clean_json_field(self, field_name):
+            raw = self.cleaned_data.get(field_name)
+            if raw in (None, "", "null"):
+                return None
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise forms.ValidationError(f"Invalid JSON for {field_name}: {exc}")
+
+        def clean_event_type(self):
+            return self._clean_json_field("event_type")
+
+        def clean_conditions(self):
+            return self._clean_json_field("conditions")
+
+        def clean_actions(self):
+            return self._clean_json_field("actions")
+
+    class Media:
+        css = {
+            "all": [
+                "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/codemirror.min.css",
+                "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/theme/idea.min.css",
+                "css/admin_actiontrigger_codemirror_override.css",
+            ]
+        }
+        js = [
+            "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/codemirror.min.js",
+            "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/javascript/javascript.min.js",
+            "js/admin_actiontrigger_codemirror.js",
+        ]
+
+    form = ActionTriggerAdminForm
+    list_display = (
+        "name",
+        "short_event_type",
+        "signal_timing",
+        "priority",
+        "active",
+        "description",
+        "created_by",
+        "updated_at_js",
+    )
+    list_filter = ("active", "signal_timing", "created_by")
+    search_fields = ("name", "description", "event_type", "actions")
+    ordering = ("priority", "-updated_at")
+    list_editable = ("priority", "active")
+
+    def _format_json_snippet(self, value, max_len=80):
+        if value is None or value == "":
+            return "-"
+        if isinstance(value, (dict, list)):
+            try:
+                text = json.dumps(value)
+            except Exception:
+                text = str(value)
+        else:
+            text = str(value)
+        if len(text) > max_len:
+            return f"{text[:max_len]}…"
+        return text
+
+    def short_event_type(self, obj):
+        return self._format_json_snippet(obj.event_type)
+
+    short_event_type.short_description = "Event Type"
+
     def get_fieldsets(self, request, obj=None):
         fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
         return [(None, {'fields': fields})]

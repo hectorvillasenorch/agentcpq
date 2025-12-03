@@ -40,6 +40,8 @@ class TriggerEngine:
             "EMAIL": self._handle_email,
             "WEBHOOK": self._handle_webhook,
         }
+        self._connected_models = set()
+        self._trigger_listener_registered = False
 
     # ----------------------------------------------------------------------
     # Wrappers: keep backward compatibility with old method names
@@ -67,24 +69,31 @@ class TriggerEngine:
 
         from django.db.models.signals import pre_save, post_save, pre_delete, post_delete
 
-        models_to_watch = self._get_models_to_watch()
+        self._register_trigger_change_listener()
+
+        models_to_watch = self._get_models_with_active_triggers()
 
         for model in models_to_watch:
-            # Pre signals
+            if model in self._connected_models:
+                continue
             pre_save.connect(self._make_signal_receiver("pre_save"), sender=model, weak=False)
             pre_delete.connect(self._make_signal_receiver("pre_delete"), sender=model, weak=False)
-
-            # Post signals
             post_save.connect(self._make_signal_receiver("post_save"), sender=model, weak=False)
             post_delete.connect(self._make_signal_receiver("post_delete"), sender=model, weak=False)
+            self._connected_models.add(model)
 
-        logger.info("⚙️ TriggerEngine: señales registradas (pre/post save/delete) para %d modelos", len(models_to_watch))
+        logger.info(
+            "⚙️ TriggerEngine: señales registradas para %d modelos con triggers activos",
+            len(self._connected_models),
+        )
     
     def _make_signal_receiver(self, timing: str):
         """
         Receiver con ejecución deduplicada mediante execution_fingerprint.
         """
         def _receiver(sender, instance, **kwargs):
+            # Snapshot original instance for update comparisons
+            self._attach_original_snapshot(sender, instance, timing, kwargs)
             # --------------------------------------------------------------
             # 1) Obtener o generar execution_fingerprint para este evento
             # --------------------------------------------------------------
@@ -157,6 +166,28 @@ class TriggerEngine:
 
         return _receiver
 
+    def _attach_original_snapshot(self, sender, instance, timing: str, kwargs):
+        """
+        Cache a copy of the DB row before changes to allow previous-value comparisons.
+        Only applies on updates (existing pk) to avoid extra work on creates.
+        """
+        if getattr(instance, "_trigger_original", None) is not None:
+            return
+
+        is_delete = timing in ("pre_delete", "post_delete")
+        created_flag = kwargs.get("created", None)
+
+        # Skip if no PK (new instance) or we already know it's a create
+        if not getattr(instance, "pk", None):
+            return
+        if created_flag is True and not is_delete:
+            return
+
+        try:
+            original = sender.objects.get(pk=instance.pk)
+        except sender.DoesNotExist:
+            return
+        setattr(instance, "_trigger_original", original)
 
     def _execute_event(self, event_type: str, instance: Model, signal_timing: str):
         self.handle_event(
@@ -204,6 +235,63 @@ class TriggerEngine:
         )
 
         return models_to_watch
+
+    def _get_models_with_active_triggers(self) -> List[Model]:
+        """
+        Returns models that have at least one active ActionTrigger for their object_type.
+        Falls back to the full list (minus blacklist) if none found to preserve behavior.
+        """
+        ActionTrigger = apps.get_model("cpq", "ActionTrigger")
+        object_types = set()
+        for t in ActionTrigger.objects.filter(active=True).only("event_type"):
+            obj = self._extract_object_type(t.event_type)
+            if obj:
+                object_types.add(obj)
+
+        models: List[Model] = []
+        for obj in object_types:
+            model = self._get_model_class(obj)
+            if model:
+                models.append(model)
+
+        if models:
+            return models
+
+        # Fallback to previous behavior if no active triggers found
+        return self._get_models_to_watch()
+
+    def _extract_object_type(self, event) -> Optional[str]:
+        if isinstance(event, dict):
+            return self._normalize_model_name(event.get("object_type") or "")
+        if isinstance(event, str) and "." in event:
+            return self._normalize_model_name(event.split(".")[0])
+        return None
+
+    def _register_trigger_change_listener(self):
+        """Auto-refresh signal registrations when ActionTriggers are created/updated/deleted."""
+        if self._trigger_listener_registered:
+            return
+
+        from django.db.models.signals import post_save, post_delete
+
+        ActionTrigger = apps.get_model("cpq", "ActionTrigger")
+
+        def _refresh_signals(sender, **kwargs):
+            # Recompute models with active triggers and connect any new ones
+            models = self._get_models_with_active_triggers()
+            for m in models:
+                if m in self._connected_models:
+                    continue
+                from django.db.models.signals import pre_save, post_save as ps, pre_delete, post_delete as pd
+                pre_save.connect(self._make_signal_receiver("pre_save"), sender=m, weak=False)
+                pre_delete.connect(self._make_signal_receiver("pre_delete"), sender=m, weak=False)
+                ps.connect(self._make_signal_receiver("post_save"), sender=m, weak=False)
+                pd.connect(self._make_signal_receiver("post_delete"), sender=m, weak=False)
+                self._connected_models.add(m)
+
+        post_save.connect(_refresh_signals, sender=ActionTrigger, weak=False)
+        post_delete.connect(_refresh_signals, sender=ActionTrigger, weak=False)
+        self._trigger_listener_registered = True
 
     # -------------------------------------------------------------------------
     # Main entry point for an event
@@ -533,6 +621,11 @@ class TriggerEngine:
             path = ref.get("path")
             alias = ref.get("alias")  # Recomendado para custom
 
+            # Allow referencing previous snapshot explicitly
+            if obj_name == "previous":
+                original = getattr(instance, "_trigger_original", None)
+                return self._resolve_path(original, path) if original else None
+
             # CustomObject
             if self._is_custom_object(obj_name):
                 rec = None
@@ -564,6 +657,14 @@ class TriggerEngine:
                     return self._resolve_path(rec, path)
 
             return None
+
+        # --------------------------------------------------
+        # PREVIOUS (explicit old value)
+        # --------------------------------------------------
+        if rtype == "previous":
+            original = getattr(instance, "_trigger_original", None)
+            path = ref.get("path")
+            return self._resolve_path(original, path) if original else None
 
         # --------------------------------------------------
         # Sin type (left-like) → relativo al instance
