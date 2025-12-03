@@ -1,0 +1,12 @@
+.cm-s-idea.CodeMirror {
+  color: #707070; /* wine text */
+  
+}
+
+.cm-s-idea .CodeMirror-lines {
+  color: #707070; /* ensure default text inherits wine color */
+}
+
+.cm-s-idea .cm-string {
+  color: #ea16af !important; /* yellow strings/quotes */
+}
