@@ -1199,3 +1199,65 @@ input.cpq-checkbox-input:checked::after {
 .fields-grid__row--records {
   grid-template-columns: 1fr 1fr 1.2fr 1fr 1fr;
 }
+
+.badge-static {
+  background: #e0e0e0;
+  color: #333;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.85em;
+}
+
+.badge-field {
+  background: #e8f5e9;
+  color: #2e7d32;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.85em;
+}
+
+.badge-expression {
+  background: #f3e5f5;
+  color: #6a1b9a;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.85em;
+}
+
+.badge-date {
+  background: #e3f2fd;
+  color: #1565c0;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.85em;
+}
+
+.badge-sequence {
+  background: #fff3e0;
+  color: #ef6c00;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.85em;
+}
+
+.badge-lookup {
+  background: #e1f5fe;
+  color: #0277bd;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.85em;
+}
+
+.formula-box {
+  font-family: monospace;
+  background: rgba(0,0,0,0.04);
+  padding: 4px 8px;
+  border-radius: 6px;
+  margin-left: 6px;
+}

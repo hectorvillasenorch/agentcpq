@@ -3087,13 +3087,11 @@ function renderActionsReadable(actions) {
   actions.forEach(a => {
     const obj = prettyName(a.target.object);
 
-    // ✅ Colores según operación
     const opColor =
       a.operation === "CREATE" ? "#2e7d32" :
       a.operation === "UPDATE" ? "#ef6c00" :
       "#c62828";
 
-    // ✅ Mostrar qué hace la acción
     let actionLabel = `
       <div style="
         padding:6px 10px;
@@ -3109,47 +3107,136 @@ function renderActionsReadable(actions) {
 
     let fieldsHtml = "";
 
-    // ✅ CASE 1: CREATE (value.fields)
+    // ✅ CREATE (NORMAL & BULK)
+    // ✅ CREATE (NORMAL & BULK)
     if (a.operation === "CREATE" && a.value?.fields) {
       for (const [fieldName, fv] of Object.entries(a.value.fields)) {
         const fieldPretty = prettyName(fieldName);
 
+        // ✅ STATIC (GRIS)
         if (fv.type === "static") {
-          fieldsHtml += `<li>${fieldPretty} = "${fv.data}"</li>`;
-        } else if (fv.type === "field") {
-          fieldsHtml += `<li>${fieldPretty} = ${prettyName(fv.object)} → ${prettyName(fv.path)}</li>`;
+          fieldsHtml += `
+            <li>
+              ${fieldPretty} 
+              <span class="badge-static">static</span> 
+              = "${fv.data}"
+            </li>
+          `;
+        }
+
+        // ✅ FIELD (VERDE)
+        else if (fv.type === "field") {
+          const path = fv.path ? prettyName(fv.path) : "(self)";
+          fieldsHtml += `
+            <li>
+              ${fieldPretty} 
+              <span class="badge-field">field</span> 
+              = ${prettyName(fv.object)} → ${path}
+            </li>
+          `;
+        }
+
+        // ✅ EXPRESSION (MORADO)
+        else if (fv.type === "expression") {
+          fieldsHtml += `
+            <li>
+              ${fieldPretty}
+              <span class="badge-expression">expression</span>
+              <span class="formula-box">${fv.formula}</span>
+            </li>
+          `;
+        }
+
+        // ✅ DATE (AZUL)
+        else if (fv.type === "date") {
+          fieldsHtml += `
+            <li>
+              ${fieldPretty}
+              <span class="badge-date">date</span>
+              <span class="formula-box">${fv.formula}</span>
+            </li>
+          `;
+        }
+
+        // ✅ SEQUENCE (NARANJA)
+        else if (fv.type === "sequence") {
+          fieldsHtml += `
+            <li>
+              ${fieldPretty}
+              <span class="badge-sequence">sequence</span>
+              = ${fv.prefix || ""}${"0".repeat(fv.padding || 0)}
+            </li>
+          `;
+        }
+
+        // ✅ LOOKUP (AZUL FUERTE)
+        else if (fv.type === "lookup") {
+          fieldsHtml += `
+            <li>
+              ${fieldPretty}
+              <span class="badge-lookup">lookup</span>
+              → ${prettyName(fv.model)}
+            </li>
+          `;
         }
       }
     }
 
-    // ✅ CASE 2: UPDATE (value type "field" or "static")
+    // ✅ UPDATE
     else if (a.operation === "UPDATE" && a.value) {
       const fieldPretty = prettyName(a.target.path);
 
       if (a.value.type === "field") {
-        fieldsHtml += `
-          <li>${fieldPretty} = ${prettyName(a.value.object)} → ${prettyName(a.value.path)}</li>
-        `;
-      } else if (a.value.type === "static") {
-        fieldsHtml += `
-          <li>${fieldPretty} = "${a.value.data}"</li>
-        `;
+        const path = a.value.path ? prettyName(a.value.path) : "(self)";
+        fieldsHtml += `<li>${fieldPretty} = ${prettyName(a.value.object)} → ${path}</li>`;
+      }
+
+      else if (a.value.type === "static") {
+        fieldsHtml += `<li>${fieldPretty} = "${a.value.data}"</li>`;
+      }
+
+      else if (a.value.type === "expression") {
+        fieldsHtml += `<li>${fieldPretty} = <code>${a.value.formula}</code></li>`;
+      }
+
+      else if (a.value.type === "date") {
+        fieldsHtml += `<li>${fieldPretty} = <code>${a.value.formula}</code></li>`;
       }
     }
 
-    // ✅ CASE 3: DELETE (no fields)
+    // ✅ DELETE
     else if (a.operation === "DELETE") {
       fieldsHtml += `<li>Record will be deleted.</li>`;
     }
 
-    // ✅ Technical details formatted
+    // ✅ BULK CREATE FILTERS
+    let filterHtml = "";
+    if (a.filters?.items?.length) {
+      filterHtml += `<br><strong>Filters:</strong><ul>`;
+      a.filters.items.forEach(f => {
+        const left = prettyName(f.field);
+        const op = operatorColored(f.operator);
+
+        let right = "";
+        if (f.value.type === "field") {
+          right = `${prettyName(f.value.object)} → ${prettyName(f.value.path)}`;
+        } 
+        else {
+          right = JSON.stringify(f.value.data);
+        }
+
+        filterHtml += `<li>${left} ${op} ${right}</li>`;
+      });
+      filterHtml += `</ul>`;
+    }
+
     const techDetails = JSON.stringify(a, null, 2);
 
     html += `
       <li style="margin-bottom:20px;">
         ${actionLabel}
-
         <ul style="margin-left:10px;">${fieldsHtml}</ul>
+        ${filterHtml}
 
         <a href="#"
            onclick="this.nextElementSibling.style.display=

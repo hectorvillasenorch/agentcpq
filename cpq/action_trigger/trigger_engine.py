@@ -1386,6 +1386,11 @@ class TriggerEngine:
                     resolved[fname] = self._resolve_sequence(field_def)
                     continue
 
+                # ✅ LOOKUP (FK SEARCH BY FILTER)
+                if ftype == "lookup":
+                    resolved[fname] = self._resolve_lookup(field_def, instance, context)
+                    continue
+
             return resolved
 
         # ----------------------------------------------------------------------
@@ -1400,17 +1405,24 @@ class TriggerEngine:
             obj = value_def.get("object")
             path = value_def.get("path", "")
 
+            # ✅ 1) PRIORIDAD: CONTEXT DIRECTO
             if obj in context:
                 if path == "":
-                    return context[obj]
+                    return context[obj]   # ✅ DEVUELVE INSTANCIA COMPLETA
                 return self._resolve_path(context[obj], path)
 
+            # ✅ 2) COMPARAR CONTRA INSTANCIA PRINCIPAL
             inst_name = self._normalize_model_name(instance.__class__.__name__)
             if obj == inst_name:
+                if path == "":
+                    return instance      # ✅ DEVUELVE INSTANCIA COMPLETA
                 return self._resolve_path(instance, path)
 
+            # ✅ 3) BUSCAR EN CONTEXT POR TIPO
             for cand in context.values():
                 if isinstance(cand, Model) and self._normalize_model_name(cand.__class__.__name__) == obj:
+                    if path == "":
+                        return cand      # ✅ DEVUELVE INSTANCIA COMPLETA
                     return self._resolve_path(cand, path)
 
             return None
@@ -2119,6 +2131,94 @@ class TriggerEngine:
 
         # ✅ NORMALIZACIÓN FINAL DEL RESULTADO
         return self._normalize_value(current)
+    
+    def _resolve_lookup(self, lookup_def: Dict[str, Any], instance: Model, context: Dict[str, Any]):
+        """
+        Generic FK lookup resolver.
+
+        lookup = {
+            "type": "lookup",
+            "model": "opportunity",
+            "where": {
+                "logic": "AND",
+                "items": [
+                    { "field": "name", "operator": "==", "value": {...} }
+                ]
+            }
+        }
+        """
+
+        model_name = lookup_def.get("model")
+        where = lookup_def.get("where") or {}
+
+        if not model_name or not where:
+            logger.debug("⚠️ LOOKUP inválido: falta model o where")
+            return None
+
+        ModelClass = self._get_model_class(model_name)
+        if ModelClass is None:
+            logger.debug(f"⚠️ LOOKUP model '{model_name}' no encontrado")
+            return None
+
+        logic = (where.get("logic") or "AND").upper()
+        items = where.get("items") or []
+
+        orm_filters = {}
+        q_objects = []
+
+        for cond in items:
+            field = cond.get("field")
+            operator = cond.get("operator", "==")
+            val_block = cond.get("value", {})
+
+            if not field:
+                continue
+
+            resolved_value = self._resolve_value_for_action(val_block, instance, context)
+            orm_key = field.replace(".", "__")
+
+            if operator == "!=":
+                orm_key = f"{orm_key}__ne"
+            elif operator == ">":
+                orm_key = f"{orm_key}__gt"
+            elif operator == "<":
+                orm_key = f"{orm_key}__lt"
+            elif operator == ">=":
+                orm_key = f"{orm_key}__gte"
+            elif operator == "<=":
+                orm_key = f"{orm_key}__lte"
+            elif operator == "contains":
+                orm_key = f"{orm_key}__icontains"
+            elif operator == "in":
+                orm_key = f"{orm_key}__in"
+
+            orm_filters[orm_key] = resolved_value
+
+        try:
+            if logic == "OR":
+                from django.db.models import Q
+                q = Q()
+                for k, v in orm_filters.items():
+                    q |= Q(**{k: v})
+                qs = ModelClass.objects.filter(q)
+            else:
+                qs = ModelClass.objects.filter(**orm_filters)
+
+            count = qs.count()
+
+            if count == 0:
+                logger.debug(f"⚠️ LOOKUP {model_name}: 0 resultados con filtros {orm_filters}")
+                return None
+
+            if count > 1:
+                logger.debug(f"⚠️ LOOKUP {model_name}: {count} resultados ambiguos con filtros {orm_filters}")
+                return None
+
+            return qs.first()
+
+        except Exception as e:
+            logger.exception(f"❌ Error ejecutando LOOKUP sobre {model_name}: {e}")
+            return None
     
     def _recalc_quote_after_create_quoteline(self, quote_line_instance):
         """

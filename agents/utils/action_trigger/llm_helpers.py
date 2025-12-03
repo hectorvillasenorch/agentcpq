@@ -414,6 +414,13 @@ def _normalize_value_block(v):
     elif t in ["expression", "date"]:
         out["formula"] = v.get("formula")
 
+    elif t == "lookup":
+        return {
+            "type": "lookup",
+            "model": v.get("model"),
+            "where": v.get("where"),
+        }
+
     return out
 
 
@@ -517,6 +524,13 @@ def normalize_create_value_fields(fields, schema):
                 "formula": spec.get("formula"),
             }
 
+        elif t == "lookup":
+            out[fname] = {
+                "type": "lookup",
+                "model": spec.get("model"),
+                "where": spec.get("where"),
+            }
+
         else:
             # Skip unknown types to avoid {"type": None}
             continue
@@ -559,8 +573,8 @@ def _normalize_filter_list(filters, target_obj, schema):
         if not isinstance(val, dict):
             continue
 
-        # ❌ Filters DO NOT allow expression, date, or sequence
-        if val.get("type") in ["expression", "date", "sequence"]:
+        # ❌ Filters DO NOT allow expression, date, lookup or sequence
+        if val.get("type") in ["expression", "date", "sequence", "lookup"]:
             continue
 
         # Normalize field refs in value
@@ -779,6 +793,31 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
     "type": "date",
     "formula": "<DATE_EXPRESSION>"
     }}
+
+    LOOKUP (FOR FK SEARCH BY FILTER):
+    {{
+        "type": "lookup",
+        "model": "<target_model>",
+        "where": {{
+            "logic": "AND" | "OR",
+            "items": [
+            {{
+                "field": "<field_name>",
+                "operator": "== | != | > | < | >= | <= | contains | in | not in",
+                "value": {{ <VALUE FORMAT> }}
+            }}
+            ]
+        }}
+    }}
+
+    STRICT RULES:
+    - LOOKUP is ONLY allowed for FK target fields
+    - LOOKUP MUST return a FULL OBJECT (not an ID)
+    - LOOKUP where MUST contain at least ONE condition
+    - Multiple conditions must use logic AND or OR
+    - If lookup value requires CONCAT, +, or functions → MUST use type="expression"
+    - NEVER use multiple duplicated keys to represent multiple conditions
+    - NEVER mix lookup with static, expression or sequence
     
     SEQUENCE (FOR AUTO NUMBERING):
     {{
@@ -792,7 +831,6 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
     }}
 
     RULES:
-    - SEQUENCE is ONLY allowed inside CREATE.value.fields
     - SEQUENCE is ONLY allowed for NON-FK scalar fields
     - NEVER use type="expression" for sequences
 
@@ -882,7 +920,7 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
     {{
         "operation": "UPDATE",
         "target": {{ "object": "<event_root>", "path": "<field>" }},
-        "value": {{ <VALUE BLOCK> }}
+        "value": {{ <VALUE FORMAT> }}
     }}
 
     BULK UPDATE:
@@ -893,7 +931,7 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
             "items": [ ... ]
         }},
         "target": {{ "object": "<TARGET_MODEL>", "path": "<field>" }},
-        "value": {{ <VALUE BLOCK> }}
+        "value": {{ <VALUE FORMAT> }}
     }}
 
     RULES:
@@ -1215,6 +1253,12 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
                                         "prefix": spec.get("prefix"),
                                         "padding": spec.get("padding", 0),
                                         "scope": spec.get("scope"),
+                                    }
+                                elif t == "lookup":
+                                    new_fields[fname] = {
+                                        "type": "lookup",
+                                        "model": spec.get("model"),
+                                        "where": spec.get("where"),
                                     }
 
                             a["value"]["fields"] = new_fields
