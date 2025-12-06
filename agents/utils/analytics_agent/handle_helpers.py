@@ -2,11 +2,13 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, date, timedelta
 
 from django.core.exceptions import FieldError
-from django.db.models import ForeignKey, OuterRef, Subquery, Q
+from django.db.models import ForeignKey, OuterRef, Subquery, Q, Sum, Avg, Count, Min, Max, CharField, TextField
 from django.db.models.functions import Cast
 from django.db.models import DecimalField, DateField
+from django.db.models.functions import TruncMonth, TruncWeek, TruncDay
 from django.utils.dateparse import parse_date
 from django.utils.timezone import now
+from dateutil.relativedelta import relativedelta
 
 from cpq.models import (
     Product,
@@ -39,10 +41,13 @@ BOOLEAN_TYPES = {"boolean"}
 def get_object_metadata(object_name):
     base_model = BASE_MODEL_MAP.get(object_name)
     if base_model:
+        custom_fields = list(
+            CustomField.objects.filter(object_type=object_name, custom_object__isnull=True)
+        )
         return {
             "model": base_model,
             "custom_object": None,
-            "custom_fields": [],
+            "custom_fields": custom_fields,
         }
 
     try:
@@ -65,6 +70,11 @@ def handle_show_metrics(user, completed_metrics):
     for metric in completed_metrics:
         object_name = metric.get("object")
         conditions = metric.get("conditions", [])
+        aggregate = metric.get("aggregate") if isinstance(metric.get("aggregate"), dict) else None
+        if aggregate:
+            rng = aggregate.get("range")
+            if not rng or rng in ("custom", "", None):
+                aggregate["range"] = "this_year"
 
         if (not object_name) and conditions:
             first_condition = conditions[0]
@@ -82,11 +92,11 @@ def handle_show_metrics(user, completed_metrics):
 
         object_name = object_name or metric.get("object")
         method = metric.get("method", "read")
-        limit = metric.get("limit", 10)
+        limit = metric.get("limit", 100)
         try:
-            limit = int(limit) if limit is not None else 10
+            limit = int(limit) if limit is not None else 100
         except (TypeError, ValueError):
-            limit = 10
+            limit = 100
         conditions = metric.get("conditions", [])
         sort = metric.get("sort", None)
 
@@ -224,6 +234,19 @@ def handle_show_metrics(user, completed_metrics):
         if not order_applied and hasattr(model, "created_at"):
             qs = qs.order_by("-created_at")
 
+        if aggregate:
+            agg_payload, agg_error = execute_aggregate(qs, aggregate, model, object_name)
+            if agg_error:
+                response_message += f"⚠️ Aggregate failed for {display_name}: {agg_error}.<br>"
+                continue
+            results[object_name] = {"aggregate": agg_payload}
+            # Build a short human-friendly note
+            if agg_payload.get("series"):
+                response_message += f"📈 {display_name} {agg_payload.get('function')}({agg_payload.get('field')}) over {agg_payload.get('range') or 'all time'} with {len(agg_payload['series'])} points.<br>"
+            else:
+                response_message += f"📈 {display_name} {agg_payload.get('function')}({agg_payload.get('field')}) = {agg_payload.get('value')}.<br>"
+            continue
+
         if limit:
             qs = qs[:limit]
 
@@ -236,6 +259,136 @@ def handle_show_metrics(user, completed_metrics):
     return response_message, results, object_labels
 
 
+def _apply_date_range(qs, date_field, range_key):
+    if not range_key or range_key == "null":
+        return qs
+
+    now_dt = now()
+    start = None
+    end = now_dt
+
+    # Explicit start/end tuple
+    if isinstance(range_key, (list, tuple)) and len(range_key) == 2:
+        start, end = range_key
+        return qs.filter(**{f"{date_field}__gte": start, f"{date_field}__lte": end})
+
+    # Named ranges
+    if range_key == "last_3_months":
+        start = (now_dt - relativedelta(months=3)).replace(day=1)
+    elif range_key == "last_month":
+        first_this_month = now_dt.replace(day=1)
+        start = (first_this_month - relativedelta(months=1)).replace(day=1)
+        end = first_this_month
+    elif range_key == "last_90_days":
+        start = now_dt - timedelta(days=90)
+    elif range_key == "this_year":
+        start = now_dt.replace(month=1, day=1)
+        end = now_dt.replace(month=12, day=31)
+    elif range_key == "next_year":
+        next_year = now_dt.year + 1
+        start = now_dt.replace(year=next_year, month=1, day=1)
+        end = now_dt.replace(year=next_year, month=12, day=31)
+    elif range_key == "this_month":
+        start = now_dt.replace(day=1)
+        end = (start + relativedelta(months=1)) - timedelta(days=1)
+    elif range_key in {"three_months", "3_months"}:
+        start = (now_dt - relativedelta(months=3)).replace(day=1)
+    elif range_key in {"six_months", "6_months"}:
+        start = (now_dt - relativedelta(months=6)).replace(day=1)
+    elif range_key in {"nine_months", "9_months"}:
+        start = (now_dt - relativedelta(months=9)).replace(day=1)
+    elif range_key in {"twelve_months", "12_months"}:
+        start = (now_dt - relativedelta(months=12)).replace(day=1)
+
+    if start:
+        return qs.filter(**{f"{date_field}__gte": start, f"{date_field}__lte": end})
+    return qs
+
+
+def execute_aggregate(qs, aggregate_def, model, object_name):
+    """
+    Execute aggregate functions with optional date range and time bucketing.
+    Returns (payload, error).
+    """
+    if not aggregate_def:
+        return None, "missing aggregate definition"
+
+    func_name = (aggregate_def.get("function") or "sum").lower()
+    field = aggregate_def.get("field")
+    group_by = (aggregate_def.get("group_by") or "").lower()
+    date_field = aggregate_def.get("date_field") or ("updated_at" if hasattr(model, "updated_at") else None)
+    range_key = aggregate_def.get("range")
+
+    if not field:
+        return None, "aggregate field is required"
+
+    agg_map = {
+        "sum": Sum,
+        "count": Count,
+        "avg": Avg,
+        "average": Avg,
+        "min": Min,
+        "max": Max,
+    }
+    agg_fn = agg_map.get(func_name)
+    if not agg_fn:
+        return None, f"unsupported aggregate function '{func_name}'"
+
+    if range_key and date_field:
+        qs = _apply_date_range(qs, date_field, range_key)
+
+    # Time bucketed series
+    if group_by in {"month", "week", "day"} and date_field:
+        trunc_map = {
+            "month": TruncMonth,
+            "week": TruncWeek,
+            "day": TruncDay,
+        }
+        trunc_fn = trunc_map.get(group_by)
+        if not trunc_fn:
+            return None, f"unsupported group_by '{group_by}'"
+
+        qs = qs.annotate(period=trunc_fn(date_field))
+        aggregated = qs.values("period").annotate(value=agg_fn(field)).order_by("period")
+
+        series = []
+        for entry in aggregated:
+            period_val = entry.get("period")
+            if period_val is None:
+                continue
+            # period might be datetime/date; normalize to ISO date
+            if hasattr(period_val, "date"):
+                period_str = period_val.date().isoformat()
+            else:
+                period_str = str(period_val)
+            val = entry.get("value")
+            series.append({
+                "period": period_str,
+                "value": float(val) if val is not None else None,
+            })
+
+        total_value = sum([item.get("value") or 0 for item in series])
+        return {
+            "function": func_name,
+            "field": field,
+            "group_by": group_by,
+            "date_field": date_field,
+            "range": range_key,
+            "series": series,
+            "total": float(total_value) if total_value is not None else None,
+        }, None
+
+    # Simple aggregate
+    agg_value = qs.aggregate(value=agg_fn(field)).get("value")
+    return {
+        "function": func_name,
+        "field": field,
+        "date_field": date_field,
+        "range": range_key,
+        "value": float(agg_value) if agg_value is not None else None,
+    }, None
+
+
 def apply_operator(field, operator, value, filters, exclude_filters, model=None):
     """
     Aplica un operador específico y actualiza filters/exclude_filters.
@@ -243,7 +396,8 @@ def apply_operator(field, operator, value, filters, exclude_filters, model=None)
     Retorna (True, "") si el operador es soportado,
     o (False, mensaje_error) si falla.
     """
-    # --- Automatically resolve ForeignKeys ---
+    # --- Automatically resolve ForeignKeys and normalize string comparisons ---
+    field_obj = None
     if model:
         try:
             field_obj = model._meta.get_field(field)
@@ -258,10 +412,71 @@ def apply_operator(field, operator, value, filters, exclude_filters, model=None)
         except Exception as e:
             return False, f"field '{field}' does not exist or is invalid"
 
+    # Normalize Opportunity.stage values (stored lowercase, no spaces)
+    if model and model.__name__ == "Opportunity" and field == "stage" and isinstance(value, str):
+        value = value.strip().lower().replace(" ", "")
+
+    def _is_text_field():
+        return isinstance(field_obj, (CharField, TextField)) if field_obj else False
+
+    # Normalize common date range keywords to explicit ranges
+    def _resolve_date_range(val):
+        """
+        Accepts:
+        - string keywords: this_year, this_month, three_months, six_months, nine_months, twelve_months, 3_months, 6_months, 9_months, 12_months
+        - list/tuple of two ISO dates
+        - dict with start_date/end_date
+        Returns (start, end) or None
+        """
+        now_dt = now()
+        if isinstance(val, str):
+            key = val.strip().lower()
+            if key == "this_year":
+                return now_dt.replace(month=1, day=1), now_dt.replace(month=12, day=31)
+            if key == "next_year":
+                next_year = now_dt.year + 1
+                return now_dt.replace(year=next_year, month=1, day=1), now_dt.replace(year=next_year, month=12, day=31)
+            if key == "this_month":
+                start = now_dt.replace(day=1)
+                end = (start + relativedelta(months=1)) - timedelta(days=1)
+                return start, end
+            if key in {"three_months", "3_months"}:
+                return (now_dt - relativedelta(months=3)).replace(day=1), now_dt
+            if key in {"six_months", "6_months"}:
+                return (now_dt - relativedelta(months=6)).replace(day=1), now_dt
+            if key in {"nine_months", "9_months"}:
+                return (now_dt - relativedelta(months=9)).replace(day=1), now_dt
+            if key in {"twelve_months", "12_months"}:
+                return (now_dt - relativedelta(months=12)).replace(day=1), now_dt
+
+        if isinstance(val, (list, tuple)) and len(val) == 2:
+            start_raw, end_raw = val[0], val[1]
+            try:
+                start_dt = parse_date(str(start_raw))
+                end_dt = parse_date(str(end_raw))
+            except Exception:
+                start_dt = end_dt = None
+
+            # If it's a full-year range but not the current year, reinterpret as current year
+            if start_dt and end_dt:
+                if start_dt.month == 1 and start_dt.day == 1 and end_dt.month == 12 and end_dt.day in (31, 30):
+                    current_start = now_dt.replace(month=1, day=1)
+                    current_end = now_dt.replace(month=12, day=31)
+                    return current_start, current_end
+                return start_raw, end_raw
+            return start_raw, end_raw
+
+        if isinstance(val, dict):
+            start = val.get("start_date") or val.get("start")
+            end = val.get("end_date") or val.get("end")
+            if start and end:
+                return start, end
+        return None
+
     # Operators dictionary
     operator_funcs = {
-        "equals": lambda f, v: filters.update({f"{f}__exact": v}),
-        "not_equals": lambda f, v: exclude_filters.update({f"{f}__exact": v}),
+        "equals": lambda f, v: filters.update({f"{f}__iexact": v}) if _is_text_field() and isinstance(v, str) else filters.update({f"{f}__exact": v}),
+        "not_equals": lambda f, v: exclude_filters.update({f"{f}__iexact": v}) if _is_text_field() and isinstance(v, str) else exclude_filters.update({f"{f}__exact": v}),
         "contains": lambda f, v: filters.update({f"{f}__icontains": v}),
         "starts_with": lambda f, v: filters.update({f"{f}__istartswith": v}),
         "ends_with": lambda f, v: filters.update({f"{f}__iendswith": v}),
@@ -279,8 +494,8 @@ def apply_operator(field, operator, value, filters, exclude_filters, model=None)
             f"{f}__gte": now() - timedelta(**(v if isinstance(v, dict) else {"days": int(v)}))
         }),
         "within_range": lambda f, v: filters.update({
-            f"{f}__gte": v[0], f"{f}__lte": v[1]
-        }) if isinstance(v, (list, tuple)) and len(v) == 2 else None,
+            f"{f}__gte": _resolve_date_range(v)[0], f"{f}__lte": _resolve_date_range(v)[1]
+        }) if _resolve_date_range(v) else None,
     }
 
     func = operator_funcs.get(operator)

@@ -13,6 +13,7 @@ from agents.analytics_agent import analytics_agent
 from agents.record_agent import record_agent
 from agents.knowledge_agent import knowledge_agent
 from agents.action_trigger_agent import action_trigger_agent
+from agents.standard_record_agent import standard_record_agent
 from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
 
@@ -57,6 +58,28 @@ def _safe_serialize(value):
         return {k: _safe_serialize(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [_safe_serialize(v) for v in value]
+    try:
+        import numbers
+        if isinstance(value, numbers.Number) and not isinstance(value, bool):
+            return float(value)
+    except Exception:
+        pass
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    # Handle Decimal
+    try:
+        from decimal import Decimal
+        if isinstance(value, Decimal):
+            return float(value)
+    except Exception:
+        pass
+    # Handle dates/datetimes
+    try:
+        from datetime import date, datetime
+        if isinstance(value, (date, datetime)):
+            return value.isoformat()
+    except Exception:
+        pass
     if hasattr(value, "__dict__") and not isinstance(value, (str, bytes)):
         return str(value)
     return value
@@ -205,6 +228,7 @@ def orchestrate_request(user, user_message, session_data):
         - "DeleteQuoteLine"
         - "DeleteQuote"
         - "CreateProductRecord"
+        - "CreateStandardRecord"
         - "UpdateProductRecord"
         - "SubmitForApproval"
         - "CheckApprovalStatus"
@@ -242,6 +266,11 @@ def orchestrate_request(user, user_message, session_data):
                     - "Display the current quote"
                     - "Open quote Q-2024-001"
                 Do NOT pick this label when the user mentions products, bundles, accounts, metrics, lists, or any non-quote record.
+        - "CreateStandardRecord" → Use when the user wants to create a standard record (Lead, Account, Contact, or Opportunity) via chat.
+                Examples:
+                    - "Create a lead John Doe with email john@acme.com"
+                    - "Add an account named Acme in New York"
+                    - "Open a new opportunity Renewal Q1 for Acme at $50k"
         - "ShowSingleRecord" → Use when the user asks to open a specific record (Account, Product, Opportunity, Lead, Contact, Quote, or any custom object) and expects a detailed card view. 
                 Examples:
                     - "Show account Acme Corp"
@@ -597,6 +626,8 @@ def get_action_map():
         # Product-related actions handled by product_agent
         "CreateProductRecord": product_agent,
         "UpdateProductRecord": product_agent,
+        # Standard objects
+        "CreateStandardRecord": standard_record_agent,
 
         # Bundles-related actions handled by bundles_agent
         "AddProductToBundle": bundles_agent,

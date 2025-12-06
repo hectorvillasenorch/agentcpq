@@ -32,7 +32,7 @@ STANDARD_OBJECTS = [
 ALLOWED_LOOKUPS = {
     "Account": ["name", "custom_identifier"],
     "Contact": ["email", "custom_identifier"],
-    "Lead": ["email"],
+    "Lead": ["email", "phone", "first_name", "last_name"],
     "Opportunity": ["name"],
     "Product": ["sku", "name"],
     "Quote": ["name"],

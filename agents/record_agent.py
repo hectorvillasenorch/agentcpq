@@ -187,7 +187,7 @@ def update_single_record_from_ui(user, user_message, session_data):
 
     record.refresh_from_db()
 
-    updated_payload = serialize_record(record, object_name, custom_object, custom_fields)
+    updated_payload = serialize_record(record, object_name, custom_object, custom_fields, user=user)
 
     combined_messages = []
     if messages_error:

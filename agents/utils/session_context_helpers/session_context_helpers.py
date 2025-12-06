@@ -311,6 +311,20 @@ def get_session_context(action, session_data):
                 "summary": None
             }
 
+        if action == "create_standard_record":
+            context_data = {
+                "create_standard_record": [
+                    {
+                        "data": {
+                            "object": None,
+                            "fields": {}
+                        },
+                        "completed": False
+                    },
+                ],
+                "summary": None
+            }
+
         session_data["state"].update(context_data)
 
     current_state = session_data["state"][action]

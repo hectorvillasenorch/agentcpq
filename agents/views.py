@@ -17,7 +17,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from dotenv import load_dotenv
 
-from agents.models import ChatSession
+from agents.models import ChatSession, SingleRecordLayout
 from agents.knowledge_agent import resolve_knowledge_video_request
 from cpq.models import Quote, QuotePendingAttachment
 
@@ -188,6 +188,47 @@ def chat_with_gpt(request):
     logger.info(f"\n\n > > > [Orchestrator] AI Response: {ai_response}\n\n")
 
     return JsonResponse({"response": ai_response})
+
+
+@csrf_exempt
+@login_required
+def single_record_layout(request):
+    """Persist and return per-user single-record layout preferences."""
+
+    if request.method == "GET":
+        object_name = request.GET.get("object")
+        if not object_name:
+            return JsonResponse({"error": "object is required"}, status=400)
+
+        layout_obj = SingleRecordLayout.objects.filter(user=request.user, object_name=object_name).first()
+        layout_data = layout_obj.layout if layout_obj and isinstance(layout_obj.layout, dict) else {}
+        return JsonResponse({
+            "order": layout_data.get("order", []),
+            "hidden": layout_data.get("hidden", []),
+        })
+
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON."}, status=400)
+
+        object_name = data.get("object")
+        if not object_name:
+            return JsonResponse({"error": "object is required"}, status=400)
+
+        order = data.get("order") if isinstance(data.get("order"), list) else []
+        hidden = data.get("hidden") if isinstance(data.get("hidden"), list) else []
+
+        SingleRecordLayout.objects.update_or_create(
+            user=request.user,
+            object_name=object_name,
+            defaults={"layout": {"order": order, "hidden": hidden}},
+        )
+
+        return JsonResponse({"order": order, "hidden": hidden})
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
 @csrf_exempt

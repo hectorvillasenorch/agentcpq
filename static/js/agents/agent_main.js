@@ -17,7 +17,9 @@ function initializeMaterializeSelects(root) {
     return;
   }
 
-  const selects = root.querySelectorAll('select');
+  const selects = Array.from(root.querySelectorAll('select')).filter(
+    sel => sel.dataset.skipMaterialize !== "true"
+  );
   if (!selects.length) {
     return;
   }
@@ -46,8 +48,8 @@ if (typeof window !== "undefined") {
 var pendingAttachments = (typeof window !== "undefined" && window.pendingAttachments)
   ? window.pendingAttachments
   : [];
-let sessionContextMenu = null;
-let sessionContextTarget = null;
+var sessionContextMenu = (typeof window !== "undefined" && window.sessionContextMenu) ? window.sessionContextMenu : null;
+var sessionContextTarget = (typeof window !== "undefined" && window.sessionContextTarget) ? window.sessionContextTarget : null;
 
 function setPendingAttachments(next) {
   pendingAttachments = Array.isArray(next) ? next : [];
@@ -96,7 +98,10 @@ function setupSessionSwitching() {
   });
 }
 
-const SESSION_TITLE_MAX_LENGTH = 255;
+var SESSION_TITLE_MAX_LENGTH = (typeof window !== "undefined" && window.SESSION_TITLE_MAX_LENGTH) ? window.SESSION_TITLE_MAX_LENGTH : 255;
+if (typeof window !== "undefined") {
+  window.SESSION_TITLE_MAX_LENGTH = SESSION_TITLE_MAX_LENGTH;
+}
 
 function setupSessionTitleEditing() {
   const items = document.querySelectorAll(".chat-history-item");
@@ -991,15 +996,7 @@ function enhanceStructuredAgentMessagesHistoryChat() {
 
       // === RETRIEVED RECORDS ===
       if (matchedKey === 'retrieved_records:') {
-        let messageBeforeJson = raw.slice(0, raw.indexOf(matchedKey)).trim();
-
-        // 1️⃣ Desescapar Unicode
-        messageBeforeJson = unescapeUnicode(messageBeforeJson);
-
-        // 2️⃣ Reemplazar escapes de HTML (como \u003Cbr\u003E)
-        messageBeforeJson = messageBeforeJson.replace(/\\u003C/g, "<").replace(/\\u003E/g, ">");
-
-        const html = renderRetrievedRecords(messageBeforeJson, data);
+        const html = renderRetrievedRecords("", data);
         div.innerHTML = html;
         return;
       }
@@ -1179,7 +1176,7 @@ async function sendMessage() {
         else if (data.response && data.response.retrieved_records) {
           //console.log(data.response);
           //console.log(data.response.retrieved_records)
-          responseMessage += renderRetrievedRecords(data.response.message, data.response.retrieved_records);
+          responseMessage += renderRetrievedRecords("", data.response.retrieved_records);
         }
         // ✅ Default Response (Handle General Messages)
         else if (data.response && data.response.message) {
@@ -1359,7 +1356,7 @@ function appendMessage(className, message) {
         const match = message.match(/retrieved_records:\s({.+})/);
         if (match && match[1]) {
           const records = JSON.parse(match[1]);
-          message = renderRetrievedRecords(records);  // Use your nice formatter
+          message = renderRetrievedRecords("", records);  // Use your nice formatter
         }
       } catch (e) {
         console.warn("Failed to parse retrieved_records JSON:", e);
@@ -1370,14 +1367,21 @@ function appendMessage(className, message) {
     chatBox.appendChild(messageBubble);
 
     // ✅ Re-initializes select from Materialize
-    const selects = messageBubble.querySelectorAll('select');
-    if (selects.length > 0) {
-      if (typeof M !== 'undefined' && M.FormSelect) {
-        M.FormSelect.init(selects);
-      } else {
-        console.warn("Materialize M.FormSelect not available; select elements were not enhanced.");
+  const selects = messageBubble.querySelectorAll('select');
+  if (selects.length > 0) {
+    if (typeof M !== 'undefined' && M.FormSelect) {
+      const filtered = Array.from(selects).filter(sel => sel.dataset.skipMaterialize !== "true");
+      if (filtered.length) {
+        M.FormSelect.init(filtered);
       }
+    } else {
+      console.warn("Materialize M.FormSelect not available; select elements were not enhanced.");
     }
+  }
+
+    messageBubble.querySelectorAll('.single-record-card').forEach(card => {
+      initializeSingleRecordCardLayout(card);
+    });
 
     if (message.includes("agent-json")) {
         enhanceStructuredAgentMessages();
@@ -2455,24 +2459,40 @@ function renderSingleRecord(record) {
     return `<div class="error-message">⚠️ Unable to display this record right now.</div>`;
   }
 
+  const layout = record.layout || { order: [], hidden: [] };
+  const orderedFields = orderSingleRecordFields(record.fields, layout);
   const title = record.record_value != null ? escapeHtml(String(record.record_value)) : 'Record';
   const objectLabel = record.display_label || record.object || '';
   const subtitle = objectLabel ? `<div class="single-record-subtitle">${escapeHtml(objectLabel)}</div>` : '';
-  const headerLabel = record.record_label ? `<span class="single-record-label">${escapeHtml(record.record_label)}</span>` : '';
+  const headerLabel = '';
   const customBadge = record.is_custom_object ? `<span class="single-record-badge">Custom object</span>` : '';
+  const layoutAttr = layout ? ` data-layout='${escapeHtml(JSON.stringify(layout))}'` : '';
+  const showLayoutButton = typeof window !== "undefined" ? !!window.isAdmin : false;
+  if (showLayoutButton) {
+    ensureSingleRecordCustomizerStyles();
+  }
+  const layoutButton = showLayoutButton
+    ? `<button type="button" class="single-record-layout-btn single-record-layout-btn--icon" onclick="openSingleRecordCustomizer(this)" aria-label="Edit layout" title="Edit layout">
+         <span class="material-icons" aria-hidden="true">tune</span>
+       </button>`
+    : '';
 
-  const fieldCards = record.fields
-    .map(field => renderSingleRecordField(record, field))
-    .join('');
+  const standardEntries = orderedFields.filter(entry => !entry.hidden && !entry.field.is_custom);
+  const customEntries = orderedFields.filter(entry => !entry.hidden && entry.field.is_custom);
+
+  const sectionsHtml = `
+    ${renderSingleRecordSection("Details", standardEntries.map(entry => renderSingleRecordField(record, entry.field, entry.hidden)))}
+    ${renderSingleRecordSection("Custom Fields", customEntries.map(entry => renderSingleRecordField(record, entry.field, entry.hidden)))}
+  `;
 
   const relatedSections = (record.related || [])
     .map(entry => renderSingleRecordRelated(entry))
     .join('');
 
-  const gridContent = fieldCards || '<div class="single-record-empty">No additional details were provided for this record.</div>';
+  const gridContent = sectionsHtml || '<div class="single-record-empty">No additional details were provided for this record.</div>';
 
   return `
-    <div class="single-record-card" data-record-object="${escapeHtml(record.object || '')}" data-record-id="${record.record_id ?? ''}">
+    <div class="single-record-card" data-record-object="${escapeHtml(record.object || '')}" data-record-id="${record.record_id ?? ''}"${layoutAttr}>
       <div class="single-record-header">
         <div class="single-record-header-text">
           ${subtitle}
@@ -2481,10 +2501,11 @@ function renderSingleRecord(record) {
         <div class="single-record-header-meta">
           ${headerLabel}
           ${customBadge}
+          ${layoutButton}
         </div>
       </div>
       <div class="single-record-body">
-        <div class="single-record-grid">
+        <div class="single-record-sections">
           ${gridContent}
         </div>
         ${relatedSections}
@@ -2494,9 +2515,420 @@ function renderSingleRecord(record) {
   `;
 }
 
-function renderSingleRecordField(record, field) {
+function renderSingleRecordSection(title, fieldsHtml) {
+  if (!fieldsHtml || (Array.isArray(fieldsHtml) && !fieldsHtml.filter(Boolean).length)) {
+    return '';
+  }
+  const content = Array.isArray(fieldsHtml) ? fieldsHtml.join('') : fieldsHtml;
+  return `
+    <div class="single-record-section">
+      <div class="single-record-section-title">${escapeHtml(title)}</div>
+      <div class="single-record-grid" data-section="${escapeHtml(title.toLowerCase())}">
+        ${content}
+      </div>
+    </div>
+  `;
+}
+
+function orderSingleRecordFields(fields, layout) {
+  if (!Array.isArray(fields)) return [];
+  const order = (layout && Array.isArray(layout.order) && layout.order.length)
+    ? layout.order
+    : fields.map(field => buildFieldKey(field.name, field.is_custom, field.field_id));
+  const hidden = new Set((layout && Array.isArray(layout.hidden)) ? layout.hidden : []);
+
+  const byKey = new Map(
+    fields.map(field => [buildFieldKey(field.name, field.is_custom, field.field_id), field])
+  );
+
+  const ordered = [];
+  order.forEach(key => {
+    const found = byKey.get(key);
+    if (!found) return;
+    ordered.push({ field: found, hidden: hidden.has(key) });
+    byKey.delete(key);
+  });
+
+  // Append any new fields not in the stored layout
+  byKey.forEach((field, key) => {
+    ordered.push({ field, hidden: hidden.has(key) });
+  });
+
+  return ordered;
+}
+
+var singleRecordLayoutCache = (typeof window !== "undefined" && window.singleRecordLayoutCache) ? window.singleRecordLayoutCache : {};
+if (typeof window !== "undefined") {
+  window.singleRecordLayoutCache = singleRecordLayoutCache;
+}
+
+async function fetchSingleRecordLayout(objectName) {
+  if (!objectName) return { order: [], hidden: [] };
+  if (singleRecordLayoutCache[objectName]) {
+    return singleRecordLayoutCache[objectName];
+  }
+
+  try {
+    const response = await fetch(`/agents/single-record-layout/?object=${encodeURIComponent(objectName)}`, {
+      credentials: "same-origin",
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const layout = {
+      order: Array.isArray(data.order) ? data.order : [],
+      hidden: Array.isArray(data.hidden) ? data.hidden : [],
+    };
+    singleRecordLayoutCache[objectName] = layout;
+    return layout;
+  } catch (err) {
+    console.warn("Unable to fetch single record layout", err);
+    return { order: [], hidden: [] };
+  }
+}
+
+async function persistSingleRecordLayout(objectName, layout) {
+  if (!objectName) return layout;
+  const payload = {
+    object: objectName,
+    order: Array.isArray(layout.order) ? layout.order : [],
+    hidden: Array.isArray(layout.hidden) ? layout.hidden : [],
+  };
+
+  try {
+    const response = await fetch("/agents/single-record-layout/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCSRFToken(),
+      },
+      credentials: "same-origin",
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const saved = {
+      order: Array.isArray(data.order) ? data.order : payload.order,
+      hidden: Array.isArray(data.hidden) ? data.hidden : payload.hidden,
+    };
+    singleRecordLayoutCache[objectName] = saved;
+    return saved;
+  } catch (err) {
+    console.warn("Unable to save single record layout", err);
+    return payload;
+  }
+}
+
+function parseSingleRecordLayout(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      order: Array.isArray(parsed.order) ? parsed.order : [],
+      hidden: Array.isArray(parsed.hidden) ? parsed.hidden : [],
+    };
+  } catch (_err) {
+    return null;
+  }
+}
+
+function openSingleRecordCustomizer(button) {
+  (async () => {
+  const card = button.closest('.single-record-card');
+  if (!card) return;
+
+  const existing = document.querySelector('.single-record-customizer-panel');
+  if (existing) {
+    existing.remove();
+  }
+
+  const objectName = card.dataset.recordObject || 'default';
+  const layout = parseSingleRecordLayout(card.dataset.layout) || await fetchSingleRecordLayout(objectName);
+  card.dataset.layout = JSON.stringify(layout);
+  const fieldsEls = Array.from(card.querySelectorAll('.single-record-field'));
+  if (!fieldsEls.length) return;
+
+  ensureSingleRecordCustomizerStyles();
+
+  const fields = fieldsEls.map(el => ({
+    key: el.dataset.fieldKey,
+    label: el.querySelector('.single-record-field-label')?.textContent.trim() || el.dataset.field || el.dataset.fieldKey,
+    hidden: Array.isArray(layout.hidden) && layout.hidden.includes(el.dataset.fieldKey)
+  }));
+
+  const panel = document.createElement('div');
+  panel.className = 'single-record-customizer-panel';
+  panel.innerHTML = `
+    <div class="single-record-customizer-header">
+      <strong>Customize fields</strong>
+      <button type="button" class="single-record-customizer-close" aria-label="Close" onclick="this.closest('.single-record-customizer-panel').remove()">✕</button>
+    </div>
+    <div class="single-record-customizer-body"></div>
+    <div class="single-record-customizer-footer">
+      <button type="button" class="single-record-customizer-save">Save</button>
+    </div>
+  `;
+
+  const list = document.createElement('ul');
+  list.className = 'single-record-customizer-list';
+
+  const buildRow = (field) => {
+    const li = document.createElement('li');
+    li.className = 'single-record-customizer-item';
+    li.dataset.fieldKey = field.key;
+    li.dataset.visible = field.hidden ? "false" : "true";
+    li.innerHTML = `
+      <label>
+        <span>${escapeHtml(field.label)}</span>
+      </label>
+      <div class="single-record-customizer-actions">
+        <button type="button" class="single-record-move-up" aria-label="Move up">↑</button>
+        <button type="button" class="single-record-move-down" aria-label="Move down">↓</button>
+        <button type="button" class="single-record-toggle ${field.hidden ? 'is-off' : 'is-on'}" aria-label="Toggle visibility">
+          ${field.hidden ? 'Hidden' : 'Visible'}
+        </button>
+      </div>
+    `;
+    return li;
+  };
+
+  fields.forEach(field => list.appendChild(buildRow(field)));
+  panel.querySelector('.single-record-customizer-body').appendChild(list);
+
+  panel.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const item = target.closest('.single-record-customizer-item');
+    if (!item) return;
+
+    if (target.classList.contains('single-record-toggle')) {
+      event.preventDefault();
+      const isVisible = item.dataset.visible !== "false";
+      const nextVisible = !isVisible;
+      item.dataset.visible = nextVisible ? "true" : "false";
+      target.classList.toggle('is-on', nextVisible);
+      target.classList.toggle('is-off', !nextVisible);
+      target.textContent = nextVisible ? 'Visible' : 'Hidden';
+      return;
+    }
+
+    if (target.classList.contains('single-record-move-up')) {
+      event.preventDefault();
+      const prev = item.previousElementSibling;
+      if (prev) {
+        item.parentNode.insertBefore(item, prev);
+      }
+    }
+
+    if (target.classList.contains('single-record-move-down')) {
+      event.preventDefault();
+      const next = item.nextElementSibling;
+      if (next) {
+        next.parentNode.insertBefore(item, next.nextElementSibling);
+      }
+    }
+
+    if (target.classList.contains('single-record-customizer-save')) {
+      event.preventDefault();
+      handleSave();
+    }
+  });
+
+  const handleSave = () => {
+    const rows = Array.from(panel.querySelectorAll('.single-record-customizer-item'));
+    const newOrder = [];
+    const hidden = [];
+    rows.forEach(row => {
+      const key = row.dataset.fieldKey;
+      const isChecked = row.dataset.visible !== "false";
+      if (!key) return;
+      if (isChecked) {
+        newOrder.push(key);
+      } else {
+        hidden.push(key);
+      }
+    });
+
+    persistSingleRecordLayout(objectName, { order: newOrder, hidden })
+      .then(saved => {
+        card.dataset.layout = JSON.stringify(saved);
+        applySingleRecordLayoutToCard(card, saved);
+      })
+      .catch(() => applySingleRecordLayoutToCard(card, { order: newOrder, hidden }))
+      .finally(() => panel.remove());
+  };
+
+  const saveBtn = panel.querySelector('.single-record-customizer-save');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      handleSave();
+    });
+  }
+
+  document.body.appendChild(panel);
+
+  // Position panel near the card and enable dragging
+  const rect = card.getBoundingClientRect();
+  panel.style.position = 'fixed';
+  panel.style.top = `${Math.max(12, rect.top + 8)}px`;
+  panel.style.left = `${Math.min(window.innerWidth - 460, rect.right + 12)}px`;
+  attachDragToPanel(panel, panel.querySelector('.single-record-customizer-header'));
+  })();
+}
+
+function ensureSingleRecordCustomizerStyles() {
+  if (document.getElementById('single-record-customizer-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'single-record-customizer-styles';
+  style.textContent = `
+    .single-record-layout-btn { background: linear-gradient(135deg, #ff9f1c, #ff7a1a); color: #fff; border: none; padding: 6px 12px; border-radius: 20px; font-weight: 600; box-shadow: 0 4px 10px rgba(255,122,26,0.35); cursor: pointer; transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease; }
+    .single-record-layout-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(255,122,26,0.45); }
+    .single-record-layout-btn--icon { width: 34px; height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }
+    .single-record-layout-btn--icon:hover { background: linear-gradient(135deg, #ffad3f, #ff8b2f); }
+    .single-record-customizer-panel { border: 1px solid #f1f1f1; box-shadow: 0 10px 28px rgba(0,0,0,0.14); border-radius: 12px; background: #fff; padding: 12px; max-width: 440px; position: fixed; z-index: 9999; resize: both; overflow: auto; min-width: 320px; min-height: 240px; max-height: 85vh; max-width: 90vw; box-sizing: border-box; }
+    .single-record-customizer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; cursor: move; }
+    .single-record-customizer-body { max-height: none; overflow: visible; padding: 4px 0; }
+    .single-record-customizer-list { list-style: none; padding: 0; margin: 0; }
+    .single-record-customizer-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 6px; border-bottom: 1px solid #f3f3f3; }
+    .single-record-customizer-item:last-child { border-bottom: none; }
+    .single-record-customizer-actions { display: inline-flex; gap: 6px; align-items: center; }
+    .single-record-customizer-actions button { border: 1px solid #ddd; background: #fafafa; padding: 4px 8px; cursor: pointer; border-radius: 8px; color: #444; }
+    .single-record-customizer-actions button:hover { background: #f2f2f2; }
+    .single-record-toggle { border: 1px solid #ff7a1a; color: #666; background: #fff; border-radius: 999px; padding: 4px 10px; font-weight: 600; }
+    .single-record-toggle.is-on { background: #fff; color: #666; }
+    .single-record-toggle.is-off { background: #ffede0; color: #444; }
+    .single-record-customizer-footer { display: flex; justify-content: flex-end; padding-top: 8px; }
+    .single-record-customizer-save { border: none; border-radius: 10px; padding: 8px 16px; background: linear-gradient(135deg, #ff9f1c, #ff7a1a); color: #fff; font-weight: 700; cursor: pointer; box-shadow: 0 6px 16px rgba(255,122,26,0.35); }
+    .single-record-customizer-save:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(255,122,26,0.45); }
+  `;
+  document.head.appendChild(style);
+}
+
+function applySingleRecordLayoutToCard(card, layout) {
+  if (!card) return;
+  const container = card.querySelector('.single-record-sections');
+  if (!container) return;
+
+  const fields = Array.from(card.querySelectorAll('.single-record-field'));
+  const byKey = new Map(fields.map(el => [el.dataset.fieldKey, el]));
+  const hidden = new Set(Array.isArray(layout.hidden) ? layout.hidden : []);
+  const order = (layout && Array.isArray(layout.order) && layout.order.length)
+    ? layout.order
+    : fields.map(el => el.dataset.fieldKey);
+
+  const standardEls = [];
+  const customEls = [];
+
+  const pushEl = (el) => {
+    const isCustom = el.dataset.isCustom === 'true';
+    const key = el.dataset.fieldKey;
+    const shouldHide = hidden.has(key);
+    el.style.display = shouldHide ? 'none' : '';
+    el.hidden = shouldHide;
+    if (shouldHide) {
+      el.setAttribute('aria-hidden', 'true');
+    } else {
+      el.removeAttribute('aria-hidden');
+    }
+    if (isCustom) {
+      customEls.push(el);
+    } else {
+      standardEls.push(el);
+    }
+  };
+
+  order.forEach(key => {
+    const el = byKey.get(key);
+    if (!el) return;
+    pushEl(el);
+    byKey.delete(key);
+  });
+
+  byKey.forEach(el => pushEl(el));
+
+  const buildSectionNode = (title, els) => {
+    if (!els.length) return null;
+    const section = document.createElement('div');
+    section.className = 'single-record-section';
+    const header = document.createElement('div');
+    header.className = 'single-record-section-title';
+    header.textContent = title;
+    const grid = document.createElement('div');
+    grid.className = 'single-record-grid';
+    els.forEach(node => grid.appendChild(node));
+    section.appendChild(header);
+    section.appendChild(grid);
+    return section;
+  };
+
+  container.innerHTML = '';
+  const stdSection = buildSectionNode('Details', standardEls);
+  const customSection = buildSectionNode('Custom Fields', customEls);
+  if (stdSection) container.appendChild(stdSection);
+  if (customSection) container.appendChild(customSection);
+
+  initializeMaterializeSelects(container);
+}
+
+function safeApplySingleRecordLayout(card, layout) {
+  try {
+    applySingleRecordLayoutToCard(card, layout);
+  } catch (err) {
+    console.error("Failed to apply single record layout", err, layout);
+    showSingleRecordToast("Couldn't apply layout. Please try again.", "error");
+  }
+}
+
+function attachDragToPanel(panel, handle) {
+  if (!panel || !handle) return;
+  let isDragging = false;
+  let startX = 0;
+  let startY = 0;
+  let startLeft = 0;
+  let startTop = 0;
+
+  const onMouseMove = (event) => {
+    if (!isDragging) return;
+    const dx = event.clientX - startX;
+    const dy = event.clientY - startY;
+    panel.style.left = `${Math.max(8, startLeft + dx)}px`;
+    panel.style.top = `${Math.max(8, startTop + dy)}px`;
+  };
+
+  const onMouseUp = () => {
+    isDragging = false;
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+  };
+
+  handle.addEventListener('mousedown', (event) => {
+    isDragging = true;
+    startX = event.clientX;
+    startY = event.clientY;
+    startLeft = panel.offsetLeft;
+    startTop = panel.offsetTop;
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
+}
+
+async function initializeSingleRecordCardLayout(card) {
+  if (!card) return;
+  const objectName = card.dataset.recordObject;
+  const initialLayout = parseSingleRecordLayout(card.dataset.layout);
+  if (initialLayout) {
+    applySingleRecordLayoutToCard(card, initialLayout);
+  }
+  const serverLayout = await fetchSingleRecordLayout(objectName);
+  if (serverLayout) {
+    card.dataset.layout = JSON.stringify(serverLayout);
+    applySingleRecordLayoutToCard(card, serverLayout);
+  }
+}
+
+function renderSingleRecordField(record, field, isHidden) {
   const label = escapeHtml(field.label || field.name || 'Field');
-  const customPill = field.is_custom ? `<span class="single-record-pill">Custom</span>` : '';
+  const customPill = '';
   const fieldKey = `${field.name || ''}::${field.is_custom ? 'custom' : 'standard'}${field.is_custom ? '::' + (field.field_id || '') : ''}`;
   const inputId = `single-record-input-${fieldKey}`;
   const isEditable = field.is_editable !== false;
@@ -2513,7 +2945,7 @@ function renderSingleRecordField(record, field) {
   ].filter(Boolean).join(' ');
 
   return `
-    <div ${containerAttrs}>
+    <div ${containerAttrs} ${isHidden ? 'style="display:none;"' : ''}>
       <div class="single-record-field-label-row">
         <label class="single-record-field-label" for="${inputId}">${label}</label>
         ${customPill}
@@ -2531,6 +2963,7 @@ function buildSingleRecordInput(field, inputId) {
   const dataType = (field.data_type || 'text').toLowerCase();
   const rawValue = field.raw_value;
   const valueForInput = prepareSingleRecordInputValue(rawValue, dataType);
+  const isChoice = dataType === 'choice' || Array.isArray(field.options);
   const baseAttrs = [
     `id="${inputId}"`,
     `class="single-record-input"`,
@@ -2567,11 +3000,23 @@ function buildSingleRecordInput(field, inputId) {
   if (dataType === 'choice') {
     const options = buildSingleRecordChoiceOptions(field.options, valueForInput);
     return `
-      <select ${baseAttrs.join(' ')}>
+      <select ${baseAttrs.join(' ')} data-skip-materialize="true">
         <option value="" ${valueForInput === '' ? 'selected' : ''}>Select…</option>
         ${options}
       </select>
     `;
+  }
+
+  if (dataType === 'lookup') {
+    const options = buildSingleRecordChoiceOptions(field.options, valueForInput);
+    if (options) {
+      return `
+        <select ${baseAttrs.join(' ')} data-skip-materialize="true">
+          <option value="" ${valueForInput === '' ? 'selected' : ''}>Select…</option>
+          ${options}
+        </select>
+      `;
+    }
   }
 
   if (field.is_multiline) {
@@ -2584,6 +3029,10 @@ function buildSingleRecordInput(field, inputId) {
 function prepareSingleRecordInputValue(rawValue, dataType) {
   if (rawValue === null || rawValue === undefined) {
     return '';
+  }
+
+  if (dataType === 'lookup') {
+    return String(rawValue);
   }
 
   if (dataType === 'boolean') {
@@ -2872,6 +3321,11 @@ function setSingleRecordInputValue(input, dataType, rawValue) {
   }
 
   if (dataType === 'choice') {
+    input.value = prepared;
+    return;
+  }
+
+  if (dataType === 'lookup') {
     input.value = prepared;
     return;
   }
@@ -4769,13 +5223,64 @@ function normalizeFieldName(fieldName) {
 // =====================================================
 
 function renderRetrievedRecords(userMessage, recordsDetails) {
-  let html = "";
+  try {
+    let html = "";
+    const formatNumber = (val) => {
+      if (val === null || val === undefined) return "—";
+      if (typeof val === "number") return val.toLocaleString("en-US", { maximumFractionDigits: 2 });
+      return val;
+    };
+    const formatCurrency = (val) => {
+      if (val === null || val === undefined) return "—";
+      if (typeof val === "number") return val.toLocaleString("en-US", { style: "currency", currency: "USD" });
+      return val;
+    };
+    const isMoneyField = (field) => {
+      const f = (field || "").toLowerCase();
+      return ["amount", "net_amount", "subtotal", "total", "revenue"].some(k => f.includes(k));
+    };
+    const getISOWeek = (date) => {
+      const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+      const dayNum = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    };
+    const formatPeriodLabel = (periodStr, groupBy) => {
+      if (!periodStr) return "—";
+      const d = new Date(periodStr);
+      if (isNaN(d.getTime())) return periodStr;
+      switch ((groupBy || "").toLowerCase()) {
+        case "week":
+          return `Week ${getISOWeek(d)}`;
+        case "day":
+          return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        case "year":
+          return `${d.getFullYear()}`;
+        case "month":
+        default:
+          return d.toLocaleString("en-US", { month: "long" });
+      }
+    };
 
-  // Añadir estilos globales una sola vez
-  if (!document.getElementById("records-table-style")) {
-    const style = document.createElement("style");
-    style.id = "records-table-style";
-    style.innerHTML = `
+    // If payload arrives as string, try to parse it
+    if (typeof recordsDetails === "string") {
+      try {
+        recordsDetails = JSON.parse(recordsDetails);
+      } catch (e) {
+        console.warn("retrieved_records parse error:", e);
+        return `${html}<div class="error-message">Unable to display records.</div>`;
+      }
+    }
+    if (!recordsDetails || typeof recordsDetails !== "object") {
+      return `${html}<div class="error-message">No records to display.</div>`;
+    }
+
+    // Añadir estilos globales una sola vez
+    if (!document.getElementById("records-table-style")) {
+      const style = document.createElement("style");
+      style.id = "records-table-style";
+      style.innerHTML = `
       .records-container {
         font-family: 'Inter', sans-serif;
         color: #1f2937;
@@ -4929,13 +5434,124 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         .popup { width: 96vw; max-height: 90vh; }
         .records-table th, .records-table td { padding: 0.5rem 0.6rem; }
       }
-    `;
-    document.head.appendChild(style);
-  }
+      `;
+      document.head.appendChild(style);
+    }
 
-  // Renderizar objetos
-  for (const [objectName, records] of Object.entries(recordsDetails)) {
-    if (!records || records.length === 0) continue;
+    // Renderizar objetos
+    let entries = [];
+    try {
+      entries = Object.entries(recordsDetails);
+    } catch (e) {
+      console.warn("Failed to iterate recordsDetails:", e);
+      return `${html}<div class="error-message">Unable to display records.</div>`;
+    }
+
+  for (const [objectName, records] of entries) {
+    if (!records) continue;
+
+    // Aggregates: render summary + optional series table
+    if (!Array.isArray(records) && records.aggregate) {
+      const agg = records.aggregate;
+      const series = Array.isArray(agg.series) ? agg.series : [];
+      const totalVal = agg.total != null ? agg.total : agg.value;
+      const money = isMoneyField(agg.field) || (agg.function || "").toLowerCase() === "sum";
+      const formatter = money ? formatCurrency : formatNumber;
+      const totalText = formatter(totalVal);
+      const func = (agg.function || "").toLowerCase();
+      const labelText = func === "count"
+        ? "Count"
+        : func === "avg" || func === "average"
+          ? "Average"
+          : func === "min"
+            ? "Minimum"
+            : func === "max"
+              ? "Maximum"
+              : money ? "Revenue" : "Total";
+      const iconName = money
+        ? "attach_money"
+        : func === "count"
+          ? "format_list_numbered"
+          : func === "avg" || func === "average"
+            ? "analytics"
+            : func === "min"
+              ? "south_west"
+              : func === "max"
+                ? "north_east"
+                : "functions";
+      const aggTitle = objectName === "Opportunity"
+        ? `<span class="material-icons" aria-hidden="true" style="vertical-align:middle;font-size:20px;margin-right:6px;font-family:'Material Icons';color:#9ca3af;">trending_up</span>Opportunity`
+        : objectName;
+      const aggId = `agg-${objectName}-${Math.random().toString(36).slice(2, 8)}`;
+      html += `
+        <div class="email-alert-container" style="margin-bottom:10px; position:relative;">
+          <div class="email-alert-header" style="
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            background: linear-gradient(135deg, #041530, #233049);
+            color:#fff;
+            padding:10px 14px;
+            border-radius:12px 12px 0 0;
+          ">
+            <h4 style="margin:0; display:flex; align-items:center; gap:6px;">${aggTitle}</h4>
+
+          </div>
+          <div class="email-alert-details" style="
+            padding:12px;
+            border:1px solid #e5e7eb;
+            border-radius:0 0 12px 12px;
+            background:#fff;
+          ">
+            <div style="
+              margin-bottom:12px;
+              font-size:1.25rem;
+              font-weight:700;
+            display:flex;
+            align-items:center;
+            gap:8px;
+          ">
+              <span class="material-icons" aria-hidden="true" style="font-size:24px;color:#9ca3af;font-family:'Material Icons';">${iconName}</span>
+              <span>${labelText}: ${totalText}</span>
+            </div>
+            ${series.length ? `
+            <div style="margin-bottom:12px; display:flex; gap:8px;">
+              <button class="records-popout-btn" onclick="toggleAggView('${aggId}','table')" style="display:flex;align-items:center;gap:4px;color:#4b5563;">
+                <span class="material-icons" style="font-family:'Material Icons';font-size:16px;color:#9ca3af;">table_chart</span> Table
+              </button>
+              <button class="records-popout-btn" onclick="toggleAggView('${aggId}','chart')" style="display:flex;align-items:center;gap:4px;color:#4b5563;">
+                <span class="material-icons" style="font-family:'Material Icons';font-size:16px;color:#9ca3af;">bar_chart</span> Graph
+              </button>
+            </div>` : ""}
+            ${series.length ? `
+              <div id="${aggId}-table" class="records-table-wrapper">
+                <table class="records-table">
+                  <thead><tr><th>Period</th><th>Value</th></tr></thead>
+                  <tbody>
+                    ${series.map(item => `
+                      <tr>
+                        <td>${formatPeriodLabel(item.period, agg.group_by)}</td>
+                        <td>${item.value != null ? formatter(item.value) : "—"}</td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+              <div id="${aggId}-chart" style="display:none; padding:4px 2px; height:260px;">
+                <canvas id="${aggId}-chart-canvas"
+                  data-labels='${JSON.stringify(series.map(s => formatPeriodLabel(s.period, agg.group_by)))}'
+                  data-values='${JSON.stringify(series.map(s => s.value || 0))}'
+                  data-money='${money ? "1" : "0"}'
+                  style="width:100%; height:100%;"></canvas>
+              </div>
+            ` : ""}
+          </div>
+        </div>
+      `;
+      continue;
+    }
+
+    if (!Array.isArray(records) || records.length === 0) continue;
     const allFields = Object.keys(records[0]);
 
     html += `
@@ -4981,13 +5597,17 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
                   ${allFields.map(field => {
                     let value = record[field];
                     if (value === null || value === undefined || value === "") return `<td>—</td>`;
-                    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+                    // Dates (with or without time)
+                    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(T.*)?$/.test(value)) {
                       const d = new Date(value);
-                      value = d.toLocaleString('en-US', {
-                        year:"numeric",month:"2-digit",day:"2-digit",
-                        hour:"2-digit",minute:"2-digit",second:"2-digit",
-                        hour12:false
-                      });
+                      if (!isNaN(d.getTime())) {
+                        value = d.toLocaleDateString('en-US', {
+                          year:"numeric",month:"2-digit",day:"2-digit"
+                        });
+                      }
+                    } else if (isMoneyField(field)) {
+                      const num = typeof value === "number" ? value : parseFloat(value);
+                      value = isNaN(num) ? value : formatCurrency(num);
                     }
                     return `<td>${value}</td>`;
                   }).join('')}
@@ -5059,17 +5679,126 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
           button.innerHTML = '<span class="material-icons" aria-hidden="true">open_in_new</span>';
         }
       }
+
+      if (!window.toggleAggView) {
+        window.toggleAggView = function(id, view) {
+          const table = document.getElementById(id + "-table");
+          const chart = document.getElementById(id + "-chart");
+          if (!table || !chart) return;
+          if (view === "chart") {
+            table.style.display = "none";
+            chart.style.display = "block";
+            const initChart = () => renderAggChart(id);
+            if (window.Chart) {
+              initChart();
+            } else {
+              loadChartJs(initChart);
+            }
+          } else {
+            table.style.display = "block";
+            chart.style.display = "none";
+          }
+        }
+      }
+
+      if (!window.renderAggChart) {
+        window.renderAggChart = function(id) {
+          const canvas = document.getElementById(id + "-chart-canvas");
+          if (!canvas) return;
+          const labels = JSON.parse(canvas.dataset.labels || "[]");
+          const values = JSON.parse(canvas.dataset.values || "[]");
+          const isMoney = canvas.dataset.money === "1";
+          const ctx = canvas.getContext("2d");
+          if (canvas._chartInstance) {
+            canvas._chartInstance.destroy();
+          }
+          canvas._chartInstance = new Chart(ctx, {
+            type: "line",
+            data: {
+              labels,
+              datasets: [
+                {
+                  label: "Revenue",
+                  data: values,
+                  borderColor: "#16a34a",
+                  backgroundColor: "rgba(22, 163, 74, 0.15)",
+                  tension: 0.35,
+                  fill: true,
+                  pointRadius: 4,
+                  pointBackgroundColor: "#16a34a"
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  display: true,
+                  labels: {
+                    font: { size: 14 }, // ~10% larger than default
+                    color: "#111827"
+                  }
+                },
+                tooltip: {
+                  callbacks: {
+                    label: (ctx) => {
+                      const val = ctx.parsed.y || 0;
+                      return isMoney ? "$" + val.toLocaleString("en-US") : val.toLocaleString("en-US");
+                    }
+                  }
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  ticks: {
+                    callback: (val) => isMoney ? "$" + Number(val).toLocaleString("en-US") : Number(val).toLocaleString("en-US")
+                  }
+                }
+              }
+            }
+          });
+        };
+      }
+
+      if (!window.loadChartJs) {
+        window.chartJsLoading = false;
+        window.loadChartJs = function(cb) {
+          if (window.Chart) return cb && cb();
+          if (window.chartJsLoading) {
+            document.addEventListener("chartjs-ready", function handler() {
+              document.removeEventListener("chartjs-ready", handler);
+              cb && cb();
+            });
+            return;
+          }
+          window.chartJsLoading = true;
+          const script = document.createElement("script");
+          script.src = "https://cdn.jsdelivr.net/npm/chart.js";
+          script.onload = () => {
+            window.chartJsLoading = false;
+            document.dispatchEvent(new Event("chartjs-ready"));
+            cb && cb();
+          };
+          document.head.appendChild(script);
+        };
+      }
     `;
     document.body.appendChild(script);
     window.makeDraggableAdded = true;
   }
 
-  if (userMessage) {
-    const cleanMessage = userMessage.split("retrieved_records:")[0];
-    html += `<div style="margin-bottom:10px;"><p>${cleanMessage}</p></div>`;
-  }
+    if (userMessage) {
+      const cleanMessage = userMessage.split("retrieved_records:")[0];
+      html += `<div style="margin-bottom:10px;"><p>${cleanMessage}</p></div>`;
+    }
 
-  return html;
+    return html;
+  } catch (e) {
+    console.warn("renderRetrievedRecords failed:", e);
+    return `<div class="error-message">Unable to display records.</div>`;
+  }
 }
 
 // =====================================================

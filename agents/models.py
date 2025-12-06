@@ -64,3 +64,18 @@ class AgentPrompt(models.Model):
 
     def __str__(self):
         return f"{self.agent_name} - {self.method}"
+
+
+class SingleRecordLayout(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="single_record_layouts")
+    object_name = models.CharField(max_length=100)
+    layout = models.JSONField(default=dict)  # { order: [], hidden: [] }
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "object_name")
+        verbose_name = "Single Record Layout"
+        verbose_name_plural = "Single Record Layouts"
+
+    def __str__(self):
+        return f"{self.user} - {self.object_name}"

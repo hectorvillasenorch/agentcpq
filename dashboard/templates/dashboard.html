@@ -9,6 +9,9 @@
     <link rel="stylesheet" href="{% static 'materialize/materialize.min.css' %}">
     <script src="{% static 'materialize/materialize.min.js' %}" defer></script>
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <script>
+      window.isAdmin = {{ request.user.is_staff|yesno:"true,false" }};
+    </script>
     <script src="{% static 'js/agents/agent_main.js' %}" defer></script>
 
     <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}">

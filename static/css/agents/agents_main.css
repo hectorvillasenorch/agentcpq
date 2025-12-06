@@ -237,44 +237,71 @@ input[type="number"] {
 }
 
 .single-record-body {
-  padding: 22px 24px 26px;
+  padding: 18px 20px 22px;
   background: #ffffff;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 18px;
 }
 
 .single-record-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(298px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.single-record-sections {
+  display: flex;
+  flex-direction: column;
   gap: 16px;
+}
+
+.single-record-section {
+  border: 1px solid #edf1f7;
+  border-radius: 14px;
+  padding: 10px 10px 14px;
+  background: linear-gradient(180deg, #f9fafc 0%, #ffffff 100%);
+}
+
+.single-record-section-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #1f2937;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .single-record-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  padding: 6px 4px;
+  border: none;
+  background: transparent;
 }
 
 .single-record-field-label-row {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
 }
 
 .single-record-field-label {
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #4b5563;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: #374151;
 }
 
 .single-record-field-value {
-  font-size: 1rem;
+  font-size: 0.92rem;
   color: #1f2937;
-  line-height: 1.5;
+  line-height: 1.4;
   word-break: break-word;
 }
 
@@ -295,8 +322,10 @@ input[type="number"] {
   background: #ffffff;
   border-radius: 8px;
   border: 1px solid #e5e7eb;
-  padding: 2px 8px;
-  /* box-shadow: 0 3px 15px rgba(15, 23, 42, 0.06); */
+  padding: 2px 6px;
+  min-height: 32px;
+  display: flex;
+  align-items: flex-start;
 }
 
 .single-record-field-control:focus-within {
@@ -307,13 +336,20 @@ input[type="number"] {
 .single-record-input {
   width: 100%;
   padding: 6px 4px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: none !important;
   background: transparent;
-  font-size: 1rem !important; 
+  font-size: 0.92rem !important; 
   color: #111827;
   transition: outline 0.2s ease;
   box-shadow: none;
+  min-height: 1rem;
+  line-height: 1rem;
+  /* height: 2rem !important; */
+}
+.single-record-input textarea {
+  max-height: 15rem !important;
+
 }
 
 .single-record-input:focus {
@@ -330,9 +366,60 @@ input[type="number"] {
 
 .single-record-field-control select.single-record-input,
 .single-record-field-control textarea.single-record-input {
-  background: transparent;
-  border: none;
+  background: #fff;
+  border: 1px solid #d7dbe3 !important;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.92rem;
+  box-shadow: none;
   resize: vertical;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 100%;
+  display: block;
+  cursor: pointer;
+}
+
+.single-record-field-control select.single-record-input {
+  min-height: 34px;
+}
+
+.single-record-field-control textarea.single-record-input {
+  min-height: 96px;
+  line-height: 1.4;
+}
+
+/* Override Materialize select styling to match the rest of the card */
+.select-wrapper input.select-dropdown {
+  background: #fff !important;
+  border: 1px solid #d7dbe3 !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  padding: 6px 8px !important;
+  height: 34px !important;
+  line-height: 22px !important;
+  color: #111827 !important;
+  font-size: 0.92rem !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+.select-wrapper {
+  width: 100% !important;
+}
+.select-wrapper input.select-dropdown:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+}
+.dropdown-content li > a,
+.dropdown-content li > span {
+  color: #111827 !important;
+  font-size: 0.92rem;
+}
+.dropdown-content li:hover > a,
+.dropdown-content li.active > a {
+  background: #f3f4f6 !important;
+  color: #111827 !important;
 }
 
 .single-record-actions {

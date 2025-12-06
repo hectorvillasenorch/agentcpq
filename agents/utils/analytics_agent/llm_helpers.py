@@ -131,7 +131,7 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
 
     system_prompt = """
     You are an AI assistant that helps extract user requests into a standardized JSON format called 'show_metrics'.
-    The user can ask to 'show me', 'teach me', 'list', or 'get' records from the following objects: Product, Lead, Account, Contact, Opportunity, Quote, Knowledge.
+    The user can ask to 'show me', 'teach me', 'list', 'get', or 'chart' metrics from the following objects: Product, Lead, Account, Contact, Opportunity, Quote, Knowledge.
     Rules:
     1. Only use the fields in 'filters' for conditions.
     2. Only use the fields in 'sort' for sorting.
@@ -158,6 +158,13 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
                 "object": <object_name>,
                 "method": "read",
                 "limit": <limit>,
+                "aggregate": {
+                    "function": "sum|count|avg|min|max",
+                    "field": <field_name>,
+                    "group_by": "month|week|day|null",
+                    "date_field": <date_field_name_or_null>,
+                    "range": "last_3_months|last_month|last_90_days|custom|null"
+                },
                 "conditions": [
                     {
                         "field": <field_name,
@@ -194,6 +201,9 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
     - "method" (e.g., "read")
     - "conditions" (a list of conditions for filtering)
     - "sort" (optional, can be null)
+    - "aggregate" (optional; include when the user asks for totals, averages, counts, or charts/over-time views. Use group_by when the user wants a chart series.)
+      - For date ranges, prefer: this_year, next_year, this_month, last_3_months, last_month, last_90_days, three_months, six_months, nine_months, twelve_months.
+      - If the user asks for a time-bound metric (e.g., “this year”, “this month”, “last 3 months”) set aggregate.range accordingly.
 
     2. Set "completed": true if:
     - "object" is not null
@@ -207,6 +217,9 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
     3. If any of these rules are not met, set "completed": false.
 
     4. Always generate one object per metric request. Do not combine multiple objects or multiple conditions into a single item.
+
+    Defaulting guidance:
+    - If the user asks for revenue/amount totals without specifying a date range, set aggregate.range to "this_year".
     """
 
     system_prompt += f"""
@@ -279,12 +292,14 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
 
         # --- FIX: asegurar que sort siempre sea dict ---
         sort_data = data.get("sort") if isinstance(data.get("sort"), dict) else {}
+        aggregate_data = data.get("aggregate") if isinstance(data.get("aggregate"), dict) else None
 
         normalized_metrics.append({
             "data": {
                 "object": data.get("object"),
                 "method": data.get("method", "read"),
                 "limit": data.get("limit", 100),
+                "aggregate": aggregate_data,
                 "conditions": [
                     {
                         "field": cond.get("field"),
