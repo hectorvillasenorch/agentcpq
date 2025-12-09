@@ -50,9 +50,9 @@ class UpdateHandler(BaseHandler):
 
     def execute(self, *, action, payload):
         model = action.target_content_type.model_class()
-        filters = action.target_filters
+        filters = getattr(action, "target_filters", None)
 
-        value = action.data  # {"type": "...", "...": ...}
+        value = action.data  # {"field": ...} or {"type": "...", "...": ...}
 
         # BULK UPDATE
         if filters:
@@ -64,7 +64,8 @@ class UpdateHandler(BaseHandler):
                     setattr(obj, "_skip_trigger", True)
                     try:
                         # value for bulk update is ONE field update
-                        final = resolve_value_fields({"value": value}, obj)
+                        value_spec = value if (isinstance(value, dict) and "type" in value) else {"type": "static", "data": value}
+                        final = resolve_value_fields({"value": value_spec}, obj)
                         obj.value = final["value"]
                         obj.save()
                         updated += 1
@@ -85,9 +86,22 @@ class UpdateHandler(BaseHandler):
 
         setattr(inst, "_skip_trigger", True)
         try:
-            # resolve dynamic value
-            resolved = resolve_value_fields({"value": value}, inst)
-            inst.value = resolved["value"]
+            # resolve dynamic value(s)
+            if isinstance(value, dict) and len(value) == 1:
+                # assume {field: payload}
+                field_name, raw_val = next(iter(value.items()))
+                value_spec = raw_val if (isinstance(raw_val, dict) and "type" in raw_val) else {"type": "static", "data": raw_val}
+                resolved = resolve_value_fields({"value": value_spec}, inst)
+                setattr(inst, field_name, resolved.get("value"))
+            else:
+                value_spec = value if (isinstance(value, dict) and "type" in value) else {"type": "static", "data": value}
+                resolved = resolve_value_fields({"value": value_spec}, inst)
+                # Fallback: set generic 'value' attr if present
+                if hasattr(inst, "value"):
+                    inst.value = resolved.get("value")
+                else:
+                    # If no 'value' field, skip
+                    return {"updated_count": 0}
             inst.save()
         finally:
             delattr(inst, "_skip_trigger")

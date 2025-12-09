@@ -288,7 +288,13 @@ def _create_contact(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[st
 def _create_opportunity(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
     account_ref = _find_account(fields.get("account"))
     if not account_ref:
-        return False, f"⚠️ Account '{fields.get('account')}' not found for Opportunity.", {}
+        try:
+            account_ref = Account.objects.create(
+                name=str(fields.get("account")),
+                created_by=user,
+            )
+        except Exception:
+            return False, f"⚠️ Account '{fields.get('account')}' not found for Opportunity.", {}
 
     stage_value = fields.get("stage") or Opportunity.STAGE_CHOICES[0][0]
     valid_stages = [choice[0] for choice in Opportunity.STAGE_CHOICES]
@@ -329,6 +335,10 @@ def _record_payload(object_name: str, record) -> Dict[str, object]:
 def _find_account(value) -> Optional[Account]:
     if not value:
         return None
+    try:
+        value = str(value).strip()
+    except Exception:
+        pass
 
     try:
         return Account.objects.get(pk=value)
@@ -347,6 +357,11 @@ def _find_account(value) -> Optional[Account]:
 
     try:
         return Account.objects.filter(name__iexact=str(value)).first()
+    except Exception:
+        pass
+
+    try:
+        return Account.objects.filter(name__icontains=str(value)).first()
     except Exception:
         return None
 

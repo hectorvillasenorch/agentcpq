@@ -52,7 +52,7 @@ def get_or_create_account_and_opportunity(user, extracted_details, session_data)
     if not extracted_details:
         logging.error("❌ extracted_details is None")
         return None, None
-    account_name = extracted_details.get("account", session_data.get("account", "")).strip()
+    account_name = (extracted_details.get("account") or session_data.get("account") or "").strip()
     opportunity_name = (extracted_details.get("opportunity") or "").strip()
 
 
@@ -62,14 +62,13 @@ def get_or_create_account_and_opportunity(user, extracted_details, session_data)
         }
     
     # Create or get Account and Opportunity
-    account, acc_created = Account.objects.get_or_create(
-        name=account_name,
-        defaults={'created_by': user}
-    )
-
-    if acc_created is False and not account.created_by:
+    account_qs = Account.objects.filter(name__iexact=account_name).order_by("id")
+    account = account_qs.first()
+    if account is None:
+        account = Account.objects.create(name=account_name, created_by=user)
+    elif not account.created_by:
         account.created_by = user
-        account.save()
+        account.save(update_fields=["created_by"])
 
     if not opportunity_name:
         existing_opps = Opportunity.objects.filter(account=account)

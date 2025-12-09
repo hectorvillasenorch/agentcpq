@@ -762,7 +762,7 @@ from django.db.models import ForeignKey
 # Allowed fields per model
 ALLOWED_FIELDS = {
     "Lead": ["first_name", "last_name", "phone", "email", "source", "contact", "status", "notes", "assigned_to", "created_at", "activities"],
-    "Product": ["name", "sku", "price", "is_subscription", "term", "is_bundle", "family", "created_at", "description"],
+    "Product": ["name", "sku", "price", "fixed_price", "price_mode", "is_subscription", "term", "is_bundle", "family", "created_at", "description"],
     "Account": ["name", "industry", "website", "phone", "street", "city", "state", "zip_code"],
     "Contact": ["first_name", "last_name", "email", "phone", "company", "job_title", "notes", "account", "is_primary"],
     "Opportunity": ["name", "account", "amount", "stage", "expected_close_date", "primary_quote"],

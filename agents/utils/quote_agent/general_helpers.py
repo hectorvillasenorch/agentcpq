@@ -216,7 +216,7 @@ def get_quote_details(quote):
         "rendered_fields": quote_details_settings.rendered_fields,
         "quote_id": quote.id,
         "quote_name": quote.name,
-        "status": quote.status,
+        "status": quote.get_status_display(),
         "subtotal": str(quote.subtotal) if quote_details_settings.show_quote_subtotal else None,
         "net_amount": str(quote.net_amount) if quote_details_settings.show_quote_net_amount else None,
         "account": quote.account.name if quote_details_settings.show_quote_account and quote.account else None,

@@ -221,6 +221,12 @@ def save_option(request):
             default_selected=default_selected,
             group_name=group_name
         )
+        # Recalculate bundle price if bundle uses sum pricing
+        try:
+            if parent_product.is_bundle and getattr(parent_product, "price_mode", "sum") == "sum":
+                parent_product.save()
+        except Exception:
+            pass
 
         response_message = "✅ Product component was successfully added to the bundle."
 
@@ -394,6 +400,13 @@ def save_update_option(request, option):
             option.group_name = group_name
 
         option.save()
+        # Recalculate bundle price if bundle uses sum pricing
+        try:
+            parent = option.parent_product
+            if parent.is_bundle and getattr(parent, "price_mode", "sum") == "sum":
+                parent.save()
+        except Exception:
+            pass
 
         response_message = "✅ Option updated successfully."
 

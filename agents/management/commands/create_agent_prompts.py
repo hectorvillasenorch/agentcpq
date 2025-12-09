@@ -1063,19 +1063,24 @@ class Command(BaseCommand):
                 "function": "extract_option_updates",
                 "system_instructions": """
                     Extract structured option updates from the following request.
-                    Return a JSON array where each object represents an option update and contains:
+                    Return ONLY a JSON array. Each item must be an object with:
 
-                    - "parent_product_sku" (string): The SKU of the bundle
-                    - "parent_product_name" (string):  The name of the bundle
-                    - "updates" (array): a list of product to update
-                        - "product_option_sku" (string): The sku of the product_option to update
-                        - "product_option_name" (string): The name of the product_option to update
-                        - "quantity" (int)
-                        - "is_required" (boolean)
-                        - "min_quantity" (int)
-                        - "max_quantity" (int)
-                        - "default_selected" (boolean)
-                        - "group_name" (string)
+                    - "parent_product_sku" (string or null): bundle SKU
+                    - "parent_product_name" (string or null): bundle name
+                    - "updates": array of updates. Each update MUST include:
+                        - "product_option_sku" (string or null)
+                        - "product_option_name" (string or null)
+                        - "quantity" (int or null)
+                        - "is_required" (boolean or null)
+                        - "min_quantity" (int or null)
+                        - "max_quantity" (int or null)
+                        - "default_selected" (boolean or null)
+                        - "group_name" (string or null)
+                    
+                    Rules:
+                    - Use null for any missing value.
+                    - Do NOT invent keys or structure; no top-level keys other than the array.
+                    - No text, explanations, or markdown—raw JSON only.
 
                     *Example Input & Output:*
                     User: "update option for component Product1 in bundle KIT-001 set quantity to 2, required and max quantity to 15."

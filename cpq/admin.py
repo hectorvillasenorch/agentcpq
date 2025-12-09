@@ -385,11 +385,12 @@ class OptionInline(admin.TabularInline):
 
         return formfield
 
-class ProductAdmin(DynamicCustomFieldAdmin):
+class ProductAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     change_list_template = "admin/product/change_list.html"
 
     # 🔹 quitar 'created_by' de readonly_fields
     readonly_fields = ('updated_by',)
+    list_display = ('name', 'sku', 'price', 'fixed_price', 'price_mode', 'is_subscription', 'is_bundle', 'created_at_js', 'updated_at_js')
 
     def get_fieldsets(self, request, obj=None):
         form = self.get_form(request, obj)()

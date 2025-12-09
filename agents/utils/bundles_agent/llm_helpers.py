@@ -11,7 +11,7 @@ from ..prompts_helpers.system_prompt_helpers import make_system_prompt
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-3.5-turbo"
+OPENAI_MODEL = "gpt-4o-mini"
 # OPENAI_MODEL = "gpt-4"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
@@ -181,7 +181,29 @@ def extract_bundle_components(user_message):
 def extract_option_updates(user_message):
     """Uses GPT to extract the option updates."""
 
-    system_prompt, temperature = make_system_prompt("bundles_agent", "update", "extract_option_updates")
+    prompt_tuple = make_system_prompt("bundles_agent", "update", "extract_option_updates", None)
+    if prompt_tuple:
+        system_prompt, temperature = prompt_tuple
+    else:
+        # Fallback prompt if no AgentPrompt is configured
+        system_prompt = """
+        You extract bundle option updates from user requests.
+        Return ONLY JSON: an array of bundles to update.
+        Each bundle object must include:
+        - parent_product_sku (string or null)
+        - parent_product_name (string or null)
+        - updates (array) where each update has:
+            - product_option_sku (string or null)
+            - product_option_name (string or null)
+            - quantity (int or null)
+            - is_required (bool or null)
+            - min_quantity (int or null)
+            - max_quantity (int or null)
+            - default_selected (bool or null)
+            - group_name (string or null)
+        Use null when data is missing. No text outside JSON.
+        """
+        temperature = 0
 
     user_prompt = user_message
 
@@ -201,31 +223,94 @@ def extract_option_updates(user_message):
         # ✅ Ensure valid JSON response
         try:
             extracted_updates = json.loads(raw_response)
-            if isinstance(extracted_updates, list) and all(
-                isinstance(bundle, dict) and
-                "parent_product_sku" in bundle and
-                "parent_product_name" in bundle and
-                "updates" in bundle and
-                isinstance(bundle["updates"], list) and all(
-                    isinstance(component, dict) and
-                    all(key in component for key in [
-                        "product_option_sku", "product_option_name", "quantity", "is_required", "min_quantity", "max_quantity", "default_selected", "group_name"
-                    ])
-                    for component in bundle["updates"]
-                )
-                for bundle in extracted_updates
-            ):
-                return extracted_updates
-            else:
-                logging.warning("⚠️ GPT response is not in expected format.")
-                return None
         except json.JSONDecodeError:
             logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
             return None
 
+        normalized = _normalize_option_updates(extracted_updates)
+        if normalized:
+            return normalized
+
+        logging.warning("⚠️ GPT response is not in expected format.")
+        return None
+
     except Exception as e:
         logging.error(f"❌ Error extracting option updates: {str(e)}")
         return None
+
+
+def _normalize_option_updates(raw):
+    """
+    Normalize various LLM shapes to the expected schema:
+    [
+      {
+        "parent_product_sku": "...",
+        "parent_product_name": "...",
+        "updates": [
+          {
+            "product_option_sku": "...",
+            "product_option_name": "...",
+            "quantity": <int or null>,
+            "is_required": <bool or null>,
+            "min_quantity": <int or null>,
+            "max_quantity": <int or null>,
+            "default_selected": <bool or null>,
+            "group_name": <string or null>
+          }
+        ]
+      }
+    ]
+    """
+    if not isinstance(raw, list):
+        return None
+
+    normalized_bundles = []
+
+    for bundle in raw:
+        if not isinstance(bundle, dict):
+            return None
+
+        parent_sku = bundle.get("parent_product_sku") or bundle.get("bundle_sku") or bundle.get("bundleSku") or bundle.get("bundle")
+        parent_name = bundle.get("parent_product_name") or bundle.get("bundle_name") or bundle.get("bundleName")
+        updates = bundle.get("updates") or bundle.get("options")
+
+        bundle_level_qty = bundle.get("quantity")
+
+        if not isinstance(updates, list):
+            return None
+
+        norm_updates = []
+        for upd in updates:
+            if not isinstance(upd, dict):
+                return None
+            qty = upd.get("quantity", bundle_level_qty)
+            norm_updates.append({
+                "product_option_sku": upd.get("product_option_sku") or upd.get("option_sku") or upd.get("component_sku"),
+                "product_option_name": upd.get("product_option_name") or upd.get("option_name") or upd.get("component_name"),
+                "quantity": qty if isinstance(qty, int) else (None if qty is None else qty),
+                "is_required": upd.get("is_required"),
+                "min_quantity": upd.get("min_quantity") if upd.get("min_quantity") is not None else upd.get("min"),
+                "max_quantity": upd.get("max_quantity") if upd.get("max_quantity") is not None else upd.get("max"),
+                "default_selected": upd.get("default_selected"),
+                "group_name": upd.get("group_name"),
+            })
+
+        normalized_bundles.append({
+            "parent_product_sku": parent_sku,
+            "parent_product_name": parent_name,
+            "updates": norm_updates,
+        })
+
+    if all(
+        isinstance(b, dict)
+        and "parent_product_sku" in b
+        and "parent_product_name" in b
+        and isinstance(b.get("updates"), list)
+        for b in normalized_bundles
+    ):
+        return normalized_bundles
+
+    return None
 
 # FUNCTION TO EXTRACT DELETING OPTIONS (DELETE_BUNDLE_OPTION_FROM_QUOTE)
 def extract_delete_options_from_quote(user_message):

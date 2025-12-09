@@ -13,6 +13,7 @@ from django.contrib.auth.models import User
 from django.conf import settings
 import os , uuid
 import secrets
+import logging
 from django.utils.timezone import now
 
 from agents.utils.knowledge_agent.embedding_helpers import generate_embedding as generate_knowledge_embedding
@@ -249,6 +250,12 @@ class Product(models.Model):
     is_subscription = models.BooleanField(default=False)
     term = models.IntegerField(null=True, blank=True)
     is_bundle = models.BooleanField(default=False)
+    PRICE_MODE_CHOICES = [
+        ("fixed", "Fixed"),
+        ("sum", "Sum of Components"),
+    ]
+    price_mode = models.CharField(max_length=10, choices=PRICE_MODE_CHOICES, default="sum")
+    fixed_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal("0.00"))])
     family = models.CharField(max_length=50)
     prdid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
@@ -272,11 +279,14 @@ class Product(models.Model):
             self.prdid = generate_agentcpq_id()
 
         if self.is_bundle and self.pk:
-            total_price = 0
-            for option in self.options.all():
-                if option.product_option:
-                    total_price += option.quantity * option.product_option.price
-            self.price = total_price
+            if self.price_mode == "sum":
+                total_price = Decimal("0.00")
+                for option in self.options.all():
+                    if option.product_option:
+                        total_price += Decimal(option.quantity) * option.product_option.price
+                self.price = total_price
+            else:
+                self.price = self.fixed_price or Decimal("0.00")
         super().save(*args, **kwargs)
     def __str__(self):
         bundle_tag = " - BUNDLE" if self.is_bundle else ""
@@ -424,12 +434,63 @@ class Quote(models.Model):
             self.subtotal = self.get_subtotal_amount()
             self.update_discount_fields()
             self.update_net_amount()
+            logging.debug(
+                "🧾 Quote.save(new) before second save pk=%s type=%s perc=%s amount=%s",
+                self.pk,
+                self.discount_type,
+                self.discount_percentage,
+                self.discount_amount,
+            )
             # Guardar como update
             super().save(update_fields=["subtotal", "discount_percentage", "discount_amount", "net_amount"])
         else:
+            logging.debug(
+                "🧾 Quote.save(existing) pk=%s incoming type=%s perc=%s amount=%s",
+                self.pk,
+                self.discount_type,
+                self.discount_percentage,
+                self.discount_amount,
+            )
+            # Optimistic lock: detect stale instances unless explicitly skipped
+            if not getattr(self, "_skip_trigger", False):
+                db_row = Quote.objects.filter(pk=self.pk).only("updated_at").first()
+                if db_row and self.updated_at and db_row.updated_at and db_row.updated_at != self.updated_at:
+                    raise ValueError(
+                        f"Quote {self.pk} has been modified by another process (updated_at mismatch)."
+                    )
+            try:
+                original = Quote.objects.filter(pk=self.pk).only("discount_type", "discount_percentage", "discount_amount").first()
+            except Exception:
+                original = None
+            if (
+                self.discount_type == "amount"
+                and Decimal(str(self.discount_percentage or 0)) == Decimal("0.00")
+                and Decimal(str(self.discount_amount or 0)) == Decimal("0.00")
+                and original
+                and (
+                    Decimal(str(original.discount_percentage or 0)) > Decimal("0.00")
+                    or Decimal(str(original.discount_amount or 0)) > Decimal("0.00")
+                )
+            ):
+                logging.debug(
+                    "🧾 Preserving original discount fields to avoid stale overwrite: type=%s perc=%s amount=%s",
+                    original.discount_type,
+                    original.discount_percentage,
+                    original.discount_amount,
+                )
+                self.discount_type = original.discount_type
+                self.discount_percentage = original.discount_percentage
+                self.discount_amount = original.discount_amount
             self.subtotal = self.get_subtotal_amount()
             self.update_discount_fields()
             self.update_net_amount()
+            logging.debug(
+                "🧾 Quote.save(existing) after recalc pk=%s type=%s perc=%s amount=%s",
+                self.pk,
+                self.discount_type,
+                self.discount_percentage,
+                self.discount_amount,
+            )
             super().save(*args, **kwargs)
 
     def __str__(self):

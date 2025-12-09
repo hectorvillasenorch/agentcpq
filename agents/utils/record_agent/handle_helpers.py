@@ -266,7 +266,7 @@ def _collect_standard_fields(record: Model, model_name: str) -> List[Dict[str, o
         if field_obj is not None and (getattr(field_obj, "auto_now", False) or getattr(field_obj, "auto_now_add", False)):
             is_editable = False
 
-        options = _get_field_options(field_obj)
+        options = _get_field_options(field_obj, record)
 
         rows.append(
             {
@@ -317,7 +317,16 @@ def _collect_custom_fields(record: Model, custom_fields: Iterable, *, content_ty
     for field in custom_fields:
         stored_value = existing_values.get(field.id)
         raw_value = _coerce_custom_raw_value(stored_value, field.data_type)
-        formatted_value = _format_custom_display_value(raw_value, field.data_type)
+        formatted_value = _format_custom_display_value(raw_value, field.data_type, field=field)
+        options = field.options or []
+        if (field.data_type or "").lower() == "lookup":
+            # Populate options from lookup_model if not already provided
+            if not options:
+                options = _get_custom_lookup_options(field)
+            # Ensure current value is present in options so the select renders it
+            if raw_value and not any(opt.get("value") == raw_value for opt in options if isinstance(opt, dict)):
+                label = _resolve_custom_lookup_label(field, raw_value) or str(raw_value)
+                options = [{"value": raw_value, "label": label}] + options
 
         rows.append(
             {
@@ -329,7 +338,7 @@ def _collect_custom_fields(record: Model, custom_fields: Iterable, *, content_ty
                 "data_type": _map_custom_data_type(field.data_type),
                 "is_custom": True,
                 "field_id": field.id,
-                "options": field.options or [],
+                "options": options,
                 "is_multiline": (field.data_type or "").lower() in {"textarea"},
                 "is_editable": True,
             }
@@ -413,18 +422,18 @@ def _coerce_raw_value(value, field_obj: Optional[Field]):
     if isinstance(field_obj, ForeignKey):
         if value is None:
             return None
-        # Prefer human-readable name/string; fall back to PK if missing
-        return getattr(value, "name", None) or getattr(value, "custom_identifier", None) or getattr(value, "email", None) or getattr(value, "id", getattr(value, "pk", None)) or str(value)
+        # Prefer PK for stable selection; fall back to readable string
+        return getattr(value, "pk", None) or getattr(value, "id", None) or getattr(value, "name", None) or getattr(value, "custom_identifier", None) or getattr(value, "email", None) or str(value)
     if hasattr(value, "__str__"):
         return str(value)
     return value
 
 
-def _get_field_options(field_obj: Optional[Field]):
+def _get_field_options(field_obj: Optional[Field], record: Optional[Model] = None):
     if not field_obj:
         return []
     if isinstance(field_obj, ForeignKey):
-        return _get_lookup_options(field_obj)
+        return _get_lookup_options(field_obj, record=record)
     choices = getattr(field_obj, "choices", None)
     if not choices:
         return []
@@ -434,23 +443,66 @@ def _get_field_options(field_obj: Optional[Field]):
     ]
 
 
-def _get_lookup_options(field_obj: ForeignKey, limit: int = 50):
-    try:
-        model = field_obj.related_model
-    except Exception:
-        return []
+def _get_lookup_options(field_obj: ForeignKey, record: Optional[Model] = None, limit: int = 200):
+    combined = []
 
-    try:
-        qs = model.objects.all()[:limit]
-    except Exception:
-        return []
+    # Explicit handling for primary_contact to avoid empty dropdowns or manager quirks
+    if field_obj.name == "primary_contact":
+        try:
+            from cpq.models import Contact  # inline import to avoid circular deps
+            qs = Contact.objects.all()
+            combined = list(qs.order_by("first_name", "last_name")[:limit])
+        except Exception:
+            combined = []
+    else:
+        try:
+            model = field_obj.related_model
+        except Exception:
+            return []
+
+        try:
+            combined = list(model.objects.all()[:limit])
+        except Exception:
+            combined = []
 
     options = []
-    for obj in qs:
-        label = getattr(obj, "name", None) or getattr(obj, "custom_identifier", None) or getattr(obj, "email", None) or str(obj)
+    seen = set()
+
+    # Always include the currently selected value, even if it wouldn't appear in the filtered queryset
+    current_val = None
+    if record is not None:
+        try:
+            current_val = getattr(record, field_obj.name, None)
+        except Exception:
+            current_val = None
+
+    if current_val is not None:
+        label = (
+            getattr(current_val, "name", None)
+            or getattr(current_val, "custom_identifier", None)
+            or getattr(current_val, "email", None)
+            or " ".join([str(getattr(current_val, "first_name", "")).strip(), str(getattr(current_val, "last_name", "")).strip()]).strip()
+            or str(current_val)
+        )
+        if label:
+            options.append({"value": getattr(current_val, "pk", None), "label": label})
+            seen.add(getattr(current_val, "pk", None))
+
+    for obj in combined:
+        if obj.pk in seen:
+            continue
+        seen.add(obj.pk)
+        label = (
+            getattr(obj, "name", None)
+            or getattr(obj, "custom_identifier", None)
+            or getattr(obj, "email", None)
+            or " ".join([str(getattr(obj, "first_name", "")).strip(), str(getattr(obj, "last_name", "")).strip()]).strip()
+            or str(obj)
+        )
         if label is None:
             continue
-        options.append({"value": label, "label": label})
+        options.append({"value": getattr(obj, "pk", None), "label": label})
+
     return options
 
 
@@ -479,7 +531,87 @@ def _coerce_custom_raw_value(value: Optional[str], data_type: Optional[str]):
     return value
 
 
-def _format_custom_display_value(value, data_type: Optional[str]):
+def _get_custom_lookup_options(field, limit: int = 200):
+    from django.apps import apps
+
+    lookup_model_path = getattr(field, "lookup_model", None)
+    model = None
+
+    if lookup_model_path:
+        try:
+            app_label, model_name = lookup_model_path.split(".")
+            model = apps.get_model(app_label, model_name)
+        except Exception:
+            model = None
+
+    # Fallback for known patterns (e.g., primary contact on Opportunity)
+    if model is None and field.object_type == "Opportunity" and "contact" in (field.name or "").lower():
+        try:
+            model = apps.get_model("cpq", "Contact")
+        except Exception:
+            model = None
+
+    if model is None:
+        return []
+
+    try:
+        qs = model.objects.all().order_by("first_name", "last_name")[:limit]
+    except Exception:
+        return []
+
+    options = []
+    for obj in qs:
+        label = _build_lookup_label(obj)
+        if label:
+            options.append({"value": getattr(obj, "pk", None), "label": label})
+    return options
+
+
+def _resolve_custom_lookup_label(field, raw_value):
+    if raw_value in (None, ""):
+        return ""
+
+    try:
+        options = _get_custom_lookup_options(field)
+    except Exception:
+        options = []
+
+    for opt in options:
+        if isinstance(opt, dict) and str(opt.get("value")) == str(raw_value):
+            return opt.get("label") or ""
+
+    # Fallback: try to fetch directly
+    try:
+        from django.apps import apps
+        lookup_model_path = getattr(field, "lookup_model", None)
+        model = None
+        if lookup_model_path:
+            app_label, model_name = lookup_model_path.split(".")
+            model = apps.get_model(app_label, model_name)
+        elif field.object_type == "Opportunity" and "contact" in (field.name or "").lower():
+            model = apps.get_model("cpq", "Contact")
+
+        if model:
+            obj = model.objects.filter(pk=raw_value).first()
+            if obj:
+                return _build_lookup_label(obj)
+    except Exception:
+        return ""
+
+    return ""
+
+
+def _build_lookup_label(obj):
+    return (
+        " ".join([str(getattr(obj, "first_name", "")).strip(), str(getattr(obj, "last_name", "")).strip()]).strip()
+        or getattr(obj, "name", None)
+        or getattr(obj, "custom_identifier", None)
+        or getattr(obj, "email", None)
+        or str(obj)
+    )
+
+
+def _format_custom_display_value(value, data_type: Optional[str], *, field=None):
     if value is None:
         return ""
     data_type = (data_type or "").lower()
@@ -491,6 +623,10 @@ def _format_custom_display_value(value, data_type: Optional[str]):
             return "Yes"
         if lowered in {"false", "0", "no"}:
             return "No"
+    if data_type == "lookup":
+        lookup_label = _resolve_custom_lookup_label(field, value) if field else None
+        if lookup_label:
+            return lookup_label
     return str(value)
 
 

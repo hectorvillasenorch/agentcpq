@@ -362,14 +362,23 @@ class TriggerEngine:
         # Recalcular quotes afectadas
         # ------------------------------------------------------------------
         if quotes_to_recalc:
+            logger.debug("🧮 quotes_to_recalc → %s", quotes_to_recalc)
             Quote = apps.get_model("cpq", "Quote")
             for qid in quotes_to_recalc:
                 q = Quote.objects.filter(pk=qid).first()
                 if not q:
+                    logger.debug("⚠️ Quote(pk=%s) not found while recalc; skipping", qid)
                     continue
 
                 try:
                     setattr(q, "_skip_trigger", True)
+                    logger.debug(
+                        "🔍 Pre-recalc (bulk) Quote(pk=%s) discounts → type=%s, perc=%s, amount=%s",
+                        q.pk,
+                        q.discount_type,
+                        q.discount_percentage,
+                        q.discount_amount,
+                    )
                     q.subtotal = q.get_subtotal_amount()
                     q.update_discount_fields()
                     q.update_net_amount()
@@ -379,13 +388,21 @@ class TriggerEngine:
                         "net_amount", "tax_amount", "tax_percentage", "updated_at"
                     ])
 
-                    logger.debug(f"🔁 Recalculated Quote(pk={q.pk}) after trigger execution")
+                    logger.debug(
+                        "🔁 Recalculated Quote(pk=%s) after trigger execution | type=%s, perc=%s, amount=%s",
+                        q.pk,
+                        q.discount_type,
+                        q.discount_percentage,
+                        q.discount_amount,
+                    )
 
                 except Exception as e:
                     logger.exception(f"❌ Error recalculating Quote(pk={qid}): {e}")
                 finally:
                     if hasattr(q, "_skip_trigger"):
                         delattr(q, "_skip_trigger")
+        else:
+            logger.debug("ℹ️ quotes_to_recalc is empty; no bulk quote recalc executed.")
 
         # ------------------------------------------------------------------
         # LIMPIEZA FINAL
@@ -874,6 +891,7 @@ class TriggerEngine:
                     "method": "UPDATE",
                     "target_content_type": target_ct,
                     "target_lookup": {"pk": target_inst.pk},
+                    "target_filters": None,
                     "data": {target_field: value},
                     "is_active": True,
                 })()
@@ -892,6 +910,7 @@ class TriggerEngine:
                     "method": "DELETE",
                     "target_content_type": target_ct,
                     "target_lookup": {"pk": target_inst.pk},
+                    "target_filters": None,
                     "data": {},
                     "is_active": True,
                 })()
@@ -2095,6 +2114,14 @@ class TriggerEngine:
         try:
             setattr(q, "_skip_trigger", True)
 
+            logger.debug(
+                "🔍 Pre-recalc Quote(pk=%s) discounts → type=%s, perc=%s, amount=%s",
+                q.pk,
+                q.discount_type,
+                q.discount_percentage,
+                q.discount_amount,
+            )
+
             q.subtotal = q.get_subtotal_amount()
             q.update_discount_fields()
             q.update_net_amount()
@@ -2104,7 +2131,13 @@ class TriggerEngine:
                 "net_amount", "tax_amount", "tax_percentage", "updated_at"
             ])
 
-            logger.debug(f"✅ Quote(pk={q.pk}) recalculada tras CREATE quote_line")
+            logger.debug(
+                "✅ Post-recalc Quote(pk=%s) discounts → type=%s, perc=%s, amount=%s",
+                q.pk,
+                q.discount_type,
+                q.discount_percentage,
+                q.discount_amount,
+            )
         except Exception as e:
             logger.exception(f"❌ Error recalculando Quote tras CREATE quote_line: {e}")
         finally:

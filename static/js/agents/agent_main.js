@@ -31,6 +31,27 @@ function initializeMaterializeSelects(root) {
   }
 }
 
+function mergeSingleRecordSections(root = document) {
+  if (!root) return;
+  const cards = root.querySelectorAll('.single-record-card');
+  cards.forEach(card => {
+    const sections = card.querySelectorAll('.single-record-section');
+    if (sections.length <= 1) return;
+
+    const primarySection = sections[0];
+    const primaryGrid = primarySection.querySelector('.single-record-grid');
+    if (!primaryGrid) return;
+
+    for (let i = 1; i < sections.length; i++) {
+      const grid = sections[i].querySelector('.single-record-grid');
+      if (grid) {
+        primaryGrid.innerHTML += grid.innerHTML;
+      }
+      sections[i].remove();
+    }
+  });
+}
+
 if (typeof window !== 'undefined') {
   window.initializeMaterializeSelects = initializeMaterializeSelects;
 }
@@ -1379,6 +1400,9 @@ function appendMessage(className, message) {
     }
   }
 
+    // ✅ Normalize single-record sections to a single section
+    mergeSingleRecordSections(messageBubble);
+
     messageBubble.querySelectorAll('.single-record-card').forEach(card => {
       initializeSingleRecordCardLayout(card);
     });
@@ -1508,6 +1532,8 @@ function renderQuoteDetails(quote) {
 
   const formattedDate_e = `${monthFormatted}/${dayFormatted}/${yearFormatted}`;
 
+  const normalizedStatus = (quote.status || '').toString().toLowerCase();
+
   var html = `<div class="quote-container" data-quote-name="${quote.quote_name}">
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
@@ -1519,11 +1545,11 @@ function renderQuoteDetails(quote) {
                       data-quote="${quote.quote_name}"
                       style="padding: 4px; border-radius: 4px; color: black;"
                       onchange="updateQuote(this)">
-                      <option value="Draft" ${quote.status === "Draft" ? "selected" : ""}>Draft</option>
-                      <option value="Pending Approval" ${quote.status === "Pending Approval" ? "selected" : ""}>Pending Approval</option>
-                      <option value="Approved" ${quote.status === "Approved" ? "selected" : ""}>Approved</option>
-                      <option value="Rejected" ${quote.status === "Rejected" ? "selected" : ""}>Rejected</option>
-                      <option value="Closed" ${quote.status === "Closed" ? "selected" : ""}>Closed</option>
+                      <option value="Draft" ${normalizedStatus === "draft" ? "selected" : ""}>Draft</option>
+                      <option value="Pending Approval" ${normalizedStatus === "pending approval" ? "selected" : ""}>Pending Approval</option>
+                      <option value="Approved" ${normalizedStatus === "approved" ? "selected" : ""}>Approved</option>
+                      <option value="Rejected" ${normalizedStatus === "rejected" ? "selected" : ""}>Rejected</option>
+                      <option value="Closed" ${normalizedStatus === "closed" ? "selected" : ""}>Closed</option>
                     </select>
                   </div>
               </div>
@@ -1977,11 +2003,27 @@ function renderQuoteDetailsMobile(quote) {
   const safeDiscountPercentage = Number.isFinite(discountPercentageValue) ? discountPercentageValue : 0;
   const safeDiscountAmount = Number.isFinite(discountAmountValue) ? discountAmountValue : 0;
   const formattedDiscountAmount = safeDiscountAmount.toLocaleString("en-US", { minimumFractionDigits: 2 });
+  const normalizedStatus = (quote.status || '').toString().toLowerCase();
 
   let html = `
     <div class="quote-mobile" data-quote-name="${quote.quote_name}" style="font-family: Arial, sans-serif; line-height: 1.4">
       <h3 style="margin:0 0 8px 0; color:#ff7f00; font-size:1.2rem; font-weight:600; background-color:#f5f5f5; padding:0.5rem">${quote.quote_name}</h3>
-      <p>🏢 <b>Account:</b> ${quote.account} 🔸 🗒️ <b>Status:</b> ${quote.status}</p>
+      <p>🏢 <b>Account:</b> ${quote.account}</p>
+      <div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
+        <span>🗒️ <b>Status:</b></span>
+        <select
+          name="status"
+          data-field="status"
+          data-quote="${quote.quote_name}"
+          style="padding: 4px; border-radius: 4px; color: black;"
+          onchange="updateQuote(this)">
+          <option value="Draft" ${normalizedStatus === "draft" ? "selected" : ""}>Draft</option>
+          <option value="Pending Approval" ${normalizedStatus === "pending approval" ? "selected" : ""}>Pending Approval</option>
+          <option value="Approved" ${normalizedStatus === "approved" ? "selected" : ""}>Approved</option>
+          <option value="Rejected" ${normalizedStatus === "rejected" ? "selected" : ""}>Rejected</option>
+          <option value="Closed" ${normalizedStatus === "closed" ? "selected" : ""}>Closed</option>
+        </select>
+      </div>
       <p>📆 <b>Expires:</b> ${format(expiration)}</p>
       <p>🚀 <b>Opportunity:</b> ${quote.opportunity}</p>
       <p>🏷️ <b>Discount:</b> ${safeDiscountPercentage}% (-$${formattedDiscountAmount})</p>
@@ -2477,13 +2519,12 @@ function renderSingleRecord(record) {
        </button>`
     : '';
 
-  const standardEntries = orderedFields.filter(entry => !entry.hidden && !entry.field.is_custom);
-  const customEntries = orderedFields.filter(entry => !entry.hidden && entry.field.is_custom);
+  const visibleEntries = orderedFields.filter(entry => !entry.hidden);
 
-  const sectionsHtml = `
-    ${renderSingleRecordSection("Details", standardEntries.map(entry => renderSingleRecordField(record, entry.field, entry.hidden)))}
-    ${renderSingleRecordSection("Custom Fields", customEntries.map(entry => renderSingleRecordField(record, entry.field, entry.hidden)))}
-  `;
+  const sectionsHtml = renderSingleRecordSection(
+    "Details",
+    visibleEntries.map(entry => renderSingleRecordField(record, entry.field, entry.hidden))
+  );
 
   const relatedSections = (record.related || [])
     .map(entry => renderSingleRecordRelated(entry))
@@ -3009,14 +3050,12 @@ function buildSingleRecordInput(field, inputId) {
 
   if (dataType === 'lookup') {
     const options = buildSingleRecordChoiceOptions(field.options, valueForInput);
-    if (options) {
-      return `
-        <select ${baseAttrs.join(' ')} data-skip-materialize="true">
-          <option value="" ${valueForInput === '' ? 'selected' : ''}>Select…</option>
-          ${options}
-        </select>
-      `;
-    }
+    return `
+      <select ${baseAttrs.join(' ')} data-skip-materialize="true">
+        <option value="" ${valueForInput === '' ? 'selected' : ''}>Select…</option>
+        ${options}
+      </select>
+    `;
   }
 
   if (field.is_multiline) {
@@ -3305,6 +3344,7 @@ function updateSingleRecordCard(card, recordData) {
   });
 
   initializeMaterializeSelects(card);
+  mergeSingleRecordSections(card);
 }
 
 function buildFieldKey(name, isCustom, fieldId) {
