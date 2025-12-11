@@ -109,6 +109,8 @@ def extract_quote_details_with_llm(user_message, current_state, previous_summary
     - Products are optional, if the user does not specify any it is not an indicator that completed has to be false.
     - Opportunity is optional, only account is required, if account is provided by the user, mark completed as true.
     - Return the response as strict JSON. Do not include comments, explanations, or trailing commas.
+    - If the user mentions any product or bundle (by name or SKU) in the same request as quote creation, always include it in the products list with sku or name captured and default quantity 1 when unspecified.
+    - If the user mentions an account or company name inline (e.g., “from REX Consulting” or “for ACME Corp”, or “for ACME Inc”), capture it in the account field even if it’s embedded in narrative text.
     """
 
     user_prompt = f"""

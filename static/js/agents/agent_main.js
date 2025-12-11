@@ -8,6 +8,7 @@ document.addEventListener("DOMContentLoaded", function () {
   enhanceStructuredAgentMessagesHistoryChat(); // 🔥
   updateAttachmentPreview();
   initializeMaterializeSelects(document);
+  initializeBundleStructureCards(document);
 
   scrollToBottom("DOMContentLoaded", true);
 });
@@ -470,13 +471,37 @@ function showAgentFeedback() {
   const feedback = document.getElementById("agent-feedback");
   if (feedback) {
     feedback.style.display = "block";
+    startThinkingAnimation();
     scrollToBottom("showAgentFeedback");
   }
 }
 
 function hideAgentFeedback() {
   const feedback = document.getElementById("agent-feedback");
+  stopThinkingAnimation();
   if (feedback) feedback.style.display = "none";
+}
+
+let thinkingInterval = null;
+function startThinkingAnimation() {
+  const el = document.querySelector("#agent-feedback .thinking-text");
+  if (!el) return;
+  const text = "Thinking...";
+  let idx = 0;
+  el.textContent = "";
+  stopThinkingAnimation();
+  thinkingInterval = setInterval(() => {
+    const len = text.length;
+    el.textContent = text.slice(0, (idx % (len + 3)));
+    idx += 1;
+  }, 120);
+}
+
+function stopThinkingAnimation() {
+  if (thinkingInterval) {
+    clearInterval(thinkingInterval);
+    thinkingInterval = null;
+  }
 }
 
 function setupChatListeners() {
@@ -1065,6 +1090,8 @@ function enhanceStructuredAgentMessagesHistoryChat() {
   if (chatBox) {
     chatBox.scrollTop = chatBox.scrollHeight;
   }
+
+  initializeBundleStructureCards(document);
 }
 
 
@@ -1152,6 +1179,7 @@ async function sendMessage() {
         // ✅ Handle Quote Details Response
         else if (data.response && data.response.quote_details && !data.response.quote_notes) {
           //console.log("Quote Details");
+          ensureQuoteStatusValue(data.response.quote_details);
           responseMessage += renderQuoteDetails(data.response.quote_details);
         }
         // ✅ Handle Quote Notes Response
@@ -1168,6 +1196,10 @@ async function sendMessage() {
           //console.log(data.response);
           //console.log(data.response.validation_rules_details)
           responseMessage += renderValidationRuleDetails(data.response.validation_rules_details);
+        }
+        else if (data.response && data.response.hiddenMessage && data.response.temporaryMessage) {
+          hideAgentFeedback();
+          return;
         }
         // ✅ Handle Inclusion Rules Response
         else if (data.response && data.response.inclusion_rules_details) {
@@ -1294,6 +1326,8 @@ function appendMessage(className, message) {
         const match = message.match(/quote_details:\s({.+})/);
         if (match && match[1]) {
           const quote = JSON.parse(match[1]);
+          // Ensure status_value exists for downstream selection logic
+          ensureQuoteStatusValue(quote);
           message = renderQuoteDetails(quote);  // Use your nice formatter
         }
       } catch (e) {
@@ -1308,6 +1342,7 @@ function appendMessage(className, message) {
         const match = message.match(/quote_details:\s({.+})/);
         if (match && match[1]) {
           const quote = JSON.parse(match[1]);
+          ensureQuoteStatusValue(quote);
           message = renderQuoteNotes(quote);  // Use your nice formatter
         }
       } catch (e) {
@@ -1406,6 +1441,8 @@ function appendMessage(className, message) {
     messageBubble.querySelectorAll('.single-record-card').forEach(card => {
       initializeSingleRecordCardLayout(card);
     });
+
+    initializeBundleStructureCards(messageBubble);
 
     if (message.includes("agent-json")) {
         enhanceStructuredAgentMessages();
@@ -1513,9 +1550,66 @@ function initializeQuoteDetailInteractions(container) {
   }
 }
 
+function ensureQuoteStatusValue(quote) {
+  if (!quote) return quote;
+  const raw = quote.status_value || quote.status || "Draft";
+  quote.status_value = raw;
+  if (!quote.status) quote.status = raw;
+  return quote;
+}
+
+function buildStatusOptions(quote) {
+  ensureQuoteStatusValue(quote);
+  const choices = Array.isArray(quote.status_choices) && quote.status_choices.length
+    ? quote.status_choices
+    : [
+        { value: "Draft", label: "Draft" },
+        { value: "Pending Approval", label: "Pending Approval" },
+        { value: "Approved", label: "Approved" },
+        { value: "Rejected", label: "Rejected" },
+        { value: "Closed", label: "Closed" },
+      ];
+  const current = quote.status_value || quote.status || "";
+  const normalizedStatus = (current || "").toString().toLowerCase();
+
+  return choices
+    .map(({ value, label }) => {
+      const isSelected =
+        value === current ||
+        normalizedStatus === value.toString().toLowerCase();
+      return `<option value="${value}" ${isSelected ? "selected" : ""}>${label}</option>`;
+    })
+    .join("");
+}
+
+function statusBadgeStyle(value) {
+  const v = (value || "").toString().toLowerCase();
+  const base = "display:inline-block;padding:4px 10px;border-radius:999px;font-weight:700;font-size:0.9rem;";
+  if (v === "approved") return `${base}background:#e8f7ef;color:#0f9d58;`;
+  if (v === "rejected") return `${base}background:#fde8ed;color:#e11d48;`;
+  if (v === "pending approval") return `${base}background:#fff3d6;color:#d98200;`;
+  return `${base}background:#f1f3f5;color:#555;`;
+}
+
+function prepareQuoteStatusFields(quote) {
+  if (!quote) return { raw: "", normalized: "" };
+  ensureQuoteStatusValue(quote);
+  const raw = (quote.status_value || quote.status || "").toString().trim();
+  const normalized = raw.replace(/_/g, " ").toLowerCase();
+  // Hydrate back for downstream use to keep consistency
+  quote.status_value = raw;
+  return { raw, normalized };
+}
+
 function renderQuoteDetails(quote) {
   if (window.innerWidth < 1200) {
     return renderQuoteDetailsMobile(quote);   // ← new helper (see below)
+  }
+  if (console && typeof console.debug === "function") {
+    console.debug("renderQuoteDetails status payload", {
+      status_value: quote.status_value,
+      status: quote.status
+    });
   }
   const createdAt = new Date(quote.created_at);
   const expirationDate = new Date(quote.expiration_date);
@@ -1532,25 +1626,21 @@ function renderQuoteDetails(quote) {
 
   const formattedDate_e = `${monthFormatted}/${dayFormatted}/${yearFormatted}`;
 
-  const normalizedStatus = (quote.status || '').toString().toLowerCase();
-
+  const { raw: statusValue, normalized: normalizedStatus } = prepareQuoteStatusFields(quote);
+  console.log('STATUS OPTIONS: '+buildStatusOptions(quote));
   var html = `<div class="quote-container" data-quote-name="${quote.quote_name}">
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
                   <div style="display: flex; align-items: center; gap: 8px;" class="status-select">
-                    <strong>Status:</strong>
                     <select
                       name="status"
                       data-field="status"
                       data-quote="${quote.quote_name}"
                       style="padding: 4px; border-radius: 4px; color: black;"
                       onchange="updateQuote(this)">
-                      <option value="Draft" ${normalizedStatus === "draft" ? "selected" : ""}>Draft</option>
-                      <option value="Pending Approval" ${normalizedStatus === "pending approval" ? "selected" : ""}>Pending Approval</option>
-                      <option value="Approved" ${normalizedStatus === "approved" ? "selected" : ""}>Approved</option>
-                      <option value="Rejected" ${normalizedStatus === "rejected" ? "selected" : ""}>Rejected</option>
-                      <option value="Closed" ${normalizedStatus === "closed" ? "selected" : ""}>Closed</option>
+                      ${buildStatusOptions(quote)}
                     </select>
+                    <span style="${statusBadgeStyle(statusValue)}">${statusValue || "—"}</span>
                   </div>
               </div>
               <div class="quote-details">
@@ -2003,26 +2093,22 @@ function renderQuoteDetailsMobile(quote) {
   const safeDiscountPercentage = Number.isFinite(discountPercentageValue) ? discountPercentageValue : 0;
   const safeDiscountAmount = Number.isFinite(discountAmountValue) ? discountAmountValue : 0;
   const formattedDiscountAmount = safeDiscountAmount.toLocaleString("en-US", { minimumFractionDigits: 2 });
-  const normalizedStatus = (quote.status || '').toString().toLowerCase();
+  const { raw: statusValue, normalized: normalizedStatus } = prepareQuoteStatusFields(quote);
 
   let html = `
     <div class="quote-mobile" data-quote-name="${quote.quote_name}" style="font-family: Arial, sans-serif; line-height: 1.4">
       <h3 style="margin:0 0 8px 0; color:#ff7f00; font-size:1.2rem; font-weight:600; background-color:#f5f5f5; padding:0.5rem">${quote.quote_name}</h3>
       <p>🏢 <b>Account:</b> ${quote.account}</p>
       <div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
-        <span>🗒️ <b>Status:</b></span>
         <select
           name="status"
           data-field="status"
           data-quote="${quote.quote_name}"
           style="padding: 4px; border-radius: 4px; color: black;"
           onchange="updateQuote(this)">
-          <option value="Draft" ${normalizedStatus === "draft" ? "selected" : ""}>Draft</option>
-          <option value="Pending Approval" ${normalizedStatus === "pending approval" ? "selected" : ""}>Pending Approval</option>
-          <option value="Approved" ${normalizedStatus === "approved" ? "selected" : ""}>Approved</option>
-          <option value="Rejected" ${normalizedStatus === "rejected" ? "selected" : ""}>Rejected</option>
-          <option value="Closed" ${normalizedStatus === "closed" ? "selected" : ""}>Closed</option>
+          ${buildStatusOptions(quote)}
         </select>
+        <span style="${statusBadgeStyle(statusValue)}">${statusValue || "—"}</span>
       </div>
       <p>📆 <b>Expires:</b> ${format(expiration)}</p>
       <p>🚀 <b>Opportunity:</b> ${quote.opportunity}</p>
@@ -2082,6 +2168,7 @@ function renderReadOnlyQuoteDetails(quote) {
   if (window.innerWidth < 1200) {
     return renderQuoteDetailsMobile(quote);   // ← new helper (see below)
   }
+  const { raw: statusValue } = prepareQuoteStatusFields(quote);
   const createdAt = new Date(quote.created_at);
   const expirationDate = new Date(quote.expiration_date);
 
@@ -2101,7 +2188,7 @@ function renderReadOnlyQuoteDetails(quote) {
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
                   <div style="display: flex; align-items: center; gap: 8px;" class="status-select">
-                    <p><strong>Status:</strong> ${quote.status}</p>
+                    <span style="${statusBadgeStyle(statusValue)}">${statusValue || "—"}</span>
                   </div>
               </div>
               <div class="quote-details">
@@ -2513,17 +2600,18 @@ function renderSingleRecord(record) {
   if (showLayoutButton) {
     ensureSingleRecordCustomizerStyles();
   }
+  const objectName = (record.object || '').toLowerCase();
+  const headerIconName = objectName === "product" ? "inventory_2" : "category";
+  const headerIcon = `<span class="material-icons" aria-hidden="true">${headerIconName}</span>`;
   const layoutButton = showLayoutButton
     ? `<button type="button" class="single-record-layout-btn single-record-layout-btn--icon" onclick="openSingleRecordCustomizer(this)" aria-label="Edit layout" title="Edit layout">
          <span class="material-icons" aria-hidden="true">tune</span>
        </button>`
     : '';
 
-  const visibleEntries = orderedFields.filter(entry => !entry.hidden);
-
   const sectionsHtml = renderSingleRecordSection(
     "Details",
-    visibleEntries.map(entry => renderSingleRecordField(record, entry.field, entry.hidden))
+    orderedFields.map(entry => renderSingleRecordField(record, entry.field, entry.hidden))
   );
 
   const relatedSections = (record.related || [])
@@ -2536,8 +2624,11 @@ function renderSingleRecord(record) {
     <div class="single-record-card" data-record-object="${escapeHtml(record.object || '')}" data-record-id="${record.record_id ?? ''}"${layoutAttr}>
       <div class="single-record-header">
         <div class="single-record-header-text">
-          ${subtitle}
-          <div class="single-record-title">${title}</div>
+          <div class="single-record-subtitle" style="display:flex;align-items:center;gap:6px;">
+            ${headerIcon}
+            ${subtitle || escapeHtml(record.object || '')}
+          </div>
+          <div class="single-record-title single-record-title--accent">${title}</div>
         </div>
         <div class="single-record-header-meta">
           ${headerLabel}
@@ -2556,6 +2647,237 @@ function renderSingleRecord(record) {
   `;
 }
 
+function normalizeBundleFieldValue(field, value) {
+  const trimmed = value === null || value === undefined ? "" : String(value).trim();
+  if (["quantity", "min", "max"].includes(field)) {
+    const num = Number(trimmed);
+    return Number.isNaN(num) ? "" : num;
+  }
+  if (field === "required" || field === "default") {
+    if (trimmed === "" || trimmed === "null") return "";
+    return trimmed === true || trimmed === "true" || trimmed === "yes" || trimmed === "1";
+  }
+  return trimmed;
+}
+
+function formatBundleFieldDisplay(field, value) {
+  if (value === "" || value === null || value === undefined) return "—";
+  if (field === "required" || field === "default") {
+    return value === true || value === "true" ? "Yes" : "No";
+  }
+  return String(value);
+}
+
+function renderBundleRowToView(row) {
+  row.querySelectorAll("[data-field]").forEach((cell) => {
+    const field = cell.dataset.field;
+    const raw = cell.dataset.value;
+    const val = normalizeBundleFieldValue(field, raw);
+    cell.textContent = formatBundleFieldDisplay(field, val);
+  });
+}
+
+function startBundleEdit(card) {
+  if (card.dataset.editing === "true") return;
+  card.dataset.editing = "true";
+
+  const rows = card.querySelectorAll(".bundle-option-row");
+  rows.forEach((row) => {
+    row.querySelectorAll("[data-field]").forEach((cell) => {
+      const field = cell.dataset.field;
+      const raw = cell.dataset.value;
+      const val = normalizeBundleFieldValue(field, raw);
+
+      if (["quantity", "min", "max"].includes(field)) {
+        cell.innerHTML = `<input type="number" class="bundle-edit-input" data-edit-field="${field}" value="${val !== "" ? val : ""}" min="0">`;
+      } else if (field === "required" || field === "default") {
+        const truthy = val === true;
+        cell.innerHTML = `
+          <select class="bundle-edit-input browser-default" data-edit-field="${field}" data-skipMaterialize="true">
+            <option value="true" ${truthy ? "selected" : ""}>Yes</option>
+            <option value="false" ${!truthy ? "selected" : ""}>No</option>
+          </select>
+        `;
+      } else {
+        cell.innerHTML = `<input type="text" class="bundle-edit-input" data-edit-field="${field}" value="${val !== "" ? escapeHtml(String(val)) : ""}">`;
+      }
+    });
+  });
+
+  let actions = card.querySelector(".bundle-edit-actions");
+  if (!actions) {
+    actions = document.createElement("div");
+    actions.className = "bundle-edit-actions";
+    actions.innerHTML = `
+      <div class="bundle-edit-feedback single-record-feedback" data-role="bundle-feedback"></div>
+      <div class="bundle-edit-buttons">
+        <button type="button" class="bundle-edit-save">Save</button>
+        <button type="button" class="bundle-edit-cancel bundle-edit-cancel-btn">Cancel</button>
+      </div>
+    `;
+    const body = card.querySelector(".single-record-body");
+    body.appendChild(actions);
+  }
+
+  actions.style.display = "flex";
+
+  const saveBtn = actions.querySelector(".bundle-edit-save");
+  const cancelBtn = actions.querySelector(".bundle-edit-cancel-btn");
+
+  if (saveBtn) {
+    saveBtn.onclick = () => saveBundleEdits(card);
+  }
+  if (cancelBtn) {
+    cancelBtn.onclick = () => cancelBundleEdit(card);
+  }
+}
+
+function cancelBundleEdit(card) {
+  card.dataset.editing = "false";
+  card.querySelectorAll(".bundle-option-row").forEach(renderBundleRowToView);
+  const actions = card.querySelector(".bundle-edit-actions");
+  if (actions) actions.style.display = "none";
+}
+
+function readBundleRowValues(row, fromInputs = false) {
+  const values = {};
+  row.querySelectorAll("[data-field]").forEach((cell) => {
+    const field = cell.dataset.field;
+    let raw = cell.dataset.value;
+    if (fromInputs) {
+      const input = cell.querySelector("[data-edit-field]");
+      if (input) {
+        raw = input.value;
+      }
+    }
+    values[field] = normalizeBundleFieldValue(field, raw);
+  });
+  return values;
+}
+
+function buildBundleUpdatePayload(card) {
+  const parentSku = card.dataset.bundleSku || null;
+  const parentName = card.dataset.bundleName || null;
+
+  const updates = [];
+
+  card.querySelectorAll(".bundle-option-row").forEach((row) => {
+    const original = readBundleRowValues(row, false);
+    const current = readBundleRowValues(row, true);
+
+    const changed = {};
+    ["quantity", "required", "default", "min", "max", "group"].forEach((field) => {
+      const origVal = original[field];
+      const newVal = current[field];
+      if (field === "group") {
+        if ((origVal || "") !== (newVal || "")) {
+          changed["group_name"] = newVal === "" ? null : newVal;
+        }
+      } else if (field === "required") {
+        if (origVal !== newVal) changed["is_required"] = newVal;
+      } else if (field === "default") {
+        if (origVal !== newVal) changed["default_selected"] = newVal;
+      } else if (field === "quantity" && origVal !== newVal && newVal !== "") {
+        changed["quantity"] = Number(newVal);
+      } else if (field === "min" && origVal !== newVal && newVal !== "") {
+        changed["min_quantity"] = Number(newVal);
+      } else if (field === "max" && origVal !== newVal && newVal !== "") {
+        changed["max_quantity"] = Number(newVal);
+      }
+    });
+
+    if (Object.keys(changed).length === 0) return;
+
+    updates.push({
+      product_option_sku: row.dataset.productSku || null,
+      product_option_name: row.dataset.productName || null,
+      ...changed,
+    });
+  });
+
+  if (!updates.length) return null;
+
+  return {
+    updates: [
+      {
+        parent_product_sku: parentSku,
+        parent_product_name: parentName,
+        updates,
+      },
+    ],
+    hiddenMessage: true,
+  };
+}
+
+function setBundleFeedback(card, message, intent = "info") {
+  const feedback = card.querySelector('[data-role="bundle-feedback"]');
+  setSingleRecordCardFeedback(feedback, message, intent);
+}
+
+async function saveBundleEdits(card) {
+  const payload = buildBundleUpdatePayload(card);
+  if (!payload) {
+    setBundleFeedback(card, "No changes to save.", "info");
+    cancelBundleEdit(card);
+    return;
+  }
+
+  setBundleFeedback(card, "Saving…", "info");
+
+  try {
+    const response = await fetch("/agents/chat/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: `Update Bundle Option: ${JSON.stringify(payload)}` }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const result = data.response || {};
+    const message = result.message || "Bundle options updated.";
+    const isError = typeof message === "string" && message.includes("⚠️");
+
+    // Persist new values locally
+    card.querySelectorAll(".bundle-option-row").forEach((row) => {
+      const current = readBundleRowValues(row, true);
+      Object.entries(current).forEach(([field, val]) => {
+        const cell = row.querySelector(`[data-field="${field}"]`);
+        if (!cell) return;
+        cell.dataset.value = String(val);
+      });
+      renderBundleRowToView(row);
+    });
+
+    card.dataset.editing = "false";
+    const actions = card.querySelector(".bundle-edit-actions");
+    if (actions) actions.style.display = "none";
+    setBundleFeedback(card, message, isError ? "error" : "success");
+  } catch (err) {
+    console.error("Failed to save bundle updates", err);
+    setBundleFeedback(card, "❌ Could not save bundle updates. Please try again.", "error");
+  }
+}
+
+function initializeBundleStructureCards(root) {
+  root.querySelectorAll(".bundle-structure-card").forEach((card) => {
+    if (card.dataset.bundleInit === "true") return;
+    card.dataset.bundleInit = "true";
+
+    const editable = card.dataset.editable === "true";
+    card.querySelectorAll(".bundle-option-row").forEach(renderBundleRowToView);
+
+    if (!editable) return;
+
+    const editBtn = card.querySelector("[data-role=\"bundle-edit-toggle\"]");
+    if (editBtn) {
+      editBtn.addEventListener("click", () => startBundleEdit(card));
+    }
+  });
+}
+
 function renderSingleRecordSection(title, fieldsHtml) {
   if (!fieldsHtml || (Array.isArray(fieldsHtml) && !fieldsHtml.filter(Boolean).length)) {
     return '';
@@ -2563,7 +2885,7 @@ function renderSingleRecordSection(title, fieldsHtml) {
   const content = Array.isArray(fieldsHtml) ? fieldsHtml.join('') : fieldsHtml;
   return `
     <div class="single-record-section">
-      <div class="single-record-section-title">${escapeHtml(title)}</div>
+      <div class="single-record-section-title" style="display:none;">${escapeHtml(title)}</div>
       <div class="single-record-grid" data-section="${escapeHtml(title.toLowerCase())}">
         ${content}
       </div>
@@ -2903,10 +3225,8 @@ function applySingleRecordLayoutToCard(card, layout) {
   };
 
   container.innerHTML = '';
-  const stdSection = buildSectionNode('Details', standardEls);
-  const customSection = buildSectionNode('Custom Fields', customEls);
-  if (stdSection) container.appendChild(stdSection);
-  if (customSection) container.appendChild(customSection);
+  const merged = buildSectionNode('Details', [...standardEls, ...customEls]);
+  if (merged) container.appendChild(merged);
 
   initializeMaterializeSelects(container);
 }
@@ -3801,6 +4121,7 @@ function renderTemporaryMessage(className, htmlContent, iterations) {
 * ✅ Show Temporary Quote Details Message
 */
 function showTemporaryQuoteDetails(quote) {
+  ensureQuoteStatusValue(quote);
    if (window.innerWidth < 1200) {
     return renderQuoteDetailsMobile(quote);   // ← new helper (see below)
   }
@@ -3819,6 +4140,8 @@ function showTemporaryQuoteDetails(quote) {
 
   const formattedDate_e = `${monthFormatted}/${dayFormatted}/${yearFormatted}`;
 
+  const { raw: statusValue, normalized: normalizedStatus } = prepareQuoteStatusFields(quote);
+
   var html = `
               <div>
                 ⏳ Rendering temporary quote details...
@@ -3827,7 +4150,15 @@ function showTemporaryQuoteDetails(quote) {
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
                   <div style="display: flex; align-items: center; gap: 8px;" class="status-select">
-                    <p><strong>Status:</strong> ${quote.status}</p>
+                    <select
+                      name="status"
+                      data-field="status"
+                      data-quote="${quote.quote_name}"
+                      style="padding: 4px; border-radius: 4px; color: black;"
+                      onchange="updateQuote(this)">
+                      ${buildStatusOptions(quote)}
+                    </select>
+                    <span style="${statusBadgeStyle(statusValue)}">${statusValue || "—"}</span>
                   </div>
               </div>
               <div class="quote-details">

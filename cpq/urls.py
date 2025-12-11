@@ -65,6 +65,8 @@ urlpatterns = [
     path('admin/usage/documents/', usage_documents, name='usage_documents'),
     path('admin/billing/', billing_view, name='billing_view'),
     path('admin/billing/create-setup-intent/', views.billing_create_setup_intent, name='billing_create_setup_intent'),
+    # Picklist API
+    path("admin/picklist-values/", views.picklist_values_api, name="picklist_values_api"),
 ]
 
 

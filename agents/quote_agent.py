@@ -152,6 +152,13 @@ def create_quote(user,user_message, session_data):
 
     extracted_details = llm_result["create_quote"].get("data") or {}
 
+    # If user replied "Use Opportunity X" after being prompted, honor it using stored state
+    match_use_opp = re.search(r"use opportunity\s+(.+)", user_message, re.IGNORECASE)
+    if match_use_opp and session_data.get("state", {}).get("create_quote"):
+        stored = session_data["state"]["create_quote"].get("data") or {}
+        extracted_details.setdefault("account", stored.get("account"))
+        extracted_details["opportunity"] = match_use_opp.group(1).strip()
+
     # ✅ Get or create account and opportunity
     result_account_and_opportunity = get_or_create_account_and_opportunity(user, extracted_details, session_data)
 
@@ -176,14 +183,20 @@ def create_quote(user,user_message, session_data):
     result = []
 
     # ✅ Create Quote
-    quote = Quote.objects.create(
-        account=account,
-        opportunity=opportunity,
-        status="Draft",
-        net_amount=Decimal("0.00"),
-        owner=user,
-        created_by=user
-    )
+    try:
+        quote = Quote.objects.create(
+            account=account,
+            opportunity=opportunity,
+            status="Draft",
+            net_amount=Decimal("0.00"),
+            owner=user,
+            created_by=user
+        )
+    except Exception as exc:
+        logging.exception("⚠️ Failed to create quote (possible signal contention)", exc_info=exc)
+        return {
+            "message": "⚠️ Another automation is currently updating your quote. Please wait and try again."
+        }
 
     #print(f"\n\nEsto es el quote cuando se crea despues de refresh from db: {json.dumps(model_to_dict(quote), indent=4, default=str)}\n\n")
 
@@ -261,7 +274,13 @@ def create_quote(user,user_message, session_data):
     result.append("{INFO_ICON} Products provided in initial quote creation.")
 
     # ✅ Save quote products
-    result = handle_products_to_add(user, extracted_products, quote, allow_updates=False)
+    try:
+        result = handle_products_to_add(user, extracted_products, quote, allow_updates=False)
+    except Exception as exc:
+        logging.exception("⚠️ Failed while adding products to quote (possible signal contention)", exc_info=exc)
+        return {
+            "message": "⚠️ Another automation is currently updating your quote. Please reachout to your administrator."
+        }
 
     successful_results = []
     failed_results = []

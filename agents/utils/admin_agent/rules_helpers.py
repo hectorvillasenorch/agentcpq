@@ -172,7 +172,90 @@ def check_inclusion_rule(user, conditions, quote, product):
     # Handle products to add
     from ..quote_agent.handle_helpers import handle_products_to_add
 
+    def _compare_values(left, right, operator):
+        try:
+            # Try numeric comparison if both look like numbers
+            lnum = float(left)
+            rnum = float(right)
+            left, right = lnum, rnum
+        except (TypeError, ValueError):
+            pass
+
+        if operator == "==":
+            return left == right
+        if operator == "!=":
+            return left != right
+        if operator == ">":
+            try:
+                return left > right
+            except Exception:
+                return False
+        if operator == "<":
+            try:
+                return left < right
+            except Exception:
+                return False
+        if operator == ">=":
+            try:
+                return left >= right
+            except Exception:
+                return False
+        if operator == "<=":
+            try:
+                return left <= right
+            except Exception:
+                return False
+        if operator == "contains":
+            try:
+                return right in left
+            except Exception:
+                return False
+        return False
+
+    def _get_value(scope, field):
+        if scope == "quote":
+            return getattr(quote, field, None)
+        if scope == "product":
+            return getattr(product, field, None)
+        return None
+
     trigger_product = conditions.get("trigger_product")
+    applies_to = conditions.get("applies_to") or None
+    extra_conditions = conditions.get("conditions") if isinstance(conditions, dict) else None
+
+    # Build a list of conditions to evaluate (supports both legacy applies_to and a conditions list)
+    to_evaluate = []
+    if applies_to and isinstance(applies_to, dict):
+        cond = {
+            "scope": applies_to.get("scope", "quote"),
+            "field": applies_to.get("field"),
+            "operator": applies_to.get("operator", "=="),
+            "value": applies_to.get("value"),
+        }
+        to_evaluate.append(cond)
+
+    if isinstance(extra_conditions, list):
+        for item in extra_conditions:
+            if not isinstance(item, dict):
+                continue
+            scope = item.get("scope", "quote")
+            field = item.get("field")
+            operator = item.get("operator", "==")
+            value = item.get("value")
+            to_evaluate.append({"scope": scope, "field": field, "operator": operator, "value": value})
+
+    # Evaluate all conditions; if any fail, rule does not apply
+    for cond in to_evaluate:
+        field = cond.get("field")
+        if not field:
+            return "failed", None
+        scope = cond.get("scope", "quote")
+        operator = cond.get("operator", "==")
+        target_value = cond.get("value")
+        current_value = _get_value(scope, field)
+        if not _compare_values(current_value, target_value, operator):
+            return "failed", None
+
     if trigger_product["sku"] is not None:
         if (trigger_product["sku"] == product.sku) or (trigger_product["sku"] == product.name):
             included_products = conditions.get("included_products")

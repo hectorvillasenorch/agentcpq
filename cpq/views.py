@@ -22,6 +22,7 @@ from .models import (
     Contact,
     Lead,
     Activity,
+    PicklistValue,
 )
 from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
@@ -1404,6 +1405,96 @@ def billing_view(request):
     }
 
     return render(request, "billing.html", context)
+
+
+# ------------------------------------------------------------------
+# Picklist Values API (admin-side)
+# ------------------------------------------------------------------
+@csrf_exempt
+@login_required
+def picklist_values_api(request):
+    """
+    Simple JSON API to list/create/update/delete picklist values.
+    Requires query params: object_name, field_name.
+    """
+    object_name = request.GET.get("object_name") or request.POST.get("object_name")
+    field_name = request.GET.get("field_name") or request.POST.get("field_name")
+
+    if not object_name or not field_name:
+        return JsonResponse({"error": "object_name and field_name are required"}, status=400)
+
+    if request.method == "GET":
+        values = (
+            PicklistValue.objects.filter(object_name=object_name, field_name=field_name)
+            .order_by("sort_order", "key")
+        )
+        data = [
+            {
+                "id": val.id,
+                "key": val.key,
+                "label": val.label,
+                "active": val.active,
+                "is_default": val.is_default,
+                "sort_order": val.sort_order,
+            }
+            for val in values
+        ]
+        return JsonResponse({"values": data})
+
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    if request.method == "POST":
+        val_id = payload.get("id")
+        key = (payload.get("key") or "").strip()
+        label = (payload.get("label") or "").strip()
+        active = bool(payload.get("active", True))
+        is_default = bool(payload.get("is_default", False))
+        sort_order = payload.get("sort_order")
+        try:
+            sort_order = int(sort_order) if sort_order is not None else 0
+        except (TypeError, ValueError):
+            sort_order = 0
+
+        if not key or not label:
+            return JsonResponse({"error": "key and label are required"}, status=400)
+
+        if is_default:
+            PicklistValue.objects.filter(object_name=object_name, field_name=field_name).update(is_default=False)
+
+        if val_id:
+            val = PicklistValue.objects.filter(id=val_id, object_name=object_name, field_name=field_name).first()
+            if not val:
+                return JsonResponse({"error": "Picklist value not found"}, status=404)
+            val.key = key
+            val.label = label
+            val.active = active
+            val.is_default = is_default
+            val.sort_order = sort_order
+            val.save()
+        else:
+            val = PicklistValue.objects.create(
+                object_name=object_name,
+                field_name=field_name,
+                key=key,
+                label=label,
+                active=active,
+                is_default=is_default,
+                sort_order=sort_order,
+            )
+
+        return JsonResponse({"success": True, "id": val.id})
+
+    if request.method == "DELETE":
+        val_id = payload.get("id")
+        if not val_id:
+            return JsonResponse({"error": "id is required to delete"}, status=400)
+        PicklistValue.objects.filter(id=val_id, object_name=object_name, field_name=field_name).delete()
+        return JsonResponse({"success": True})
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
 @login_required

@@ -17,7 +17,21 @@
         </div>
         {% for field in standard_fields %}
           <div class="fields-grid__row">
-            <span>{{ field.name }}</span>
+            <span>
+              {{ field.name }}
+              {% if object_name == "Opportunity" and field.name == "stage" %}
+                <button
+                  class="btn-flat picklist-edit-btn"
+                  type="button"
+                  data-object="Opportunity"
+                  data-field="stage"
+                  onclick="openPicklistEditor(this)"
+                  title="Edit stage picklist"
+                  style="margin-left:8px;padding:0 6px;height:24px;line-height:24px;">
+                  <i class="material-icons" style="font-size:18px;vertical-align:middle;">edit</i>
+                </button>
+              {% endif %}
+            </span>
             <span class="muted">{{ field.data_type }}</span>
           </div>
         {% endfor %}
@@ -26,6 +40,36 @@
       <div class="fields-panel__empty">No standard fields for {{ object_name }}.</div>
     {% endif %}
   </div>
+
+  {% if object_name == "Opportunity" %}
+    <!-- Picklist Editor Modal (Opportunity Stage) -->
+    <div id="picklist-editor-modal" class="modal" style="max-width: 520px;">
+      <div class="modal-content">
+        <h4>Edit Picklist</h4>
+        <p class="muted" id="picklist-meta"></p>
+        <div id="picklist-editor-list"></div>
+        <div class="input-field">
+          <input id="picklist-key" type="text" placeholder="Key (e.g., closedwon)">
+          <label class="active" for="picklist-key">Key</label>
+        </div>
+        <div class="input-field">
+          <input id="picklist-label" type="text" placeholder="Label (e.g., Closed Won)">
+          <label class="active" for="picklist-label">Label</label>
+        </div>
+        <p>
+          <label><input type="checkbox" id="picklist-active" checked><span>Active</span></label>
+        </p>
+        <p>
+          <label><input type="checkbox" id="picklist-default"><span>Default</span></label>
+        </p>
+        <div class="right-align" style="margin-top: 12px;">
+          <button class="btn-flat modal-close">Cancel</button>
+          <button class="btn" id="picklist-save-btn">Save</button>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
 
   <!-- 🔸 CUSTOM FIELDS -->
   <div class="fields-panel">

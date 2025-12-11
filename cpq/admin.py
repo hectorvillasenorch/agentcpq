@@ -30,6 +30,7 @@ from .models import (
     CustomAction,
     ActionLog
 )
+from .models import PicklistValue
 from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession, AgentPrompt
 from django.contrib.contenttypes.models import ContentType
@@ -272,6 +273,17 @@ class OpportunityEditableForm(BaseOpportunityForm): # type: ignore
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Use picklist choices for stage
+        try:
+            from .models import picklist_choices
+            self.fields["stage"] = forms.ChoiceField(
+                choices=picklist_choices("Opportunity", "stage"),
+                required=False,
+                initial=getattr(self.instance, "stage", None) if getattr(self, "instance", None) else None,
+                label="Stage",
+            )
+        except Exception:
+            pass
         # Prefill with instance value when editing
         if getattr(self, 'instance', None) is not None:
             self.fields['hs_deal_id'].initial = getattr(self.instance, 'hs_deal_id', None)
@@ -300,6 +312,15 @@ class OpportunityAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
             fields.append('hs_deal_id')
 
         return [(None, {'fields': fields})]
+
+    def formfield_for_choice_field(self, db_field, request, **kwargs):
+        if db_field.name == "stage":
+            try:
+                from .models import picklist_choices
+                kwargs["choices"] = picklist_choices("Opportunity", "stage")
+            except Exception:
+                pass
+        return super().formfield_for_choice_field(db_field, request, **kwargs)
 
 admin.site.register(Opportunity, OpportunityAdmin)
 
@@ -390,7 +411,8 @@ class ProductAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
 
     # 🔹 quitar 'created_by' de readonly_fields
     readonly_fields = ('updated_by',)
-    list_display = ('name', 'sku', 'price', 'fixed_price', 'price_mode', 'is_subscription', 'is_bundle', 'created_at_js', 'updated_at_js')
+    list_display = ('name', 'sku', 'price', 'fixed_price', 'price_mode', 'is_subscription', 'is_bundle', 'is_active', 'created_at_js', 'updated_at_js')
+    list_filter = ('is_active', 'is_bundle', 'is_subscription', 'price_mode')
 
     def get_fieldsets(self, request, obj=None):
         form = self.get_form(request, obj)()
@@ -456,7 +478,7 @@ class ProductAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     display_name_sku.short_description = "Product"      # type: ignore
 
     def get_list_display(self, request):
-        initial_fields = ['display_name_sku', 'price', 'family']
+        initial_fields = ['display_name_sku', 'price', 'family', 'is_active']
         trailing_fields = ['display_updated_by', 'display_created_by']
 
         custom_fields = CustomField.objects.filter(crm="AgentCPQ", object_type="Product")
@@ -573,7 +595,39 @@ admin.site.register(Option, OptionAdmin)
 
 @admin.register(BusinessRule)
 class BusinessRuleAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
-    form = get_dynamic_form(BusinessRule, crm="AgentCPQ", object_type="BusinessRule")
+    class BusinessRuleAdminForm(forms.ModelForm):
+        conditions = forms.CharField(
+            required=False,
+            widget=JSONPrettyTextarea(rows=12),
+            help_text="JSON list of conditions",
+        )
+
+        class Meta:
+            model = BusinessRule
+            fields = "__all__"
+
+        def __init__(self, *args, **kwargs):
+            kwargs.pop("user", None)
+            super().__init__(*args, **kwargs)
+            value = self.initial.get("conditions") or getattr(self.instance, "conditions", None)
+            if isinstance(value, (dict, list)):
+                self.initial["conditions"] = json.dumps(value, indent=2)
+            elif isinstance(value, str) and value.strip():
+                try:
+                    self.initial["conditions"] = json.dumps(json.loads(value), indent=2)
+                except Exception:
+                    self.initial["conditions"] = value
+
+        def clean_conditions(self):
+            raw = self.cleaned_data.get("conditions")
+            if raw in (None, "", "null"):
+                return []
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise forms.ValidationError(f"Invalid JSON for conditions: {exc}")
+
+    form = BusinessRuleAdminForm
     list_display = ('name', 'rule_type', 'active', 'get_created_by', 'created_at_js')
     search_fields = ('name',)
     list_filter = ('rule_type', 'active')
@@ -656,6 +710,13 @@ class SystemFieldMappingAdmin(admin.ModelAdmin):
     list_display = ('crm', 'field_type', 'local_field', 'crm_field')
     list_filter   = ('crm', 'field_type')
     search_fields = ('local_field', 'crm_field')
+
+
+@admin.register(PicklistValue)
+class PicklistValueAdmin(admin.ModelAdmin):
+    list_display = ("object_name", "field_name", "key", "label", "active", "is_default", "sort_order")
+    list_filter = ("object_name", "field_name", "active", "is_default")
+    search_fields = ("object_name", "field_name", "key", "label")
 
 
 @admin.register(AgentPrompt)

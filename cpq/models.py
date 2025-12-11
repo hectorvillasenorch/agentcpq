@@ -25,6 +25,16 @@ from django.core.validators import MinLengthValidator
 
 User = get_user_model()
 
+DEFAULT_OPPORTUNITY_STAGES = [
+    ("appointmentscheduled", "Appointment Scheduled"),
+    ("qualifiedtobuy", "Qualified to Buy"),
+    ("presentationscheduled", "Presentation Scheduled"),
+    ("decisionmakerboughtin", "Decision Maker Bought-In"),
+    ("contractsent", "Contract Sent"),
+    ("closedwon", "Closed Won"),
+    ("closedlost", "Closed Lost"),
+]
+
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -40,6 +50,118 @@ def generate_agentcpq_id():
     base = base62_encode(number)
     branded = base[:4] + "ACPQ" + base[4:]
     return branded[:18].upper()
+
+
+def picklist_choices(object_name: str, field_name: str):
+    """
+    Returns active picklist choices as [(key, label), ...] for the given object/field.
+    Falls back to hardcoded defaults when no DB values exist.
+    """
+    try:
+        from django.apps import apps
+        PicklistValueModel = apps.get_model("cpq", "PicklistValue")
+        qs = PicklistValueModel.objects.filter(
+            object_name=object_name,
+            field_name=field_name,
+            active=True,
+        ).order_by("sort_order", "key")
+        if qs.exists():
+            return [(row.key, row.label) for row in qs]
+    except Exception:
+        pass
+
+    fallback_map = {
+        ("Opportunity", "stage"): DEFAULT_OPPORTUNITY_STAGES,
+    }
+    return fallback_map.get((object_name, field_name), [])
+
+
+def picklist_default_key(object_name: str, field_name: str):
+    """
+    Returns the default key for a picklist (first default, else first active, else fallback first).
+    """
+    try:
+        from django.apps import apps
+        PicklistValueModel = apps.get_model("cpq", "PicklistValue")
+        default_row = PicklistValueModel.objects.filter(
+            object_name=object_name,
+            field_name=field_name,
+            active=True,
+            is_default=True,
+        ).order_by("sort_order", "key").first()
+        if default_row:
+            return default_row.key
+        first_row = PicklistValueModel.objects.filter(
+            object_name=object_name,
+            field_name=field_name,
+            active=True,
+        ).order_by("sort_order", "key").first()
+        if first_row:
+            return first_row.key
+    except Exception:
+        pass
+
+    fallback = picklist_choices(object_name, field_name)
+    return fallback[0][0] if fallback else None
+
+
+def default_opportunity_stage():
+    return picklist_default_key("Opportunity", "stage") or "appointmentscheduled"
+
+
+class PicklistValue(models.Model):
+    object_name = models.CharField(max_length=100)
+    field_name = models.CharField(max_length=100)
+    key = models.CharField(max_length=100)
+    label = models.CharField(max_length=255)
+    active = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=0)
+    is_default = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = ("object_name", "field_name", "key")
+        verbose_name = "Picklist Value"
+        verbose_name_plural = "Picklist Values"
+
+    def __str__(self):
+        return f"{self.object_name}.{self.field_name}: {self.label or self.key}"
+
+class OpportunityStage(models.Model):
+    key = models.CharField(max_length=50, unique=True)
+    label = models.CharField(max_length=100)
+    active = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=0)
+    is_default = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = "Opportunity Stage"
+        verbose_name_plural = "Opportunity Stages"
+
+    def __str__(self):
+        return self.label or self.key
+
+    @classmethod
+    def choices(cls):
+        try:
+            qs = cls.objects.filter(active=True).order_by("sort_order", "key")
+            if qs.exists():
+                return [(s.key, s.label) for s in qs]
+        except Exception:
+            pass
+        return DEFAULT_OPPORTUNITY_STAGES
+
+    @classmethod
+    def default_key(cls):
+        try:
+            default = cls.objects.filter(active=True, is_default=True).order_by("sort_order").first()
+            if default:
+                return default.key
+            first = cls.objects.filter(active=True).order_by("sort_order", "key").first()
+            if first:
+                return first.key
+        except Exception:
+            pass
+        return DEFAULT_OPPORTUNITY_STAGES[0][0]
 
 class Lead(models.Model):
     STATUS_CHOICES = [
@@ -150,30 +272,10 @@ class Contact(models.Model):
 
 class Opportunity(models.Model):
     """Represents a sales opportunity linked to an Account."""
-    # STAGE_CHOICES = [
-    #     ('Prospecting', 'Prospecting'),
-    #     ('Qualification', 'Qualification'),
-    #     ('Proposal', 'Proposal Sent'),
-    #     ('Negotiation', 'Negotiation'),
-    #     ('Closed Won', 'Closed Won'),
-    #     ('Closed Lost', 'Closed Lost'),
-    # ]
-
-    ## UNCOMENT FOR HUBSPOT INTEGRATION ###
-    STAGE_CHOICES = [
-        ("appointmentscheduled", "Appointment Scheduled"),
-        ("qualifiedtobuy", "Qualified to Buy"),
-        ("presentationscheduled", "Presentation Scheduled"),
-        ("decisionmakerboughtin", "Decision Maker Bought-In"),
-        ("contractsent", "Contract Sent"),
-        ("closedwon", "Closed Won"),
-        ("closedlost", "Closed Lost"),
-    ]
-
     name = models.CharField(max_length=255)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="opportunities")
     amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    stage = models.CharField(max_length=50, choices=STAGE_CHOICES, default='Prospecting')
+    stage = models.CharField(max_length=50, default=default_opportunity_stage)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     expected_close_date = models.DateField(blank=True, null=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
@@ -259,6 +361,7 @@ class Product(models.Model):
     family = models.CharField(max_length=50)
     prdid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    is_active = models.BooleanField(default=True, help_text="Set to false to soft-hide this product without deleting it.")
 
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_products')

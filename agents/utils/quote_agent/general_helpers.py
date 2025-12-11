@@ -217,6 +217,9 @@ def get_quote_details(quote):
         "quote_id": quote.id,
         "quote_name": quote.name,
         "status": quote.get_status_display(),
+        # Preserve the raw DB value so the UI can mark the correct option in the status <select>
+        "status_value": quote.status,
+        "status_choices": [{"value": value, "label": label} for value, label in Quote.STATUS_CHOICES],
         "subtotal": str(quote.subtotal) if quote_details_settings.show_quote_subtotal else None,
         "net_amount": str(quote.net_amount) if quote_details_settings.show_quote_net_amount else None,
         "account": quote.account.name if quote_details_settings.show_quote_account and quote.account else None,
@@ -602,7 +605,7 @@ def get_document_pdf(quote, session_data=None):
         # ✅ Quote Status
         if template.show_quote_status and quote.status:
             pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, f"Status: {quote.status}")
+            pdf.drawString(x_position, y_position, f"Status {quote.status}")
             y_position -= 15
 
         # ✅ Quote Created Date

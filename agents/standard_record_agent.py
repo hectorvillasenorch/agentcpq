@@ -296,8 +296,10 @@ def _create_opportunity(user, fields: Dict[str, object]) -> Tuple[bool, str, Dic
         except Exception:
             return False, f"⚠️ Account '{fields.get('account')}' not found for Opportunity.", {}
 
-    stage_value = fields.get("stage") or Opportunity.STAGE_CHOICES[0][0]
-    valid_stages = [choice[0] for choice in Opportunity.STAGE_CHOICES]
+    from cpq.models import picklist_choices, picklist_default_key
+    stage_choices = picklist_choices("Opportunity", "stage")
+    stage_value = fields.get("stage") or picklist_default_key("Opportunity", "stage")
+    valid_stages = [choice[0] for choice in stage_choices] if stage_choices else []
     if stage_value not in valid_stages:
         return False, f"⚠️ Invalid stage '{stage_value}'. Allowed: {', '.join(valid_stages)}.", {}
 

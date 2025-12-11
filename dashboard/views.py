@@ -101,7 +101,7 @@ def dashboard(request):
     bundles = None
 
     if view == "products":
-        product_queryset = Product.objects.all()
+        product_queryset = Product.objects.filter(is_active=True)
         if not user.is_superuser:
             product_queryset = product_queryset.filter(created_by=user)
 

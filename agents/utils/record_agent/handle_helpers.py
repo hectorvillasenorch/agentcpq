@@ -219,8 +219,15 @@ def _get_saved_layout(user, object_name: str, default_order: List[str]) -> Dict[
     if not user or not object_name:
         return base
 
+    # Resolve user when a username string is passed
+    user_filters = {}
+    if isinstance(user, str):
+        user_filters["user__username"] = user
+    else:
+        user_filters["user"] = user
+
     try:
-        layout_obj = SingleRecordLayout.objects.filter(user=user, object_name=object_name).first()
+        layout_obj = SingleRecordLayout.objects.filter(object_name=object_name, **user_filters).first()
     except Exception:
         return base
 
@@ -258,15 +265,17 @@ def _collect_standard_fields(record: Model, model_name: str) -> List[Dict[str, o
             data_type = "related"
             is_editable = False
         else:
-            formatted_value = _format_display_value(value, field_obj)
+            formatted_value = _format_display_value(value, field_obj, model_name=model_name, field_name=field_name)
             raw_value = _coerce_raw_value(value, field_obj)
             data_type = _infer_data_type(field_obj, raw_value)
+            if model_name == "Opportunity" and field_name == "stage":
+                data_type = "choice"
             is_editable = True if field_obj is None else bool(getattr(field_obj, "editable", True))
 
         if field_obj is not None and (getattr(field_obj, "auto_now", False) or getattr(field_obj, "auto_now_add", False)):
             is_editable = False
 
-        options = _get_field_options(field_obj, record)
+        options = _get_field_options(field_obj, record, model_name=model_name, field_name=field_name)
 
         rows.append(
             {
@@ -283,6 +292,38 @@ def _collect_standard_fields(record: Model, model_name: str) -> List[Dict[str, o
                 "is_editable": is_editable and data_type != "related",
             }
         )
+
+    # Safeguard: ensure Opportunity.stage renders even if missing above
+    if model_name == "Opportunity":
+        try:
+            stage_value = getattr(record, "stage", None)
+            already = any(r["name"] == "stage" for r in rows)
+            if not already:
+                stage_label = stage_value
+                try:
+                    from cpq.models import picklist_choices, DEFAULT_OPPORTUNITY_STAGES
+                    stage_label = dict(picklist_choices("Opportunity", "stage") or DEFAULT_OPPORTUNITY_STAGES).get(
+                        str(stage_value), stage_value
+                    )
+                except Exception:
+                    stage_label = stage_value
+                rows.append(
+                    {
+                        "name": "stage",
+                        "label": "Stage",
+                        "value": stage_label or "",
+                        "display_value": stage_label or "",
+                        "raw_value": stage_value,
+                        "data_type": "text",
+                        "is_custom": False,
+                        "field_id": None,
+                        "options": [],
+                        "is_multiline": False,
+                        "is_editable": True,
+                    }
+                )
+        except Exception:
+            pass
 
     return rows
 
@@ -347,9 +388,17 @@ def _collect_custom_fields(record: Model, custom_fields: Iterable, *, content_ty
     return rows
 
 
-def _format_display_value(value, field_obj: Optional[Field]):
+def _format_display_value(value, field_obj: Optional[Field], *, model_name: Optional[str] = None, field_name: Optional[str] = None):
     if value is None:
         return ""
+    # Map Opportunity stage key to label using picklist
+    if model_name == "Opportunity" and field_name == "stage":
+        try:
+            from cpq.models import picklist_choices, DEFAULT_OPPORTUNITY_STAGES
+            choices = dict(picklist_choices("Opportunity", "stage") or DEFAULT_OPPORTUNITY_STAGES)
+            return choices.get(str(value), value)
+        except Exception:
+            pass
     if isinstance(value, bool):
         return "Yes" if value else "No"
     if isinstance(value, datetime):
@@ -429,11 +478,21 @@ def _coerce_raw_value(value, field_obj: Optional[Field]):
     return value
 
 
-def _get_field_options(field_obj: Optional[Field], record: Optional[Model] = None):
+def _get_field_options(field_obj: Optional[Field], record: Optional[Model] = None, *, model_name: Optional[str] = None, field_name: Optional[str] = None):
     if not field_obj:
         return []
     if isinstance(field_obj, ForeignKey):
         return _get_lookup_options(field_obj, record=record)
+    # Picklist for Opportunity.stage
+    if model_name == "Opportunity" and field_name == "stage":
+        try:
+            from cpq.models import picklist_choices, DEFAULT_OPPORTUNITY_STAGES
+            return [
+                {"value": key, "label": label}
+                for key, label in (picklist_choices("Opportunity", "stage") or DEFAULT_OPPORTUNITY_STAGES)
+            ]
+        except Exception:
+            return []
     choices = getattr(field_obj, "choices", None)
     if not choices:
         return []

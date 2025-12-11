@@ -161,43 +161,61 @@ def update_product(user, user_message, session_data):
         if sku == "MISSING_SKU":
             return {"message": "⚠️ Error: No SKU found in update request. Please specify the product SKU.", "product_details": None}
 
-        # ✅ Step 2: Check if product exists in the database
-        try:
-            product = Product.objects.get(sku=sku)
-        except Product.DoesNotExist:
-            return {"message": f"⚠️ Error: Product with SKU `{sku}` not found. Would you like to create it instead?", "product_details": None}
+        def parse_skus(raw_sku: str):
+            cleaned = (raw_sku or "").replace(" and ", ",")
+            parts = [p.strip() for p in cleaned.split(",") if p.strip()]
+            return parts or [raw_sku.strip()]
 
-        # ✅ Extract existing product details
-        product_details = {
-            "sku": product.sku,
-            "name": product.name,
-            "price": float(product.price),
-            "is_subscription": product.is_subscription,
-            "term": product.term,
-            "is_bundle": product.is_bundle,
-            "description": product.description or "",
-            "family": product.family,
-        }
+        sku_list = parse_skus(sku)
+        messages = []
 
-        print("🔹 DEBUG: Current Product Details in DB:", product_details)  # Debugging step
+        for one_sku in sku_list:
+            # ✅ Step 2: Check if product exists in the database
+            try:
+                product = Product.objects.get(sku=one_sku)
+            except Product.DoesNotExist:
+                messages.append(f"⚠️ Error: Product with SKU `{one_sku}` not found. Would you like to create it instead?")
+                continue
 
-        # ✅ Modify product details using GPT
-        updated_product = gpt_modify_product_details(user_message, product_details)
+            # ✅ Extract existing product details (include is_active)
+            product_details = {
+                "sku": product.sku,
+                "name": product.name,
+                "price": float(product.price),
+                "is_subscription": product.is_subscription,
+                "term": product.term,
+                "is_bundle": product.is_bundle,
+                "description": product.description or "",
+                "family": product.family,
+                "is_active": product.is_active,
+            }
 
-        if not updated_product:
-            agent_response = "Error: No changes detected or invalida update request"
-            save_or_update_conversation_context(session_context, agent_response)
-            return {"message": "⚠️ No changes detected or invalid update request."}
+            print("🔹 DEBUG: Current Product Details in DB:", product_details)  # ✅ Debugging step
 
-        # ✅ Store JSON preview for reference
-        json_preview = json.dumps(updated_product, indent=2)
+            # ✅ Modify product details using GPT
+            updated_product = gpt_modify_product_details(user_message, product_details)
 
-        # ✅ Execute the update
-        product_update_executed = update_product_record(user, updated_product)
+            if not updated_product:
+                agent_response = "Error: No changes detected or invalid update request"
+                save_or_update_conversation_context(session_context, agent_response)
+                messages.append("⚠️ No changes detected or invalid update request.")
+                continue
+
+            # ✅ Pre-step: infer activation intent from phrasing
+            lower_msg = user_message.lower()
+            if "deactivate" in lower_msg or "disable" in lower_msg or "inactivate" in lower_msg:
+                updated_product["is_active"] = False
+            elif "activate" in lower_msg or "enable" in lower_msg:
+                updated_product["is_active"] = True
+
+            # ✅ Execute the update
+            product_update_executed = update_product_record(user, updated_product)
+            messages.append(product_update_executed)
+
+        final_message = "<br>".join(messages) if messages else "⚠️ No products were updated."
 
         return {
-            "message": product_update_executed,
-            #"product_details": updated_product
+            "message": final_message,
         }
 
     except Exception as e:
@@ -220,6 +238,8 @@ def update_product_record(user,updated_product_details):
         product.is_subscription = updated_product_details.get("is_subscription", product.is_subscription)
         product.term = updated_product_details.get("term", product.term)
         product.is_bundle = updated_product_details.get("is_bundle", product.is_bundle)
+        if "is_active" in updated_product_details:
+            product.is_active = updated_product_details.get("is_active", product.is_active)
         if "description" in updated_product_details:
             product.description = updated_product_details.get("description") or ""
         if "family" in updated_product_details:

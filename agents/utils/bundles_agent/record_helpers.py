@@ -3,6 +3,7 @@ import json
 from cpq.models import Product, Option, QuoteLine
 from django.db.models import Q
 from django.db import transaction
+from ..message_formatters import SUCCESS_ICON
 
 def handle_bundle_components(extracted_components, response_message):
     logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🛠️ Creating record for bundle components (model option) 🛠️")
@@ -10,11 +11,9 @@ def handle_bundle_components(extracted_components, response_message):
     components_created = [] #Model option
 
     for bundle_index, bundle_item in enumerate(extracted_components, start=1):
-        response_message += f"<b>📦 <u>Bundle Request #{bundle_index}</u> 📦</b><br>"
-
         # Before anything, confirm if bundle exists
-        product_bundle_sku = bundle_item.get("bundle_sku", None)
         product_bundle_name = bundle_item.get("bundle_name", None)
+        product_bundle_sku = bundle_item.get("bundle_sku", None)
 
         if product_bundle_sku is None and product_bundle_name is None:
             logging.warning(f"⚠️ No bundle product was found in your message. Please provide a bundle SKU or name. Request omitted.")
@@ -38,8 +37,6 @@ def handle_bundle_components(extracted_components, response_message):
             continue
 
         for index, component in enumerate(bundle_components, start=1):
-            response_message += f"<b>🔧 <u>Bundle component #{index} for {bundle.name} bundle</u> 🔧</b><br>"
-
             product_sku = component.get("product_sku", None)
             product_name = component.get("product_name", None)
             quantity = component.get("quantity", None)
@@ -115,35 +112,23 @@ def handle_bundle_components(extracted_components, response_message):
                 continue
 
 
-            response_message += f"🧩 Product: {product_component.name}<br>"
-            response_message += f"📦 Bundle: {bundle.name}<br>"
+            response_message += (
+                f"<span class=\"material-icons\" style=\"vertical-align:middle;color:#233049;\">category</span> "
+                f"Bundle: {bundle.name}<br>"
+            )
+            response_message += (
+                f"<span class=\"material-icons\" style=\"vertical-align:middle;color:#233049;\">extension</span> "
+                f"Product: {product_component.name}<br>"
+            )
 
             # ✅ Format response message
 
-            fields = {
-                "quantity": quantity,
-                "is_required": is_required,
-                "min_quantity": min_quantity,
-                "max_quantity": max_quantity,
-                "default_selected": default_selected,
-                "group_name": group_name
-            }
-
-            field_emojis = {
-                "quantity": "🔢",
-                "is_required": "✅",
-                "min_quantity": "➖",
-                "max_quantity": "➕",
-                "default_selected": "☑️",
-                "group_name": "🏷️"
-            }
-
             response_message += "<br>"
-            for field, value in fields.items():
-                if value is not None:
-                    field_label = field.replace("_", " ").capitalize()
-                    emoji = field_emojis.get(field, "ℹ️")
-                    response_message += f"{emoji} {field_label}: {value}<br>"
+            qty_value = quantity if quantity is not None else 1
+            response_message += (
+                f"<span class=\"material-icons\" style=\"vertical-align:middle;color:#233049;\">format_list_numbered</span> "
+                f"Quantity: {qty_value}<br>"
+            )
 
             # Set default values if no fields are founded
             option = {
@@ -228,7 +213,7 @@ def save_option(request):
         except Exception:
             pass
 
-        response_message = "✅ Product component was successfully added to the bundle."
+        response_message = f"{SUCCESS_ICON} Product component was successfully added to the bundle."
 
         return {
             "message": response_message,
@@ -408,7 +393,7 @@ def save_update_option(request, option):
         except Exception:
             pass
 
-        response_message = "✅ Option updated successfully."
+        response_message = f"{SUCCESS_ICON} Option updated successfully."
 
         return {
             "message": response_message,

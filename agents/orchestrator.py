@@ -102,6 +102,11 @@ def handle_user_request(user,user_message, session_data):
 
     trigger_phrases = get_trigger_phrases()
 
+    # 🧠 Pending create_quote flow: user selecting an opportunity
+    if session_data.get("state", {}).get("create_quote") and re.search(r"use\s+(the\s+)?opportunity", user_message, re.IGNORECASE):
+        logging.info("Do NOT use GPT (pending create_quote opportunity selection)\n")
+        return orchestrate_request_trigger(user, user_message, session_data, decision="CreateQuote")
+
     # 🧠 Shortcut manual: "show quote details for <quote_id>"
     if user_message.lower().startswith("show quote details for "):
         logging.info("Do NOT use GPT\n")
@@ -112,6 +117,15 @@ def handle_user_request(user,user_message, session_data):
         logging.info("Do NOT use GPT\n")
         response = orchestrate_request_trigger(user, user_message, session_data, decision="UpdateQuoteLineFromUI")
 
+    # 🧠 Shortcut manual: explicit create quote phrases
+    elif "create a quote" in message or "create the quote" in message:
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(user, user_message, session_data, decision="CreateQuote")
+
+    elif user_message.startswith("Update Bundle Option:"):
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(user, user_message, session_data, decision="UpdateBundleOption")
+
     elif user_message.startswith("Update Quote:"):
         logging.info("Do NOT use GPT\n")
         response = orchestrate_request_trigger(user, user_message, session_data, decision="UpdateQuoteFromUI")
@@ -119,6 +133,11 @@ def handle_user_request(user,user_message, session_data):
     elif user_message.startswith("Update Record:"):
         logging.info("Do NOT use GPT\n")
         response = orchestrate_request_trigger(user, user_message, session_data, decision="UpdateSingleRecordFromUI")
+
+    # 🧠 Shortcut manual: Add product option to bundle (avoid misrouting to quote)
+    elif re.search(r"\badd\s+(?:product\s+)?option\b.*\bbundle\b", user_message, re.IGNORECASE):
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(user, user_message, session_data, decision="AddProductToBundle")
 
     # 🧠 Shortcut manual: "generate pdf"
     elif any(message.startswith(trigger) for trigger in trigger_phrases):
@@ -246,6 +265,7 @@ def orchestrate_request(user, user_message, session_data):
         - "UpdateBundleOption"
         - "DeleteBundleOption"
         - "DeleteBundleComponentFromQuote"
+        - "ShowBundleStructure" → Use when the user wants to view the components/options of a bundle product (SKU or name). Examples: "show bundle structure SYM-ACPQ-IMP-STARTER", "list components in bundle STARTER", "display bundle ACME-BUNDLE".
         - "CreateCustomObject"
         - "UpdateCustomObject"
         - "DeleteCustomObject"
@@ -276,6 +296,7 @@ def orchestrate_request(user, user_message, session_data):
                     - "Show account Acme Corp"
                     - "Open product SKU-1001"
                     - "Display the opportunity Renewal Q1"
+                Do NOT use this for bundle component breakdowns; prefer "ShowBundleStructure" when the user asks to see bundle options/components.
         - "ShowMetrics" → Use when the user requests listings, summaries, or filtered searches 
                 involving one or more records (products, quotes, accounts, bundles, etc.).  
                 This includes plural forms ("quotes", "products"), aggregate/numeric comparisons,
@@ -314,6 +335,30 @@ def orchestrate_request(user, user_message, session_data):
         #decision = re.sub(r'[^\w\s\-\_\.\,]', '', decision)
         logging.info(f"\n🟢 AI Decision Received: {decision} \n")
 
+        # Handle common model message when no active quote is found
+        if "no active quote" in raw_decision.lower():
+            return {
+                "message": "⚠️ I couldn’t find an active quote. Please specify a quote name (e.g., Q-00066) or ask me to create a new quote."
+            }
+
+        # 🔒 Prevent accidental ShowSingleRecord unless the user explicitly asks to view a record
+        if decision == "ShowSingleRecord":
+            wants_record = re.search(
+                r"\b(show|display|open|get|view)\b.*\b(record|opportunity|account|product|quote|contact|lead)\b",
+                user_message,
+                re.IGNORECASE,
+            )
+            if not wants_record:
+                logging.info("Guarding against unintended ShowSingleRecord; rerouting to GeneralQuery.")
+                decision = "GeneralQuery"
+
+        # 🔒 Guard: list/all bundle products should go to metrics, not structure
+        if decision == "ShowBundleStructure":
+            wants_listing = re.search(r"\b(all|list|show)\b.*\bbundle(s)?\b", user_message, re.IGNORECASE)
+            if wants_listing and not re.search(r"\bstructure\b", user_message, re.IGNORECASE):
+                logging.info("Guarding against bundle listing routed to ShowBundleStructure; rerouting to ShowMetrics.")
+                decision = "ShowMetrics"
+
     except Exception as e:
         logging.error(f"❌ Error in OpenAI call: {e}")
         return {"message": "⚠️ Sorry, an error occurred while processing your request."}
@@ -344,7 +389,7 @@ def orchestrate_request(user, user_message, session_data):
             ):
                 agent_message += f"\n\n{key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 
-        decoded_agent_message = _decode_chat_text(agent_message)
+        decoded_agent_message = _decode_chat_text(_strip_session_summary_text(agent_message))
 
         if session_data and decoded_initial_user_message and decoded_agent_message:
             update_message_history(session_data, decoded_initial_user_message, decoded_agent_message)
@@ -433,6 +478,20 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
             )
         except json.JSONDecodeError as e:
             logging.error(f" Error decoding JSON: {e}")
+    elif user_message.startswith("Update Bundle Option:"):
+        try:
+            json_str = user_message.replace("Update Bundle Option:", "")
+            update_data = json.loads(json_str)
+            hiddenMessage = update_data.get("hiddenMessage", False) if isinstance(update_data, dict) else False
+            decoded_message = _decode_chat_text(user_message)
+            ChatMessage.objects.create(
+                session=chat_session,
+                sender="user",
+                content=decoded_message,
+                hiddenMessage=hiddenMessage
+            )
+        except json.JSONDecodeError as e:
+            logging.error(f" Error decoding JSON: {e}")
     else:
         decoded_message = _decode_chat_text(user_message)
         ChatMessage.objects.create(
@@ -456,10 +515,10 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
             agent_message = result.get("message", "")
 
             for key, value in result.items():
-                if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat"):
+                if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat", "temporaryMessage", "session_summary"):
                     agent_message += f"\n\n📦 {key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 
-            agent_message = _decode_chat_text(agent_message)
+            agent_message = _strip_session_summary_text(_decode_chat_text(agent_message))
 
             sanitized_result["message"] = agent_message
 
@@ -486,10 +545,10 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
         agent_message = result.get("message", "")
 
         for key, value in result.items():
-            if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat"):
+            if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat", "temporaryMessage", "session_summary"):
                 agent_message += f"\n\n📦 {key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 
-        agent_message = _decode_chat_text(agent_message)
+        agent_message = _strip_session_summary_text(_decode_chat_text(agent_message))
 
         ChatMessage.objects.create(
             session=chat_session,
@@ -634,6 +693,7 @@ def get_action_map():
         "UpdateBundleOption": bundles_agent,
         "DeleteBundleOption": bundles_agent,
         "DeleteBundleComponentFromQuote": bundles_agent,
+        "ShowBundleStructure": bundles_agent,
 
         # Record detail cards
         "ShowSingleRecord": record_agent,
@@ -701,3 +761,15 @@ def clean_llm_label(text: str) -> str:
     cleaned = re.sub(r'[^A-Za-z]', '', text)
 
     return cleaned
+
+
+def _strip_session_summary_text(message: str) -> str:
+    """Remove accidental session_summary artifacts from agent messages."""
+    if not message:
+        return message
+    parts = []
+    for line in message.splitlines():
+        if "session_summary" in line.lower():
+            continue
+        parts.append(line)
+    return "\n".join(parts)

@@ -1246,6 +1246,7 @@ class Command(BaseCommand):
                     2. There must be at least one product in the included_products list. If the user does not specify any included product, then mark "completed" as false.
                     3. The "trigger_product" must have either sku or name. If the user specifies a SKU, set name as null; if the user specifies a name, then set sku as null.
                     4. If the user does not specify the quantity of any product to include, set "quantity" to 1.
+                    5. If the user mentions a term/contract duration (e.g., term = 24 months), capture it as a condition: set "applies_to" to an object like {"field": "term", "operator": "==", "value": 24}. If no term is mentioned, leave applies_to as null.
                 """,
                 "temperature": 0.0,
                 "agent_message": """
@@ -1354,6 +1355,6 @@ class Command(BaseCommand):
                 }
             )
             if created:
-                self.stdout.write(self.style.SUCCESS(f"✅ Created AgentPrompt: {prompt_data["function"]}"))
+                self.stdout.write(self.style.SUCCESS(f"✅ Created AgentPrompt: {prompt_data['function']}"))
             else:
-                self.stdout.write(self.style.WARNING(f"⚠️ AgentPrompt already exists: {prompt_data["function"]}"))
+                self.stdout.write(self.style.WARNING(f"⚠️ AgentPrompt already exists: {prompt_data['function']}"))

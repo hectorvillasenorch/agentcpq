@@ -5,6 +5,7 @@ from django.db.models import Q, Sum
 from django.db import transaction
 
 from ..orchestrator.context_handle_helpers import save_or_update_conversation_context
+from ..message_formatters import INFO_ICON
 
 
 def _clean_identifier(value):
@@ -97,7 +98,7 @@ def get_or_create_account_and_opportunity(user, extracted_details, session_data)
             )
 
             opportunity_message = (
-                f"🔍 An attempt was made to create a quote for the account {account_name}, "
+                f"{INFO_ICON} An attempt was made to create a quote for the account {account_name}, "
                 f"but this account already has existing opportunities:<br>"
                 f"{opp_list_html}<br><br>"
                 f"Would you like to use one of these opportunities, "

@@ -7,6 +7,9 @@
     <title>AgentCPQ</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/agents/agents_main.css' %}">
+    <script>
+      window.isAdmin = {{ request.user.is_staff|yesno:"true,false" }};
+    </script>
     <script src="{% static 'js/agents/agent_main.js' %}" defer></script>
     <!-- Flatpickr JS & CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
@@ -113,7 +116,7 @@
                 <img width="95px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
               </div>
               <div class="message">
-                <img src="/static/img/thinking.gif" alt="Agent is thinking..." width="40">
+                <span class="thinking-text" aria-live="polite" style="color:#2e2e2e;">Thinking...</span>
 
               </div>
             </div>

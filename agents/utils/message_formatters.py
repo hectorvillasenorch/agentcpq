@@ -124,6 +124,22 @@ def format_quote_success_message(
         for product in successful_products or []
     ]
 
+    # Optional discount line (use first product with a discount)
+    discount_line = None
+    for product in successful_products or []:
+        dtype = str(product.get("discount_type") or "").lower()
+        dval = product.get("discount_value")
+        try:
+            dnum = float(dval)
+        except (TypeError, ValueError):
+            dnum = 0.0
+        if dtype == "percentage" and dnum > 0:
+            discount_line = f"{SUCCESS_ICON} Discount applied: {dnum:.2f}%."
+            break
+        if dtype == "amount" and dnum > 0:
+            discount_line = f"{SUCCESS_ICON} Discount applied: <b>${dnum:,.2f}</b>."
+            break
+
     lines.extend(filter(None, product_lines))
 
     try:
@@ -131,7 +147,9 @@ def format_quote_success_message(
     except (TypeError, ValueError):
         amount_value = 0.0
 
-    lines.append(f"{AGENT_MONEY_ICON} Net amount updated to {amount_value:,.2f}.")
+    lines.append(f"{SUCCESS_ICON} Net amount updated to <b>${amount_value:,.2f}</b>.")
+    if discount_line:
+        lines.append(discount_line)
 
     return "<br>".join(lines)
 
@@ -255,7 +273,7 @@ def _apply_status_icon(line: str) -> str:
     if "info" in normalized and not line.startswith(INFO_ICON):
         return f"{INFO_ICON} {line}"
 
-    return line
+    return f"{INFO_ICON} {line}"
 
 
 def format_message_with_standard_icons(message: str) -> str:

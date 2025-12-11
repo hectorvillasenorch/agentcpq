@@ -210,6 +210,122 @@
 </script>
 
 <script>
+  // Picklist Editor (Opportunity stage)
+  function openPicklistEditor(btn) {
+    const objectName = btn.dataset.object;
+    const fieldName = btn.dataset.field;
+    const meta = document.getElementById('picklist-meta');
+    const listEl = document.getElementById('picklist-editor-list');
+    const keyEl = document.getElementById('picklist-key');
+    const labelEl = document.getElementById('picklist-label');
+    const activeEl = document.getElementById('picklist-active');
+    const defaultEl = document.getElementById('picklist-default');
+
+    meta.textContent = `${objectName} • ${fieldName}`;
+    keyEl.value = '';
+    labelEl.value = '';
+    activeEl.checked = true;
+    defaultEl.checked = false;
+
+    const apiUrl = "{% url 'cpq:picklist_values_api' %}";
+    // Show modal immediately, then load data
+    const modalEl = document.getElementById('picklist-editor-modal');
+    if (window.M && modalEl) {
+      const instance = M.Modal.getInstance(modalEl) || M.Modal.init(modalEl, {});
+      instance.open();
+    } else if (modalEl) {
+      modalEl.style.display = 'block';
+    }
+
+    fetch(`${apiUrl}?object_name=${encodeURIComponent(objectName)}&field_name=${encodeURIComponent(fieldName)}`)
+      .then(res => res.json())
+      .then(data => {
+        const values = data.values || [];
+        listEl.innerHTML = values.map(val => `
+          <div class="card-panel" style="padding:8px 12px;margin:8px 0;display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div><strong>${val.label}</strong> <span class="muted">(${val.key})</span></div>
+              <div class="muted">Active: ${val.active ? 'Yes' : 'No'} • Default: ${val.is_default ? 'Yes' : 'No'}</div>
+            </div>
+            <div>
+              <button class="btn-flat" type="button" onclick="editPicklistValue(${val.id}, '${objectName}', '${fieldName}', '${val.key}', '${val.label}', ${val.active}, ${val.is_default})">Edit</button>
+              <button class="btn-flat red-text" type="button" onclick="deletePicklistValue(${val.id}, '${objectName}', '${fieldName}')">Delete</button>
+            </div>
+          </div>
+        `).join('') || '<div class="muted">No values yet.</div>';
+      })
+      .catch(err => {
+        console.error("Picklist fetch failed", err);
+        alert("Unable to load picklist values.");
+      });
+  }
+
+  function editPicklistValue(id, obj, field, key, label, active, isDefault) {
+    document.getElementById('picklist-key').value = key;
+    document.getElementById('picklist-label').value = label;
+    document.getElementById('picklist-active').checked = !!active;
+    document.getElementById('picklist-default').checked = !!isDefault;
+    document.getElementById('picklist-save-btn').dataset.id = id;
+    M.updateTextFields();
+  }
+
+  function deletePicklistValue(id, obj, field) {
+    if (!confirm('Delete this picklist value?')) return;
+    const apiUrl = "{% url 'cpq:picklist_values_api' %}";
+    fetch(`${apiUrl}?object_name=${encodeURIComponent(obj)}&field_name=${encodeURIComponent(field)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    }).then(() => openPicklistEditor({ dataset: { object: obj, field: field } }))
+      .catch(err => {
+        console.error("Delete failed", err);
+        alert("Unable to delete picklist value.");
+      });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const saveBtn = document.getElementById('picklist-save-btn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', function () {
+        const id = this.dataset.id;
+        const meta = document.getElementById('picklist-meta').textContent.split(' • ');
+        const objectName = meta[0];
+        const fieldName = meta[1];
+        const keyEl = document.getElementById('picklist-key');
+        const labelEl = document.getElementById('picklist-label');
+        const activeEl = document.getElementById('picklist-active');
+        const defaultEl = document.getElementById('picklist-default');
+        const payload = {
+          id: id || undefined,
+          key: keyEl.value,
+          label: labelEl.value,
+          active: activeEl.checked,
+          is_default: defaultEl.checked
+        };
+        const apiUrl = "{% url 'cpq:picklist_values_api' %}";
+        fetch(`${apiUrl}?object_name=${encodeURIComponent(objectName)}&field_name=${encodeURIComponent(fieldName)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).then(() => {
+          delete saveBtn.dataset.id;
+          openPicklistEditor({ dataset: { object: objectName, field: fieldName } });
+        }).catch(err => {
+          console.error("Save failed", err);
+          alert("Unable to save picklist value.");
+        });
+      });
+    }
+
+    // Initialize modal if Materialize is present
+    const modalEl = document.getElementById('picklist-editor-modal');
+    if (modalEl && window.M) {
+      M.Modal.init(modalEl, {});
+    }
+  });
+</script>
+
+<script>
   document.addEventListener('DOMContentLoaded', function () {
     const tabs = document.querySelectorAll('.object-tab');
 
