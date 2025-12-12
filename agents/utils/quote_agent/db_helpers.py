@@ -53,8 +53,25 @@ def get_or_create_account_and_opportunity(user, extracted_details, session_data)
     if not extracted_details:
         logging.error("❌ extracted_details is None")
         return None, None
-    account_name = (extracted_details.get("account") or session_data.get("account") or "").strip()
-    opportunity_name = (extracted_details.get("opportunity") or "").strip()
+    # Reuse account/opportunity captured in session state to honor follow-up messages like
+    # "Use the current opportunity TESTING 44" that omit the account name.
+    create_quote_state = session_data.get("state", {}).get("create_quote", {})
+    state_data = create_quote_state.get("data") if isinstance(create_quote_state, dict) else {}
+
+    account_name = (
+        extracted_details.get("account")
+        or (state_data.get("account") if isinstance(state_data, dict) else None)
+        or session_data.get("account")
+        or ""
+    )
+    account_name = account_name.strip()
+
+    opportunity_name = (
+        extracted_details.get("opportunity")
+        or (state_data.get("opportunity") if isinstance(state_data, dict) else None)
+        or session_data.get("opportunity")
+        or ""
+    ).strip()
 
 
     if not account_name:

@@ -1,7 +1,7 @@
 import logging, json
 from decimal import Decimal
 from .db_helpers import find_product_and_normalize_variables
-from cpq.models import QuoteLine
+from cpq.models import QuoteLine, Option
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from django.forms.models import model_to_dict
 
@@ -11,11 +11,13 @@ from .record_helpers import update_quote_line_record, save_quote_line_update
 from .general_helpers import normalize_term_for_product, copy_custom_fields_values_from_product_to_quote_line
 
 #Rules Helpers
-from ..admin_agent.rules_helpers import check_exclusion_rules_for_quote_level, build_temp_quote_line, check_for_rules_quote_line_level, check_inclusion_rules_for_quote_level, check_for_rules_quote_level
+from ..admin_agent.rules_helpers import check_exclusion_rules_for_quote_level, build_temp_quote_line, check_for_rules_quote_line_level, check_inclusion_rules_for_quote_level, check_for_rules_quote_line_level
+
+logger = logging.getLogger(__name__)
 
 # ----------- UPDATE QUOTE LINE ----------- #
 
-def handle_products_to_add(user, completed_products, quote, allow_updates=False):
+def handle_products_to_add(user, completed_products, quote, allow_updates=False, parent_line=None):
     """
     Creates QuoteLine records for a given quote using a list of already structured product dictionaries.
 
@@ -111,10 +113,11 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
             result.append(result_payload)
             continue
 
-        inclusions = check_inclusion_rules_for_quote_level(user, "quote_line", "inclusion", quote, product)
-
-        if inclusions:
-            result_payload["inclusion_message"] = inclusions
+        # Run inclusion rules unless this is a bundle (bundles are handled after parent is created) or a child add
+        if parent_line is None and not product.is_bundle:
+            inclusions = check_inclusion_rules_for_quote_level(user, "quote_line", "inclusion", quote, product)
+            if inclusions:
+                result_payload["inclusion_message"] = inclusions
 
         # Validate exclusion rules
         exclusions = check_exclusion_rules_for_quote_level(user, quote, product)
@@ -128,12 +131,12 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
 
         #################################################
 
-        # ✅ Check if existing line
+        # ✅ Check if existing line (only when not forcing child creation)
         existing_line = QuoteLine.objects.filter(quote=quote, product=product, is_bundle_child=False).first()
 
         # ✅ If the product already exists in the quote and updates are allowed,
         #    update the existing quote line instead of creating a new one
-        if existing_line and allow_updates:
+        if parent_line is None and existing_line and allow_updates:
 
             logging.info(f"=>>>>>>>>>>>>>>>>>>>> 🔁 Product `{sku}/{name}` already in quote. Updating instead of creating.")
 
@@ -201,7 +204,7 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
 
         # ✅ If the product already exists in the quote, skip it during creation
         #    This avoids creating duplicate quote lines when the same SKU is mentioned multiple times
-        elif existing_line and not allow_updates:
+        elif parent_line is None and existing_line and not allow_updates:
             # Dejar aqui asi hasta modificar como manejamos el QUOTE
             logging.warning(f"⚠️ Product `{sku}` already exists in quote. Skipping creation.")
             result_payload['error'] = f"⚠️ Product `{sku or name}` already exists in quote. Skipping creation."
@@ -229,7 +232,7 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
             discount_fields["discount_percentage"] = Decimal("0.00")
 
         try:
-            if product.is_bundle:
+            if product.is_bundle and parent_line is None:
                 print("Product is a bundle")
                 try:
                     # Parent Quote Line
@@ -248,7 +251,18 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
                     # Children Quote Line(s)
                     bundle_response_message = ""
                     for option in product.options.all():
-                        if option.default_selected and option.product_option:
+                        if not option.product_option:
+                            continue
+
+                        # Only auto-create lines for required or default-selected options
+                        if option.is_required or option.default_selected:
+                            logging.info(
+                                "################################# Evaluating bundle auto-select option parent=%s option=%s required=%s default=%s",
+                                product.sku,
+                                option.product_option.sku,
+                                option.is_required,
+                                option.default_selected,
+                            )
                             QuoteLine.objects.create(
                                 quote=quote,
                                 product=option.product_option,
@@ -262,44 +276,81 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False)
                                 discount_type=None,
                                 discount_percentage=Decimal("0.00"),
                                 discount_amount=Decimal("0.00"),
-                                is_bundle_component_selected=True # Indicates that it is and option selected
+                                is_bundle_component_selected=True # Indicates that it is an option selected
                             )
 
                             bundle_response_message += f"&emsp;🔧 Added {option.quantity}x {option.product_option.sku}/{option.product_option.name} ({option.parent_product})<br>"
 
-                        elif option.default_selected == False and option.product_option:
-                            QuoteLine.objects.create(
-                                quote=quote,
-                                product=option.product_option,
-                                quantity=int(option.quantity),
-                                parent_line=quote_line, # Bundle parent quote line
-                                is_bundle_parent=False,
-                                is_bundle_child=True,
-                                product_option=option,
-                                is_subscription=option.product_option.is_subscription,
-                                term=None,
-                                discount_type=None,
-                                discount_percentage=Decimal("0.00"),
-                                discount_amount=Decimal("0.00"),
-                                is_bundle_component_selected=False # Indicates that it is and option selected
-                            )
-
-                            bundle_response_message += f"&emsp;🔘 Pending: {option.quantity}x {option.product_option.sku}/{option.product_option.name} - You can add this item to the quote.<br>"
+                    # Run inclusion rules for this bundle with proper parent linkage
+                    try:
+                        check_inclusion_rules_for_quote_level(
+                            user,
+                            "quote_line",
+                            "inclusion",
+                            quote,
+                            product,
+                            skip_existing=True,
+                            quote_line=quote_line,
+                        )
+                    except Exception as exc:
+                        logging.warning("Inclusion rules during bundle add failed: %s", exc)
 
                 except Exception as e:
                     print(f"Error: {e}")
 
             else:
                 bundle_response_message = "" #Restart variable for no bundle products
-                quote_line = QuoteLine.objects.create(
-                    quote=quote,
-                    product=product,
-                    quantity=quantity,
-                    term=term,
-                    **discount_fields,
-                    description=product.description,
-                    is_subscription=product.is_subscription,
-                )
+                if parent_line is not None:
+                    opts = list(
+                        Option.objects.filter(parent_product=parent_line.product)
+                        .values(
+                            "id",
+                            "parent_product__sku",
+                            "product_option__sku",
+                            "product_option__name",
+                            "is_required",
+                            "default_selected",
+                        )
+                    )
+                    logger.warning("Bundle options for parent %s => %s", parent_line.product.sku, opts)
+
+                    logger.warning("QL Product OPTION %s => %s",  opts)
+
+                    # Strict match by child SKU under the same parent
+                    option_obj = Option.objects.filter(
+                        parent_product=parent_line.product,
+                        product_option__sku__iexact=product.sku
+                    ).first()
+                    logger.warning(
+                        "Selected option for child %s under parent %s => %s",
+                        product.sku,
+                        parent_line.product.sku,
+                        option_obj.id if option_obj else None,
+                    )
+                    quote_line = QuoteLine.objects.create(
+                        quote=quote,
+                        product=product,
+                        quantity=quantity,
+                        term=parent_line.term if parent_line.term is not None else term,
+                        **discount_fields,
+                        description=product.description,
+                        is_subscription=product.is_subscription,
+                        parent_line=parent_line,
+                        is_bundle_parent=False,
+                        is_bundle_child=True,
+                        is_bundle_component_selected=True,
+                        product_option=option_obj,
+                    )
+                else:
+                    quote_line = QuoteLine.objects.create(
+                        quote=quote,
+                        product=product,
+                        quantity=quantity,
+                        term=term,
+                        **discount_fields,
+                        description=product.description,
+                        is_subscription=product.is_subscription,
+                    )
 
                 #print(f"\n\n1 | Esto es quote line: {json.dumps(model_to_dict(quote_line), indent=4, default=str)}\n1 | Esto es quote: {json.dumps(model_to_dict(quote), indent=4, default=str)}\n\n")
 

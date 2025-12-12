@@ -406,7 +406,7 @@ class Option(models.Model):
     group_name = models.CharField(max_length=255, blank=True, null=True)  # Optional grouping (for dynamic)
 
     def __str__(self):
-        return f"{self.parent_product.name}"
+        return f"{self.parent_product.name} -> {self.product_option.name}"
 
 # Default expiration date for Quote model
 def default_expiration_date():

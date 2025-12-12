@@ -18,6 +18,7 @@ from django.conf import settings
 from reportlab.lib.colors import HexColor, red
 from django.http import JsonResponse
 from django.db import models
+from .utils.admin_agent.rules_helpers import check_inclusion_rules_for_quote_level
 from agents.approvals_agent import get_approval_status
 from django.db.models import Max
 from django.db.models import Q
@@ -37,6 +38,7 @@ from .utils.quote_agent.db_helpers import get_or_create_account_and_opportunity,
 
 # General Helpers
 from .utils.quote_agent.general_helpers import get_active_quote, set_active_quote_to_session_data, get_quote_details, get_backup_value_from_quote_line, format_currency, wrap_text
+from .utils.admin_agent.rules_helpers import check_inclusion_rules_for_quote_level
 from .utils.quote_agent.general_helpers import get_document_pdf, get_backup_value_from_quote
 
 from .utils.message_formatters import SUCCESS_ICON, ERROR_ICON, INFO_ICON, WARNING_ICON
@@ -153,11 +155,18 @@ def create_quote(user,user_message, session_data):
     extracted_details = llm_result["create_quote"].get("data") or {}
 
     # If user replied "Use Opportunity X" after being prompted, honor it using stored state
-    match_use_opp = re.search(r"use opportunity\s+(.+)", user_message, re.IGNORECASE)
+    match_use_opp = re.search(r"use\s+\w*oppor\w*\s*(?:with\s*name\s*[=:]\s*)?(.+)", user_message, re.IGNORECASE)
     if match_use_opp and session_data.get("state", {}).get("create_quote"):
         stored = session_data["state"]["create_quote"].get("data") or {}
         extracted_details.setdefault("account", stored.get("account"))
         extracted_details["opportunity"] = match_use_opp.group(1).strip()
+
+    # If user provided a custom opportunity name directly, use it and reuse stored account
+    match_custom_opp = re.search(r"(?:custom\s+oppor\w*\s*name|oppor\w*\s*name)\s*[:=]\s*(.+)", user_message, re.IGNORECASE)
+    if match_custom_opp and session_data.get("state", {}).get("create_quote"):
+        stored = session_data["state"]["create_quote"].get("data") or {}
+        extracted_details.setdefault("account", stored.get("account"))
+        extracted_details["opportunity"] = match_custom_opp.group(1).strip()
 
     # ✅ Get or create account and opportunity
     result_account_and_opportunity = get_or_create_account_and_opportunity(user, extracted_details, session_data)
@@ -256,7 +265,7 @@ def create_quote(user,user_message, session_data):
 
         return {
             "message": formatted_message,
-            "session_summary": updated_summary
+            "session_summary": updated_summary,
         }
 
     # In case the quote is created with any products
@@ -363,7 +372,7 @@ def create_quote(user,user_message, session_data):
 
     return {
         "message": _ensure_success_icon(dynamic_message),
-        "session_summary": updated_summary
+        "session_summary": updated_summary,
     }
 
 
@@ -431,7 +440,8 @@ def add_product_to_quote(user, user_message, session_data):
 
     return {
         "message": dynamic_message,
-        "session_summary": updated_summary
+        "session_summary": updated_summary,
+        "quote_details": get_quote_details(quote)
     }
 
 #< ----------------- UPDATE QUOTE LINE -------------------- >
@@ -939,6 +949,20 @@ def update_quote_line_from_ui(user, user_message, session_data):
             set_active_quote_to_session_data(session_data, quote)
 
             if response.get("success") == True:
+                try:
+                    for line in quote.quote_lines.filter(is_bundle_parent=True):
+                        check_inclusion_rules_for_quote_level(
+                            user,
+                            "quote_line",
+                            "inclusion",
+                            quote,
+                            line.product,
+                            skip_existing=True,
+                            quote_line=line,
+                        )
+                except Exception as exc:
+                    logging.warning(" XXXXXXXXXXXXXXXX Inclusion rules post-quote-line-update failed: %s", exc)
+
                 return {
                     "message": response.get("message"),
                     "success": True,
@@ -1003,6 +1027,12 @@ def update_quote_from_ui(user,user_message, session_data):
             set_active_quote_to_session_data(session_data, quote)
 
             if response.get("success") == True:
+                try:
+                    for line in quote.quote_lines.filter(is_bundle_parent=True):
+                        check_inclusion_rules_for_quote_level(user, "quote_line", "inclusion", quote, line.product, skip_existing=True)
+                except Exception as exc:
+                    logging.warning("XXXXXXXXXXXXXXXXXXXXXX Inclusion rules post-update failed: %s", exc)
+
                 return {
                     "message": "✅ Quote updated successfully.",
                     "success": True,

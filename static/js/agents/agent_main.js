@@ -1508,6 +1508,10 @@ function replaceQuoteDetailsElement(existingElement, quote) {
     return null;
   }
 
+  const previousSkus = new Set(
+    Array.from(existingElement.querySelectorAll("[data-sku]")).map(el => el.dataset.sku)
+  );
+
   const parent = existingElement.parentNode;
   if (!parent) {
     return null;
@@ -1522,6 +1526,19 @@ function replaceQuoteDetailsElement(existingElement, quote) {
 
   parent.replaceChild(nextElement, existingElement);
   initializeQuoteDetailInteractions(nextElement);
+
+  // Highlight newly added line items (SKUs not present before)
+  const newRows = nextElement.querySelectorAll(".quote-table tbody tr");
+  newRows.forEach(row => {
+    const skuEl = row.querySelector("[data-sku]");
+    const sku = skuEl ? skuEl.dataset.sku : null;
+    if (sku && !previousSkus.has(sku)) {
+      row.classList.add("quote-line-flash");
+      setTimeout(() => row.classList.remove("quote-line-flash"), 1800);
+    }
+  });
+
+  flashQuoteTotals(nextElement);
   return nextElement;
 }
 
@@ -1548,6 +1565,10 @@ function initializeQuoteDetailInteractions(container) {
       }
     });
   }
+}
+
+function flashQuoteTotals(container) {
+  // Flashing of totals disabled per request; keep function for callsites
 }
 
 function ensureQuoteStatusValue(quote) {
@@ -3908,8 +3929,16 @@ async function updateQuoteLine(input) {
 
         if (data.response && data.response.quote_details) {
             const updatedQuote = data.response.quote_details;
-            const quoteContainer = input.closest(".quote-container");
-            //console.log(updatedQuote); #For debugging
+            let quoteContainer = input.closest(".quote-container");
+            if (!quoteContainer) {
+              quoteContainer = document.querySelector(`.quote-container[data-quote-name="${updatedQuote.quote_name}"]`) ||
+                document.querySelector(`.quote-mobile[data-quote-name="${updatedQuote.quote_name}"]`);
+            }
+            if (quoteContainer) {
+              replaceQuoteDetailsElement(quoteContainer, updatedQuote);
+              flashQuoteTotals(quoteContainer);
+              return; // replaced card; no need for inline updates
+            }
 
             //First we update every single quote line total price
             const row =input.closest("tr");
@@ -4048,7 +4077,8 @@ async function updateQuote(input) {
             }
 
             if (existingDetails) {
-                replaceQuoteDetailsElement(existingDetails, updatedQuote);
+                const newEl = replaceQuoteDetailsElement(existingDetails, updatedQuote);
+                flashQuoteTotals(newEl || existingDetails);
             }
 
             alert("✅ Quote updated successfully.");

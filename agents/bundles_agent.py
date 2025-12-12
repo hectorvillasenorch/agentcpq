@@ -6,6 +6,7 @@ import json
 import html
 import os
 import logging
+import re
 from .utils.quote_agent.db_helpers import log_action_usage
 from .utils.message_formatters import SUCCESS_ICON
 
@@ -106,15 +107,64 @@ def delete_bundle_option_from_quote(user, user_message, session_data):
 
 def _extract_bundle_identifier(user_message: str) -> str:
     """
-    Simple extractor that prefers SKU-like tokens (letters/numbers/hyphens),
-    otherwise returns the raw message trimmed.
+    Extract bundle identifier (SKU or name) from a free-form message.
+    - Prefer quoted text
+    - Strip common lead-in phrases (e.g., "show bundle structure for")
+    - Fall back to SKU-like tokens or the raw tail
     """
     if not user_message:
         return ""
-    tokens = [t.strip(",.") for t in user_message.split() if "-" in t or t.isupper()]
+
+    message = user_message.strip()
+
+    quoted = re.search(r"[\"']([^\"']+)[\"']", message)
+    if quoted:
+        return quoted.group(1).strip()
+
+    lowered = message.lower()
+    prefixes = [
+        "show bundle structure for",
+        "bundle structure for",
+        "show bundle structure",
+        "show structure for",
+        "structure for",
+        "show bundle",
+        "bundle",
+    ]
+    for prefix in prefixes:
+        idx = lowered.find(prefix)
+        if idx != -1:
+            remainder = message[idx + len(prefix):].strip(" :.-")
+            if remainder:
+                message = remainder
+                break
+
+    # Drop leading descriptors like "product name", "product", or "sku"
+    message = re.sub(r"^(product\s+name|product\s+sku|product|sku)\s+", "", message, flags=re.IGNORECASE).strip()
+
+    tokens = [t.strip(",.") for t in message.split() if "-" in t or t.isupper()]
     if tokens:
         return tokens[0]
-    return user_message.strip()
+
+    return message
+
+
+def _find_bundle(identifier: str):
+    """Locate a bundle by exact SKU/name first, then by partial match."""
+    if not identifier:
+        return None
+
+    base_qs = Product.objects.filter(is_bundle=True)
+
+    bundle = base_qs.filter(
+        Q(sku__iexact=identifier) | Q(name__iexact=identifier)
+    ).first()
+    if bundle:
+        return bundle
+
+    return base_qs.filter(
+        Q(sku__icontains=identifier) | Q(name__icontains=identifier)
+    ).first()
 
 def _extract_delete_option_request(user_message: str):
     """Extract parent (bundle) and child (option) identifiers from a delete request."""
@@ -145,11 +195,8 @@ def show_bundle_structure(user, user_message, session_data):
     if not identifier:
         return {"message": "⚠️ Please provide a bundle SKU or name to inspect its structure."}
 
-    try:
-        bundle = Product.objects.get(
-            Q(is_bundle=True) & (Q(sku__iexact=identifier) | Q(name__iexact=identifier))
-        )
-    except Product.DoesNotExist:
+    bundle = _find_bundle(identifier)
+    if not bundle:
         return {"message": f"⚠️ No bundle found for '{identifier}'. Please verify the SKU or name."}
 
     safe_bundle_name = html.escape(bundle.name, quote=True)

@@ -140,8 +140,8 @@ def get_quote_details(quote):
             "error": True,
             "message": "⚠️ The quote data can’t be rendered because there’s no quote template available. Please create one in <b>Admin > Manage Document</b>"
         }
-    print(f"\nRendered fields on UI Quote Details: {quote_details_settings.rendered_fields}")
-    print(f"\nOmitted fields on UI Quote Details: {quote_details_settings.omitted_fields}\n")
+    # Debug render fields as needed; keep silent in normal runs
+    # Debug omitted fields as needed; keep silent in normal runs
 
     default_fields = [
         'sku_product', 'quantity', 'unit_price', 'discount_percentage',
@@ -180,8 +180,8 @@ def get_quote_details(quote):
     for ql in QuoteLine.objects.filter(quote=quote):
         line_data = {
             "id": ql.id,
-            "product": ql.product.name,
-            "sku": ql.product.sku,
+            "product": ql.product_option.product_option.name if ql.product_option else ql.product.name,
+            "sku": ql.product_option.product_option.sku if ql.product_option else ql.product.sku,
             "quantity": ql.quantity,
             "description": ql.description,
             "unit_price": str(ql.unit_price),
@@ -193,8 +193,10 @@ def get_quote_details(quote):
             "term": ql.term,
             "is_bundle_child": ql.is_bundle_child,
             "bundle_name": ql.parent_line.product_name if ql.is_bundle_child else "",
-            "is_bundle_component_required": ql.product_option.is_required if ql.is_bundle_child else "",
-            "is_bundle_component_selected": ql.is_bundle_component_selected
+            "is_bundle_component_required": ql.product_option.is_required if ql.is_bundle_child and ql.product_option else "",
+            "is_bundle_component_selected": ql.is_bundle_component_selected,
+            "product_option_name": ql.product_option.product_option.name if ql.product_option else "",
+            "product_option_sku": ql.product_option.product_option.sku if ql.product_option else "",
         }
 
         # Agregar los campos custom

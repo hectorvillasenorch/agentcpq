@@ -135,7 +135,7 @@ def check_validation_conditions(data, quote, product, quote_line, depth=1):
         logging.warning(f"{indent}❌ Unexpected data type: {type(data).__name__}")
         return False
 
-def check_inclusion_rules_for_quote_level(user, target_type, rule_type, quote, product):
+def check_inclusion_rules_for_quote_level(user, target_type, rule_type, quote, product, skip_existing=False, quote_line=None):
 
 
     rules = BusinessRule.objects.filter(
@@ -156,19 +156,19 @@ def check_inclusion_rules_for_quote_level(user, target_type, rule_type, quote, p
             logging.warning(f"Error: {e}")
             continue # Skip the rules with conditions bad formed
 
-        print(f"\n📜 Evaluating inclusion rule: {rule.name} ('{rule.description}')")
+        logging.info("📜 ################################# Evaluating inclusion rule: %s (%s)", rule.name, rule.description)
         if rule.rule_type == "inclusion":
-            success, result = check_inclusion_rule(user, conditions, quote, product)
+            success, result = check_inclusion_rule(user, conditions, quote, product, rule, skip_existing, quote_line)
 
             if success == "success":
                 logging.warning(f"Rule {rule.name} has been triggered.")
                 triggered_rules += f"Rule: {rule.name} has been triggered -> {rule.error_message}."
             else:
-                logging.warning("La regla no aplica.")
+                logging.warning("###################################### Inclusion rule %s did not apply.", rule.name)
 
     return triggered_rules
 
-def check_inclusion_rule(user, conditions, quote, product):
+def check_inclusion_rule(user, conditions, quote, product, rule=None, skip_existing=False, quote_line=None):
     # Handle products to add
     from ..quote_agent.handle_helpers import handle_products_to_add
 
@@ -217,6 +217,8 @@ def check_inclusion_rule(user, conditions, quote, product):
             return getattr(quote, field, None)
         if scope == "product":
             return getattr(product, field, None)
+        if scope == "quote_line" and quote_line is not None:
+            return getattr(quote_line, field, None)
         return None
 
     trigger_product = conditions.get("trigger_product")
@@ -258,16 +260,63 @@ def check_inclusion_rule(user, conditions, quote, product):
 
     if trigger_product["sku"] is not None:
         if (trigger_product["sku"] == product.sku) or (trigger_product["sku"] == product.name):
-            included_products = conditions.get("included_products")
+            included_products = conditions.get("included_products") or []
+            if skip_existing:
+                filtered = []
+                for inc in included_products:
+                    inc_sku = inc.get("sku") or inc.get("name")
+                    if not inc_sku:
+                        continue
+                    exists = QuoteLine.objects.filter(quote=quote).filter(
+                        Q(product__sku__iexact=inc_sku) | Q(product__name__iexact=inc_sku) | Q(sku__iexact=inc_sku)
+                    ).exists()
+                    if not exists:
+                        filtered.append(inc)
+                included_products = filtered
+                if not included_products:
+                    return "failed", None
 
-            result = handle_products_to_add(user, included_products, quote, allow_updates=True)
+            result = handle_products_to_add(user, included_products, quote, allow_updates=True, parent_line=quote_line)
+
+            logging.info("################################# Inclusion rule fired")
+            logging.info(
+                "Rule=%s QuoteID=%s Trigger=%s Included=%s",
+                getattr(rule, "name", None) if 'rule' in locals() else None,
+                getattr(quote, "id", None),
+                trigger_product,
+                included_products,
+            )
 
             return "success", result
     elif trigger_product["name"] is not None:
         if (trigger_product["name"] == product.sku) or (trigger_product["name"] == product.name):
-            included_products = conditions.get("included_products")
+            included_products = conditions.get("included_products") or []
+            if skip_existing:
+                filtered = []
+                for inc in included_products:
+                    inc_sku = inc.get("sku") or inc.get("name")
+                    if not inc_sku:
+                        continue
+                    exists = QuoteLine.objects.filter(quote=quote).filter(
+                        Q(product__sku__iexact=inc_sku) | Q(product__name__iexact=inc_sku) | Q(sku__iexact=inc_sku)
+                    ).exists()
+                    if not exists:
+                        filtered.append(inc)
+                included_products = filtered
+                if not included_products:
+                    return "failed", None
 
-            result = handle_products_to_add(user, included_products, quote, allow_updates=True)
+            result = handle_products_to_add(user, included_products, quote, allow_updates=True, parent_line=quote_line)
+
+            logging.info(
+                "################################# Inclusion rule fired",
+                extra={
+                    "rule": getattr(rule, "name", None) if 'rule' in locals() else None,
+                    "quote_id": getattr(quote, "id", None),
+                    "trigger": trigger_product,
+                    "included": included_products,
+                },
+            )
 
             return "success", result
 

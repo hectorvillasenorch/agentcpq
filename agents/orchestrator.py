@@ -103,9 +103,15 @@ def handle_user_request(user,user_message, session_data):
     trigger_phrases = get_trigger_phrases()
 
     # 🧠 Pending create_quote flow: user selecting an opportunity
-    if session_data.get("state", {}).get("create_quote") and re.search(r"use\s+(the\s+)?opportunity", user_message, re.IGNORECASE):
-        logging.info("Do NOT use GPT (pending create_quote opportunity selection)\n")
-        return orchestrate_request_trigger(user, user_message, session_data, decision="CreateQuote")
+    if session_data.get("state", {}).get("create_quote"):
+        wants_opportunity_selection = (
+            re.search(r"use\s+(?:the\s+)?(?:current\s+)?oppor", user_message, re.IGNORECASE)
+            or re.search(r"use\s+.*\boppor", user_message, re.IGNORECASE)
+            or re.search(r"(custom\s+oppor\w*\s*name|oppor\w*\s*name\s*[:=])", user_message, re.IGNORECASE)
+        )
+        if wants_opportunity_selection:
+            logging.info("Do NOT use GPT (pending create_quote opportunity selection)\n")
+            return orchestrate_request_trigger(user, user_message, session_data, decision="CreateQuote")
 
     # 🧠 Shortcut manual: "show quote details for <quote_id>"
     if user_message.lower().startswith("show quote details for "):
@@ -385,7 +391,7 @@ def orchestrate_request(user, user_message, session_data):
             if key not in (
                 "message", "session_id", "hiddenMessage", "temporaryMessage",
                 "update_details", "iterations", "success", "quote_id", "notes",
-                "tokens", "cost", "session_summary", "rules_created"
+                "tokens", "cost", "session_summary", "rules_created", "quote_details"
             ):
                 agent_message += f"\n\n{key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 
@@ -515,7 +521,7 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
             agent_message = result.get("message", "")
 
             for key, value in result.items():
-                if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat", "temporaryMessage", "session_summary"):
+                if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat", "temporaryMessage", "session_summary", "quote_details"):
                     agent_message += f"\n\n📦 {key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 
             agent_message = _strip_session_summary_text(_decode_chat_text(agent_message))
@@ -545,7 +551,7 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
         agent_message = result.get("message", "")
 
         for key, value in result.items():
-            if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat", "temporaryMessage", "session_summary"):
+            if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat", "temporaryMessage", "session_summary", "quote_details"):
                 agent_message += f"\n\n📦 {key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 
         agent_message = _strip_session_summary_text(_decode_chat_text(agent_message))

@@ -637,6 +637,26 @@ textarea.bundle-edit-input {
   text-align: center;
 }
 
+.quote-line-flash {
+  animation: quoteFlash 1.8s ease;
+}
+
+@keyframes quoteFlash {
+  0% { background-color: #fff1e0; border-color: #f9a03f; }
+  60% { background-color: #fff6ec; border-color: #fbc08f; }
+  100% { background-color: transparent; border-color: transparent; }
+}
+
+.quote-net-flash {
+  animation: none;
+}
+
+@keyframes quoteNetFlash {
+  0% { color: inherit; background-color: transparent; }
+  60% { color: inherit; background-color: transparent; }
+  100% { color: inherit; background-color: transparent; }
+}
+
 .single-record-actions-footer {
   display: flex;
   justify-content: flex-end;
