@@ -161,9 +161,9 @@ def create_quote(user,user_message, session_data):
 
     clear_session_state("create_quote", session_data)
 
-    # ✅ Assign formatted name after creation using quote.id
-    quote.name = f"Q-{quote.id:05d}"
-    quote.save()
+    # ✅ Assign formatted name after creation using quote.id <---- Lo hacemos en la logica interna del modelo Quote
+    #quote.name = f"Q-{quote.id:05d}"
+    #quote.save()
     
     log_action_usage("CreateQuote", user, "Quote", quote.name)
 

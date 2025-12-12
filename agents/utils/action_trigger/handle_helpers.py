@@ -42,18 +42,18 @@ def handle_create_action_trigger(user, completed_action_triggers, response_messa
                 response_message += f"❌ event_type must be a dictionary, got {type(event_type).__name__}.<br>"
                 continue
 
-            object_type = event_type.get("object_type")
+            object_name = event_type.get("object_name")
             action_name = event_type.get("action")
 
-            if not object_type or not action_name:
-                response_message += "❌ event_type must contain 'object_type' and 'action'.<br>"
+            if not object_name or not action_name:
+                response_message += "❌ event_type must contain 'object_name' and 'action'.<br>"
                 continue
 
-            if not isinstance(object_type, str) or not isinstance(action_name, str):
-                response_message += f"❌ object_type and action must be strings. Got {event_type}.<br>"
+            if not isinstance(object_name, str) or not isinstance(action_name, str):
+                response_message += f"❌ object_name and action must be strings. Got {event_type}.<br>"
                 continue
 
-            if not object_type.isidentifier() or not action_name.isidentifier():
+            if not object_name.isidentifier() or not action_name.isidentifier():
                 response_message += f"❌ Invalid identifiers in event_type: {event_type}.<br>"
                 continue
 

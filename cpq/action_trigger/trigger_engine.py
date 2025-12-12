@@ -37,10 +37,14 @@ class TriggerEngine:
             "SET": self._handle_set,
             "UPDATE": self._handle_set,
             "CREATE": self._handle_create,
+            "CLONE": self._handle_clone,
             "DELETE": self._handle_delete,
             "EMAIL": self._handle_email,
             "WEBHOOK": self._handle_webhook,
         }
+
+        # ✅ Anti-Loop global (industrial grade)
+        self._processing_events = set()
 
     # ----------------------------------------------------------------------
     # Wrappers: keep backward compatibility with old method names
@@ -216,6 +220,17 @@ class TriggerEngine:
         event_type = f"{object_type}.{action}"
         logger.debug(f"⚙️ Processing triggers for event {event_type} [{signal_timing}]")
 
+        # ----------------------------------------------------------------------
+        # ✅ Anti-Loop: bloquear reentradas mientras este evento está en proceso
+        # ----------------------------------------------------------------------
+        event_key = f"{object_type}.{action}:{instance.pk}"
+
+        if event_key in self._processing_events:
+            logger.debug(f"⛔ Prevented recursive trigger for {event_key}")
+            return []
+
+        self._processing_events.add(event_key)
+
         triggers = self._load_active_triggers_for_event(event_type, signal_timing)
         results = []
 
@@ -245,31 +260,153 @@ class TriggerEngine:
         elif instance.__class__.__name__ == "Quote":
             quotes_to_recalc.add(instance.pk)
 
-        # ------------------------------------------------------------------
-        # Ejecutar cada trigger
-        # ------------------------------------------------------------------
-        for trig in triggers:
-            try:
-                matched, context = self._evaluate_trigger(trig, instance)
-                if not matched:
-                    continue
+        # ==============================================================
+        # ✅ EJECUCIÓN ATÓMICA REAL
+        # ==============================================================
+        from django.db import transaction
 
-                exec_results = self._execute_trigger_actions(trig, instance, context)
-                results.append({"trigger_id": getattr(trig, "id", None), "results": exec_results})
+        failed_context = None   # ✅ guardamos info del error aquí
 
-                # Si acciones afectan quote o quote_line
-                for action_data in (trig.actions or []):
-                    target = (action_data.get("target") or {}).get("object", "")
-                    if target in ("quote", "quote_line"):
 
-                        if target == "quote":
-                            quotes_to_recalc.add(instance.pk)
+        try:
+            with transaction.atomic():
 
-                        if target == "quote_line" and getattr(instance, "quote_id", None):
-                            quotes_to_recalc.add(instance.quote_id)
+                for trig in triggers:
+                    try:
+                        matched, context = self._evaluate_trigger(trig, instance)
+                        if not matched:
+                            continue
 
-            except Exception as exc:
-                logger.exception("❌ Trigger %s execution error: %s", getattr(trig, "id", "?"), exc)
+                        exec_results = self._execute_trigger_actions(trig, instance, context)
+
+                        results.append({
+                            "trigger_id": getattr(trig, "id", None),
+                            "results": exec_results
+                        })
+
+                        def log_success():
+                            try:
+                                operation, target_model = self._resolve_operation_and_target_from_trigger(trig)
+
+                                exists = ActionLog.objects.filter(
+                                    trigger_name=trig.name,   # ✅ ahora cada trigger es único
+                                    target_pk=str(instance.pk),
+                                    operation=operation,     # ✅ mismo tipo de acción
+                                    event_type=event_type,
+                                    signal_timing=signal_timing,
+                                ).exists()
+
+                                if exists:
+                                    return  # ✅ Evita duplicado real definitivo
+
+                                result_payload = {"ok": True}
+
+                                # ✅ Extraer warnings de cualquier acción (CLONE, BULK, etc.)
+                                warnings = []
+
+                                for r in exec_results:
+                                    action_result = r.get("result") or {}
+                                    if isinstance(action_result, dict):
+                                        w = action_result.get("warnings")
+                                        if isinstance(w, list):
+                                            warnings.extend(w)
+
+                                if warnings:
+                                    result_payload["warnings"] = warnings
+
+                                ActionLog.objects.create(
+                                    trigger_name=trig.name,
+                                    operation=operation,
+                                    target_model=target_model,
+                                    target_pk=str(instance.pk),
+                                    event_type=event_type,
+                                    signal_timing=signal_timing,
+                                    status="success",
+                                    payload=exec_results,
+                                    result=result_payload
+                                )
+
+                            except Exception as log_exc:
+                                logger.exception("⚠️ Error creando ActionLog (success): %s", log_exc)
+
+                        transaction.on_commit(log_success)
+
+                        for action_data in (trig.actions or []):
+                            raw_target = action_data.get("target")
+
+                            # Normalizar target en string
+                            if isinstance(raw_target, str):
+                                # target root model: "opportunity", "quote", "quote_line"
+                                parts = raw_target.split(".")
+                                target_root = parts[0]
+                                target_last = parts[-1]
+                            elif isinstance(raw_target, dict):
+                                target_root = raw_target.get("object", "")
+                                target_last = raw_target.get("path", "").split(".")[-1] if raw_target.get("path") else target_root
+                            else:
+                                target_root = ""
+                                target_last = ""
+
+                            # ------------------------------------------------------
+                            # 🟢 Detectar cuándo recalcular QUOTE
+                            # ------------------------------------------------------
+                            # Caso 1: target = "quote"
+                            if target_root == "quote":
+                                quotes_to_recalc.add(instance.pk)
+
+                            # Caso 2: target es quote_line
+                            if target_root == "quote_line" and getattr(instance, "quote_id", None):
+                                quotes_to_recalc.add(instance.quote_id)
+
+                            # Caso 3: target es un path que termina en "quote"
+                            if target_last == "quote":
+                                quotes_to_recalc.add(instance.pk)
+
+                            # Caso 4: target es un path que termina en "quote_line"
+                            if target_last == "quote_line" and getattr(instance, "quote_id", None):
+                                quotes_to_recalc.add(instance.quote_id)
+
+                    except Exception as exc:
+                        # ✅ SOLO guardamos el error, NO escribimos BD aquí
+                        failed_context = {
+                            "trig": trig,
+                            "exception": exc
+                        }
+
+                        logger.exception(
+                            "❌ Trigger %s execution error (ROLLBACK): %s",
+                            getattr(trig, "id", "?"),
+                            exc
+                        )
+
+                        raise   # 🔥 fuerza rollback total del atomic
+
+        except Exception:
+            logger.exception("❌ TRANSACTION ROLLED BACK for event %s", event_type)
+
+            # ✅ ✅ ✅ AQUÍ SÍ SE GUARDA EL ACTION LOG FAILED (FUERA DEL ATOMIC)
+            if failed_context:
+                trig = failed_context["trig"]
+                exc = failed_context["exception"]
+
+                try:
+                    operation, target_model = self._resolve_operation_and_target_from_trigger(trig)
+
+                    ActionLog.objects.create(
+                        trigger_name=trig.name,
+                        operation=operation,
+                        target_model=target_model,
+                        target_pk=str(instance.pk),
+                        event_type=f"{object_type}.{action}",
+                        signal_timing=signal_timing,
+                        status="failed",
+                        payload={},
+                        result={"error": str(exc)}
+                    )
+                except Exception as log_exc:
+                    logger.exception("⚠️ Error escribiendo ActionLog (failed): %s", log_exc)
+
+            return []
 
         # ------------------------------------------------------------------
         # Recalcular quotes afectadas
@@ -318,6 +455,12 @@ class TriggerEngine:
         if hasattr(instance, "_trigger_fingerprint"):
             delattr(instance, "_trigger_fingerprint")
 
+        # ----------------------------------------------------------------------
+        # 🔄 Anti-Loop cleanup
+        # ----------------------------------------------------------------------
+        if event_key in self._processing_events:
+            self._processing_events.remove(event_key)
+
         return results
 
 
@@ -348,7 +491,7 @@ class TriggerEngine:
 
     def _event_type_matches(self, stored_event, incoming_event: str) -> bool:
         if isinstance(stored_event, dict):
-            obj = stored_event.get("object_type")
+            obj = stored_event.get("object_name")
             act = stored_event.get("action")
             return incoming_event == f"{obj}.{act}"
         if isinstance(stored_event, str):
@@ -366,10 +509,15 @@ class TriggerEngine:
             - custom objects
             - condiciones múltiples
             - logic: AND / OR
+
+        Nuevo formato de condiciones:
+            - Usa source / target en lugar de left / right
+            - Usa field_name en lugar de path
+        Mantiene compatibilidad con el formato viejo (left/right, path).
         """
 
         conditions = trigger.conditions or {"logic": "AND", "items": []}
-        items: List[Dict[str, Any]] = conditions.get("items", [])
+        items: List[Dict[str, Any]] = conditions.get("items", []) or []
         logic = (conditions.get("logic") or "AND").upper()
 
         # ----------------------------------------------------------------------
@@ -383,36 +531,52 @@ class TriggerEngine:
         alias_candidates: Dict[Optional[str], List[Any]] = {}
 
         for alias, conds in alias_groups.items():
+            # alias None → instancia principal
             if alias is None:
                 alias_candidates[alias] = [instance]
                 continue
 
-            # Detectar modelo del lado derecho
-            right_models = [
-                c.get("right", {}).get("object")
-                for c in conds
-                if isinstance(c.get("right", {}), dict)
-                and c["right"].get("type") == "field"
-                and c["right"].get("object")
-            ]
-            model_name = right_models[0] if right_models else None
+            # Detectar modelo del lado "target" (nuevo) o "right" (legacy)
+            target_models = []
+
+            for c in conds:
+                tgt = c.get("target") or c.get("right") or {}
+                if (
+                    isinstance(tgt, dict)
+                    and tgt.get("type") == "field"
+                    and tgt.get("object")
+                ):
+                    target_models.append(tgt.get("object"))
+
+            model_name = target_models[0] if target_models else None
 
             if not model_name:
-                logger.debug("⚠️ Alias '%s' sin modelo detectable en right.object", alias)
+                logger.debug("⚠️ Alias '%s' sin modelo detectable en target.object", alias)
                 return False, {}
 
-            # Filtros: only == conditions
+            # Filtros: sólo condiciones == para resolver el alias
             filters: Dict[str, Any] = {}
 
             for c in conds:
                 if c.get("operator") not in ("==", "="):
                     continue
 
-                left = c.get("left", {})
-                right = c.get("right", {})
-                if right.get("type") == "field" and right.get("object") == model_name:
-                    expected = self._resolve_value_from_reference(left, {None: instance}, instance)
-                    filters[right.get("path")] = expected
+                source_ref = c.get("source") or c.get("left") or {}
+                target_ref = c.get("target") or c.get("right") or {}
+
+                if (
+                    isinstance(target_ref, dict)
+                    and target_ref.get("type") == "field"
+                    and target_ref.get("object") == model_name
+                ):
+                    expected = self._resolve_value_from_reference(
+                        source_ref,
+                        {None: instance},
+                        instance,
+                    )
+                    field_key = target_ref.get("field_name") or target_ref.get("path")
+                    if field_key:
+                        filters[field_key] = expected
 
             # Buscar candidatos
             if self._is_custom_object(model_name):
@@ -444,12 +608,12 @@ class TriggerEngine:
         results = []
 
         for cond in items:
-            left = cond.get("left", {})
-            right = cond.get("right", {})
+            left_ref = cond.get("source") or cond.get("left") or {}
+            right_ref = cond.get("target") or cond.get("right") or {}
             op = cond.get("operator")
 
-            left_val = self._resolve_value_from_reference(left, alias_map, instance)
-            right_val = self._resolve_value_from_reference(right, alias_map, instance)
+            left_val = self._resolve_value_from_reference(left_ref, alias_map, instance)
+            right_val = self._resolve_value_from_reference(right_ref, alias_map, instance)
 
             ok = self._compare(left_val, right_val, op)
             results.append(ok)
@@ -458,7 +622,7 @@ class TriggerEngine:
             if logic == "AND" and not ok:
                 logger.debug(
                     "❌ Condición NO cumple (AND): %s %s %s (resueltos: %s %s %s)",
-                    left, op, right, left_val, op, right_val
+                    left_ref, op, right_ref, left_val, op, right_val
                 )
                 return False, {}
 
@@ -466,11 +630,9 @@ class TriggerEngine:
             if logic == "OR" and ok:
                 logger.debug(
                     "✅ Condición cumple (OR): %s %s %s (resueltos: %s %s %s)",
-                    left, op, right, left_val, op, right_val
+                    left_ref, op, right_ref, left_val, op, right_val
                 )
                 return True, alias_map
-
-            # si OR pero esta individual falla → continuar evaluando
 
         # ----------------------------------------------------------------------
         # 5) Resultado final
@@ -506,7 +668,7 @@ class TriggerEngine:
         # STATIC
         # --------------------------------------------------
         if rtype == "static":
-            return ref.get("data")
+            return ref.get("value")
 
         # --------------------------------------------------
         # DATE → usar _evaluate_date_formula (para condiciones)
@@ -531,7 +693,8 @@ class TriggerEngine:
         # --------------------------------------------------
         if rtype == "field":
             obj_name = ref.get("object")
-            path = ref.get("path")
+            field_name = ref.get("field_name")
+            #path = ref.get("path")
             alias = ref.get("alias")  # Recomendado para custom
 
             # CustomObject
@@ -546,23 +709,23 @@ class TriggerEngine:
                     logger.debug("⚠️ No hay record de CustomObject '%s' en alias_map (alias='%s')", obj_name, alias)
                     return None
 
-                value = self._resolve_custom_field_value(rec, path)
-                logger.debug("📌 Resolviendo CustomObject: %s.%s (alias=%s) => %s", obj_name, path, alias, value)
+                value = self._resolve_custom_field_value(rec, field_name)
+                logger.debug("📌 Resolviendo CustomObject: %s.%s (alias=%s) => %s", obj_name, field_name, alias, value)
                 return value
 
             # Modelo nativo desde alias_map
             if obj_name in alias_map and alias_map[obj_name] is not None:
-                return self._resolve_path(alias_map[obj_name], path)
+                return self._resolve_path(alias_map[obj_name], field_name)
 
             # Modelo nativo = instancia principal
             inst_name = self._normalize_model_name(instance.__class__.__name__)
             if obj_name == inst_name:
-                return self._resolve_path(instance, path)
+                return self._resolve_path(instance, field_name)
 
             # Buscar en otros objetos del contexto
             for rec in alias_map.values():
                 if rec is not None and self._normalize_model_name(rec.__class__.__name__) == obj_name:
-                    return self._resolve_path(rec, path)
+                    return self._resolve_path(rec, field_name)
 
             return None
 
@@ -570,16 +733,16 @@ class TriggerEngine:
         # Sin type (left-like) → relativo al instance
         # --------------------------------------------------
         obj_name = ref.get("object")
-        path = ref.get("path")
-        if obj_name is None and path:
-            return self._resolve_path(instance, path)
+        field_name = ref.get("field_name")
+        if obj_name is None and field_name:
+            return self._resolve_path(instance, field_name)
 
         inst_name = self._normalize_model_name(instance.__class__.__name__)
         if obj_name in (inst_name, instance.__class__.__name__.lower(), None):
-            return self._resolve_path(instance, path)
+            return self._resolve_path(instance, field_name)
 
         if obj_name in alias_map and alias_map[obj_name] is not None:
-            return self._resolve_path(alias_map[obj_name], path)
+            return self._resolve_path(alias_map[obj_name], field_name)
 
         return None
 
@@ -596,6 +759,11 @@ class TriggerEngine:
 
             next_part = parts[idx + 1] if idx + 1 < len(parts) else None
             self._next_custom_field = next_part  # para lookups encadenados
+
+            if part == "id":
+                # Devolver siempre la instancia completa, no el valor del ID
+                self._next_custom_field = None
+                return current
 
             if part.endswith("__c"):
                 current = self._resolve_custom_field_value(current, part)
@@ -737,20 +905,36 @@ class TriggerEngine:
         TODO pasa por aquí:
         - CREATE simple
         - CREATE bulk (con action.filters)
-        - UPDATE simple (SET / UPDATE de un campo)
+        - UPDATE simple (SET / UPDATE de uno o varios campos con value.fields)
         - UPDATE bulk (con target.filters)
         - DELETE simple
         - DELETE bulk (con target.filters)
-        - EMAIL / WEBHOOK
+        - EMAIL / WEBHOOK aun no agregado al trigger
+
+        Cambios:
+        - target puede ser string path o dict (compatibilidad)
+        - UPDATE simple ahora usa siempre value.fields
         """
         results = []
 
         for action in (trigger.actions or []):
             op = (action.get("operation") or "").upper()
-            target = action.get("target") or {}
+            target = action.get("target")
             value_def = action.get("value") or {}
-            action_filters = action.get("filters")  # usado solo en BULK CREATE
-            target_filters = target.get("filters")  # usado en BULK UPDATE / DELETE
+
+            # BULK filters
+            action_filters = action.get("filters")  # usado en BULK CREATE / BULK CLONE
+            target_filters = None
+            if isinstance(target, dict):
+                target_filters = target.get("filters")
+
+            # ==================================================================
+            # 🔁 BULK CLONE (usa action.filters → source_object + items[])
+            # ==================================================================
+            if op == "CLONE" and action_filters:
+                result = self._handle_bulk_clone(action, instance, context)
+                results.append({"action": action, "status": "ok", "result": result})
+                continue
 
             # ==================================================================
             # 🔁 BULK CREATE (usa action.filters → source_object + items[])
@@ -777,14 +961,22 @@ class TriggerEngine:
                 continue
 
             # ==================================================================
-            # 🟩 CREATE SIMPLE (sin filtros, igual que AT-001)
+            # 🟩 CREATE SIMPLE (sin filtros)
             # ==================================================================
             if op == "CREATE":
-                model_name = target.get("object")
+                model_name = None
+
+                if isinstance(target, (str, dict)):
+                    model_name = self._resolve_target_model_name(target)
+
                 if not model_name:
+                    logger.warning(f"⚠️ CREATE: no se pudo resolver modelo para target={target}")
                     continue
 
-                ModelClass = apps.get_model("cpq", self._to_camel_case(model_name))
+                ModelClass = self._get_model_class(model_name)
+                if ModelClass is None:
+                    logger.warning(f"⚠️ CREATE: modelo '{model_name}' no encontrado para target={target}")
+                    continue
 
                 # contexto para resolver fields
                 context["_current_action"] = {
@@ -796,9 +988,13 @@ class TriggerEngine:
                 if not isinstance(fields, dict):
                     fields = {}
 
+                # ✅ 1) Limpiar campos inválidos
+                clean_fields = self._filter_model_fields(ModelClass, fields)
+
+                # ✅ 2) Coercer ForeignKeys solo en campos reales
                 final_fields = {
                     f: self._coerce_fk(ModelClass, f, v, context=context, instance=instance)
-                    for f, v in fields.items()
+                    for f, v in clean_fields.items()
                 }
 
                 created_instance = ModelClass.objects.create(**final_fields)
@@ -815,7 +1011,15 @@ class TriggerEngine:
                 continue
 
             # ==================================================================
-            # 📝 UPDATE SIMPLE (SET) → TODO pasa por _handle_set
+            # 🟩 CLONE SIMPLE (sin filtros)
+            # ==================================================================
+            if op == "CLONE":
+                result = self._handle_clone(action, instance, context)
+                results.append({"action": action, "status": "ok", "result": result})
+                continue
+
+            # ==================================================================
+            # 📝 UPDATE SIMPLE (SET) → ahora siempre con value.fields
             # ==================================================================
             if op == "UPDATE":
                 result = self._handle_set(action, instance, context)
@@ -855,6 +1059,9 @@ class TriggerEngine:
         - Filtra sobre source_object (NO sobre target)
         - Resuelve filtros desde action["filters"]
         - Crea un registro del target por cada source record
+
+        Cambios:
+        - Soporta field_name además de field en los filtros.
         """
         filters = action.get("filters") or {}
         source_model_name = filters.get("source_object")
@@ -867,7 +1074,12 @@ class TriggerEngine:
         if SourceModel is None:
             return {"created": False, "reason": f"Source model '{source_model_name}' not found"}
 
-        target_obj_name = action.get("target", {}).get("object")
+        target_raw = action.get("target")
+        if isinstance(target_raw, str):
+            target_obj_name = self._resolve_target_model_name(target_raw)
+        else:
+            target_obj_name = (target_raw or {}).get("object")
+
         TargetModel = self._get_model_class(target_obj_name)
         if TargetModel is None:
             return {"created": False, "reason": f"Target model '{target_obj_name}' not found"}
@@ -878,9 +1090,12 @@ class TriggerEngine:
         orm_filters = {}
 
         for f in items:
-            field = f.get("field")
+            field = f.get("field_name") or f.get("field")
             op = f.get("operator", "==")
             val_block = f.get("value", {})
+
+            if not field:
+                continue
 
             resolved = self._resolve_value_for_action(val_block, instance, context)
             orm_key = field.replace(".", "__")
@@ -912,7 +1127,7 @@ class TriggerEngine:
         for source_record in qs:
             # EXTENDED CONTEXT: use exact object name for LLM paths
             local_context = dict(context)
-            local_context[source_model_name] = source_record  # CORRECCIÓN CRÍTICA
+            local_context[source_model_name] = source_record
 
             # Store action for FK coercion
             local_context["_current_action"] = {
@@ -923,9 +1138,16 @@ class TriggerEngine:
             # Resolve CREATE fields
             fields = self._resolve_value_for_action(action.get("value", {}), instance, local_context)
 
+            # ✅ LIMPIEZA GLOBAL
+            clean_fields = self._filter_model_fields(TargetModel, fields or {})
+
             final_fields = {}
-            for fname, raw in fields.items():
-                final_fields[fname] = self._coerce_fk(TargetModel, fname, raw, context=local_context, instance=instance)
+            for fname, raw in clean_fields.items():
+                final_fields[fname] = self._coerce_fk(
+                    TargetModel, fname, raw,
+                    context=local_context,
+                    instance=instance
+                )
 
             obj = TargetModel.objects.create(**final_fields)
             created_pks.append(obj.pk)
@@ -946,11 +1168,23 @@ class TriggerEngine:
         """
         UPDATE with filters → Bulk Update.
         Aplica los fields especificados a TODOS los registros que coincidan en el queryset.
-        """
-        target = action.get("target", {})
-        value_def = action.get("value", {})
 
-        model_name = target.get("object")
+        Cambios:
+        - target puede ser string o dict
+        - filtros soportan field_name además de field
+        - value usa siempre value.fields
+        """
+        target = action.get("target") or {}
+        value_def = action.get("value") or {}
+
+        # target puede ser string o dict
+        if isinstance(target, str):
+            model_name = self._resolve_target_model_name(target)
+            filters_list = []
+        else:
+            model_name = target.get("object")
+            filters_list = target.get("filters") or []
+
         if not model_name:
             return {"updated": False, "reason": "object missing in target"}
 
@@ -964,8 +1198,8 @@ class TriggerEngine:
         # ----------------------------------------------------------------------
         orm_filters = {}
 
-        for f in (target.get("filters") or []):
-            field = f.get("field")
+        for f in filters_list:
+            field = f.get("field_name") or f.get("field")
             operator = f.get("operator", "==")
             val_block = f.get("value", {})
 
@@ -1004,12 +1238,12 @@ class TriggerEngine:
             return {"updated": False, "reason": "no records matched"}
 
         # ----------------------------------------------------------------------
-        # 2. Resolver los fields a actualizar
+        # 2. Resolver los fields a actualizar (value.fields)
         # ----------------------------------------------------------------------
         raw_fields = self._resolve_value_for_action(value_def, instance, context)
-        # raw_fields → {'field1': value, 'field2': value2, ...}
+        clean_fields = self._filter_model_fields(ModelClass, raw_fields or {})
 
-        if not raw_fields:
+        if not clean_fields:
             return {"updated": False, "reason": "no resolved fields"}
 
         updated_pks = []
@@ -1018,24 +1252,22 @@ class TriggerEngine:
         # 3. Recorrer cada registro y actualizar uno por uno
         # ----------------------------------------------------------------------
         for obj in rows:
-            for field, new_value in raw_fields.items():
-                # Soporte FK
+            for field, new_value in clean_fields.items():
                 coerced = self._coerce_fk(ModelClass, field, new_value, context=context, instance=obj)
                 setattr(obj, field, coerced)
 
             setattr(obj, "_skip_trigger", True)
-            obj.save(update_fields=list(raw_fields.keys()))
+            obj.save(update_fields=list(clean_fields.keys()))
             delattr(obj, "_skip_trigger")
 
             updated_pks.append(obj.pk)
-            logger.debug(f"🔧 BULK UPDATE updated {model_name}(pk={obj.pk}) fields={raw_fields}")
+            logger.debug(f"🔧 BULK UPDATE updated {model_name}(pk={obj.pk}) fields={clean_fields}")
 
         # ----------------------------------------------------------
         # 🔁 Recalcular quotes afectadas (igual que en DELETE)
         # ----------------------------------------------------------
         from django.apps import apps
 
-        # Si el objeto que se está actualizando es quote_line
         if model_name == "quote_line" and hasattr(ModelClass, "quote_id"):
             unique_quote_ids = set(
                 ModelClass.objects.filter(pk__in=updated_pks).values_list("quote_id", flat=True)
@@ -1071,46 +1303,544 @@ class TriggerEngine:
             "object": model_name,
             "pks": updated_pks
         }
+    
+    def _handle_bulk_clone(self, action, instance, context):
+        """
+        BULK CLONE:
+        ✅ Usa action.filters para buscar source_object
+        ✅ Soporta rutas profundas en target (string path o dict legacy)
+        ✅ Clona cada registro encontrado
+        ✅ Aplica SOLO los overrides definidos en action.value
+        ✅ Omite campos UNIQUE automáticamente
+        ✅ Aplica coerción correcta de ForeignKeys
+        ✅ Recalcula Quote si se clonan QuoteLine
+
+        Cambios:
+        - Soporta field_name además de field en filtros
+        - target puede ser string path o dict
+        """
+
+        filters = action.get("filters") or {}
+        source_model_name = filters.get("source_object")
+        items = filters.get("items", [])
+
+        if not source_model_name:
+            return {"bulk_cloned": False, "reason": "source_object missing in filters"}
+
+        SourceModel = self._get_model_class(source_model_name)
+        if SourceModel is None:
+            return {"bulk_cloned": False, "reason": f"Source model '{source_model_name}' not found"}
+
+        target_raw = action.get("target")
+        if isinstance(target_raw, str):
+            raw_target = target_raw.strip()
+        else:
+            raw_target = (target_raw or {}).get("object")
+
+        if not raw_target:
+            return {"bulk_cloned": False, "reason": "target.object missing"}
+
+        # ----------------------------------------------------------------------
+        # ✅ 1) CONSTRUIR FILTROS ORM PARA EL SOURCE
+        # ----------------------------------------------------------------------
+        orm_filters = {}
+
+        for f in items:
+            field = f.get("field_name") or f.get("field")
+            op = f.get("operator", "==")
+            val_block = f.get("value", {})
+
+            if not field:
+                continue
+
+            resolved = self._resolve_value_for_action(val_block, instance, context)
+            orm_key = field.replace(".", "__")
+
+            if op == "!=":
+                orm_filters[f"{orm_key}__ne"] = resolved
+                continue
+            elif op == ">":
+                orm_key = f"{orm_key}__gt"
+            elif op == "<":
+                orm_key = f"{orm_key}__lt"
+            elif op == ">=":
+                orm_key = f"{orm_key}__gte"
+            elif op == "<=":
+                orm_key = f"{orm_key}__lte"
+            elif op == "contains":
+                orm_key = f"{orm_key}__icontains"
+            elif op == "in":
+                orm_key = f"{orm_key}__in"
+
+            orm_filters[orm_key] = resolved
+
+        queryset = SourceModel.objects.filter(**orm_filters)
+
+        cloned_pks = []
+        warnings = []
+
+        # ----------------------------------------------------------------------
+        # ✅ 2) CLONAR CADA REGISTRO
+        # ----------------------------------------------------------------------
+        for source_record in queryset:
+
+            # ---- Contexto extendido para overrides ----
+            local_context = dict(context)
+            local_context[source_model_name] = source_record
+
+            # ------------------------------------------------------------------
+            # ✅ 3) RESOLVER RUTA PROFUNDA DEL TARGET
+            # ------------------------------------------------------------------
+            path_parts = raw_target.split(".")
+            current = None
+
+            if path_parts[0] == source_model_name:
+                current = source_record
+            elif path_parts[0] in local_context:
+                current = local_context[path_parts[0]]
+
+            from django.db.models import ForeignKey, OneToOneField
+
+            last_model_inst = current
+
+            for part in path_parts[1:]:
+                if current is None:
+                    break
+
+                try:
+                    next_val = getattr(current, part)
+                except Exception:
+                    current = None
+                    break
+
+                is_fk = False
+                try:
+                    field = current.__class__._meta.get_field(part)
+                    if isinstance(field, (ForeignKey, OneToOneField)):
+                        is_fk = True
+                except Exception:
+                    pass
+
+                if is_fk and isinstance(next_val, Model):
+                    last_model_inst = next_val
+
+                current = next_val
+
+            if isinstance(current, Model):
+                source_instance = current
+            elif isinstance(last_model_inst, Model):
+                # ej: opportunity.primary_quote.account.name → usamos Account
+                source_instance = last_model_inst
+            else:
+                warnings.append(
+                    f"⚠️ Skipped BULK CLONE invalid path '{raw_target}' (not a model)"
+                )
+                continue
+
+            TargetModel = source_instance.__class__
+
+            target_obj_name = self._normalize_model_name(TargetModel.__name__)
+
+            local_context["_current_action"] = {
+                "target_object": target_obj_name,
+                "target_model": TargetModel,
+            }
+
+            # ------------------------------------------------------------------
+            # ✅ 4) DETECTAR Y OMITIR CAMPOS UNIQUE
+            # ------------------------------------------------------------------
+            unique_fields = self._detect_unique_clone_fields(TargetModel)
+            if unique_fields:
+                warnings.append(
+                    f"⚠️ Unique fields skipped while cloning {target_obj_name}: "
+                    + ", ".join(unique_fields)
+                )
+
+            # ------------------------------------------------------------------
+            # ✅ 5) COPIAR BASE DE DATOS (SIN PK, M2M NI UNIQUE)
+            # ------------------------------------------------------------------
+            base_data = {
+                f.name: getattr(source_instance, f.name)
+                for f in TargetModel._meta.get_fields()
+                if (
+                    f.concrete
+                    and not f.many_to_many
+                    and not f.primary_key
+                    and not getattr(f, "unique", False)
+                )
+            }
+
+            # ------------------------------------------------------------------
+            # ✅ 6) RESOLVER OVERRIDES
+            # ------------------------------------------------------------------
+            overrides = self._resolve_value_for_action(
+                action.get("value") or {},
+                instance,
+                local_context,
+            ) or {}
+
+            overrides = self._filter_model_fields(TargetModel, overrides)
+
+            final_data = {**base_data, **overrides}
+
+            # ------------------------------------------------------------------
+            # ✅ 7) COERCIÓN DE FOREIGN KEYS
+            # ------------------------------------------------------------------
+            for fname, val in final_data.items():
+                final_data[fname] = self._coerce_fk(
+                    TargetModel,
+                    fname,
+                    val,
+                    context=local_context,
+                    instance=source_instance
+                )
+
+            # ------------------------------------------------------------------
+            # ✅ 8) CREAR REGISTRO CLONADO
+            # ------------------------------------------------------------------
+            new_obj = TargetModel.objects.create(**final_data)
+            cloned_pks.append(new_obj.pk)
+
+            # ------------------------------------------------------------------
+            # ✅ 9) RECALCULAR QUOTE SI SE CLONÓ UNA QUOTELINE
+            # ------------------------------------------------------------------
+            if target_obj_name == "quote_line":
+                self._recalc_quote_after_create_quoteline(new_obj)
+
+        return {
+            "bulk_cloned": True,
+            "count": len(cloned_pks),
+            "object": raw_target,
+            "pks": cloned_pks,
+            "warnings": warnings,
+        }
+
+    
+    def _handle_clone(self, action, instance, context):
+        """
+        CLONE normal con soporte de:
+        ✅ Rutas profundas en target (string path o dict legacy)
+        ✅ Validación de modelo real
+        ✅ Omisión de UNIQUE fields
+        ✅ Warnings controlados
+        """
+
+        target_raw = action.get("target")
+
+        # Nuevo formato: target es string path ("opportunity.primary_quote.account")
+        if isinstance(target_raw, str):
+            full_path = target_raw.strip()
+            if not full_path:
+                return {"cloned": False, "reason": "target path empty"}
+        else:
+            # Legacy dict: { "object": "...", "path": "..." }
+            target_def = target_raw or {}
+            raw_object = target_def.get("object")
+            raw_path = target_def.get("path")
+            if not raw_object:
+                return {"cloned": False, "reason": "target.object missing"}
+            full_path = raw_object if not raw_path else f"{raw_object}.{raw_path}"
+
+        path_parts = full_path.split(".")
+        root_name = path_parts[0]
+        current = None
+
+        # 1️⃣ Context directo
+        if root_name in context and isinstance(context[root_name], Model):
+            current = context[root_name]
+        else:
+            # 2️⃣ Instancia principal
+            inst_name = self._normalize_model_name(instance.__class__.__name__)
+            if root_name == inst_name:
+                current = instance
+
+        # ❌ No se pudo resolver raíz
+        if current is None:
+            return {
+                "cloned": False,
+                "warnings": [
+                    f"⚠️ CLONE root '{root_name}' not found in context or instance"
+                ]
+            }
+
+        from django.db.models import ForeignKey, OneToOneField
+
+        # 🧭 Navegar la ruta restante, recordando el ÚLTIMO modelo de FK
+        last_model_inst = current
+
+        for part in path_parts[1:]:
+            if current is None:
+                break
+
+            try:
+                next_val = getattr(current, part)
+            except Exception:
+                current = None
+                break
+
+            # ¿Es FK / O2O este segmento?
+            is_fk = False
+            try:
+                field = current.__class__._meta.get_field(part)
+                if isinstance(field, (ForeignKey, OneToOneField)):
+                    is_fk = True
+            except Exception:
+                pass
+
+            if is_fk and isinstance(next_val, Model):
+                last_model_inst = next_val
+
+            current = next_val
+
+        # Determinar instancia fuente REAL
+        if isinstance(current, Model):
+            source_instance = current
+        elif isinstance(last_model_inst, Model):
+            # ej: opportunity.primary_quote.account.name → usamos Account
+            source_instance = last_model_inst
+        else:
+            return {
+                "cloned": False,
+                "warnings": [
+                    f"⚠️ Invalid CLONE target path '{full_path}'. "
+                    f"Final resolved value is NOT a model ({type(current).__name__})."
+                ]
+            }
+
+        # ✅ ESTA ES LA INSTANCIA FUENTE REAL
+        ModelClass = source_instance.__class__
+        target_obj_name = self._normalize_model_name(ModelClass.__name__)
+
+        # --------------------------------------------------
+        # ✅ 2) DETECTAR CAMPOS UNIQUE OMITIDOS
+        # --------------------------------------------------
+        unique_fields = self._detect_unique_clone_fields(ModelClass)
+
+        warnings = []
+        if unique_fields:
+            warnings.append(
+                f"⚠️ Heads up! Some unique fields were skipped while cloning {target_obj_name}: "
+                + ", ".join(unique_fields)
+            )
+
+        # --------------------------------------------------
+        # ✅ 3) COPIAR TODOS LOS CAMPOS BASE
+        # --------------------------------------------------
+        original_data = {
+            f.name: getattr(source_instance, f.name)
+            for f in ModelClass._meta.get_fields()
+            if (
+                f.concrete
+                and not f.many_to_many
+                and not f.primary_key
+                and not getattr(f, "unique", False)
+            )
+        }
+
+        # --------------------------------------------------
+        # ✅ 4) RESOLVER OVERRIDES
+        # --------------------------------------------------
+        context["_current_action"] = {
+            "target_object": target_obj_name,
+            "target_model": ModelClass,
+        }
+
+        override_fields = self._resolve_value_for_action(
+            action.get("value") or {},
+            instance,
+            context,
+        ) or {}
+
+        override_fields = self._filter_model_fields(ModelClass, override_fields)
+
+        final_data = {**original_data, **override_fields}
+
+        # --------------------------------------------------
+        # ✅ 5) COERCE DE FOREIGN KEYS
+        # --------------------------------------------------
+        for fname, val in final_data.items():
+            final_data[fname] = self._coerce_fk(
+                ModelClass,
+                fname,
+                val,
+                context=context,
+                instance=instance
+            )
+
+        # --------------------------------------------------
+        # ✅ 6) CREAR REGISTRO CLONADO
+        # --------------------------------------------------
+        new_obj = ModelClass.objects.create(**final_data)
+
+        # --------------------------------------------------
+        # ✅ 7) RECALCULAR QUOTE SI APLICA
+        # --------------------------------------------------
+        if target_obj_name == "quote_line":
+            self._recalc_quote_after_create_quoteline(new_obj)
+
+        return {
+            "cloned": True,
+            "object": target_obj_name,
+            "source_pk": source_instance.pk,
+            "new_pk": new_obj.pk,
+            "warnings": warnings,
+        }
 
 
     def _handle_set(self, action, instance, context):
         """
-        Ejecuta una acción SET/UPDATE sobre un campo, incluyendo soporte
-        para campos CustomFields (__c) en cualquier modelo (Account, Quote, etc.)
+        Ejecuta una acción SET/UPDATE sobre uno o varios campos.
+
+        Nuevo comportamiento:
+        - UPDATE simple usa siempre value.fields (uno o varios campos)
+        - Soporta campos nativos y CustomFields (__c)
+        - Mantiene compatibilidad con el formato legacy (value.type + target.path)
         """
         from django.contrib.contenttypes.models import ContentType
 
-        target = action.get("target", {})
-        value_def = action.get("value", {})
+        target_def = action.get("target")
+        value_def = action.get("value") or {}
 
-        target_inst, target_field = self._resolve_target_instance_and_field(target, instance, context)
-        if target_inst is None or not target_field:
-            return {"updated": False, "reason": "no se pudo resolver instancia/field del target"}
+        target_inst, legacy_target_field = self._resolve_target_instance_and_field(
+            target_def,
+            instance,
+            context,
+        )
+        if target_inst is None:
+            return {"updated": False, "reason": "no se pudo resolver instancia del target"}
 
+        # ============================================================
+        # ✅ NUEVO FORMATO: value.fields { "<field_name>": { ... } }
+        # ============================================================
+        if isinstance(value_def.get("fields"), dict) and value_def["fields"]:
+            resolved_fields = self._resolve_value_for_action(value_def, instance, context) or {}
+            if not isinstance(resolved_fields, dict) or not resolved_fields:
+                return {"updated": False, "reason": "no resolved fields"}
+
+            updated_native = []
+            updated_custom = []
+
+            for fname, new_val in resolved_fields.items():
+                field_def = (value_def.get("fields") or {}).get(fname, {}) or {}
+                field_type = field_def.get("type")
+
+                # Bloquear sólo cuando:
+                # - NO es static
+                # - y el valor no se pudo resolver (None)
+                if field_type != "static" and new_val is None:
+                    logger.debug(
+                        f"⚠️ UPDATE skipped field '{fname}' because value is None and type != static"
+                    )
+                    continue
+
+                # 1) Campo __c → CustomFieldValue
+                if fname.endswith("__c"):
+                    try:
+                        ct = ContentType.objects.get_for_model(target_inst.__class__)
+                        model_name = target_inst.__class__.__name__
+
+                        cf = (
+                            CustomField.objects.filter(
+                                name=fname,
+                                object_type__iexact=model_name
+                            ).first()
+                            or CustomField.objects.filter(
+                                name=fname,
+                                custom_object__name__iexact=model_name
+                            ).first()
+                        )
+
+                        if not cf:
+                            logger.warning(f"⚠️ No se encontró CustomField '{fname}' para {model_name}")
+                            continue
+
+                        if target_inst.__class__.__name__ == "CustomRecord":
+                            cfv, created = CustomFieldValue.objects.update_or_create(
+                                field=cf,
+                                record=target_inst,
+                                defaults={"value": str(new_val)},
+                            )
+                        else:
+                            cfv, created = CustomFieldValue.objects.update_or_create(
+                                field=cf,
+                                content_type=ct,
+                                object_id=target_inst.pk,
+                                defaults={"value": str(new_val)},
+                            )
+
+                        logger.debug(
+                            f"🧩 {'CREATED' if created else 'UPDATED'} CustomFieldValue "
+                            f"{model_name}.{fname} = {new_val} (pk={cfv.pk})"
+                        )
+                        updated_custom.append(fname)
+
+                    except Exception as e:
+                        logger.exception(f"❌ Error actualizando CustomFieldValue {fname}: {e}")
+                        continue
+
+                # 2) Campo nativo
+                else:
+                    setattr(target_inst, fname, new_val)
+                    updated_native.append(fname)
+
+            # Guardar nativos en un solo save
+            if updated_native:
+                setattr(target_inst, "_skip_trigger", True)
+                try:
+                    target_inst.save(update_fields=updated_native)
+                finally:
+                    if hasattr(target_inst, "_skip_trigger"):
+                        delattr(target_inst, "_skip_trigger")
+
+                logger.debug(
+                    "📝 UPDATE %s fields %s (pk=%s)",
+                    self._normalize_model_name(target_inst.__class__.__name__),
+                    updated_native,
+                    target_inst.pk,
+                )
+
+            if not updated_native and not updated_custom:
+                return {"updated": False, "reason": "no fields updated"}
+
+            return {
+                "updated": True,
+                "pk": target_inst.pk,
+                "fields": updated_native,
+                "custom_fields": updated_custom,
+            }
+
+        # ============================================================
+        # 🧩 FORMATO LEGACY: value.type + target.path (un solo campo)
+        # ============================================================
+        value_type = (value_def or {}).get("type")
         new_val = self._resolve_value_for_action(value_def, instance, context)
-        if new_val is None:
-            return {"updated": False, "reason": "valor no resuelto o nulo"}
+
+        if not legacy_target_field:
+            return {"updated": False, "reason": "no target field resolved (legacy update)"}
+
+        if value_type != "static" and new_val is None:
+            return {"updated": False, "reason": "valor no resuelto"}
 
         # 1) Campo __c → CustomFieldValue
-        if target_field.endswith("__c"):
+        if legacy_target_field.endswith("__c"):
             try:
                 ct = ContentType.objects.get_for_model(target_inst.__class__)
                 model_name = target_inst.__class__.__name__
 
                 cf = (
                     CustomField.objects.filter(
-                        name=target_field,
+                        name=legacy_target_field,
                         object_type__iexact=model_name
                     ).first()
                     or CustomField.objects.filter(
-                        name=target_field,
+                        name=legacy_target_field,
                         custom_object__name__iexact=model_name
                     ).first()
                 )
 
                 if not cf:
-                    logger.warning(f"⚠️ No se encontró CustomField '{target_field}' para {model_name}")
-                    return {"updated": False, "reason": f"CustomField '{target_field}' no encontrado"}
+                    logger.warning(f"⚠️ No se encontró CustomField '{legacy_target_field}' para {model_name}")
+                    return {"updated": False, "reason": f"CustomField '{legacy_target_field}' no encontrado"}
 
                 if target_inst.__class__.__name__ == "CustomRecord":
                     cfv, created = CustomFieldValue.objects.update_or_create(
@@ -1128,30 +1858,29 @@ class TriggerEngine:
 
                 logger.debug(
                     f"🧩 {'CREATED' if created else 'UPDATED'} CustomFieldValue "
-                    f"{model_name}.{target_field} = {new_val} (pk={cfv.pk})"
+                    f"{model_name}.{legacy_target_field} = {new_val} (pk={cfv.pk})"
                 )
 
-                return {"updated": True, "pk": cfv.pk, "custom_field": target_field}
+                return {"updated": True, "pk": cfv.pk, "custom_field": legacy_target_field}
 
             except Exception as e:
-                logger.exception(f"❌ Error actualizando CustomFieldValue {target_field}: {e}")
+                logger.exception(f"❌ Error actualizando CustomFieldValue {legacy_target_field}: {e}")
                 return {"updated": False, "reason": str(e)}
 
         # 2) Campo nativo
-        setattr(target_inst, target_field, new_val)
+        setattr(target_inst, legacy_target_field, new_val)
 
-        # Evitar loops (para que no vuelva a disparar el trigger)
         setattr(target_inst, "_skip_trigger", True)
         try:
-            target_inst.save(update_fields=[target_field])
+            target_inst.save(update_fields=[legacy_target_field])
         finally:
             if hasattr(target_inst, "_skip_trigger"):
                 delattr(target_inst, "_skip_trigger")
 
         logger.debug(
-            "📝 UPDATE %s.%s = %s (pk=%s)",
+            "📝 UPDATE %s.%s = %s (pk=%s) [LEGACY]",
             self._normalize_model_name(target_inst.__class__.__name__),
-            target_field,
+            legacy_target_field,
             new_val,
             target_inst.pk,
         )
@@ -1324,42 +2053,87 @@ class TriggerEngine:
         - Soporta path="" → usar instancia completa
         - Respeta source_object en bulk
         - Coerce FK correctamente
+        - Nuevo formato:
+            - static.value (en vez de static.data)
+            - field.field_name (acepta path legacy también)
+            - UPDATE simple usa siempre value.fields
+
+        🔥 Mejora:
+        - En value.fields:
+            1) Primero resuelve TODOS los campos cuyo nombre empieza con 'LOOKUP_' y type == 'lookup'
+               y los guarda en un contexto local (local_context).
+            2) Luego, con ese contexto enriquecido, resuelve el resto de los campos (static, field, expression, date, sequence, lookup normal).
+        - Esto hace que expresiones como `DATEADD(LOOKUP_Contract.end_date, 1, 'months')`
+          o fields con object="LOOKUP_Opportunity" siempre tengan el lookup resuelto ANTES.
         """
         if not value_def:
             return None
 
         # ----------------------------------------------------------------------
-        # CASE 1: CREATE → fields{}
+        # CASE 1: CREATE / UPDATE (nuevo) → fields{}
         # ----------------------------------------------------------------------
         if "fields" in value_def:
-            resolved = {}
+            fields_def = value_def.get("fields") or {}
+            resolved: Dict[str, Any] = {}
 
-            for fname, field_def in value_def["fields"].items():
+            # ⚠️ Muy importante: NO mutamos el contexto original, usamos una copia local
+            local_context = dict(context)
+
+            # ==============================================================
+            # PASO 1: Resolver primero TODOS los LOOKUP_* (por nombre de key)
+            # ==============================================================
+            for fname, field_def in fields_def.items():
+                if not isinstance(field_def, dict):
+                    continue
+
+                ftype = field_def.get("type")
+
+                # Solo los que:
+                # - key empieza con LOOKUP_
+                # - y type == 'lookup'
+                if fname.startswith("LOOKUP_") and ftype == "lookup":
+                    lookup_val = self._resolve_lookup(field_def, instance, local_context)
+                    resolved[fname] = lookup_val
+                    # Hacemos disponible el resultado para expresiones y fields posteriores
+                    local_context[fname] = lookup_val
+
+            # ==============================================================
+            # PASO 2: Resolver el resto de campos con el contexto enriquecido
+            # ==============================================================
+
+            for fname, field_def in fields_def.items():
+                # Si ya lo resolvimos en el paso 1 (LOOKUP_*), lo saltamos
+                if fname in resolved or not isinstance(field_def, dict):
+                    continue
+
                 ftype = field_def.get("type")
                 obj = field_def.get("object")
-                path = field_def.get("path", "")
+                path = field_def.get("path")
+                if path is None:
+                    path = field_def.get("field_name", "")
                 alias = field_def.get("alias")
 
                 # STATIC
                 if ftype == "static":
-                    resolved[fname] = field_def.get("data")
+                    resolved[fname] = field_def.get("value", field_def.get("data"))
                     continue
 
                 # FIELD
                 if ftype == "field":
                     base = None
 
-                    # PRIORIDAD ALTA → contexto directo
-                    if obj in context:
-                        base = context[obj]
+                    # PRIORIDAD 1: contexto local (incluye LOOKUP_* resueltos)
+                    if obj in local_context:
+                        base = local_context[obj]
 
-                    # Instancia principal
-                    inst_name = self._normalize_model_name(instance.__class__.__name__)
-                    if base is None and obj == inst_name:
-                        base = instance
+                    # PRIORIDAD 2: instancia principal del evento
+                    if base is None:
+                        inst_name = self._normalize_model_name(instance.__class__.__name__)
+                        if obj == inst_name:
+                            base = instance
 
-                    # path vacío → usar instancia completa del obj
-                    if path == "":
+                    # path vacío o id → devolver instancia completa
+                    if path in ("", "id"):
                         resolved[fname] = base
                         continue
 
@@ -1373,37 +2147,50 @@ class TriggerEngine:
 
                 # EXPRESSION
                 if ftype == "expression":
-                    resolved[fname] = self._evaluate_expression(field_def.get("formula", ""), instance, context)
+                    # 👈 Aquí ya puede usar LOOKUP_* dentro del formula, porque local_context
+                    # ya tiene LOOKUP_Contract, LOOKUP_Opportunity, etc.
+                    resolved[fname] = self._evaluate_expression(
+                        field_def.get("formula", ""),
+                        instance,
+                        local_context,
+                    )
                     continue
 
                 # DATE
                 if ftype == "date":
-                    resolved[fname] = self._evaluate_date_formula(field_def.get("formula", ""), instance, context)
+                    resolved[fname] = self._evaluate_date_formula(
+                        field_def.get("formula", ""),
+                        instance,
+                        local_context,
+                    )
                     continue
 
-                # ✅ SEQUENCE (NEXT_SEQUENCE)
+                # SEQUENCE (NEXT_SEQUENCE)
                 if ftype == "sequence":
                     resolved[fname] = self._resolve_sequence(field_def)
                     continue
 
-                # ✅ LOOKUP (FK SEARCH BY FILTER)
+                # LOOKUP normal (para campos "product", "account", etc. que usan lookup pero
+                # no son aliases tipo LOOKUP_*)
                 if ftype == "lookup":
-                    resolved[fname] = self._resolve_lookup(field_def, instance, context)
+                    resolved[fname] = self._resolve_lookup(field_def, instance, local_context)
                     continue
 
             return resolved
 
         # ----------------------------------------------------------------------
-        # CASE 2: UPDATE / DELETE → simple value.type
+        # CASE 2: LEGACY simple value.type (UPDATE/DELETE antiguos)
         # ----------------------------------------------------------------------
         ftype = value_def.get("type")
 
         if ftype == "static":
-            return value_def.get("data")
+            return value_def.get("value", value_def.get("data"))
 
         if ftype == "field":
             obj = value_def.get("object")
-            path = value_def.get("path", "")
+            path = value_def.get("path")
+            if path is None:
+                path = value_def.get("field_name", "")
 
             # ✅ 1) PRIORIDAD: CONTEXT DIRECTO
             if obj in context:
@@ -1432,7 +2219,7 @@ class TriggerEngine:
 
         if ftype == "date":
             return self._evaluate_date_formula(value_def.get("formula", ""), instance, context)
-        
+
         if ftype == "sequence":
             return self._resolve_sequence(value_def)
 
@@ -1559,59 +2346,114 @@ class TriggerEngine:
 
     def _resolve_target_instance_and_field(
         self,
-        target_def: Dict[str, Any],
+        target_def: Any,
         instance: Model,
         context: Dict[Optional[str], Any],
     ) -> Tuple[Optional[Model], Optional[str]]:
+        """
+        Resuelve la instancia objetivo y, opcionalmente, el nombre del campo.
+
+        Nuevo comportamiento (alineado con tus reglas de target):
+
+        - target puede ser string path ("opportunity.primary_quote.account.name")
+          o dict {object, path}
+        - Siempre intentamos llegar al ÚLTIMO objeto navegable por FK.
+        - Si el último segmento es un campo normal:
+            - Se usa el ÚLTIMO objeto FK como target_inst
+            - El campo final se IGNORA para el flujo nuevo (value.fields)
+        - Para el formato legacy (value.type + target.path sin FKs), se mantiene:
+            - ej: object="quote", path="name" → target_inst=quote, field="name"
+        """
         if not target_def:
             return None, None
 
-        obj_name = (target_def.get("object") or "").strip()
-        path = (target_def.get("path") or "").strip()
+        # Normalizamos a (obj_name, path)
+        if isinstance(target_def, str):
+            raw = target_def.strip()
+            if not raw:
+                return None, None
+            parts = raw.split(".")
+            obj_name = parts[0]
+            path = ".".join(parts[1:]) if len(parts) > 1 else ""
+        else:
+            obj_name = (target_def.get("object") or "").strip()
+            path = (target_def.get("path") or "").strip()
 
-        if not obj_name or not path:
+        if not obj_name:
             return None, None
 
         # Punto de inicio
         inst = None
 
+        # 1) Contexto (alias / LOOKUP_ / etc.)
         if obj_name in context and isinstance(context[obj_name], Model):
             inst = context[obj_name]
 
+        # 2) Instancia principal
         if inst is None:
             inst_name = self._normalize_model_name(instance.__class__.__name__)
             if obj_name in (inst_name, instance.__class__.__name__.lower()):
                 inst = instance
 
+        # 3) Buscar en otros objetos del contexto por tipo
         if inst is None:
             for rec in context.values():
                 if isinstance(rec, Model) and self._normalize_model_name(rec.__class__.__name__) == obj_name:
                     inst = rec
                     break
 
+        # Fallback: instancia principal
         if inst is None:
             inst = instance
 
+        # Sin path → target es el propio objeto
+        if not path:
+            return inst, None
+
         parts = path.split(".")
-        *leading, last = parts
 
         current = inst
-        for seg in leading:
+        last_model_inst: Optional[Model] = inst
+
+        from django.db.models import ForeignKey, OneToOneField
+
+        for seg in parts:
             if current is None:
                 break
-            current = self._resolve_path(current, seg)
 
-        if current is None or not isinstance(current, Model):
-            return None, None
+            # Navegación usando la misma lógica de _resolve_path
+            next_val = self._resolve_path(current, seg)
 
-        if last.endswith("__c") and len(parts) > 1:
-            prev_seg = leading[-1] if leading else None
-            if prev_seg and prev_seg.endswith("__c"):
-                resolved_obj = self._resolve_path(inst, ".".join(leading))
-                if resolved_obj is not None:
-                    return resolved_obj, last
+            # ¿Este segmento es un FK / O2O en el modelo actual?
+            is_fk = False
+            try:
+                field = current.__class__._meta.get_field(seg)
+                if isinstance(field, (ForeignKey, OneToOneField)):
+                    is_fk = True
+            except Exception:
+                pass
 
-        return current, last
+            if is_fk and isinstance(next_val, Model):
+                last_model_inst = next_val
+
+            current = next_val
+
+        # Caso 1: terminamos exactamente en un modelo → ese es el objeto target
+        if isinstance(current, Model):
+            return current, None
+
+        # Caso 2: no es modelo, pero sí pasamos por al menos un FK
+        # Ej: opportunity.primary_quote.account.name → current = "Jahir", last_model_inst = Account
+        if isinstance(last_model_inst, Model) and last_model_inst is not inst:
+            return last_model_inst, None
+
+        # Caso 3 (LEGACY): no había FKs, o todo era campos normales
+        # ej: object="quote", path="name" → queremos quote.name
+        last_seg = parts[-1]
+        if isinstance(inst, Model):
+            return inst, last_seg
+
+        return None, None
     
     def _evaluate_expression(self, formula: str, instance: Model, context: Dict[str, Any]):
         """
@@ -1644,7 +2486,7 @@ class TriggerEngine:
             val = self._normalize_value(raw_val)
 
             if val is None:
-                return "0"
+                return "None"
 
             if isinstance(val, Decimal):
                 return str(float(val))
@@ -1887,6 +2729,24 @@ class TriggerEngine:
         obj = parts[0].strip()
         path = parts[1].strip()
 
+        # 🔥 Si es ".id" → no usar resolve_path, devolver instancia completa
+        if path == "id":
+            # contexto
+            if obj in context and isinstance(context[obj], Model):
+                return context[obj]
+
+            # instancia principal
+            inst_name = self._normalize_model_name(instance.__class__.__name__)
+            if obj == inst_name:
+                return instance
+
+            # otros objetos en el contexto
+            for cand in context.values():
+                if isinstance(cand, Model) and self._normalize_model_name(cand.__class__.__name__) == obj:
+                    return cand
+
+            return None
+
         # Buscar en el contexto (alias)
         if obj in context and isinstance(context[obj], Model):
             return self._resolve_path(context[obj], path)
@@ -1924,24 +2784,20 @@ class TriggerEngine:
             if isinstance(value, RelatedModel):
                 return value
 
-            # 2) Si es ID → convertir
+            # 2) Si es instancia de otro modelo → inválido
+            if isinstance(value, Model):
+                return None  # evitar error silencioso
+
+            # 3) Si es ID → convertir
             if isinstance(value, (int, str)):
                 try:
                     return RelatedModel.objects.get(pk=value)
                 except RelatedModel.DoesNotExist:
                     return None
 
-            # 3) Si value es None pero tenemos contexto
-            if value is None and instance is not None:
-                inst_name = self._normalize_model_name(instance.__class__.__name__)
-                if inst_name == self._normalize_model_name(RelatedModel.__name__):
-                    return instance
-
-            # 4) Si value es None y hay alias en context
-            if value is None and context:
-                for cand in context.values():
-                    if isinstance(cand, RelatedModel):
-                        return cand
+            # ✅ 4) Si value es None → NO intentar inferir nada
+            if value is None:
+                return None
 
         except Exception:
             pass
@@ -2142,10 +2998,13 @@ class TriggerEngine:
             "where": {
                 "logic": "AND",
                 "items": [
-                    { "field": "name", "operator": "==", "value": {...} }
+                    { "field_name": "name", "operator": "==", "value": {...} }
                 ]
             }
         }
+
+        Cambios:
+        - Usa field_name (nuevo) pero soporta field (legacy)
         """
 
         model_name = lookup_def.get("model")
@@ -2164,10 +3023,9 @@ class TriggerEngine:
         items = where.get("items") or []
 
         orm_filters = {}
-        q_objects = []
 
         for cond in items:
-            field = cond.get("field")
+            field = cond.get("field_name") or cond.get("field")
             operator = cond.get("operator", "==")
             val_block = cond.get("value", {})
 
@@ -2250,6 +3108,118 @@ class TriggerEngine:
         finally:
             if hasattr(q, "_skip_trigger"):
                 delattr(q, "_skip_trigger")
+
+    def _resolve_operation_and_target_from_trigger(self, trig):
+        actions = trig.actions or []
+
+        if not isinstance(actions, list) or not actions:
+            return "UNKNOWN", "UNKNOWN"
+
+        first_action = actions[0]
+
+        operation = (first_action.get("operation") or "UNKNOWN").upper()
+
+        raw_target = first_action.get("target")
+        if raw_target is None:
+            target_model = "UNKNOWN"
+        elif isinstance(raw_target, dict):
+            target_model = (raw_target.get("object") or "UNKNOWN")
+        else:
+            target_model = self._resolve_target_model_name(raw_target) or "UNKNOWN"
+
+        return operation, target_model
+
+    
+    def _filter_model_fields(self, ModelClass, data: dict):
+        """
+        Remove all keys that are NOT real Django model fields.
+        This automatically removes all LOOKUP_* and any hallucinated keys.
+        """
+        if not isinstance(data, dict):
+            return {}
+
+        real_fields = {
+            f.name for f in ModelClass._meta.get_fields()
+            if f.concrete and not f.many_to_many
+        }
+
+        clean = {}
+        for k, v in data.items():
+            if k in real_fields:
+                clean[k] = v
+
+        return clean
+    
+    def _resolve_target_model_name(self, raw_target: Any) -> Optional[str]:
+        """
+        Dado un target (string path o dict), devuelve el nombre normalizado
+        del modelo FINAL al que apunta el path.
+
+        Reglas:
+        - Si es dict → usa target["object"]
+        - Si es string:
+            - Empieza desde el primer segmento como modelo raíz
+            - Recorre sólo campos ForeignKey / OneToOne
+            - Si un segmento NO es FK, se detiene y devuelve el último modelo válido
+              (ej: opportunity.primary_quote.account.name → Account)
+        """
+        # Dict legacy: {"object": "opportunity", "path": "..." }
+        if isinstance(raw_target, dict):
+            obj = (raw_target.get("object") or "").strip()
+            return self._normalize_model_name(obj) if obj else None
+
+        # Nada o no string
+        if not isinstance(raw_target, str):
+            return None
+
+        raw = raw_target.strip()
+        if not raw:
+            return None
+
+        parts = raw.split(".")
+        root_name = parts[0]
+
+        # Modelo raíz (event_root)
+        ModelClass = self._get_model_class(root_name)
+        if ModelClass is None:
+            # Fallback: nos quedamos con el último segmento
+            return self._normalize_model_name(parts[-1])
+
+        # Recorremos sólo FKs / O2O
+        from django.db.models import ForeignKey, OneToOneField
+
+        for seg in parts[1:]:
+            try:
+                field = ModelClass._meta.get_field(seg)
+            except Exception:
+                # Segmento desconocido → nos quedamos en el último modelo válido
+                break
+
+            if isinstance(field, (ForeignKey, OneToOneField)):
+                ModelClass = field.related_model
+            else:
+                # Campo normal → dejamos de bajar, usamos el último modelo FK
+                break
+
+        return self._normalize_model_name(ModelClass.__name__)
+    
+    def _detect_unique_clone_fields(self, ModelClass):
+        """
+        Retorna una lista de nombres de campos que son UNIQUE
+        y que por diseño NO deben copiarse en CLONE.
+        """
+        uniques = []
+
+        for f in ModelClass._meta.get_fields():
+            if (
+                f.concrete
+                and not f.many_to_many
+                and not f.primary_key
+                and getattr(f, "unique", False)
+            ):
+                uniques.append(f.name)
+
+        return uniques
 
 # Instancia global del engine
 engine = TriggerEngine()

@@ -2844,6 +2844,8 @@ function renderExclusionRuleDetails(message, rules, read_only=false) {
 function renderActionTriggersDetails(message, action_triggers, read_only=false) {
   let html = "";
 
+  console.log(action_triggers);
+
   if (message) {
     const idx = message.indexOf("action_triggers_details:");
     if (idx !== -1) {
@@ -2924,7 +2926,7 @@ function prettyName(str) {
 function renderEventTypeReadable(ev) {
   if (!ev) return "<em>No event type defined</em>";
 
-  const obj = prettyName(ev.object_type);
+  const obj = prettyName(ev.object_name);
   const action = ev.action === "create" ? "created"
                : ev.action === "update" ? "updated"
                : "deleted";
@@ -2947,7 +2949,7 @@ function renderEventTypeReadable(ev) {
             border-radius:6px;
             display:inline-block;
             ">
-            Runs when <strong>${obj}</strong> is <strong>${action}</strong>
+            Runs when <b>${obj}</b> is <strong>${action}</strong>
           </div>
       </li>
   `;
@@ -2962,8 +2964,8 @@ function renderConditionsReadable(conditions) {
 
   conditions.items.forEach((cond, idx) => {
 
-    const left = buildReadableObjectPath(cond.left);
-    const right = buildReadableObjectPath(cond.right);
+    const source = buildReadableObjectPath(cond.source);
+    const target = buildReadableObjectPath(cond.target);
     const op = operatorColored(cond.operator);
 
     html += `
@@ -2982,7 +2984,7 @@ function renderConditionsReadable(conditions) {
             border-radius:6px;
             display:inline-block;
             ">
-            <strong>If</strong> ${left} ${op} ${right}
+            <strong>If</strong> ${source} ${op} ${target}
           </div>
 
         </div>
@@ -3032,19 +3034,19 @@ ${buildTechnicalCondition(cond)}
 function buildReadableObjectPath(ref) {
   if (!ref) return "";
 
-  if (ref.type === "static") return `"${ref.data}"`;
+  if (ref.type === "static") return `"${ref.value}"`;
 
   // ✅ FIELD
-  if (ref.type === "field" && ref.object && ref.path) {
+  if (ref.type === "field" && ref.object && ref.field_name) {
     const obj = prettyName(ref.object);
-    const path = ref.path.split(".").map(p => prettyName(p)).join(" → ");
+    const path = ref.field_name.split(".").map(p => prettyName(p)).join(" → ");
     return `${obj} → ${path}`;
   }
 
   // ✅ LEFT SIDE
-  if (!ref.type && ref.object && ref.path) {
+  if (!ref.type && ref.object && ref.field_name) {
     const obj = prettyName(ref.object);
-    const path = ref.path.split(".").map(p => prettyName(p)).join(" → ");
+    const path = ref.field_name.split(".").map(p => prettyName(p)).join(" → ");
     return `${obj} → ${path}`;
   }
 
@@ -3066,182 +3068,241 @@ function operatorLabel(op) {
 }
 
 function buildTechnicalCondition(cond) {
-  const left = cond.left?.object && cond.left?.path
-    ? `${cond.left.object}.${cond.left.path}`
-    : cond.left?.path || cond.left?.alias || "<?>";
+  const source = cond.source?.object && cond.source?.field_name
+    ? `${cond.source.object}.${cond.source.field_name}`
+    : cond.source?.field_name || cond.source?.alias || "<?>";
   
-  const right = cond.right?.object && cond.right?.path
-    ? `${cond.right.object}.${cond.right.path}`
-    : cond.right?.data !== undefined
-      ? JSON.stringify(cond.right.data)
-      : cond.right?.alias || "<?>";
+  const target = cond.target?.object && cond.target?.field_name
+    ? `${cond.target.object}.${cond.target.field_name}`
+    : cond.target?.data !== undefined
+      ? JSON.stringify(cond.target.data)
+      : cond.target?.alias || "<?>";
 
-  return `${left} ${cond.operator} ${right}`;
+  return `${source} ${cond.operator} ${target}`;
 }
 
 function renderActionsReadable(actions) {
-  if (!actions || actions.length === 0) return "<em>No actions</em>";
+  if (!actions || actions.length === 0) {
+    return "<em>No actions defined</em>";
+  }
 
-  let html = "<ul>";
+  let html = `<ul style="padding-left:0;">`;
 
   actions.forEach(a => {
+
     const obj = prettyName(a.target.object);
+
+    let pathLabel = "";
+    if (a.target) {
+      pathLabel =
+        " → " +
+        a.target
+          .split(".")
+          .map(p => prettyName(p))
+          .join(" → ");
+    }
 
     const opColor =
       a.operation === "CREATE" ? "#2e7d32" :
       a.operation === "UPDATE" ? "#ef6c00" :
+      a.operation === "CLONE"  ? "#1565c0" :
       "#c62828";
 
     let actionLabel = `
       <div style="
-        padding:6px 10px;
-        background:#f0f0f0;
-        border-radius:6px;
         display:inline-block;
-        margin-bottom:6px;
+        padding:8px 14px;
+        background:#f4f6f8;
+        border-radius:10px;
+        border:1px solid #ddd;
+        margin-bottom:10px;
       ">
-        <span style="color:${opColor}; font-weight:700;">${a.operation}</span>
-        <span style="color:#444;">${obj}</span>
+        <span style="color:${opColor}; font-weight:700; margin-right:6px;">
+          ${a.operation}
+        </span>
+        <span style="color:#333;">
+          ${obj}${pathLabel}
+        </span>
       </div>
     `;
 
-    let fieldsHtml = "";
+    // =========================
+    // ✅ PREFILTER
+    // =========================
+    let preFilterHtml = "";
 
-    // ✅ CREATE (NORMAL & BULK)
-    // ✅ CREATE (NORMAL & BULK)
-    if (a.operation === "CREATE" && a.value?.fields) {
-      for (const [fieldName, fv] of Object.entries(a.value.fields)) {
-        const fieldPretty = prettyName(fieldName);
+    if (a.filters?.items?.length && a.filters.source_object) {
+      preFilterHtml += `
+        <div style="
+          margin-bottom:16px;
+          padding:12px;
+          background:#fafafa;
+          border:1px dashed #ccc;
+          border-radius:10px;
+        ">
+          <div style="font-weight:700; margin-bottom:6px;">
+            🔍 Searching records in <span style="color:#1976d2;">${prettyName(a.filters.source_object)}</span>
+          </div>
+          <ul style="margin-top:6px; padding-left:18px;">
+      `;
 
-        // ✅ STATIC (GRIS)
-        if (fv.type === "static") {
-          fieldsHtml += `
-            <li>
-              ${fieldPretty} 
-              <span class="badge-static">static</span> 
-              = "${fv.data}"
-            </li>
-          `;
-        }
-
-        // ✅ FIELD (VERDE)
-        else if (fv.type === "field") {
-          const path = fv.path ? prettyName(fv.path) : "(self)";
-          fieldsHtml += `
-            <li>
-              ${fieldPretty} 
-              <span class="badge-field">field</span> 
-              = ${prettyName(fv.object)} → ${path}
-            </li>
-          `;
-        }
-
-        // ✅ EXPRESSION (MORADO)
-        else if (fv.type === "expression") {
-          fieldsHtml += `
-            <li>
-              ${fieldPretty}
-              <span class="badge-expression">expression</span>
-              <span class="formula-box">${fv.formula}</span>
-            </li>
-          `;
-        }
-
-        // ✅ DATE (AZUL)
-        else if (fv.type === "date") {
-          fieldsHtml += `
-            <li>
-              ${fieldPretty}
-              <span class="badge-date">date</span>
-              <span class="formula-box">${fv.formula}</span>
-            </li>
-          `;
-        }
-
-        // ✅ SEQUENCE (NARANJA)
-        else if (fv.type === "sequence") {
-          fieldsHtml += `
-            <li>
-              ${fieldPretty}
-              <span class="badge-sequence">sequence</span>
-              = ${fv.prefix || ""}${"0".repeat(fv.padding || 0)}
-            </li>
-          `;
-        }
-
-        // ✅ LOOKUP (AZUL FUERTE)
-        else if (fv.type === "lookup") {
-          fieldsHtml += `
-            <li>
-              ${fieldPretty}
-              <span class="badge-lookup">lookup</span>
-              → ${prettyName(fv.model)}
-            </li>
-          `;
-        }
-      }
-    }
-
-    // ✅ UPDATE
-    else if (a.operation === "UPDATE" && a.value) {
-      const fieldPretty = prettyName(a.target.path);
-
-      if (a.value.type === "field") {
-        const path = a.value.path ? prettyName(a.value.path) : "(self)";
-        fieldsHtml += `<li>${fieldPretty} = ${prettyName(a.value.object)} → ${path}</li>`;
-      }
-
-      else if (a.value.type === "static") {
-        fieldsHtml += `<li>${fieldPretty} = "${a.value.data}"</li>`;
-      }
-
-      else if (a.value.type === "expression") {
-        fieldsHtml += `<li>${fieldPretty} = <code>${a.value.formula}</code></li>`;
-      }
-
-      else if (a.value.type === "date") {
-        fieldsHtml += `<li>${fieldPretty} = <code>${a.value.formula}</code></li>`;
-      }
-    }
-
-    // ✅ DELETE
-    else if (a.operation === "DELETE") {
-      fieldsHtml += `<li>Record will be deleted.</li>`;
-    }
-
-    // ✅ BULK CREATE FILTERS
-    let filterHtml = "";
-    if (a.filters?.items?.length) {
-      filterHtml += `<br><strong>Filters:</strong><ul>`;
       a.filters.items.forEach(f => {
         const left = prettyName(f.field);
         const op = operatorColored(f.operator);
 
         let right = "";
         if (f.value.type === "field") {
-          right = `${prettyName(f.value.object)} → ${prettyName(f.value.path)}`;
+          right = `${prettyName(f.value.object)} → ${prettyName(f.value.field_name)}`;
         } 
+        else if (f.value.type === "expression") {
+          right = `<code>${f.value.formula}</code>`;
+        }
         else {
-          right = JSON.stringify(f.value.data);
+          right = JSON.stringify(f.value.value);
         }
 
-        filterHtml += `<li>${left} ${op} ${right}</li>`;
+        preFilterHtml += `<li>If ${left} ${op} ${right}</li>`;
       });
-      filterHtml += `</ul>`;
+
+      preFilterHtml += `</ul></div>`;
+    }
+
+    // =========================
+    // ✅ NORMAL FIELDS
+    // =========================
+    let fieldsHtml = "";
+
+    if (a.operation != "CLONE" && a.value?.fields) {
+      for (const [fieldName, fv] of Object.entries(a.value.fields)) {
+        const fieldPretty = prettyName(fieldName);
+
+        if (fv.type === "static") {
+          fieldsHtml += `<li>${fieldPretty} <span class="badge-static">static</span> = "${fv.value}"</li>`;
+        }
+        else if (fv.type === "field") {
+          const field_name = fv.field_name ? prettyName(fv.field_name) : "(self)";
+          fieldsHtml += `<li>${fieldPretty} <span class="badge-field">field</span> = ${prettyName(fv.object)} → ${field_name}</li>`;
+        }
+        else if (fv.type === "expression") {
+          fieldsHtml += `<li>${fieldPretty} <span class="badge-expression">expression</span> <span class="formula-box">${fv.formula}</span></li>`;
+        }
+        else if (fv.type === "date") {
+          fieldsHtml += `<li>${fieldPretty} <span class="badge-date">date</span> <span class="formula-box">${fv.formula}</span></li>`;
+        }
+        else if (fv.type === "sequence") {
+          fieldsHtml += `<li>${fieldPretty} <span class="badge-sequence">sequence</span> = ${fv.prefix || ""}${"0".repeat(fv.padding || 0)}</li>`;
+        }
+
+        // ✅ LOOKUP CON DETALLE DEL WHERE ✅✅✅
+        else if (fv.type === "lookup") {
+          const whereLines = (fv.where?.items || []).map(w => {
+            const left = prettyName(w.field_name);
+            const op = operatorColored(w.operator);
+
+            let right = "";
+            if (w.value?.type === "expression") {
+              right = `<code>${w.value.formula}</code>`;
+            } else if (w.value?.type === "field") {
+              right = `${prettyName(w.value.object)} → ${prettyName(w.value.field_name)}`;
+            } else {
+              right = JSON.stringify(w.value?.data);
+            }
+
+            return `<div style="margin-left:16px; font-size:0.85rem; color:#444;">• ${left} ${op} ${right}</div>`;
+          }).join("");
+
+          fieldsHtml += `
+            <li>${fieldPretty}
+              <span class="badge-lookup">lookup</span>
+              → ${prettyName(fv.model)}
+              ${whereLines}
+            </li>`;
+        }
+      }
+    }
+
+    // =========================
+    // ✅ CLONE MODIFIED FIELDS
+    // =========================
+    let cloneFieldsHtml = "";
+
+    if (a.operation === "CLONE" && a.value?.fields && Object.keys(a.value.fields).length) {
+      cloneFieldsHtml += `
+        <div style="
+          margin-top:12px;
+          padding:12px;
+          background:#f8fbff;
+          border:1px solid #d0e2ff;
+          border-radius:10px;
+        ">
+          <div style="font-weight:700; margin-bottom:6px;">
+            ✏️ Modified fields
+          </div>
+          <ul style="padding-left:18px;">
+      `;
+
+      for (const [fname, fv] of Object.entries(a.value.fields)) {
+        const fieldPretty = prettyName(fname);
+
+        if (fv.type === "lookup") {
+          const whereLines = (fv.where?.items || []).map(w => {
+            const left = prettyName(w.field_name);
+            const op = operatorColored(w.operator);
+
+            let right = "";
+            if (w.value?.type === "expression") {
+              right = `<code>${w.value.formula}</code>`;
+            } else if (w.value?.type === "field") {
+              right = `${prettyName(w.value.object)} → ${prettyName(w.value.field_name)}`;
+            } else {
+              right = JSON.stringify(w.value?.value);
+            }
+
+            return `<div style="margin-left:16px; font-size:0.85rem; color:#444;">• ${left} ${op} ${right}</div>`;
+          }).join("");
+
+          cloneFieldsHtml += `
+            <li>${fieldPretty}
+              <span class="badge-lookup">lookup</span>
+              → ${prettyName(fv.model)}
+              ${whereLines}
+            </li>`;
+        }
+
+        else if (fv.type === "field") {
+          cloneFieldsHtml += `<li>${fieldPretty} <span class="badge-field">field</span> = ${prettyName(fv.object)} → ${prettyName(fv.field_name)}</li>`;
+        }
+        else if (fv.type === "static") {
+          cloneFieldsHtml += `<li>${fieldPretty} <span class="badge-static">static</span> = "${fv.value}"</li>`;
+        }
+        else if (fv.type === "expression") {
+          cloneFieldsHtml += `<li>${fieldPretty} <span class="badge-expression">expression</span> <span class="formula-box">${fv.formula}</span></li>`;
+        }
+      }
+
+      cloneFieldsHtml += `</ul></div>`;
     }
 
     const techDetails = JSON.stringify(a, null, 2);
 
     html += `
-      <li style="margin-bottom:20px;">
+      <li style="
+        list-style:none;
+        margin-bottom:26px;
+        padding-bottom:18px;
+        border-bottom:1px solid #eee;
+      ">
+        ${preFilterHtml}
         ${actionLabel}
-        <ul style="margin-left:10px;">${fieldsHtml}</ul>
-        ${filterHtml}
+
+        ${fieldsHtml ? `<ul style="margin-left:12px; margin-top:10px;">${fieldsHtml}</ul>` : ""}
+
+        ${cloneFieldsHtml}
 
         <a href="#"
            onclick="this.nextElementSibling.style.display=
              this.nextElementSibling.style.display==='none'?'block':'none'; return false;"
-           style="font-size:0.85rem; margin-top:6px; display:block;">
+           style="font-size:0.85rem; margin-top:10px; display:block;">
            (Show technical)
         </a>
 
@@ -3253,6 +3314,8 @@ function renderActionsReadable(actions) {
   html += "</ul>";
   return html;
 }
+
+
 
 function renderActionFields(valueDef) {
   if (!valueDef || !valueDef.fields) return "";
@@ -3430,12 +3493,12 @@ function renderActionsBlock(actions) {
 
 function operatorColored(op) {
   const map = {
-    "==": { label: "equals", color: "#0073e6" },
-    "!=": { label: "does not equal", color: "#e63946" },
-    ">":  { label: "is greater than", color: "#8d39e6" },
-    "<":  { label: "is less than", color: "#8d39e6" },
-    ">=": { label: "is greater or equal", color: "#c77d1a" },
-    "<=": { label: "is less or equal", color: "#c77d1a" },
+    "==": { label: "equals (==)", color: "#0073e6" },
+    "!=": { label: "does not equal (!=)", color: "#e63946" },
+    ">":  { label: "is greater than (>)", color: "#8d39e6" },
+    "<":  { label: "is less than (<)", color: "#8d39e6" },
+    ">=": { label: "is greater or equal (>=)", color: "#c77d1a" },
+    "<=": { label: "is less or equal (<=)", color: "#c77d1a" },
     "contains": { label: "contains", color: "#009688" },
     "in": { label: "in", color: "#5c6bc0" },
     "not in": { label: "not in", color: "#5c6bc0" },

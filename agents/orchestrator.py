@@ -178,6 +178,14 @@ def orchestrate_request(user, user_message, session_data):
     messages.append({
         "role": "system",
         "content": f"""
+        CRITICAL CLASSIFICATION RULES (HIGHEST PRIORITY):
+
+        1) DETERMINISTIC PREFIX RULE:
+        If the user message STARTS WITH the exact text:
+        "create action trigger"
+        You MUST ALWAYS return the label:
+        "CreateActionTrigger"
+
         Possible labels:
         - "CreateQuote"
         - "AddProductToQuote"

@@ -257,15 +257,19 @@ def normalize_event_type(evt, available_models):
     if not isinstance(evt, dict):
         return None
 
-    obj = evt.get("object_type")
+    # ✅ Acepta object_type o object_name (compatibilidad total)
+    obj = evt.get("object_name")
     act = (evt.get("action") or "").lower().strip()
 
-    # Accept "created", "updated", "deleted"
     action_map = {
         "created": "create",
         "updated": "update",
         "deleted": "delete",
+        "create": "create",
+        "update": "update",
+        "delete": "delete",
     }
+
     act = action_map.get(act, act)
 
     if obj not in available_models:
@@ -273,23 +277,13 @@ def normalize_event_type(evt, available_models):
     if act not in ["create", "update", "delete"]:
         return None
 
-    return {"object_type": obj, "action": act}
+    return {"object_name": obj, "action": act}
 
 
 # ---------------------------------------------------------
 # ✅ Validate actions list
 # ---------------------------------------------------------
 def actions_are_valid(actions):
-    """
-    VALIDATION RULES (ONLY unified format):
-
-    Supports:
-    ✔ Normal CREATE
-    ✔ Bulk CREATE (filters at action root)
-    ✔ Normal UPDATE
-    ✔ Bulk UPDATE (filters at action root)
-    ✔ DELETE
-    """
     if not isinstance(actions, list) or not actions:
         return False
 
@@ -298,25 +292,23 @@ def actions_are_valid(actions):
             return False
 
         op = (a.get("operation") or "").upper()
-        target = a.get("target", {})
+        target = a.get("target")
         value = a.get("value")
         filters = a.get("filters")
 
-        # All ops require target.object
-        if not target.get("object"):
+        # ✅ target MUST be a string always
+        if not isinstance(target, str) or not target.strip():
             return False
 
         # -------------------------------------------------
         # CREATE
         # -------------------------------------------------
         if op == "CREATE":
-            fields = (value or {}).get("fields")
-
-            # Normal CREATE → no filters allowed
             if not filters:
-                if not isinstance(fields, dict) or not fields:
+                if not isinstance(value, dict):
                     return False
-                if target.get("path") not in (None, ""):
+                fields = value.get("fields")
+                if not isinstance(fields, dict) or not fields:
                     return False
                 return True
 
@@ -326,19 +318,40 @@ def actions_are_valid(actions):
                     return False
                 if not isinstance(filters.get("items"), list):
                     return False
-                if target.get("path") not in (None, ""):
+                if not isinstance(value, dict):
                     return False
+                fields = value.get("fields")
                 if not isinstance(fields, dict) or not fields:
                     return False
                 return True
 
-            return False
+        # -------------------------------------------------
+        # CLONE
+        # -------------------------------------------------
+        if op == "CLONE":
+            if not isinstance(value, dict):
+                return False
+            fields = value.get("fields")
+            if not isinstance(fields, dict):
+                return False
+
+            # Bulk CLONE
+            if filters:
+                if "source_object" not in filters:
+                    return False
+                if not isinstance(filters.get("items"), list):
+                    return False
+
+            return True
 
         # -------------------------------------------------
         # UPDATE
         # -------------------------------------------------
         if op == "UPDATE":
             if not isinstance(value, dict):
+                return False
+            fields = value.get("fields")
+            if not isinstance(fields, dict) or not fields:
                 return False
 
             # Bulk UPDATE
@@ -348,194 +361,27 @@ def actions_are_valid(actions):
                 if not isinstance(filters.get("items"), list):
                     return False
 
-                # Bulk update MUST update exactly one field
-                p = target.get("path")
-                if not isinstance(p, str) or not p.strip():
-                    return False
-
-                return True
-
-            # Normal UPDATE
-            else:
-                p = target.get("path")
-                if not isinstance(p, str) or not p.strip():
-                    return False
-                return True
+            return True
 
         # -------------------------------------------------
         # DELETE
         # -------------------------------------------------
         if op == "DELETE":
-            tfilters = target.get("filters")
-            if not isinstance(tfilters, list):
+            if value is not None:
                 return False
+
+            # Bulk DELETE
+            if filters:
+                if "source_object" not in filters:
+                    return False
+                if not isinstance(filters.get("items"), list):
+                    return False
+
             return True
 
         return False
 
     return True
-
-# ---------------------------------------------------------
-# 🔧 Normalizers (mantienen tu formato original)
-# ---------------------------------------------------------
-
-def _normalize_value_block(v):
-    """Normalize a value block for CREATE / UPDATE / DELETE."""
-    if not isinstance(v, dict):
-        return None
-
-    t = v.get("type")
-
-    # Auto-detect expression if no type but formula present
-    if not t and "formula" in v:
-        t = "expression"
-
-    # ✅ SEQUENCE SUPPORT
-    if t == "sequence":
-        return {
-            "type": "sequence",
-            "strategy": v.get("strategy", "auto"),
-            "model": v.get("model"),
-            "field": v.get("field"),
-            "prefix": v.get("prefix"),
-            "padding": v.get("padding", 0),
-            "scope": v.get("scope"),
-        }
-
-    out = {"type": t}
-
-    if t == "field":
-        out["object"] = v.get("object")
-        out["path"] = v.get("path")
-
-    elif t == "static":
-        out["data"] = v.get("data")
-
-    elif t in ["expression", "date"]:
-        out["formula"] = v.get("formula")
-
-    elif t == "lookup":
-        return {
-            "type": "lookup",
-            "model": v.get("model"),
-            "where": v.get("where"),
-        }
-
-    return out
-
-
-def normalize_conditions(cond):
-    """
-    Normalize conditions into strict format:
-
-    {
-        "logic": "AND" | "OR",
-        "items": [
-            {
-                "alias": null | "xx",
-                "left": { "object": ..., "path": ... },
-                "operator": "...",
-                "right": { "type": ..., ... }
-            }
-        ]
-    }
-    """
-    if not cond:
-        return None
-
-    items = []
-    for c in cond.get("items", []):
-        items.append({
-            "alias": c.get("alias"),
-            "left": {
-                "object": c.get("left", {}).get("object"),
-                "path": c.get("left", {}).get("path"),
-            },
-            "operator": c.get("operator"),
-            "right": _normalize_value_block(c.get("right")),
-        })
-
-    return {
-        "logic": cond.get("logic", "AND"),
-        "items": items,
-    }
-
-
-def normalize_create_value_fields(fields, schema):
-    """
-    Normalize CREATE.value.fields WITHOUT changing the structure.
-
-    Each field entry is normalized depending on type:
-      - field → resolve path against declared `object`
-      - static / expression / date → preserved
-    """
-    if not isinstance(fields, dict):
-        return {}
-
-    out = {}
-
-    for fname, spec in fields.items():
-        if not isinstance(spec, dict):
-            continue
-
-        t = spec.get("type")
-
-        if t == "field":
-            obj = spec.get("object")
-            path = spec.get("path")
-
-            if isinstance(obj, str) and isinstance(path, str):
-                norm_path = resolve_path_from_root(schema, obj, path)
-            else:
-                norm_path = _fix_double_c(path)
-
-            out[fname] = {
-                "type": "field",
-                "object": obj,
-                "path": norm_path,
-            }
-
-        elif t == "static":
-            out[fname] = {
-                "type": "static",
-                "data": spec.get("data"),
-            }
-
-        elif t == "expression":
-            out[fname] = {
-                "type": "expression",
-                "formula": spec.get("formula"),
-            }
-        
-        elif t == "sequence":
-            out[fname] = {
-                "type": "sequence",
-                "strategy": spec.get("strategy", "auto"),
-                "model": spec.get("model"),
-                "field": spec.get("field"),
-                "prefix": spec.get("prefix"),
-                "padding": spec.get("padding", 0),
-                "scope": spec.get("scope"),
-            }
-
-        elif t == "date":
-            out[fname] = {
-                "type": "date",
-                "formula": spec.get("formula"),
-            }
-
-        elif t == "lookup":
-            out[fname] = {
-                "type": "lookup",
-                "model": spec.get("model"),
-                "where": spec.get("where"),
-            }
-
-        else:
-            # Skip unknown types to avoid {"type": None}
-            continue
-
-    return out
 
 
 def _normalize_filter_list(filters, target_obj, schema):
@@ -569,19 +415,7 @@ def _normalize_filter_list(filters, target_obj, schema):
         field_path = _fix_double_c(field_path)
 
         # Normalize value
-        val = _normalize_value_block(raw_value)
-        if not isinstance(val, dict):
-            continue
-
-        # ❌ Filters DO NOT allow expression, date, lookup or sequence
-        if val.get("type") in ["expression", "date", "sequence", "lookup"]:
-            continue
-
-        # Normalize field refs in value
-        if val.get("type") == "field":
-            vobj = val.get("object")
-            vpth = resolve_path_from_root(schema, vobj, val.get("path"))
-            val["path"] = _fix_double_c(vpth)
+        val = raw_value
 
         clean.append({
             "field": field_path,
@@ -593,112 +427,69 @@ def _normalize_filter_list(filters, target_obj, schema):
 
 
 def normalize_actions(actions, schema):
-    """
-    NEW unified normalizer for all operations:
-      - Bulk CREATE → action["filters"]
-      - Bulk UPDATE → action["filters"]
-      - Normal CREATE / UPDATE → no filters
-      - DELETE → unchanged
-    """
     out = []
 
     for a in actions or []:
         op = (a.get("operation") or "").upper()
-        tgt = a.get("target", {}) or {}
+        target_raw = a.get("target")
         filters = a.get("filters")
-        target_obj = tgt.get("object")
-        target_path = tgt.get("path")
+        value = a.get("value")
 
-        # --------------------------------------------------
-        # CREATE
-        # --------------------------------------------------
-        if op == "CREATE":
-            fields = a.get("value", {}).get("fields", {})
-            fields_norm = normalize_create_value_fields(fields, schema)
+        # ✅ Normalize target with schema
+        if isinstance(target_raw, str) and "." in target_raw:
+            root = target_raw.split(".")[0]
+            tail = ".".join(target_raw.split(".")[1:])
+            tail = resolve_path_from_root(schema, root, tail)
+            target = f"{root}.{tail}"
+        else:
+            target = target_raw
 
-            # Bulk CREATE
-            if filters:
-                cleaned_items = _normalize_filter_list(
-                    filters.get("items", []),
-                    filters.get("source_object"),
-                    schema,
-                )
-
-                out.append({
-                    "operation": "CREATE",
-                    "filters": {
-                        "source_object": filters.get("source_object"),
-                        "items": cleaned_items,
-                    },
-                    "target": {"object": target_obj, "path": None},
-                    "value": {"fields": fields_norm},
-                })
-                continue
-
-            # Normal CREATE
-            out.append({
-                "operation": "CREATE",
-                "filters": None,
-                "target": {"object": target_obj, "path": None},
-                "value": {"fields": fields_norm},
-            })
-            continue
-
-        # --------------------------------------------------
-        # UPDATE
-        # --------------------------------------------------
-        if op == "UPDATE":
-            val = a.get("value") or {}
-
-            # Bulk UPDATE
-            if filters:
-                cleaned_items = _normalize_filter_list(
-                    filters.get("items", []),
-                    filters.get("source_object"),
-                    schema,
-                )
-
-                out.append({
-                    "operation": "UPDATE",
-                    "filters": {
-                        "source_object": filters.get("source_object"),
-                        "items": cleaned_items,
-                    },
-                    "target": {
-                        "object": target_obj,
-                        "path": _fix_double_c(target_path),
-                    },
-                    "value": _normalize_value_block(val),
-                })
-                continue
-
-            # Normal UPDATE
-            out.append({
-                "operation": "UPDATE",
-                "filters": None,
-                "target": {
-                    "object": target_obj,
-                    "path": _fix_double_c(target_path),
-                },
-                "value": _normalize_value_block(val),
-            })
-            continue
-
-        # --------------------------------------------------
+        # -----------------------------
         # DELETE
-        # --------------------------------------------------
+        # -----------------------------
         if op == "DELETE":
-            tfilters = tgt.get("filters", [])
-            cleaned_filters = _normalize_filter_list(tfilters, target_obj, schema)
-
-            out.append({
+            item = {
                 "operation": "DELETE",
-                "target": {
-                    "object": target_obj,
-                    "filters": cleaned_filters,
-                },
+                "target": target,
                 "value": None,
-            })
+                "filters": None,
+            }
+
+            if filters:
+                cleaned_items = _normalize_filter_list(
+                    filters.get("items", []),
+                    filters.get("source_object"),
+                    schema,
+                )
+
+                item["filters"] = {
+                    "source_object": filters.get("source_object"),
+                    "items": cleaned_items,
+                }
+
+            out.append(item)
+            continue
+        else:
+            item = {
+                "operation": op,
+                "target": target,
+                "value": value,
+                "filters": None,
+            }
+
+            if filters:
+                cleaned_items = _normalize_filter_list(
+                    filters.get("items", []),
+                    filters.get("source_object"),
+                    schema,
+                )
+
+                item["filters"] = {
+                    "source_object": filters.get("source_object"),
+                    "items": cleaned_items,
+                }
+
+            out.append(item)
             continue
 
     return out
@@ -718,108 +509,730 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
     # -----------------------------------------------------
     system_prompt = f"""
     You are a CPQ Action Trigger extraction engine.
-
-    ⚠️ STRICT REQUIREMENTS — DO NOT VIOLATE ⚠️
-    - You MUST output EXACTLY the JSON structure below (no extra keys, no different formats).
-    - Do NOT invent operators.
-    - Do NOT invent action types.
-    - If the user does NOT specify conditions, set "conditions": null.
+    Your job is to interpret the user's message and transform it into a JSON for an action trigger.
 
     ========================================================
-    ✅ FIELD NAME SELECTION (VERY IMPORTANT)
+    ✅ REQUIRED KEYS
     ========================================================
-    - Pick object names ONLY from AVAILABLE_MODELS.
-    - Pick field names ONLY from MODEL_SCHEMA below.
-    - NEVER guess names outside MODEL_SCHEMA.
-    - Custom objects and custom fields ALWAYS end with __c, but users often omit that suffix.
-    → If any object or field matches a custom one, ALWAYS return it with the __c suffix.
+    You MUST output:
+
+    {{
+        "create_action_trigger": [
+            {{
+            "data": {{
+                "description": "...",
+                "event_type": {{
+                    "object_name": "...",
+                    "action": "..." 
+                }},
+                "conditions": null OR {{...}},
+                "actions": [ ... ],
+                "active": true,
+                "priority": null
+            }},
+            "completed": true|false
+            }}
+        ],
+        "agent_message": "...",
+        "summary": "..."
+    }}
 
     ========================================================
-    ✅ ALLOWED event_type.action
+    ✅ DESCRIPTION
     ========================================================
-    "create", "update", "delete" ONLY.
+    - Create a short description that explains what the action trigger will do,
+        based on the event type (when <event_type.object_name> is <event_type.action>), 
+        then explain the conditions, and finally what will be executed (actions).
+
+    ========================================================
+    ✅ EVENT TYPE
+    ========================================================
+    - event_type.object_name: Name of the object that will trigger the Action Trigger
+    - event_type.action: Database action performed on the object_name.
+
+    Rules:
+    - Only the following are available: "CREATE", "UPDATE", "DELETE"
+    - Do not write: BULK CREATE, BULK CLONE, BULK UPDATE, or BULK DELETE.
 
     ========================================================
     ✅ CONDITIONS FORMAT (STRICT)
     ========================================================
+    The structure of an Action Trigger is:
+
+    Event: Represents the event that will trigger the Action Trigger. 
+        When a database object is created, updated, or deleted, that event becomes the EVENT ROOT OBJECT, 
+        because it is the main object that triggers the Action Trigger. It can also be called the main instance.
+
+    Conditions (HERE): Conditions are used to evaluate fields of the EVENT ROOT OBJECT and they ONLY evaluate 
+        conditions from the EVENT ROOT OBJECT. They are not related to BULK OPERATIONS nor to LOOKUP. 
+        They serve only as a bridge to decide whether the conditions are met and, if so, proceed to the 
+        next step to execute actions in the database (CREATE, UPDATE, or DELETE). Conditions are a series of 
+        logical operations where, if the result is TRUE, it means something must be executed in the database; 
+        if the result is FALSE, it means we do not want to execute anything when this EVENT ROOT OBJECT triggers 
+        a change in the database.
+
+    Actions: The actions that will be executed in the database: CREATE, CLONE, UPDATE, BULK OPERATIONS, or DELETE.
     Conditions MUST be:
 
     {{
-    "logic": "AND" | "OR",
-    "items": [
-        {{
-        "alias": null | "xx",
-        "left": {{
-            "object": "<event_root_object>",
-            "path": "<field_or_relation_path>"
-        }},
-        "operator": "== | != | > | < | >= | <= | contains | in | not in",
-        "right": {{ <VALUE FORMAT> }}
-        }}
-    ]
+        "logic": "AND" | "OR",
+        "items": [
+            {{
+                "source": {{
+                    "object": "<ALWAYS_event_root_object>",
+                    "field_name": "<field_or_relation_path>"
+                }},
+                "operator": "== | != | > | < | >= | <= | contains | in | not in",
+                "target": {{ <VALUE FORMAT> }},
+                "alias": null | "xx"
+            }}
+        ]
     }}
 
-    RULES:
-    - left.object MUST be event_type.object_type.
-    - Relationship navigation MUST use MODEL_SCHEMA paths.
-    - Alias is ONLY allowed for repeated field-to-field comparisons referencing THE SAME external object.
+    🚨 HARD CONDITIONS RULE — EVENT ROOT ONLY (MAY COEXIST WITH FILTERS)
+
+    IMPORTANT:
+    - "conditions" and "filters" MAY appear together in the same action trigger.
+    - They DO NOT serve the same purpose:
+
+    ✅ "conditions" = logical gate to decide IF the trigger runs at all  
+        (only for the EVENT ROOT OBJECT)
+
+    ✅ "filters"   = record selection for BULK operations  
+        (only for the SOURCE_OBJECT)
+
+    STRICT RULES FOR "conditions":
+
+    1) "conditions" MAY ONLY reference the EVENT ROOT OBJECT.
+
+    - source.object MUST ALWAYS be exactly event_type.object_name
+    - You MUST NEVER use any other object name here.
+    - You MUST NOT use source_object, bulk iteration models, or any external model.
+
+    2) "conditions" MUST NEVER be used to simulate BULK filters.
+
+    ❌ INVALID USAGE EXAMPLES (DO NOT DO THIS):
+
+    - Using "quote_line" as source.object:
+        {{
+        "source": {{
+            "object": "quote_line",
+            "field_name": "is_subscription"
+        }},
+        ...
+        }}
+
+    - Using any object that is NOT the event_type.object_name:
+        {{
+        "source": {{
+            "object": "product",
+            "field_name": "family"
+        }},
+        ...
+        }}
+
+    In these cases, if the user is describing "all quote lines…" or similar,
+    the logic MUST go into "filters" (bulk selection), NOT into "conditions".
+
+    3) VALID COEXISTENCE WITH FILTERS:
+
+    It IS valid to have:
+
+    - "conditions" checking only the EVENT ROOT, e.g.:
+        IF opportunity.stage == "closedwon"
+
+    - AND "filters" selecting BULK records, e.g.:
+        all quote_line WHERE quote == opportunity.primary_quote
+
+    Example in natural language:
+    "create an action trigger for when opportunity is updated,
+        if opportunity stage == 'closedwon',
+        then bulk create all quote lines where quote = opportunity.primary_quote"
+
+    → "conditions" checks ONLY opportunity (the event root)  
+    → "filters" searches quote_line records  
+    → This is VALID and EXPECTED.
+
+    4) If the user does NOT specify any condition based on the event root object,
+    you MUST set:
+    "conditions": null
 
     ========================================================
-    ✅ VALUE FORMAT (STRICT)
+    ✅ VALUE FORMAT (STRICT) (VALUE_FORMAT)
     ========================================================
     Valid formats:
 
     STATIC:
     {{
-    "type": "static",
-    "data": <LITERAL>
+        "type": "static",
+        "value": <LITERAL>
+    }}
+
+    NULL STATIC:
+    {{
+        "type": "static",
+        "value": null
     }}
 
     FIELD:
     {{
-    "type": "field",
-    "object": "<object>",
-    "path": "<path>"
+        "type": "field",
+        "object": "<object>",
+        "field_name": "<path>"
     }}
 
     EXPRESSION:
     {{
-    "type": "expression",
-    "formula": "<FORMULA>"
+        "type": "expression",
+        "formula": "<formula>"
     }}
 
     DATE:
     {{
-    "type": "date",
-    "formula": "<DATE_EXPRESSION>"
+        "type": "date",
+        "formula": "<date_expression>"
     }}
 
-    LOOKUP (FOR FK SEARCH BY FILTER):
+
+    ========================================================
+    ✅ ACTIONS
+    ========================================================
+
+    "actions": [
+        {{
+            "operation": "CREATE | CLONE | UPDATE | DELETE",
+            "filters": {{ <FILTERS_FORMAT> }},
+            "target": "<object_and_path>",
+            "value": {{
+                "fields": {{
+                    "<FIELD_NAME>": {{
+                        "type": "<VALUE_FORMAT>"
+                    }}
+                }}
+            }}
+        }}
+    ]
+
+    - operation: The operation to be executed in the database. Valid operations are: CREATE, CLONE, UPDATE, DELETE.
+        - CREATE: Create one or multiple records in a database model.
+        - CLONE: Clone one or multiple records into a database model.
+        - UPDATE: Update one or multiple records of a database model.
+        - DELETE: Delete one or multiple records of a database model.
+    - filters: Search filters in case the user requires them (check the filter format later).
+    - target: Object and path that the engine must follow to determine which object the operation should be applied to.
+
+        Target rules:
+        - The target MUST ALWAYS start with the instance object that triggered the Action Trigger, meaning the event_type.object_name.
+        - The target MAY be a path only if the user explicitly specifies it in the message, and it MUST ALWAYS start with the instance object that triggers the Action Trigger (event_type.object_name).
+        - When the target is a path, you must always follow this format: <event_root>.<field>.<field>.<field>
+        - When the target is a path, it can only be built using foreign key relationships of an object based on the <MODEL_SCHEMA>.
+
+        !!IMPORTANT!!:
+        - The target is the object that will be affected by the operation. 
+            If it is a path, it cannot end with a regular field; it must always end with a Foreign Key field, 
+            because this value does not represent the field that will be affected, but rather the path that 
+            will be followed to obtain the object that will be affected.
+
+    Target output example:
+        User message: [...], then clone opportunity primary quote [...]
+        Output: target: "opportunity.primary_quote" (according to the <MODEL_SCHEMA>)
+
+    Example 2:
+        User message: [...], then create an Account where [...]
+        Output: target: "account"
+
+    - Value: Inside value there will be the key FIELDS, which will contain the following depending on the operation type used:
+
+        - When operation = CREATE: value.fields will contain the fields of the object to be created (the keys MUST ALWAYS reference the <MODEL_SCHEMA>).
+        - When operation = CLONE: value.fields will contain the fields that the user wants to be different when cloning one or multiple records.
+        - When operation = UPDATE: value.fields will contain the fields that should be updated in the record (the keys MUST ALWAYS reference the <MODEL_SCHEMA>).
+        - When operation = DELETE: value = null.
+
+    The value inside each field must follow the VALUE_FORMAT.
+
+    ========================================================
+    🚨 ABSOLUTE OPERATION TYPE ENFORCEMENT (CRITICAL)
+    ========================================================
+
+    The ONLY valid values for "operation" are:
+
+    - "CREATE"
+    - "UPDATE"
+    - "CLONE"
+    - "DELETE"
+
+    🚫 It is STRICTLY FORBIDDEN to generate any other value for "operation", including but NOT limited to:
+
+    - "LOOKUP"
+    - "BULK"
+    - "BULK_CREATE"
+    - "BULK_CLONE"
+    - "BULK_UPDATE"
+    - "BULK_DELETE"
+    - "FETCH"
+    - "GET"
+    - Any invented action
+
+    ⚠️ LOOKUP is NOT an operation.
+    ⚠️ LOOKUP is NOT an action.
+    ⚠️ LOOKUP must NEVER appear as a standalone object inside the "actions" array.
+
+    ✅ LOOKUP is ONLY allowed as:
+
+    "value": {{
+        "fields": {{
+            "LOOKUP_<MODEL>": {{ ... }}
+        }}
+    }}
+
+    ========================================================
+    ✅ FILTERS FORMAT | BULK OPERATIONS (FILTERS_FORMAT)
+    ========================================================
+
+    All operations can be executed for a single record or for bulk records: BULK CREATE, BULK UPDATE, BULK CLONE, and BULK DELETE.
+    - To perform BULK operations, the following flow is used:
+    source_object → filters → target → value.fields  
+    (Only when the operation is DELETE, value = null)
+    - filters define WHICH records are selected
+    - value.fields define WHAT is created/updated/cloned
+    - conditions MUST NEVER be used as record selectors for BULK operations
+
+    Filters are used to perform bulk operations and help the engine find multiple records of an object in the database. 
+    Filters are typically used when you want to iterate over a set of records that are NOT related to the instance object that triggered the Action Trigger.
+
+    Output format for filters:
+    "filters": {{
+        "source_object": "<source_model>",
+        "items": [
+            {{
+                "field": "<path_in_source>",
+                "operator": "== | != | > | < | >= | <= | contains | in",
+                "value": {{ <VALUE_FORMAT> }}
+            }}
+        ]
+    }}
+
+    ❌ FORBIDDEN:
+
+    - Using conditions to simulate BULK selection logic
+    - Using conditions to filter records that belong to source_object
+    - Mixing conditions logic with filters logic
+
+    ✅ conditions = EVENT activation  
+    ✅ filters = BULK record selection
+
+    ====================================================================
+    ✅ LOOKUP AS A TEMPORARY OBJECT NODE
+    ====================================================================
+
+    When the user wants to perform a LOOKUP search, that is, 
+    to extract data from a record that is external to the current context, 
+    we use the TEMPORAL LOOKUP NODE. This is an object that ALWAYS exists inside actions.value.fields 
+    and is used to bring a specific record into the context so that its data can 
+    be used to assign values to other fields, either as a foreign key or simply by extracting its data.
+
+    You will know when the user wants to use a TEMPORAL LOOKUP NODE because there are only two ways to invoke it:
+
+    1. The value of a field is a LOOKUP search:
+    <MODEL_FIELD> = <OBJECT_TO_LOOKUP> where <OBJECT_TO_LOOKUP_FIELD> = <ANY_VALUE>
+
+    This means the user wants to use the LOOKUP search as a foreign key, so you must first generate the lookup node and then assign the value.
+
+    2. The user specifies a LOOKUP search first and then extracts a value from the temporal node to assign it to a field:
+    lookup <OBJECT_TO_LOOKUP> where <OBJECT_TO_LOOKUP_FIELD> = <ANY_VALUE>, then use that record to set <MODEL_FIELD> = <OBJECT_TO_LOOKUP>.<ANY_FIELD_FROM_OBJECT_TO_LOOKUP>
+
+    In this case, the user wants you to first generate the temporal node (the lookup), and then use that node to extract the value of a field and assign it to the target object's field where the operation will be applied.
+
+
+    Rules:
+    - LOOKUP creates a TEMPORARY OBJECT NODE inside actions.value.fields
+    - The node is NOT a model. It is NOT a real database object.
+    - The node is a TEMPORARY DATA SOURCE for the execution of the current action.
+
+    --------------------------------------------------------
+    RULE 1 — LOOKUP DECLARATION
+    --------------------------------------------------------
+
+    ALL LOOKUPS MUST:
+
+    - Be declared ONLY inside:
+    actions.value.fields
+
+    - Use a TEMPORARY ALIAS name:
+    LOOKUP_<MODEL>
+
+    - ALWAYS define:
+    "value": {{
+        "fields": {{
+            "LOOKUP_<MODEL>": {{
+                "type": "lookup",
+                "model": "<REAL_MODEL_FROM_SCHEMA>",
+                where: {{ ... }}
+            }}
+        }}
+    }}
+
+    A LOOKUP MUST ALWAYS be nested inside:
+
+    "value": {{
+        "fields": {{ <HERE> }}
+    }}
+
+    It is STRICTLY FORBIDDEN for a LOOKUP to appear:
+
+    - As a standalone action
+    - As an object inside the actions list
+    - As a sibling of "operation"
+    - As an independent JSON block
+
+    --------------------------------------------------------
+    ✅ 🚨 LOOKUP.where FORMAT (STRICT — ENGINE COMPATIBLE)
+    --------------------------------------------------------
+
+    The internal engine ONLY accepts the following format for LOOKUP.where:
+
+    VALID FORMAT:
+
+    "where": {{
+        "logic": "AND" | "OR",
+        "items": [
+            {{
+                "field_name": "<field_path_on_model>",
+                "operator": "== | != | > | < | >= | <= | contains | in",
+                "value": {{ <value_format> }}
+            }}
+        ]
+    }}
+
+    EXAMPLES:
+    --------------------------------------------------------
+    ✅ LOOKUP AS A FOREIGN KEY VALUE
+    --------------------------------------------------------
+
+    When the user wants to use the temporary LOOKUP node as a Foreign Key, you must generate the NODE and assign to the field the name of the NODE using the value type field, for example:
+
+    User message:
+    create an action trigger for when <OBJECT_EXAMPLE_1> is updated, then clone that record but modify:
+    <FIELD_FOREIGN_KEY> = <OBJECT_TO_LOOKUP> where <FIELD_EXAMPLE_1> = <VALUE>
+
+    Output must be:
+
+    "value": {{
+        "fields": {{
+            "LOOKUP_<OBJECT_TO_LOOKUP>": {{
+                "type": "lookup",
+                "model": "<OBJECT_TO_LOOKUP>",
+                "where": {{
+                    "logic": "AND",
+                    "items": [
+                        {{
+                            "field": "<FIELD_EXAMPLE_1>",
+                            "operator": "==",
+                            "value": {{
+                                <VALUE>
+                            }}
+                        }}
+                    ]
+                }}
+            }},
+            "<FIELD_FOREIGN_KEY>": {{
+                "type": "field",
+                "object": "LOOKUP_<OBJECT_TO_LOOKUP>",
+                "field_name": "id"
+            }}
+        }}
+    }}
+
+    In this way, we tell the engine that it must use the id of the LOOKUP record that was found.
+
+    🚨 FK + LOOKUP STRICT RULE
+
+    If a target field is a Foreign Key:
+
+    - The value MUST NOT come from:
+    - static
+    - expression
+    - date
+    - lookup directly
+
+    - The ONLY allowed format is:
+
     {{
-        "type": "lookup",
-        "model": "<target_model>",
-        "where": {{
-            "logic": "AND" | "OR",
+        "type": "field",
+        "object": "LOOKUP_<MODEL>",
+        "field_name": "id"
+    }}
+
+    Any other format for FK assignment using LOOKUP is STRICTLY INVALID.
+
+    --------------------------------------------------------
+    ✅ LOOKUP AS ANY OTHER VALUE
+    --------------------------------------------------------
+
+    For any other value obtained from the LOOKUP NODE, we follow the same logic. The user can operate on the value using any of the <VALUE_FORMAT> types, for example:
+
+    User message:
+    create an action trigger for when <OBJECT_EXAMPLE_2> is created, then clone that record but modify:
+    find the <OBJECT_LOOKUP> record where <EXAMPLE_FIELD> equals <ANY_VALUE>, then take that record and set <EXAMPLE_FIELD_2> to lookup <OBJECT_LOOKUP>.<EXAMPLE_FIELD_3> + 1 year.
+
+    Output must be:
+
+    "value": {{
+        "fields": {{
+            "LOOKUP_<OBJECT_LOOKUP>": {{
+                "type": "lookup",
+                "model": "<OBJECT_LOOKUP>",
+                "where": {{
+                    "logic": "AND",
+                    "items": [
+                        {{
+                            "field": "<EXAMPLE_FIELD>",
+                            "operator": "==",
+                            "value": {{
+                                <ANY_VALUE>
+                            }}
+                        }}
+                    ]
+                }}
+            }},
+            "<EXAMPLE_FIELD_2>": {{
+                "type": "expression",
+                "formula": "<OBJECT_LOOKUP>.<EXAMPLE_FIELD_3> + 1 year"
+            }}
+        }}
+    }}
+
+    🚨 LOOKUP EXECUTION ORDER (MANDATORY)
+
+    When a LOOKUP is required:
+
+    1. The LOOKUP_<MODEL> node MUST be declared FIRST inside value.fields.
+    2. The consuming FIELD that references LOOKUP_<MODEL> MUST appear AFTER it.
+    3. The LLM MUST NEVER assign a LOOKUP node after a consuming field.
+
+    Invalid order = Engine execution error.
+
+    🚨 LOOKUP CAN NEVER BE A FINAL FIELD VALUE
+
+    The following output is STRICTLY FORBIDDEN:
+
+    {{
+        "<any_field>": {{
+            "type": "lookup",
+            "model": "...",
+            "where": {{ ... }}
+        }}
+    }}
+
+    LOOKUP is NOT a value.
+    LOOKUP is a TEMPORARY DATA NODE ONLY.
+
+    Any LOOKUP must ALWAYS be followed by a field reference using:
+
+    {{
+        "type": "field",
+        "object": "LOOKUP_<MODEL>",
+        "field_name": "id" | "<any_field>"
+    }}
+
+    If a LOOKUP node exists but is NOT consumed by a FIELD → the output is INVALID.
+
+    You MUST NEVER assign "type": "lookup" directly to a business field
+    such as "product", "account", "quote", etc.
+
+    ✅ INSTEAD, you MUST:
+
+    1) Declare a TEMPORARY LOOKUP NODE inside value.fields:
+        "LOOKUP_<MODEL>": {{
+            "type": "lookup",
+            "model": "<REAL_MODEL>",
+            "where": {{ ... }}
+        }}
+
+    2) Consume that node using a FIELD reference that points to the LOOKUP node:
+        "<FOREIGN_KEY_FIELD>": {{
+            "type": "field",
+            "object": "LOOKUP_<MODEL>",
+            "field_name": "id"
+        }}
+
+    ========================================================
+    ✅ BULK + LOOKUP COEXISTENCE RULES (CRITICAL)
+    ========================================================
+
+    Using BULK operations does NOT forbid the use of LOOKUP.
+
+    However, LOOKUP usage is ONLY valid when the requested value CANNOT be resolved from:
+
+    - the source_object
+    - the event root object
+    - or any of their reachable relations
+
+    --------------------------------------------------------
+
+    ✅ SOURCE OBJECT AS DEFAULT CONTEXT
+
+    When filters.source_object is present:
+
+    - value.fields is evaluated inside an implicit loop:
+    FOR EACH record in filters.source_object
+
+    - This means that source_object becomes the DEFAULT data context for value.fields, but data from the EVENT ROOT can also be used.
+
+    - Any value that can be obtained from source_object or its reachable relations
+    MUST be referenced directly using:
+
+    {{
+        "type": "field",
+        "object": "<source_object>",
+        "field_name": "<field_or_empty>"
+    }}
+
+    --------------------------------------------------------
+
+    🚨 STRICT LOOKUP DECISION RULE
+
+    - If the user explicitly references data that belongs to:
+    • source_object
+    • event root
+    • or their reachable relations
+    → LOOKUP is STRICTLY FORBIDDEN.
+
+    - If the user explicitly references data that belongs to:
+    • a different model NOT reachable from source_object or event root
+    → LOOKUP is MANDATORY.
+
+    --------------------------------------------------------
+
+    ✅ VALID BULK + LOOKUP COMBINATION EXAMPLE (CONCEPTUAL)
+
+    - Values coming from source_object → use FIELD
+    - Values coming from unrelated records → use LOOKUP
+
+    🚨 LOOKUP ACTION PROHIBITION (FINAL GUARD)
+
+    It is STRICTLY FORBIDDEN for LOOKUP to appear in ANY of the following locations:
+
+    - As an "operation" value
+    - As an object inside the "actions" array
+    - As a standalone JSON block
+    - As a sibling of "operation"
+    - As a top-level instruction
+
+    LOOKUP ONLY exists inside:
+
+    actions[i].value.fields.LOOKUP_<MODEL>
+
+    ========================================================
+    ✅ CLONE OPERATION (NORMAL & BULK)
+    ========================================================
+
+    When the user explicitly says:
+    - "clone"
+    - "duplicate"
+    - "copy this record"
+    - "make a copy"
+
+    You MUST generate: clone operation
+
+    When generating a CLONE action, the source record to be cloned is always resolved from the CURRENT EVENT INSTANCE or from the SOURCE_OBJECT (for BULK CLONE) and their reachable relations.
+
+    Therefore:
+
+    - The target MUST ALWAYS begin with the ROOT MODEL of the instance that triggered the event (event root), or with the source_object in BULK operations.
+    - From that root, the path may be extended to point to a related instance.
+
+    Rules:
+
+    - If the user wants to clone the SAME instance that triggered the action or the source_object, then the target must contain ONLY the ROOT MODEL or the SOURCE OBJECT.
+    (Conceptual example: if the root is <ROOT_OBJECT>, then: target: "<ROOT_OBJECT>".  
+    But if it is a bulk clone, then: target: "<SOURCE_OBJECT>")
+
+    - If the user wants to clone a DIFFERENT instance, this is only valid if that instance is reachable from the ROOT MODEL or from the source_object through a chain of relations.
+    In such cases, the target must be built as a relation chain starting from the root.
+    (Conceptual example: target: "<ROOT_OBJECT>.<RELATION_1>.<RELATION_2>")
+
+    - It is NOT allowed to define a target that does not originate from the ROOT MODEL of the event or from the source_object.
+    - All logic defining WHICH instance is being cloned MUST live EXCLUSIVELY inside target.
+    - The engine will automatically navigate this path at runtime.
+    - The LLM MUST NOT flatten or truncate the path.
+    - The LLM MUST NOT move the path into value.fields.
+    - The LLM MUST NOT replace the root object with the final model.
+    - Only override fields explicitly requested.
+    - CLONE is NOT UPDATE.
+    - CLONE always creates new records.
+    - NEVER manually copy all fields.
+    - NEVER guess a different root object.
+    - NEVER remove intermediate relationship levels from the path.
+
+
+    FINAL FORMAT:
+
+    {{
+        "operation": "CLONE",
+        "filters": {{
+            "source_object": "<SOURCE_MODEL>",
             "items": [
             {{
-                "field": "<field_name>",
-                "operator": "== | != | > | < | >= | <= | contains | in | not in",
-                "value": {{ <VALUE FORMAT> }}
+                "field": "<path_in_source>",
+                "operator": "...",
+                "value": {{ ... }}
+            }}
+            ]
+        }} | null (for symple clone),
+        "target": "<object_and_path>",
+        "value": {{
+            "fields": {{
+            "<ONLY overridden fields>": {{ <VALUE FORMAT> }}
+            }}
+        }}
+    }}
+
+    ========================================================
+    ✅ DELETE RULES
+    ========================================================
+    DELETE MUST be:
+
+    {{
+        "operation": "DELETE",
+        "target": {{
+            "object": "<object_to_delete>",
+            "filters": [
+            {{
+                "field": "<field_path>",
+                "operator": "...",
+                "value": {{ ... }}
             }}
             ]
         }}
     }}
 
-    STRICT RULES:
-    - LOOKUP is ONLY allowed for FK target fields
-    - LOOKUP MUST return a FULL OBJECT (not an ID)
-    - LOOKUP where MUST contain at least ONE condition
-    - Multiple conditions must use logic AND or OR
-    - If lookup value requires CONCAT, +, or functions → MUST use type="expression"
-    - NEVER use multiple duplicated keys to represent multiple conditions
-    - NEVER mix lookup with static, expression or sequence
-    
-    SEQUENCE (FOR AUTO NUMBERING):
+    ========================================================
+    🔥 GENERAL RULES FOR THE JSON STRUCTURE
+    ========================================================
+
+    1. FOREIGN KEYS (FK)
+    - Check FK using MODEL_SCHEMA[target]["relations"].
+    - If field is FK:
+    → MUST use: {{ "type": "field", "object": "<obj>", "path": "<path_or_empty>" }}
+    - NEVER use static/expression/date/raw IDs for FK fields.
+    - FK values MUST come from:
+        • source_object (bulk loop instance)
+        • reachable relations via MODEL_SCHEMA
+        • alias defined in conditions
+
+    2. Value Sources in VALUE.FIELDS:
+    - All value.fields MUST come from:
+            • source_object
+            • relations reachable from source_object
+            • static/expression/date ONLY if the target field is NOT an FK
+    - Do NOT reference unrelated objects unless they are reachable or used in filters.
+    - source_object is the DEFAULT data root.
+
+    ========================================================
+    ✅ SEQUENCE (FOR AUTO NUMBERING) (STRICT)
+    ========================================================
+
     {{
         "type": "sequence",
         "strategy": "auto" | "id_based" | "max_plus_one" | "scoped_max_plus_one",
@@ -834,9 +1247,57 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
     - SEQUENCE is ONLY allowed for NON-FK scalar fields
     - NEVER use type="expression" for sequences
 
+    ========================================================
+    ✅ SEQUENCE RULES (AUTO NUMBERING)
+    ========================================================
+
+    When the user says ANY of the following:
+
+    - "next sequence"
+    - "next number"
+    - "next quote number"
+    - "auto increment name"
+    - "next folio"
+    - "next code"
+
+    You MUST generate:
+
+    {{
+        "type": "sequence",
+        "strategy": "auto",
+        "model": "<target_model>",
+        "field": "<field_name>",
+        "prefix": "<PREFIX>",
+        "padding": <INTEGER>
+    }}
+
+    EXAMPLES:
+
+    Quote name:
+    "name": {{
+        "type": "sequence",
+        "strategy": "auto",
+        "model": "quote",
+        "field": "name",
+        "prefix": "Q-",
+        "padding": 5
+    }}
+
+    Purchase request:
+        "name": {{
+        "type": "sequence",
+        "strategy": "auto",
+        "model": "purchase_request",
+        "field": "name",
+        "prefix": "PR-",
+        "padding": 5
+    }}
+
+    Rules:
+    - ALWAYS use prefix "Q-" for quote names
 
     ========================================================
-    DATE FUNCTION RULES (STRICT)
+    ✅ DATE FUNCTION RULES (STRICT)
     ========================================================
 
     ⚠️ DATEADD MUST ALWAYS BE USED AS AN EXPRESSION ⚠️
@@ -866,134 +1327,6 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
     If the formula contains functions → use EXPRESSION instead.
 
     ========================================================
-    ✅ CREATE ACTION RULES (NORMAL CREATE — NO FILTERS)
-    ========================================================
-    "target.path" MUST be null or omitted.
-
-    CREATE MUST be:
-
-    {{
-    "operation": "CREATE",
-    "target": {{ "object": "<object_to_create>" }},
-    "value": {{
-        "fields": {{
-        "<field_name>": {{ <VALUE BLOCK> }}
-        }}
-    }}
-    }}
-
-    ⇨ NEVER output create: {{ "value": {{ "type": "...", ... }} }}
-    ⇨ ALWAYS use value.fields.
-
-    ========================================================
-    ✅ BULK CREATE (STRICT)
-    ========================================================
-    Bulk CREATE MUST be:
-
-    {{
-    "operation": "CREATE",
-    "filters": {{
-        "source_object": "<SOURCE_MODEL>",
-        "items": [
-        {{
-            "field": "<path_in_source>",
-            "operator": "...",
-            "value": {{ ... }}
-        }}
-        ]
-    }},
-    "target": {{ "object": "<TARGET_MODEL>" }},
-    "value": {{
-        "fields": {{ ... }}
-    }}
-    }}
-
-    RULES:
-    - filters MUST be at top-level of action.
-    - NEVER place filters inside target.
-    - For each matched source row → one new record is created.
-
-    ========================================================
-    ✅ UPDATE RULES (NORMAL & BULK)
-    ========================================================
-    NORMAL UPDATE:
-    {{
-        "operation": "UPDATE",
-        "target": {{ "object": "<event_root>", "path": "<field>" }},
-        "value": {{ <VALUE FORMAT> }}
-    }}
-
-    BULK UPDATE:
-    {{
-        "operation": "UPDATE",
-        "filters": {{
-            "source_object": "<SOURCE_MODEL>",
-            "items": [ ... ]
-        }},
-        "target": {{ "object": "<TARGET_MODEL>", "path": "<field>" }},
-        "value": {{ <VALUE FORMAT> }}
-    }}
-
-    RULES:
-    - NEVER use target.path = null in UPDATE.
-    - Bulk update MUST update exactly ONE field.
-
-    ========================================================
-    🔥 BULK CREATE — ULTRA COMPACT STRICT RULES
-    ========================================================
-
-    1️⃣ FOREIGN KEYS (FK)
-    - Check FK using MODEL_SCHEMA[target]["relations"].
-    - If field is FK:
-    → MUST use: {{ "type": "field", "object": "<obj>", "path": "<path_or_empty>" }}
-    - NEVER use static/expression/date/raw IDs for FK fields.
-    - FK values MUST come from:
-    • source_object (bulk loop instance)
-    • reachable relations via MODEL_SCHEMA
-    • alias defined in conditions
-
-    2️⃣ EMPTY PATH ("path": "")
-    - Means: “use the FULL INSTANCE of the referenced object.”
-    - ONLY allowed when:
-    • target field is FK
-    • referenced object exists in context (source_object, filter object, alias)
-    - NOT allowed for scalar fields, filters, UPDATE targets, or unrelated objects.
-    - If unsure, use normal path (e.g. "quote", "product", "id").
-
-    3️⃣ BULK CREATE VALUE SOURCING
-    - Bulk CREATE uses: source_object → filters → target → value.fields.
-    - All value.fields MUST come from:
-    • source_object
-    • relations reachable from source_object
-    • static/expression/date ONLY if target field is NOT FK.
-    - Do NOT reference unrelated objects unless reachable or used in filters.
-    - source_object is the DEFAULT data root.
-
-    ========================================================
-    END
-    ========================================================
-
-
-    ========================================================
-    ✅ DELETE RULES
-    ========================================================
-    DELETE MUST be:
-
-    {{
-    "operation": "DELETE",
-    "target": {{
-        "object": "<object_to_delete>",
-        "filters": [
-        {{
-            "field": "<field_path>",
-            "operator": "...",
-            "value": {{ ... }}
-        }}
-        ]
-    }}
-    }}
-
-    ========================================================
     ✅ EXPRESSION RULES
     ========================================================
     Expression formulas may include:
@@ -1014,77 +1347,21 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
     - "$" → discount_amount + discount_type="amount"
     - ALWAYS generate TWO updates.
 
-    ========================================================
-    ✅ SEQUENCE RULES (AUTO NUMBERING)
-    ========================================================
 
-    When the user says ANY of the following:
-
-    - "next sequence"
-    - "next number"
-    - "next quote number"
-    - "auto increment name"
-    - "next folio"
-    - "next code"
-
-    You MUST generate:
-
-    {{
-    "type": "sequence",
-    "strategy": "auto",
-    "model": "<target_model>",
-    "field": "<field_name>",
-    "prefix": "<PREFIX>",
-    "padding": <INTEGER>
-    }}
-
-    EXAMPLES:
-
-    Quote name:
-    "name": {{
-    "type": "sequence",
-    "strategy": "auto",
-    "model": "quote",
-    "field": "name",
-    "prefix": "Q-",
-    "padding": 5
-    }}
-
-    Purchase request:
-    "name": {{
-    "type": "sequence",
-    "strategy": "auto",
-    "model": "purchase_request",
-    "field": "name",
-    "prefix": "PR-",
-    "padding": 5
-    }}
-
-    Rules:
-    - ALWAYS use prefix "Q-" for quote names
+    ⚠️ STRICT REQUIREMENTS — DO NOT VIOLATE ⚠️
+    - You MUST output EXACTLY the JSON structure above (no extra keys, no different formats).
+    - Do NOT invent operators.
+    - Do NOT invent action types.
+    - If the user does NOT specify conditions, set "conditions": null.
 
     ========================================================
-    ✅ REQUIRED KEYS
+    ✅ FIELD NAME SELECTION (VERY IMPORTANT)
     ========================================================
-    You MUST output:
-
-    {{
-    "create_action_trigger": [
-        {{
-        "data": {{
-            "description": "...",
-            "event_type": {{ "object_type": "...", "action": "..." }},
-            "conditions": null OR {{...}},
-            "actions": [ ... ],
-            "active": true,
-            "priority": null
-        }},
-        "completed": true|false
-        }}
-    ],
-    "agent_message": "...",
-    "summary": "..."
-    }}
+    - Pick object names ONLY from AVAILABLE_MODELS.
+    - Pick field names ONLY from MODEL_SCHEMA below.
+    - NEVER guess names outside MODEL_SCHEMA.
+    - Custom objects and custom fields ALWAYS end with __c, but users often omit that suffix.
+    → If any object or field matches a custom one, ALWAYS return it with the __c suffix.
 
     ========================================================
     MODEL_SCHEMA (use these field & model names ONLY)
@@ -1095,6 +1372,11 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
     AVAILABLE_MODELS
     ========================================================
     {json.dumps(available_models, indent=2)}
+
+    ========================================================
+    COMPLETED
+    ========================================================
+    ALWAYS returd "completed" key as TRUE, ALWAYS.
     """
 
     # -----------------------------------------------------
@@ -1121,7 +1403,7 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_prompt},
         ],
-        temperature=0.2,
+        temperature=0,
     )
 
     raw = response.choices[0].message.content.strip()
@@ -1155,7 +1437,8 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
                 # Normalize event type
                 evt = normalize_event_type(data.get("event_type"), available_models)
                 data["event_type"] = evt
-                event_root = evt["object_type"] if evt else None
+
+                event_root = evt["object_name"] if evt else None
 
                 # -----------------------------------------
                 # CONDITIONS SANITIZING
@@ -1164,153 +1447,12 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
                 if cond and isinstance(cond, dict):
                     items = cond.get("items") or []
 
-                    for item in items:
-                        # enforce left.object
-                        if event_root and item.get("left"):
-                            item["left"]["object"] = event_root
-
-                        # sanitize left.path
-                        lp = item["left"].get("path")
-                        item["left"]["path"] = resolve_path_from_root(
-                            schema, event_root, lp
-                        )
-
-                        # sanitize right.path if field
-                        rgt = item.get("right") or {}
-                        if isinstance(rgt, dict) and rgt.get("path"):
-                            rgt["path"] = _fix_double_c(rgt["path"])
-
-                        # Auto alias for pricingtable__c (optional rule)
-                        if (
-                            rgt.get("type") == "field"
-                            and rgt.get("object") == "pricingtable__c"
-                            and not item.get("alias")
-                        ):
-                            item["alias"] = "pt"
-
                     # remove empty conditions
                     if not items:
                         data["conditions"] = None
-                    else:
-                        cond["items"] = items
-                        data["conditions"] = cond
 
                 else:
                     data["conditions"] = None
-
-                # -----------------------------------------
-                # ACTIONS SANITIZING
-                # -----------------------------------------
-                acts = data.get("actions") or []
-                for a in acts:
-                    op = (a.get("operation") or "").upper()
-                    tgt = a.get("target") or {}
-                    val = a.get("value") or {}
-
-                    # CREATE
-                    if op == "CREATE":
-                        a["target"]["path"] = None
-
-                        fields = val.get("fields", {})
-                        if isinstance(fields, dict):
-                            new_fields = {}
-                            for fname, spec in fields.items():
-                                if not isinstance(spec, dict):
-                                    continue
-
-                                t = spec.get("type")
-                                if t == "field":
-                                    obj = spec.get("object")
-                                    pth = spec.get("path")
-                                    if isinstance(obj, str) and isinstance(pth, str):
-                                        pth = _fix_double_c(pth)
-                                        new_fields[fname] = {
-                                            "type": "field",
-                                            "object": obj,
-                                            "path": pth,
-                                        }
-                                elif t == "static":
-                                    new_fields[fname] = {
-                                        "type": "static",
-                                        "data": spec.get("data"),
-                                    }
-                                elif t == "expression":
-                                    new_fields[fname] = {
-                                        "type": "expression",
-                                        "formula": spec.get("formula"),
-                                    }
-                                elif t == "date":
-                                    new_fields[fname] = {
-                                        "type": "date",
-                                        "formula": spec.get("formula"),
-                                    }
-                                elif t == "sequence":
-                                    new_fields[fname] = {
-                                        "type": "sequence",
-                                        "strategy": spec.get("strategy", "auto"),
-                                        "model": spec.get("model"),
-                                        "field": spec.get("field"),
-                                        "prefix": spec.get("prefix"),
-                                        "padding": spec.get("padding", 0),
-                                        "scope": spec.get("scope"),
-                                    }
-                                elif t == "lookup":
-                                    new_fields[fname] = {
-                                        "type": "lookup",
-                                        "model": spec.get("model"),
-                                        "where": spec.get("where"),
-                                    }
-
-                            a["value"]["fields"] = new_fields
-
-                        # sanitize bulk create filters
-                        if a.get("filters"):
-                            flt = a["filters"]
-                            items = flt.get("items", [])
-                            for f in items:
-                                if f.get("field"):
-                                    f["field"] = _fix_double_c(f["field"])
-                                v = f.get("value")
-                                if isinstance(v, dict) and v.get("path"):
-                                    v["path"] = _fix_double_c(v["path"])
-
-                    # UPDATE
-                    elif op == "UPDATE":
-                        if tgt.get("path"):
-                            tgt["path"] = _fix_double_c(tgt["path"])
-
-                        # sanitize field ref in value
-                        if val.get("type") == "field" and val.get("path"):
-                            val["path"] = _fix_double_c(val["path"])
-
-                        # sanitize bulk update filters
-                        if a.get("filters"):
-                            flt = a["filters"]
-                            items = flt.get("items", [])
-                            for f in items:
-                                if f.get("field"):
-                                    f["field"] = _fix_double_c(f["field"])
-                                v = f.get("value")
-                                if isinstance(v, dict) and v.get("path"):
-                                    v["path"] = _fix_double_c(v["path"])
-
-                    # DELETE
-                    elif op == "DELETE":
-                        filters = tgt.get("filters", [])
-                        cleaned = []
-                        for f in filters:
-                            if not isinstance(f, dict):
-                                continue
-                            v = f.get("value")
-                            if isinstance(v, dict) and v.get("path"):
-                                v["path"] = _fix_double_c(v["path"])
-                            cleaned.append({
-                                "field": f.get("field"),
-                                "operator": f.get("operator"),
-                                "value": v,
-                            })
-                        a["target"]["filters"] = cleaned
-
         except Exception:
             logging.exception("Post-fix sanitizer failed")
 
@@ -1325,26 +1467,16 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
         data = trig.get("data", {}) or {}
 
         evt = normalize_event_type(data.get("event_type"), available_models)
-        conditions = normalize_conditions(data.get("conditions"))
+        conditions = data.get("conditions")
         actions = normalize_actions(data.get("actions"), schema)
 
         def is_valid_event(e):
-            return bool(e and e.get("object_type") in available_models and e.get("action") in ["create", "update", "delete"])
+            return bool(e and e.get("object_name") in available_models and e.get("action") in ["create", "update", "delete"])
 
         def is_valid_actions_list(a):
             return actions_are_valid(a)
 
         completed_flag = is_valid_event(evt) and is_valid_actions_list(actions)
-
-        # Ensure description/agent_message
-        if not data.get("description"):
-            data["description"] = "Action trigger extracted from user instruction."
-
-        if not result.get("agent_message"):
-            result["agent_message"] = "Trigger interpreted and formatted. Review before saving."
-
-        if not result.get("summary"):
-            result["summary"] = "Parsed trigger with validated structure."
 
         # -------------------------------------
         # PRIORITY NORMALIZATION

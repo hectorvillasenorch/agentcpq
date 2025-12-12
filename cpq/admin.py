@@ -271,7 +271,7 @@ class OpportunityEditableForm(BaseOpportunityForm): # type: ignore
 
 class OpportunityAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = OpportunityEditableForm
-    list_display = ('name','amount', 'account', 'stage', 'expected_close_date', 'primary_quote', 'created_by', 'created_at_js')
+    list_display = ('name', 'primary_quote', 'amount', 'account', 'stage', 'expected_close_date', 'created_by', 'created_at_js')
     def get_fieldsets(self, request, obj=None):
         fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
 
@@ -565,7 +565,7 @@ class BusinessRuleAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
 class QuoteLineAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(QuoteLine, crm="AgentCPQ", object_type="QuoteLine")
 
-    list_display = ('product_name', 'unit_price', 'quantity', 'discount_type', 'discount_percentage', 'discount_amount', 'subtotal', 'total_price', 'created_at_js', 'updated_at_js')
+    list_display = ('product_name', 'unit_price', 'quantity', 'quote', 'discount_type', 'discount_percentage', 'discount_amount', 'subtotal', 'total_price', 'created_at_js', 'updated_at_js')
 
     def get_fieldsets(self, request, obj=None):
         fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
@@ -686,9 +686,9 @@ admin.site.register(ActionTrigger, ActionTriggerAdmin)
 
 class ActionLogAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(ActionLog, crm="AgentCPQ", object_type="ActionLog")
-    list_display = ('trigger_name', 'operation', 'target_model', 'result', 'status', 'created_at_js')
+    list_display = ('trigger_name', 'operation', 'target_model', 'event_type', 'result', 'status', 'signal_timing', 'executed_at')
     def get_fieldsets(self, request, obj=None):
-        fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
+        fields = [f for f in self.form().fields.keys() if f not in ['executed_at', 'updated_at']]
         return [(None, {'fields': fields})]
 admin.site.register(ActionLog, ActionLogAdmin)
 

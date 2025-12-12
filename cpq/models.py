@@ -309,7 +309,7 @@ class Quote(models.Model):
         ('Closed', 'Closed'),
     ]
 
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, unique=True)
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="quotes")
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, related_name="quotes")
     sf_opportunity_id = models.CharField(max_length=18, blank=True, null=True)
@@ -419,13 +419,17 @@ class Quote(models.Model):
             # Solo guardar sin lógica extra, evitar conflictos con force_insert
             super().save(*args, **kwargs)
 
+            # ✅ Generar nombre basado en ID si no existe aún
+            if not self.name:
+                self.name = f"Q-{self.id:05d}"
+
             # Actualizar campos dependientes y volver a guardar
             self.update_tax()
             self.subtotal = self.get_subtotal_amount()
             self.update_discount_fields()
             self.update_net_amount()
             # Guardar como update
-            super().save(update_fields=["subtotal", "discount_percentage", "discount_amount", "net_amount"])
+            super().save(update_fields=["name","subtotal", "discount_percentage", "discount_amount", "net_amount"])
         else:
             self.subtotal = self.get_subtotal_amount()
             self.update_discount_fields()
@@ -1727,6 +1731,7 @@ class ActionLog(models.Model):
         ("CREATE", "Create"),
         ("UPDATE", "Update"),
         ("DELETE", "Delete"),
+        ("CLONE", "Clone"),
     ]
 
     SIGNAL_TIMING_CHOICES = [
