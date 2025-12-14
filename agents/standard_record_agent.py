@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from datetime import date
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
@@ -10,7 +11,8 @@ from django.contrib.auth import get_user_model
 from django.utils.dateparse import parse_date
 from dotenv import load_dotenv
 
-from cpq.models import Account, Contact, Lead, Opportunity
+from cpq.models import Account, Contact, Lead, Opportunity, CustomField, CustomFieldValue
+from django.contrib.contenttypes.models import ContentType
 from .utils.agents_utils import clean_llm_json
 from .utils.message_formatters import SUCCESS_ICON
 from .utils.orchestrator.context_handle_helpers import estimate_cost
@@ -34,12 +36,75 @@ REQUIRED_FIELDS: Dict[str, List[str]] = {
     "Opportunity": ["name", "account"],
 }
 
-ALLOWED_FIELDS: Dict[str, List[str]] = {
-    "Lead": ["first_name", "last_name", "email", "phone", "source", "status", "notes", "assigned_to", "owner"],
-    "Account": ["name", "industry", "website", "phone", "street", "city", "state", "zip_code", "tenant_id", "owner"],
-    "Contact": ["first_name", "last_name", "email", "phone", "company", "job_title", "notes", "account", "is_primary"],
-    "Opportunity": ["name", "account", "amount", "stage", "expected_close_date", "owner"],
+MODEL_MAP = {
+    "Lead": Lead,
+    "Account": Account,
+    "Contact": Contact,
+    "Opportunity": Opportunity,
 }
+
+# Optional extras that aren't model fields but we still accept (e.g., mapped into notes)
+EXTRA_FIELDS = {
+    "Lead": ["company", "company_name", "title"],
+}
+
+ALLOWED_FIELDS: Dict[str, List[str]] = {}
+ALLOWED_FIELD_MAP: Dict[str, Dict[str, str]] = {}
+
+
+def _refresh_allowed_fields():
+    """Build allowed fields from model metadata + extras + custom fields."""
+    global ALLOWED_FIELDS, ALLOWED_FIELD_MAP
+    allowed: Dict[str, List[str]] = {}
+    allowed_map: Dict[str, Dict[str, str]] = {}
+
+    for obj, model in MODEL_MAP.items():
+        model_fields = [
+            f.name
+            for f in model._meta.get_fields()
+            if not getattr(f, "auto_created", False)
+            and getattr(f, "editable", True)
+            and not f.many_to_many  # avoid M2M intermediary
+        ]
+        extras = EXTRA_FIELDS.get(obj, [])
+
+        try:
+            custom_fields = CustomField.objects.filter(custom_object__isnull=True, object_type=obj)
+            custom_field_names = []
+            for cf in custom_fields:
+                if cf.name:
+                    custom_field_names.append(cf.name)
+                if cf.label:
+                    custom_field_names.append(cf.label)
+        except Exception:
+            custom_field_names = []
+
+        merged = list({*model_fields, *extras, *custom_field_names})
+        allowed[obj] = merged
+        obj_map: Dict[str, str] = {}
+
+        # Base model + extras
+        for name in model_fields + extras:
+            obj_map[name.lower()] = name
+
+        # Custom fields → allow name, label, and underscored label variants to map to canonical custom name
+        for cf in custom_fields or []:
+            canonical = cf.name or cf.label
+            if not canonical:
+                continue
+            variants = [v for v in [cf.name, cf.label] if v]
+            for var in variants:
+                obj_map[var.lower()] = canonical
+                underscored = re.sub(r"\s+", "_", var.strip()).lower()
+                obj_map[underscored] = canonical
+
+        allowed_map[obj] = obj_map
+
+    ALLOWED_FIELDS = allowed
+    ALLOWED_FIELD_MAP = allowed_map
+
+
+_refresh_allowed_fields()
 
 
 def standard_record_agent(user, action, user_message, session_data):
@@ -50,6 +115,7 @@ def standard_record_agent(user, action, user_message, session_data):
 
 
 def _create_standard_records(user, user_message, session_data):
+    _refresh_allowed_fields()
     current_state, previous_summary = get_session_context("create_standard_record", session_data)
 
     llm_result, tokens_used, cost_est = _extract_create_requests(
@@ -103,11 +169,17 @@ def _create_standard_records(user, user_message, session_data):
     return {
         "message": "<br>".join(message_parts) if message_parts else "",
         "session_summary": llm_result.get("summary"),
-        "hiddenMessage": True,
+        "hiddenMessage": False,
     }
 
 
 def _extract_create_requests(user_message: str, current_state, previous_summary: Optional[str]):
+    _refresh_allowed_fields()
+
+    allowed_fields_prompt = "\n".join(
+        [f"   - {obj}: {', '.join(sorted(ALLOWED_FIELDS.get(obj, [])))}" for obj in SUPPORTED_OBJECTS]
+    )
+
     system_prompt = f"""
 You convert user requests into structured attempts to create standard CRM records.
 Return ONLY JSON matching this schema:
@@ -122,10 +194,7 @@ Return ONLY JSON matching this schema:
 Rules:
 1. Supported objects: {', '.join(SUPPORTED_OBJECTS)}. Use singular names.
 2. Allowed fields per object:
-   - Lead: first_name, last_name, email, phone, source, status, notes, assigned_to, owner
-   - Account: name, industry, website, phone, street, city, state, zip_code, tenant_id, owner
-   - Contact: first_name, last_name, email, phone, company, job_title, notes, account, is_primary
-   - Opportunity: name, account, amount, stage, expected_close_date, owner
+{allowed_fields_prompt}
 3. Required fields:
    - Lead: first_name, last_name
    - Account: name
@@ -182,7 +251,14 @@ Return only JSON.
         data = item.get("data") if isinstance(item, dict) else {}
         obj = _sanitize(data.get("object"))
         fields = data.get("fields") if isinstance(data.get("fields"), dict) else {}
-        normalized_fields = {k: v for k, v in fields.items() if isinstance(k, str)}
+        allowed_map = ALLOWED_FIELD_MAP.get(obj, {})
+        normalized_fields = {}
+        for k, v in fields.items():
+            if not isinstance(k, str):
+                continue
+            canonical = allowed_map.get(k.lower())
+            if canonical:
+                normalized_fields[canonical] = v
 
         required = REQUIRED_FIELDS.get(obj or "", [])
         completed = bool(obj and all(normalized_fields.get(f) not in (None, "", []) for f in required))
@@ -211,24 +287,44 @@ def _persist_record(user, object_name: str, fields: Dict[str, object]) -> Tuple[
 
     try:
         if object_name == "Lead":
-            return _create_lead(user, fields)
+            success, message, record = _create_lead(user, fields)
         if object_name == "Account":
-            return _create_account(user, fields)
+            success, message, record = _create_account(user, fields)
         if object_name == "Contact":
-            return _create_contact(user, fields)
+            success, message, record = _create_contact(user, fields)
         if object_name == "Opportunity":
-            return _create_opportunity(user, fields)
+            success, message, record = _create_opportunity(user, fields)
     except Exception as exc:
         logger.exception("Failed to create %s", object_name)
         return False, f"⚠️ Failed to create {object_name}: {exc}", {}
 
-    return False, f"⚠️ Unsupported object '{object_name}'.", {}
+    if not success:
+        return False, message, {}
+
+    _save_custom_fields(record, fields, object_name, user)
+    return True, message, _record_payload(object_name, record)
 
 
 def _create_lead(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
     status = fields.get("status")
     if status and status not in dict(Lead.STATUS_CHOICES):
         return False, f"⚠️ Invalid lead status '{status}'. Allowed: {', '.join(dict(Lead.STATUS_CHOICES))}.", {}
+
+    # Capture optional company/title into notes only when no matching custom field exists
+    notes = (fields.get("notes") or "").strip()
+    extras = []
+    custom_map = _get_custom_field_map("Lead")
+    def _has_cf(key):
+        return key and key.lower() in custom_map
+
+    for key in ("company", "company_name"):
+        if fields.get(key) and not _has_cf(key):
+            extras.append(f"Company: {fields.get(key)}")
+            break
+    if fields.get("title") and not _has_cf("title"):
+        extras.append(f"Title: {fields.get('title')}")
+    if extras:
+        notes = (notes + ("\n" if notes else "") + "\n".join(extras)).strip()
 
     lead = Lead.objects.create(
         first_name=str(fields.get("first_name")),
@@ -237,13 +333,13 @@ def _create_lead(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, 
         phone=fields.get("phone") or "",
         source=fields.get("source") or "",
         status=status or Lead.STATUS_CHOICES[0][0],
-        notes=fields.get("notes") or "",
+        notes=notes,
         assigned_to=fields.get("assigned_to") or "",
         owner=_resolve_user(fields.get("owner")),
         created_by=user,
     )
 
-    return True, "", _record_payload("Lead", lead)
+    return True, "", lead
 
 
 def _create_account(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
@@ -261,7 +357,7 @@ def _create_account(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[st
         created_by=user,
     )
 
-    return True, "", _record_payload("Account", account)
+    return True, "", account
 
 
 def _create_contact(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
@@ -282,7 +378,7 @@ def _create_contact(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[st
         created_by=user,
     )
 
-    return True, "", _record_payload("Contact", contact)
+    return True, "", contact
 
 
 def _create_opportunity(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
@@ -313,7 +409,7 @@ def _create_opportunity(user, fields: Dict[str, object]) -> Tuple[bool, str, Dic
         created_by=user,
     )
 
-    return True, "", _record_payload("Opportunity", opportunity)
+    return True, "", opportunity
 
 
 def _record_payload(object_name: str, record) -> Dict[str, object]:
@@ -332,6 +428,57 @@ def _record_payload(object_name: str, record) -> Dict[str, object]:
         or getattr(record, "email", None)
         or getattr(record, "first_name", None),
     }
+
+def _normalize_key(key: str) -> str:
+    if key is None:
+        return ""
+    return re.sub(r"\s+", " ", str(key).replace("_", " ").strip().lower())
+
+
+def _get_custom_field_map(object_name: str) -> Dict[str, CustomField]:
+    try:
+        qs = CustomField.objects.filter(custom_object__isnull=True, object_type=object_name)
+        mapping: Dict[str, CustomField] = {}
+        for cf in qs:
+            for variant in [cf.name, cf.label]:
+                if not variant:
+                    continue
+                normalized = _normalize_key(variant)
+                mapping[normalized] = cf
+        return mapping
+    except Exception:
+        return {}
+
+
+def _save_custom_fields(record, fields: Dict[str, object], object_name: str, user):
+    if not record or not fields:
+        return
+    custom_map = _get_custom_field_map(object_name)
+    if not custom_map:
+        return
+
+    try:
+        ct = ContentType.objects.get_for_model(record.__class__)
+    except Exception:
+        return
+
+    for key, value in fields.items():
+        cf = custom_map.get(_normalize_key(key))
+        if not cf:
+            continue
+        try:
+            CustomFieldValue.objects.update_or_create(
+                field=cf,
+                content_type=ct,
+                object_id=record.id,
+                defaults={
+                    "value": "" if value is None else str(value),
+                    "record": None,
+                    "updated_by_user": user,
+                },
+            )
+        except Exception:
+            logger.exception("Failed to save custom field %s for %s", key, object_name)
 
 
 def _find_account(value) -> Optional[Account]:

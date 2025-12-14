@@ -321,8 +321,11 @@ def orchestrate_request(user, user_message, session_data):
 
     messages.append({
         "role": "system",
-        "content": f"""
-        
+        "content": """
+        Routing clarifications:
+        - If the user asks to show/open/view/display a specific record (e.g., “show lead with phone 9498724333”, “show lead Victor Lopez”, “open account ACME”), choose ShowSingleRecord. This includes lookups by phone, email, name, company, SKU, quote id, or any identifier.
+        - Only use CreateStandardRecord when the user is asking to create/add a new record. Do NOT choose CreateStandardRecord when the verbs are show/open/view/display.
+        - When in doubt between ShowSingleRecord and CreateStandardRecord, prefer ShowSingleRecord if the user is requesting to see an existing record.
         """
     })
 
@@ -354,6 +357,12 @@ def orchestrate_request(user, user_message, session_data):
                 user_message,
                 re.IGNORECASE,
             )
+            if not wants_record:
+                wants_record = re.search(
+                    r"\b(opportunity|account|product|quote|contact|lead|bundle|custom\s+object|custom\s+record)\b",
+                    user_message,
+                    re.IGNORECASE,
+                )
             if not wants_record:
                 logging.info("Guarding against unintended ShowSingleRecord; rerouting to GeneralQuery.")
                 decision = "GeneralQuery"

@@ -32,7 +32,7 @@ STANDARD_OBJECTS = [
 ALLOWED_LOOKUPS = {
     "Account": ["name", "custom_identifier"],
     "Contact": ["email", "custom_identifier"],
-    "Lead": ["email", "phone", "first_name", "last_name"],
+    "Lead": ["email", "phone", "first_name", "last_name", "company", "company_name"],
     "Opportunity": ["name"],
     "Product": ["sku", "name"],
     "Quote": ["name"],
@@ -90,11 +90,12 @@ Rules:
 4. Required fields for completion: object AND identifier. Set completed=true only when both are present.
 5. `lookup_field` must come from this allowlist. If not specified by the user, choose the first sensible default.
 {lookup_instruction_text}
-6. Do not hallucinate records or confirm that a record exists.
-7. If you cannot determine object or identifier, leave them null and set completed=false. Ask a clarifying question in agent_message.
-8. Keep agent_message short, professional, HTML-safe (use <br> for line breaks if needed), and continue the existing conversation tone.
-9. summary should extend the prior summary with the new interpretation in plain text.
-10. Return well-formed JSON without comments or trailing commas.
+6. If the user provides a phone number for a Lead, set lookup_field="phone" and identifier to that phone number (strip spaces/punctuation).
+7. Do not hallucinate records or confirm that a record exists.
+8. If you cannot determine object or identifier, leave them null and set completed=false. Ask a clarifying question in agent_message.
+9. Keep agent_message short, professional, HTML-safe (use <br> for line breaks if needed), and continue the existing conversation tone.
+10. summary should extend the prior summary with the new interpretation in plain text.
+11. Return well-formed JSON without comments or trailing commas.
 
 {custom_instruction}
 """

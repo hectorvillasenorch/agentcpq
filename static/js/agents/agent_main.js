@@ -2611,7 +2611,26 @@ function renderSingleRecord(record) {
 
   const layout = record.layout || { order: [], hidden: [] };
   const orderedFields = orderSingleRecordFields(record.fields, layout);
-  const title = record.record_value != null ? escapeHtml(String(record.record_value)) : 'Record';
+  const normalizeKey = (value) => (value || "").toString().trim().replace(/\s+/g, " ").replace(/_/g, " ").toLowerCase();
+  const findFieldValue = (keys) => {
+    const wanted = keys.map(k => normalizeKey(k));
+    const match = record.fields.find(f => {
+      const nameKey = normalizeKey(f.name);
+      const labelKey = normalizeKey(f.label);
+      return wanted.includes(nameKey) || wanted.includes(labelKey);
+    });
+    return match ? escapeHtml(String(match.display_value ?? match.value ?? "")) : "";
+  };
+
+  const leadFullName = (() => {
+    const first = findFieldValue(["first_name", "first name"]);
+    const last = findFieldValue(["last_name", "last name"]);
+    return `${first} ${last}`.trim();
+  })();
+
+  const title = record.object && record.object.toLowerCase() === "lead"
+    ? (leadFullName || (record.record_value != null ? escapeHtml(String(record.record_value)) : "Record"))
+    : (record.record_value != null ? escapeHtml(String(record.record_value)) : "Record");
   const objectLabel = record.display_label || record.object || '';
   const subtitle = objectLabel ? `<div class="single-record-subtitle">${escapeHtml(objectLabel)}</div>` : '';
   const headerLabel = '';
@@ -2624,6 +2643,37 @@ function renderSingleRecord(record) {
   const objectName = (record.object || '').toLowerCase();
   const headerIconName = objectName === "product" ? "inventory_2" : "category";
   const headerIcon = `<span class="material-icons" aria-hidden="true">${headerIconName}</span>`;
+
+  const leadHeaderMeta = (() => {
+    if (objectName !== "lead") return "";
+    const firstName = findFieldValue(["first_name", "first name"]);
+    const lastName = findFieldValue(["last_name", "last name"]);
+    const email = findFieldValue(["email"]);
+    const company = findFieldValue(["company_name", "company name", "company"]);
+    const phone = findFieldValue(["phone"]);
+
+    const parts = [];
+    const iconSpan = (icon, text) => `<span class="material-icons" aria-hidden="true" style="font-size:16px;vertical-align:middle;">${icon}</span> <span>${text}</span>`;
+    if (firstName || lastName) {
+      parts.push(iconSpan("person", `${firstName} ${lastName}`.trim()));
+    }
+    if (email) {
+      parts.push(iconSpan("mail", email));
+    }
+    if (company) {
+      parts.push(iconSpan("apartment", company));
+    }
+    if (phone) {
+      parts.push(iconSpan("call", phone));
+    }
+
+    if (!parts.length) return "";
+    return `
+      <div class="single-record-lead-meta">
+        ${parts.join('<span class="lead-meta-sep">|</span>')}
+      </div>
+    `;
+  })();
   const layoutButton = showLayoutButton
     ? `<button type="button" class="single-record-layout-btn single-record-layout-btn--icon" onclick="openSingleRecordCustomizer(this)" aria-label="Edit layout" title="Edit layout">
          <span class="material-icons" aria-hidden="true">tune</span>
@@ -2650,6 +2700,7 @@ function renderSingleRecord(record) {
             ${subtitle || escapeHtml(record.object || '')}
           </div>
           <div class="single-record-title single-record-title--accent">${title}</div>
+          ${leadHeaderMeta}
         </div>
         <div class="single-record-header-meta">
           ${headerLabel}

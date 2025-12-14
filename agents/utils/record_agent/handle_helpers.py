@@ -37,7 +37,16 @@ logger = logging.getLogger(__name__)
 DEFAULT_LOOKUPS = {
     "Account": ["name", "custom_identifier", "id"],
     "Contact": ["email", "custom_identifier", "id"],
-    "Lead": ["email", "phone", "first_name", "last_name", "id"],
+    "Lead": [
+        "email",
+        "phone",
+        "first_name",
+        "last_name",
+        "company_name",
+        "company",
+        "notes",
+        "id",
+    ],
     "Opportunity": ["name", "id"],
     "Product": ["sku", "name", "id"],
     "Quote": ["name", "id"],
@@ -136,11 +145,18 @@ def _find_record(
         except FieldDoesNotExist:
             field_obj = None
 
-        # Prefer an exact match first, then fall back to case-insensitive/contains
+        # Prefer an exact match first, then fall back to case-insensitive/contains.
+        # For phone lookups, normalize digits to improve matching.
         filter_attempts = [{field: identifier}]
         if field_obj is None or isinstance(field_obj, (CharField, TextField)):
             filter_attempts.insert(0, {f"{field}__iexact": identifier})
             filter_attempts.append({f"{field}__icontains": identifier})
+
+        # Special handling for phone: strip non-digits to broaden matching.
+        if model_name == "Lead" and field == "phone":
+            digits = "".join(ch for ch in identifier if ch.isdigit())
+            if digits:
+                filter_attempts.insert(0, {f"{field}__icontains": digits})
 
         try:
             for attempt in filter_attempts:
