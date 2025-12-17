@@ -1,7 +1,7 @@
 from agents.models import AgentPrompt
 
 
-def make_system_prompt(agent_name, method, function_name, previous_summary):
+def make_system_prompt(agent_name, method, function_name, previous_summary=None):
     try:
         agent_prompt = AgentPrompt.objects.get(agent_name=agent_name, method=method, function=function_name)
         print(f"\n✅ Agent prompt extracted successfully for {agent_name} {method} ✅")
@@ -18,7 +18,8 @@ def make_system_prompt(agent_name, method, function_name, previous_summary):
         return system_prompt, temperature
     except AgentPrompt.DoesNotExist:
         print(f"\n❌ No AgentPrompt found for {agent_name} {method} ❌")
-        return None  # Retorna None si no se encuentra
+        # Keep callers from crashing; fall back to an empty prompt with a sane temperature.
+        return "", 0.7
     except Exception as e:
         print(f"\n⚠️ Unexpected error while fetching AgentPrompt: {e} ⚠️")
-        return None
+        return "", 0.7

@@ -34,3 +34,21 @@ def json_script(values, element_id):
     """
     data = {v.field.id: v.value for v in values}
     return django_json_script(data, element_id)
+
+
+@register.filter
+def label_from_options(options, raw_value):
+    """
+    Given a list of option dicts (with id/label), return the matching label for the value.
+    Falls back to the raw value when no match is found.
+    """
+    if raw_value is None:
+        return ""
+
+    try:
+        for opt in options or []:
+            if str(opt.get("id")) == str(raw_value):
+                return opt.get("label") or raw_value
+    except Exception:
+        pass
+    return raw_value

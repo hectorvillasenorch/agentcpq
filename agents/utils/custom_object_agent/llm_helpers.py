@@ -596,8 +596,8 @@ def extract_custom_records_updates(user_message, record_identifiers, custom_obje
     system_prompt, temperature = make_system_prompt("custom_object_agent", "update", "extract_custom_records_updates")
 
     system_prompt += "The list of available custom objects and their fields is the following:" + json.dumps(custom_objects_data, indent=2)
-    system_prompt += "List of object names you can use:" + custom_objects_names
-    system_prompt += "List of the current record identifiers:" + record_identifiers
+    system_prompt += "List of object names you can use:" + (", ".join(custom_objects_names) if isinstance(custom_objects_names, list) else str(custom_objects_names))
+    system_prompt += "List of the current record identifiers:" + (", ".join(record_identifiers) if isinstance(record_identifiers, list) else str(record_identifiers))
 
     user_prompt = user_message
 

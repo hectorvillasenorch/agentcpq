@@ -31,7 +31,7 @@ from salesforce.models import SalesforceToken
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.exceptions import ObjectDoesNotExist
 import json
-from .forms import CustomFieldForm, CustomObjectForm, EmailAlertForm, generate_dynamic_form
+from .forms import CustomFieldForm, CustomObjectForm, EmailAlertForm, generate_dynamic_form, resolve_lookup_model
 from django.contrib.auth.decorators import login_required
 from django.contrib.contenttypes.models import ContentType
 from django.contrib import messages
@@ -843,7 +843,26 @@ def get_custom_record_form(request, record_id):
     record = get_object_or_404(CustomRecord, id=record_id)
     DynamicForm = generate_dynamic_form(record.object_type)
 
-    initial_data = {v.field.name: v.value for v in record.custom_field_values.all()}
+    initial_data = {}
+    for value in record.custom_field_values.select_related("field"):
+        field = value.field
+        if field.data_type == "lookup" and field.lookup_model and value.value:
+            model_class = resolve_lookup_model(field.lookup_model, field_name=field.name, field_label=field.label)
+            related_obj = None
+            if model_class:
+                related_obj = model_class.objects.filter(pk=value.value).first()
+
+            # Allow lookups to custom objects by name (stored as CustomRecord)
+            if related_obj is None and field.lookup_model:
+                try:
+                    target_co = CustomObject.objects.get(name=field.lookup_model)
+                    related_obj = CustomRecord.objects.filter(object_type=target_co, pk=value.value).first()
+                except CustomObject.DoesNotExist:
+                    related_obj = None
+
+            initial_data[field.name] = related_obj or value.value
+        else:
+            initial_data[field.name] = value.value
     form = DynamicForm(initial=initial_data)
 
     # Solo retornamos el HTML parcial
@@ -865,9 +884,19 @@ def edit_custom_record(request, record_id):
                     field=custom_field,
                     defaults={'content_type': content_type, 'object_id': record.id}
                 )
-                if not created:
-                    cfv.value = value
-                    cfv.save()
+                if custom_field.data_type == "lookup" and value:
+                    value_to_store = str(value.pk)
+                elif isinstance(value, bool):
+                    value_to_store = str(value)
+                else:
+                    value_to_store = value or ""
+
+                cfv.value = value_to_store
+                if not cfv.content_type_id:
+                    cfv.content_type = content_type
+                if not cfv.object_id:
+                    cfv.object_id = record.id
+                cfv.save()
             messages.success(request, f"{record.object_type.label} record updated successfully.")
 
             # Actualizar usuario y fecha
@@ -1221,13 +1250,17 @@ def create_custom_record(request, object_name, user_id):
             for field_name, value in form.cleaned_data.items():
                 try:
                     custom_field = CustomField.objects.get(name=field_name, custom_object=custom_object)
-                    if not value:
-                        value = "---"
+                    if custom_field.data_type == "lookup" and value:
+                        value_to_store = str(value.pk)
+                    elif isinstance(value, bool):
+                        value_to_store = str(value)
+                    else:
+                        value_to_store = value or ""
 
                     CustomFieldValue.objects.create(
                         record=record,
                         field=custom_field,
-                        value=value,
+                        value=value_to_store,
                         content_type=content_type,
                         object_id=record.id
                     )
@@ -1239,9 +1272,12 @@ def create_custom_record(request, object_name, user_id):
     else:
         form = DynamicForm()
 
+    lookup_options = get_lookup_data_for_form(custom_object)
+
     return render(request, 'custom_objects/record_form.html', {
         'form': form,
-        'custom_object': custom_object
+        'custom_object': custom_object,
+        'lookup_options': lookup_options,
     })
 
 
@@ -1249,11 +1285,24 @@ def get_lookup_data_for_form(custom_object):
     lookup_data = {}
     for field in CustomField.objects.filter(custom_object=custom_object, data_type="lookup"):
         try:
-            model = apps.get_model(field.lookup_model)
-            # Only grab id and name or string version
-            instances = model.objects.all()
-            lookup_data[field.name] = [{"id": i.id, "label": str(i)} for i in instances]
-        except Exception as e:
+            model = resolve_lookup_model(field.lookup_model, field_name=field.name, field_label=field.label)
+            queryset = None
+
+            if model:
+                queryset = model.objects.all()
+            elif field.lookup_model:
+                try:
+                    target_co = CustomObject.objects.get(name=field.lookup_model)
+                    queryset = CustomRecord.objects.filter(object_type=target_co)
+                except CustomObject.DoesNotExist:
+                    queryset = None
+
+            if queryset is None:
+                lookup_data[field.name] = []
+                continue
+
+            lookup_data[field.name] = [{"id": i.id, "label": str(i)} for i in queryset]
+        except Exception:
             lookup_data[field.name] = []
     return lookup_data
 

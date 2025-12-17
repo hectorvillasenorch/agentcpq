@@ -1,10 +1,11 @@
-from cpq.models import Product
+from cpq.models import Product, CustomField, CustomFieldValue
 import openai
 from dotenv import load_dotenv
 import json, inspect
 import os
 import re
 import logging,threading
+from django.contrib.contenttypes.models import ContentType
 from .utils.quote_agent.db_helpers import log_action_usage
 from .utils.message_formatters import SUCCESS_ICON
 from decimal import Decimal
@@ -232,7 +233,7 @@ def update_product_record(user,updated_product_details):
         # ✅ Find the product in the database
         product = Product.objects.get(sku=sku)
 
-        # ✅ Update fields if they exist in the updated details
+        # ✅ Update standard fields if they exist in the updated details
         product.name = updated_product_details.get("name", product.name)
         product.price = updated_product_details.get("price", product.price)
         product.is_subscription = updated_product_details.get("is_subscription", product.is_subscription)
@@ -248,6 +249,55 @@ def update_product_record(user,updated_product_details):
 
         # ✅ Save the updated product
         product.save()
+
+        # ✅ Persist Product custom fields (e.g. vendor__c, lead_time_days__c)
+        standard_keys = {
+            "sku",
+            "name",
+            "price",
+            "is_subscription",
+            "term",
+            "is_bundle",
+            "description",
+            "family",
+            "is_active",
+        }
+        custom_field_keys = [k for k in updated_product_details.keys() if k not in standard_keys]
+        if custom_field_keys:
+            content_type = ContentType.objects.get_for_model(Product)
+            custom_fields = list(CustomField.objects.filter(crm="AgentCPQ", object_type="Product"))
+
+            for key in custom_field_keys:
+                raw_value = updated_product_details.get(key)
+                value_to_store = "" if raw_value is None else str(raw_value)
+
+                field = next((f for f in custom_fields if f.name == key), None)
+                if field is None:
+                    key_lower = key.lower()
+                    field = next((f for f in custom_fields if (f.name or "").lower() == key_lower), None)
+                if field is None:
+                    continue
+
+                existing_value = (
+                    CustomFieldValue.objects.filter(
+                        content_type=content_type,
+                        object_id=product.id,
+                        field=field,
+                    )
+                    .order_by("-id")
+                    .first()
+                )
+
+                cfv = existing_value or CustomFieldValue(
+                    content_type=content_type,
+                    object_id=product.id,
+                    field=field,
+                )
+                cfv.value = value_to_store
+                if hasattr(cfv, "updated_by_user"):
+                    cfv.updated_by_user = user
+                cfv.save()
+
         log_action_usage("UpdateProductRecord", user, "Product", product.name)
         print(f"✅ DEBUG: Product {sku} successfully updated.")  # ✅ Debugging step
 

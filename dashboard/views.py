@@ -235,7 +235,11 @@ def get_user_accounts(user):
     return Account.objects.filter(owner=user)
 
 def get_values_by_record(custom_object):
-    records_custom_object = CustomRecord.objects.filter(object_type=custom_object).order_by('-created_at')
+    records_custom_object = (
+        CustomRecord.objects.filter(object_type=custom_object)
+        .prefetch_related("custom_field_values__field")
+        .order_by('-created_at')
+    )
 
     field_values_by_record = {}
 

@@ -355,7 +355,6 @@ def generate_final_metrics_message(completed_metrics, db_results, remaining_metr
     - When a metric has been successfully made, specify the object and conditions to render.
     - Don’t say phrases like “Great news!”; if records matching the user’s request are found, just respond: here they are (the records the user requested).
     - Use this emoji "✅" for records successfully getted.
-    - Do NOT mention incomplete or failed metrics.
     - No utilices
 
     Instructions for "summary":

@@ -1,6 +1,11 @@
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, date, timedelta
 
+import difflib
+import re
+import unicodedata
+
+from django.apps import apps
 from django.core.exceptions import FieldError
 from django.db.models import ForeignKey, OuterRef, Subquery, Q, Sum, Avg, Count, Min, Max, CharField, TextField
 from django.db.models.functions import Cast
@@ -9,6 +14,7 @@ from django.db.models.functions import TruncMonth, TruncWeek, TruncDay
 from django.utils.dateparse import parse_date
 from django.utils.timezone import now
 from dateutil.relativedelta import relativedelta
+from django.contrib.contenttypes.models import ContentType
 
 from cpq.models import (
     Product,
@@ -37,6 +43,16 @@ TEXT_LIKE_TYPES = {"text", "textarea", "dropdown", "lookup"}
 NUMERIC_TYPES = {"number"}
 DATE_TYPES = {"date"}
 BOOLEAN_TYPES = {"boolean"}
+
+
+def _normalize_lookup_text(value: str) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip().lower()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 def get_object_metadata(object_name):
     base_model = BASE_MODEL_MAP.get(object_name)
@@ -235,7 +251,14 @@ def handle_show_metrics(user, completed_metrics):
             qs = qs.order_by("-created_at")
 
         if aggregate:
-            agg_payload, agg_error = execute_aggregate(qs, aggregate, model, object_name)
+            agg_payload, agg_error = execute_aggregate(
+                qs,
+                aggregate,
+                model,
+                object_name,
+                custom_object=custom_object,
+                custom_fields=custom_fields,
+            )
             if agg_error:
                 response_message += f"⚠️ Aggregate failed for {display_name}: {agg_error}.<br>"
                 continue
@@ -305,7 +328,7 @@ def _apply_date_range(qs, date_field, range_key):
     return qs
 
 
-def execute_aggregate(qs, aggregate_def, model, object_name):
+def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None, custom_fields=None):
     """
     Execute aggregate functions with optional date range and time bucketing.
     Returns (payload, error).
@@ -337,6 +360,17 @@ def execute_aggregate(qs, aggregate_def, model, object_name):
     if range_key and date_field:
         qs = _apply_date_range(qs, date_field, range_key)
 
+    # Detect if the target field is a custom field
+    custom_field_lookup = {}
+    for cf in custom_fields or []:
+        custom_field_lookup[cf.name.lower()] = cf
+        if cf.label:
+            custom_field_lookup[cf.label.lower()] = cf
+
+    custom_field = None
+    if isinstance(field, str):
+        custom_field = custom_field_lookup.get(field.lower())
+
     # Time bucketed series
     if group_by in {"month", "week", "day"} and date_field:
         trunc_map = {
@@ -348,15 +382,42 @@ def execute_aggregate(qs, aggregate_def, model, object_name):
         if not trunc_fn:
             return None, f"unsupported group_by '{group_by}'"
 
-        qs = qs.annotate(period=trunc_fn(date_field))
-        aggregated = qs.values("period").annotate(value=agg_fn(field)).order_by("period")
+        # Custom field aggregation path
+        if custom_field:
+            data_type = (custom_field.data_type or "").lower()
+            if data_type not in NUMERIC_TYPES:
+                return None, f"aggregate not supported for non-numeric custom field '{field}'"
+
+            values_qs = CustomFieldValue.objects.filter(field=custom_field)
+            date_prefix = "record__" if custom_object else "content_object__"
+
+            # Filter to the records in the base queryset
+            if custom_object:
+                values_qs = values_qs.filter(record_id__in=qs.values_list("id", flat=True))
+            else:
+                try:
+                    ct = ContentType.objects.get_for_model(model)
+                    values_qs = values_qs.filter(content_type=ct, object_id__in=qs.values_list("id", flat=True))
+                except Exception:
+                    return None, "unable to resolve content type for custom field aggregation"
+
+            # Apply date range on the related object if provided
+            if range_key and date_field:
+                date_field_path = f"{date_prefix}{date_field}"
+                values_qs = _apply_date_range(values_qs, date_field_path, range_key)
+
+            values_qs = values_qs.annotate(value_cast=Cast("value", output_field=DecimalField(max_digits=30, decimal_places=10)))
+            values_qs = values_qs.annotate(period=trunc_fn(date_prefix + date_field))
+            aggregated = values_qs.values("period").annotate(value=agg_fn("value_cast")).order_by("period")
+        else:
+            qs = qs.annotate(period=trunc_fn(date_field))
+            aggregated = qs.values("period").annotate(value=agg_fn(field)).order_by("period")
 
         series = []
         for entry in aggregated:
             period_val = entry.get("period")
             if period_val is None:
                 continue
-            # period might be datetime/date; normalize to ISO date
             if hasattr(period_val, "date"):
                 period_str = period_val.date().isoformat()
             else:
@@ -379,7 +440,32 @@ def execute_aggregate(qs, aggregate_def, model, object_name):
         }, None
 
     # Simple aggregate
-    agg_value = qs.aggregate(value=agg_fn(field)).get("value")
+    if custom_field:
+        data_type = (custom_field.data_type or "").lower()
+        if data_type not in NUMERIC_TYPES:
+            return None, f"aggregate not supported for non-numeric custom field '{field}'"
+
+        values_qs = CustomFieldValue.objects.filter(field=custom_field)
+        if custom_object:
+            values_qs = values_qs.filter(record_id__in=qs.values_list("id", flat=True))
+            date_prefix = "record__"
+        else:
+            try:
+                ct = ContentType.objects.get_for_model(model)
+                values_qs = values_qs.filter(content_type=ct, object_id__in=qs.values_list("id", flat=True))
+            except Exception:
+                return None, "unable to resolve content type for custom field aggregation"
+            date_prefix = "content_object__"
+
+        if range_key and date_field:
+            date_field_path = f"{date_prefix}{date_field}"
+            values_qs = _apply_date_range(values_qs, date_field_path, range_key)
+
+        values_qs = values_qs.annotate(value_cast=Cast("value", output_field=DecimalField(max_digits=30, decimal_places=10)))
+        agg_value = values_qs.aggregate(value=agg_fn("value_cast")).get("value")
+    else:
+        agg_value = qs.aggregate(value=agg_fn(field)).get("value")
+
     return {
         "function": func_name,
         "field": field,
@@ -516,7 +602,279 @@ def apply_custom_field_condition(qs, custom_field, operator, value):
     def exclude_records(filtered_qs):
         return qs.exclude(id__in=filtered_qs.values_list("record_id", flat=True)).distinct()
 
+    def _resolve_lookup_ids(raw_value):
+        """Map a lookup filter value (label/name/id) to matching record IDs stored in CFV.value."""
+        val_str = str(raw_value).strip()
+        ids = []
+        model = None
+        target_custom_object = None
+
+        # Resolve lookup target model
+        model_ref = getattr(custom_field, "lookup_model", None)
+        if model_ref:
+            if isinstance(model_ref, str) and "." in model_ref:
+                try:
+                    app_label, model_name = model_ref.split(".", 1)
+                    model = apps.get_model(app_label, model_name)
+                except Exception:
+                    model = None
+            if model is None:
+                # Maybe it is a CustomObject name
+                try:
+                    target_custom_object = CustomObject.objects.get(name=model_ref)
+                    model = CustomRecord
+                except CustomObject.DoesNotExist:
+                    model = None
+
+        if model is None:
+            return [val_str]
+
+        if val_str.isdigit():
+            return [val_str]
+
+        def _resolve_custom_record_id_by_name():
+            if model is not CustomRecord or not target_custom_object:
+                return []
+
+            try:
+                all_fields = list(CustomField.objects.filter(custom_object=target_custom_object))
+                if not all_fields:
+                    return []
+
+                # Prefer "name"/"nombre"/"title"/"titulo" fields for display matching
+                preferred = []
+                for f in all_fields:
+                    name = (f.name or "").lower()
+                    label = (f.label or "").lower()
+                    haystack = f"{name} {label}"
+                    if any(token in haystack for token in ("name", "nombre", "title", "titulo")):
+                        preferred.append(f)
+
+                candidate_fields = preferred
+                if not candidate_fields:
+                    candidate_fields = [f for f in all_fields if (f.data_type or "").lower() in {"text", "textarea", "dropdown"}]
+                if not candidate_fields:
+                    return []
+
+                candidate_values = (
+                    CustomFieldValue.objects.filter(
+                        record__object_type=target_custom_object,
+                        field__in=candidate_fields,
+                    )
+                    .exclude(value="")
+                    .exclude(value__isnull=True)
+                )
+
+                exact_ids = list(candidate_values.filter(value__iexact=val_str).values_list("record_id", flat=True).distinct())
+                if exact_ids:
+                    return [str(exact_ids[0])]
+
+                query_norm = _normalize_lookup_text(val_str)
+                if not query_norm:
+                    return []
+
+                # Fuzzy match against up to N candidate labels
+                rows = list(candidate_values.values_list("record_id", "value")[:1200])
+                best_by_record = {}
+                for record_id, candidate_value in rows:
+                    cand_norm = _normalize_lookup_text(candidate_value)
+                    if not cand_norm:
+                        continue
+                    score = difflib.SequenceMatcher(None, query_norm, cand_norm).ratio()
+                    if score > best_by_record.get(record_id, 0):
+                        best_by_record[record_id] = score
+
+                if not best_by_record:
+                    return []
+
+                ranked = sorted(best_by_record.items(), key=lambda item: item[1], reverse=True)
+                best_id, best_score = ranked[0]
+                second_score = ranked[1][1] if len(ranked) > 1 else 0
+
+                # Only accept a confident single match
+                if best_score >= 0.86 and (best_score - second_score) >= 0.06:
+                    return [str(best_id)]
+            except Exception:
+                return []
+
+            return []
+
+        try:
+            qs_lookup = model.objects.all()
+            if model is CustomRecord and target_custom_object:
+                qs_lookup = qs_lookup.filter(object_type=target_custom_object)
+
+            # Direct PK match
+            ids.extend(list(qs_lookup.filter(pk=val_str).values_list("pk", flat=True)))
+
+            # Name-like matches
+            name_filter_exact = Q()
+            name_filter_contains = Q()
+            has_name_filters = False
+            if hasattr(model, "name"):
+                name_filter_exact |= Q(name__iexact=val_str)
+                name_filter_contains |= Q(name__icontains=val_str)
+                has_name_filters = True
+            if hasattr(model, "custom_identifier"):
+                name_filter_exact |= Q(custom_identifier__iexact=val_str)
+                name_filter_contains |= Q(custom_identifier__icontains=val_str)
+                has_name_filters = True
+            if hasattr(model, "email"):
+                name_filter_exact |= Q(email__iexact=val_str)
+                name_filter_contains |= Q(email__icontains=val_str)
+                has_name_filters = True
+            if hasattr(model, "first_name") and hasattr(model, "last_name"):
+                name_filter_exact |= Q(first_name__iexact=val_str) | Q(last_name__iexact=val_str)
+                name_filter_contains |= Q(first_name__icontains=val_str) | Q(last_name__icontains=val_str)
+                has_name_filters = True
+
+            if has_name_filters:
+                exact_hits = list(qs_lookup.filter(name_filter_exact).values_list("pk", flat=True))
+                ids.extend(exact_hits)
+                if not exact_hits:
+                    ids.extend(list(qs_lookup.filter(name_filter_contains).values_list("pk", flat=True)))
+
+            if model is CustomRecord:
+                ids.extend(_resolve_custom_record_id_by_name())
+        except Exception:
+            return []
+
+        ids = [str(i) for i in ids if i is not None]
+        return ids
+
+    def _resolve_lookup_ids_from_candidates(raw_value):
+        """
+        Resolve a human-friendly lookup value (e.g. project name) to IDs by looking only at
+        lookup IDs already referenced by the current queryset.
+        """
+        raw_str = str(raw_value or "").strip()
+        if not raw_str:
+            return [], []
+        if raw_str.isdigit():
+            return [raw_str], []
+
+        # Candidate lookup ids present in the filtered records
+        candidate_ids = list(
+            values_qs.filter(record_id__in=qs.values_list("id", flat=True))
+            .exclude(value="")
+            .exclude(value__isnull=True)
+            .values_list("value", flat=True)
+            .distinct()[:500]
+        )
+        if not candidate_ids:
+            return [], []
+
+        # Resolve lookup target model (best-effort)
+        model_ref = getattr(custom_field, "lookup_model", None)
+        model = None
+        target_custom_object = None
+
+        if model_ref and isinstance(model_ref, str) and "." in model_ref:
+            try:
+                app_label, model_name = model_ref.split(".", 1)
+                model = apps.get_model(app_label, model_name)
+            except Exception:
+                model = None
+        if model is None and model_ref:
+            try:
+                target_custom_object = CustomObject.objects.get(name=model_ref)
+                model = CustomRecord
+            except Exception:
+                model = None
+
+        if model is None:
+            # Default to CustomRecord for custom-object lookups
+            model = CustomRecord
+
+        # Fetch referenced objects and build a label map
+        objects_qs = model.objects.filter(pk__in=candidate_ids)
+        if model is CustomRecord and target_custom_object:
+            objects_qs = objects_qs.filter(object_type=target_custom_object)
+
+        id_to_label = {}
+        try:
+            for obj in objects_qs[:500]:
+                label = str(obj).strip()
+                if label:
+                    id_to_label[str(obj.pk)] = label
+        except Exception:
+            id_to_label = {}
+
+        if not id_to_label:
+            return [], []
+
+        query_norm = _normalize_lookup_text(raw_str)
+        if not query_norm:
+            return [], []
+
+        # Exact normalized match first
+        exact_matches = [
+            rec_id
+            for rec_id, label in id_to_label.items()
+            if _normalize_lookup_text(label) == query_norm
+        ]
+        if exact_matches:
+            return exact_matches, sorted(set(id_to_label.values()))[:10]
+
+        # Safe contains match (only if unambiguous)
+        contains_matches = []
+        for rec_id, label in id_to_label.items():
+            label_norm = _normalize_lookup_text(label)
+            if not label_norm:
+                continue
+            if query_norm in label_norm or label_norm in query_norm:
+                contains_matches.append(rec_id)
+        if len(contains_matches) == 1:
+            return contains_matches, sorted(set(id_to_label.values()))[:10]
+
+        # Fuzzy match within the referenced set
+        scored = []
+        for rec_id, label in id_to_label.items():
+            score = difflib.SequenceMatcher(None, query_norm, _normalize_lookup_text(label)).ratio()
+            scored.append((rec_id, score))
+        scored.sort(key=lambda t: t[1], reverse=True)
+
+        best_id, best_score = scored[0]
+        second_score = scored[1][1] if len(scored) > 1 else 0
+        if best_score >= 0.86 and (best_score - second_score) >= 0.06:
+            return [best_id], sorted(set(id_to_label.values()))[:10]
+        return [], sorted(set(id_to_label.values()))[:10]
+
     try:
+        # Special handling for lookup fields: allow matching by ID or readable label
+        if data_type == "lookup":
+            # First try resolving against referenced IDs in the current queryset (more reliable for CustomRecord lookups).
+            target_ids, suggestions = _resolve_lookup_ids_from_candidates(value)
+            if not target_ids:
+                target_ids = _resolve_lookup_ids(value)
+            if isinstance(value, str) and not value.strip().isdigit() and not target_ids:
+                suggestion_text = f" Available options include: {', '.join(suggestions[:8])}." if suggestions else ""
+                return False, f"could not resolve lookup value '{value}' to a record id.{suggestion_text}", qs
+            if operator == "equals":
+                updated_qs = include_records(values_qs.filter(value__in=target_ids))
+            elif operator == "not_equals":
+                updated_qs = exclude_records(values_qs.filter(value__in=target_ids))
+            elif operator == "in":
+                normalized = []
+                for item in value if isinstance(value, (list, tuple)) else [value]:
+                    ids_for_item, _ = _resolve_lookup_ids_from_candidates(item)
+                    normalized.extend(ids_for_item or _resolve_lookup_ids(item))
+                if isinstance(value, (list, tuple)) and all(isinstance(v, str) and not v.strip().isdigit() for v in value) and not normalized:
+                    return False, "could not resolve lookup values to record ids", qs
+                updated_qs = include_records(values_qs.filter(value__in=normalized))
+            elif operator == "not_in":
+                normalized = []
+                for item in value if isinstance(value, (list, tuple)) else [value]:
+                    ids_for_item, _ = _resolve_lookup_ids_from_candidates(item)
+                    normalized.extend(ids_for_item or _resolve_lookup_ids(item))
+                if isinstance(value, (list, tuple)) and all(isinstance(v, str) and not v.strip().isdigit() for v in value) and not normalized:
+                    return False, "could not resolve lookup values to record ids", qs
+                updated_qs = exclude_records(values_qs.filter(value__in=normalized))
+            else:
+                return False, f"operator '{operator}' not supported for lookup", qs
+
+            return True, "", updated_qs
+
         if data_type in TEXT_LIKE_TYPES:
             if operator == "equals":
                 updated_qs = include_records(values_qs.filter(value__iexact=str(value)))

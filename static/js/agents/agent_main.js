@@ -1054,6 +1054,13 @@ function enhanceStructuredAgentMessagesHistoryChat() {
         return;
       }
 
+      // === QUOTE DETAILS (editable) ===
+      if (matchedKey === 'quote_details:') {
+        ensureQuoteStatusValue(data);
+        div.innerHTML = renderQuoteDetails(data);
+        return;
+      }
+
       // === QUOTE DETAILS (por defecto si no entró en nada anterior) ===
       const html = renderReadOnlyQuoteDetails(data);
       div.innerHTML = html;

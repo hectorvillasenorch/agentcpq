@@ -16,6 +16,7 @@ def get_session_context(action, session_data):
 
     # Initialize default state if not exists
     if action not in session_data.get("state", {}):
+        context_data = None
         if action == "create_quote":
             context_data = {
                 "create_quote": {
@@ -322,6 +323,13 @@ def get_session_context(action, session_data):
                         "completed": False
                     },
                 ],
+                "summary": None
+            }
+
+        # Fallback for actions without explicit context scaffolding
+        if context_data is None:
+            context_data = {
+                action: [],
                 "summary": None
             }
 

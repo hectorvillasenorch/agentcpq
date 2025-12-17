@@ -1237,17 +1237,28 @@ class CustomRecord(models.Model):
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_records')
 
     def __str__(self):
-        label = f"{self.object_type.name} record"
+        base_label = (self.object_type.label or self.object_type.name or "").strip() or "Record"
         try:
             from .models import CustomFieldValue
-            values = CustomFieldValue.objects.filter(record=self).select_related("field")[:4]
-            value_parts = [
-                f"{v.field.label}: {v.value}" for v in values if v.field and v.value
-            ]
-            #return f"{label} — {' | '.join(value_parts)}" if value_parts else label
-            return label
+            values = CustomFieldValue.objects.filter(record=self).select_related("field")
+
+            # Prefer a field named/labelled like a "name" field (supports Spanish too)
+            name_tokens = ("name", "nombre", "title", "titulo")
+            for v in values:
+                field_label = (v.field.label or "").lower()
+                field_name = (v.field.name or "").lower()
+                if v.value and any(tok in field_label or tok in field_name for tok in name_tokens):
+                    return str(v.value)
+
+            # Fallback to the first non-empty value
+            for v in values:
+                if v.value:
+                    return str(v.value)
+
+            # Last resort: show the identifier
+            return f"{base_label} {self.custom_identifier or self.pk or ''}".strip()
         except Exception:
-            return label
+            return base_label
 
 
 class CustomField(models.Model):

@@ -400,7 +400,7 @@ def orchestrate_request(user, user_message, session_data):
             if key not in (
                 "message", "session_id", "hiddenMessage", "temporaryMessage",
                 "update_details", "iterations", "success", "quote_id", "notes",
-                "tokens", "cost", "session_summary", "rules_created", "quote_details"
+                "tokens", "cost", "session_summary", "rules_created"
             ):
                 agent_message += f"\n\n{key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 
@@ -530,7 +530,7 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
             agent_message = result.get("message", "")
 
             for key, value in result.items():
-                if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat", "temporaryMessage", "session_summary", "quote_details"):
+                if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat", "temporaryMessage", "session_summary"):
                     agent_message += f"\n\n📦 {key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 
             agent_message = _strip_session_summary_text(_decode_chat_text(agent_message))
@@ -560,7 +560,7 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
         agent_message = result.get("message", "")
 
         for key, value in result.items():
-            if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat", "temporaryMessage", "session_summary", "quote_details"):
+            if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat", "temporaryMessage", "session_summary"):
                 agent_message += f"\n\n📦 {key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 
         agent_message = _strip_session_summary_text(_decode_chat_text(agent_message))

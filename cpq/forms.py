@@ -1,5 +1,5 @@
 from django import forms
-from .models import CustomField, BusinessRule, RuleCondition, CustomObject, QuoteLine, CustomFieldValue, ContentType
+from .models import CustomField, BusinessRule, RuleCondition, CustomObject, QuoteLine, CustomFieldValue, ContentType, CustomRecord
 from django.forms import modelformset_factory
 from django.apps import apps
 from django.contrib.auth import get_user_model
@@ -72,6 +72,79 @@ WIDGET_MAPPING = {
 }
 
 
+def resolve_lookup_model(model_ref, field_name=None, field_label=None):
+    """
+    Safely resolve a lookup model reference.
+    Accepts fully-qualified labels (e.g. 'cpq.Account') or shorthand names like 'account'/'opportunity'.
+    If lookup_model is empty, attempts to infer based on the field name/label (account, opportunity, contact).
+    """
+    def _infer_from_hint(hint: str):
+        hint_lower = hint.lower()
+        if "account" in hint_lower:
+            return ("cpq", "Account")
+        if "opportunity" in hint_lower or "opp" in hint_lower:
+            return ("cpq", "Opportunity")
+        if "contact" in hint_lower:
+            return ("cpq", "Contact")
+        return None
+
+    # Use provided model ref if present
+    if model_ref:
+        if not isinstance(model_ref, str):
+            return None
+
+        candidate = model_ref.strip()
+
+        # Try fully qualified path first (app_label.ModelName)
+        if "." in candidate:
+            try:
+                app_label, model_name = candidate.split(".", 1)
+                return apps.get_model(app_label, model_name)
+            except (LookupError, ValueError):
+                pass
+
+        # Friendly fallbacks for common CRM objects
+        fallback_map = {
+            "account": ("cpq", "Account"),
+            "accounts": ("cpq", "Account"),
+            "opportunity": ("cpq", "Opportunity"),
+            "opportunities": ("cpq", "Opportunity"),
+            "contact": ("cpq", "Contact"),
+            "contacts": ("cpq", "Contact"),
+        }
+
+        normalized = candidate.lower()
+        if normalized in fallback_map:
+            try:
+                app_label, model_name = fallback_map[normalized]
+                return apps.get_model(app_label, model_name)
+            except LookupError:
+                return None
+
+        # Last attempt: assume cpq app if only the model name was provided
+        try:
+            return apps.get_model("cpq", candidate)
+        except LookupError:
+            pass
+
+    # If lookup_model is empty or unresolved, infer from field hints
+    for hint in (field_name, field_label):
+        if hint:
+            inferred = _infer_from_hint(str(hint))
+            if inferred:
+                try:
+                    app_label, model_name = inferred
+                    return apps.get_model(app_label, model_name)
+                except LookupError:
+                    continue
+
+    # Nothing matched
+    try:
+        return None
+    except Exception:
+        return None
+
+
 def get_model_choices():
     choices = []
     for model in apps.get_models():
@@ -79,7 +152,16 @@ def get_model_choices():
         model_name = model.__name__
         full_label = f"{app_label}.{model_name}"
         choices.append((full_label, full_label))
-    return sorted(choices)
+
+    # Also allow pointing to a Custom Object by name (stored directly in lookup_model)
+    try:
+        for co in CustomObject.objects.all():
+            label = co.label or co.name
+            choices.append((co.name, f"Custom: {label} ({co.name})"))
+    except Exception:
+        pass
+
+    return sorted(choices, key=lambda x: x[1])
 
 class CustomFieldForm(forms.ModelForm):
     lookup_model = forms.ChoiceField(
@@ -248,6 +330,7 @@ def generate_dynamic_form(custom_object):
                     field_type = forms.FloatField
                 elif field.data_type == 'date':
                     field_type = forms.DateField
+                    widget = forms.DateInput(attrs={"type": "date", "class": "browser-default"})
                 elif field.data_type == 'boolean':
                     field_type = forms.BooleanField
                 elif field.data_type == 'text':
@@ -265,9 +348,38 @@ def generate_dynamic_form(custom_object):
                     self.fields[field.name] = field_type(
                         label=field.label or field.name,
                         choices=choices,
-                        required=field.required
+                        required=field.required,
+                        widget=forms.Select(attrs={"class": "browser-default"})
                     )
                     continue
+                elif field.data_type == 'lookup':
+                    model_class = resolve_lookup_model(field.lookup_model, field_name=field.name, field_label=field.label)
+                    target_custom_object = None
+
+                    # Support lookups that target another custom object by name
+                    if model_class is None and field.lookup_model:
+                        try:
+                            target_custom_object = CustomObject.objects.get(name=field.lookup_model)
+                            model_class = CustomRecord
+                        except CustomObject.DoesNotExist:
+                            target_custom_object = None
+
+                    if model_class:
+                        qs = model_class.objects.all()
+                        if model_class is CustomRecord and target_custom_object:
+                            qs = qs.filter(object_type=target_custom_object)
+
+                        self.fields[field.name] = forms.ModelChoiceField(
+                            label=field.label or field.name,
+                            queryset=qs,
+                            required=field.required,
+                            widget=forms.Select(attrs={
+                                "class": "browser-default lookup-field",
+                                "data-lookup-field": "true",
+                                "data-field-label": field.label or field.name,
+                            })
+                        )
+                        continue
 
                 self.fields[field.name] = field_type(
                     label=field.label or field.name,
@@ -380,17 +492,21 @@ def get_dynamic_form(model_class, crm, object_type):
                         )
 
                     # --- Lookup (FK) ---
-                    elif field.data_type == "lookup" and field.lookup_model:
-                        lookup_model = field.lookup_model
-                        if isinstance(lookup_model, str):
+                    elif field.data_type == "lookup":
+                        target_custom_object = None
+                        lookup_model = resolve_lookup_model(field.lookup_model, field_name=field.name, field_label=field.label)
+
+                        if lookup_model is None and field.lookup_model:
                             try:
-                                app_label, model_name = lookup_model.split(".", 1)
-                                lookup_model = apps.get_model(app_label, model_name)
-                            except (ValueError, LookupError):
-                                lookup_model = None
+                                target_custom_object = CustomObject.objects.get(name=field.lookup_model)
+                                lookup_model = CustomRecord
+                            except CustomObject.DoesNotExist:
+                                target_custom_object = None
 
                         if lookup_model is not None:
                             qs = lookup_model.objects.all()
+                            if lookup_model is CustomRecord and target_custom_object:
+                                qs = qs.filter(object_type=target_custom_object)
                             self.fields[field_name] = field_class(
                                 label=field.label or field.name,
                                 required=field.required,

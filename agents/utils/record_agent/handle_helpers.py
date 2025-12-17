@@ -73,6 +73,63 @@ _NUMERIC_FIELD_TYPES = (
 )
 
 
+def _resolve_lookup_model_path(model_ref, field_name: Optional[str] = None):
+    from django.apps import apps
+
+    if not model_ref:
+        # Try inferring from field name if provided
+        if field_name:
+            hint = field_name.lower()
+            fallback_map = {
+                "account": ("cpq", "Account"),
+                "opportunity": ("cpq", "Opportunity"),
+                "contact": ("cpq", "Contact"),
+            }
+            for key, target in fallback_map.items():
+                if key in hint:
+                    try:
+                        app_label, model_name = target
+                        return apps.get_model(app_label, model_name)
+                    except Exception:
+                        return None
+        return None
+
+    if isinstance(model_ref, str):
+        candidate = model_ref.strip()
+    else:
+        candidate = str(model_ref)
+
+    try:
+        if "." in candidate:
+            app_label, model_name = candidate.split(".", 1)
+            return apps.get_model(app_label, model_name)
+    except Exception:
+        pass
+
+    fallback_map = {
+        "account": ("cpq", "Account"),
+        "accounts": ("cpq", "Account"),
+        "opportunity": ("cpq", "Opportunity"),
+        "opportunities": ("cpq", "Opportunity"),
+        "contact": ("cpq", "Contact"),
+        "contacts": ("cpq", "Contact"),
+    }
+
+    normalized = candidate.lower()
+    target = fallback_map.get(normalized)
+    if target:
+        try:
+            app_label, model_name = target
+            return apps.get_model(app_label, model_name)
+        except Exception:
+            return None
+
+    try:
+        return apps.get_model("cpq", candidate)
+    except Exception:
+        return None
+
+
 def get_single_record_payload(user, request_payload: Dict[str, Union[str, int]]) -> Tuple[str, Optional[Dict[str, object]]]:
     """Fetch a single record and format it for UI consumption."""
 
@@ -610,14 +667,8 @@ def _get_custom_lookup_options(field, limit: int = 200):
     from django.apps import apps
 
     lookup_model_path = getattr(field, "lookup_model", None)
-    model = None
-
-    if lookup_model_path:
-        try:
-            app_label, model_name = lookup_model_path.split(".")
-            model = apps.get_model(app_label, model_name)
-        except Exception:
-            model = None
+    model = _resolve_lookup_model_path(lookup_model_path, field_name=getattr(field, "name", None))
+    target_custom_object_name = lookup_model_path if isinstance(lookup_model_path, str) else None
 
     # Fallback for known patterns (e.g., primary contact on Opportunity)
     if model is None and field.object_type == "Opportunity" and "contact" in (field.name or "").lower():
@@ -630,7 +681,19 @@ def _get_custom_lookup_options(field, limit: int = 200):
         return []
 
     try:
-        qs = model.objects.all().order_by("first_name", "last_name")[:limit]
+        qs = model.objects.all()
+        # If this is a CustomRecord lookup pointing to a specific custom object, filter down
+        if model.__name__ == "CustomRecord" and target_custom_object_name:
+            try:
+                from cpq.models import CustomObject
+
+                co = CustomObject.objects.filter(name=target_custom_object_name).first()
+                if co:
+                    qs = qs.filter(object_type=co)
+            except Exception:
+                pass
+
+        qs = qs.order_by("first_name", "last_name")[:limit]
     except Exception:
         return []
 
@@ -657,13 +720,10 @@ def _resolve_custom_lookup_label(field, raw_value):
 
     # Fallback: try to fetch directly
     try:
-        from django.apps import apps
         lookup_model_path = getattr(field, "lookup_model", None)
-        model = None
-        if lookup_model_path:
-            app_label, model_name = lookup_model_path.split(".")
-            model = apps.get_model(app_label, model_name)
-        elif field.object_type == "Opportunity" and "contact" in (field.name or "").lower():
+        model = _resolve_lookup_model_path(lookup_model_path, field_name=getattr(field, "name", None))
+        if model is None and field.object_type == "Opportunity" and "contact" in (field.name or "").lower():
+            from django.apps import apps
             model = apps.get_model("cpq", "Contact")
 
         if model:
