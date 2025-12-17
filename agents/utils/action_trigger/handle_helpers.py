@@ -24,7 +24,6 @@ def handle_create_action_trigger(user, completed_action_triggers, response_messa
 
     for trigger_data in completed_action_triggers:
         try:
-            print(f"\n\nTrigger Data: {trigger_data}\n\n")
 
             description = trigger_data.get("description") or trigger_data.get("name")
             event_type = trigger_data.get("event_type", {})

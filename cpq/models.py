@@ -1732,6 +1732,7 @@ class ActionLog(models.Model):
         ("UPDATE", "Update"),
         ("DELETE", "Delete"),
         ("CLONE", "Clone"),
+        ("EMAIL", "Email")
     ]
 
     SIGNAL_TIMING_CHOICES = [

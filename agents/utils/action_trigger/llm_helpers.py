@@ -6,6 +6,8 @@ import logging
 import openai
 from dotenv import load_dotenv
 from django.apps import apps
+from django.contrib.auth.models import User
+from django.contrib.auth.models import Group
 
 from cpq.models import CustomObject
 
@@ -378,6 +380,31 @@ def actions_are_valid(actions):
                     return False
 
             return True
+        
+        # -------------------------------------------------
+        # EMAIL
+        # -------------------------------------------------
+        if op == "EMAIL":
+            email = a.get("email")
+
+            if not isinstance(email, dict):
+                return False
+
+            # Required keys
+            if not email.get("template"):
+                return False
+            if not email.get("subject"):
+                return False
+            if not email.get("recipients"):
+                return False
+
+            # EMAIL must NOT have value or filters
+            if value is not None:
+                return False
+            if filters is not None:
+                return False
+
+            return True
 
         return False
 
@@ -431,6 +458,18 @@ def normalize_actions(actions, schema):
 
     for a in actions or []:
         op = (a.get("operation") or "").upper()
+
+        # 🔥 EMAIL ACTION — DO NOT NORMALIZE LIKE DB ACTIONS
+        if op == "EMAIL":
+            out.append({
+                "operation": "EMAIL",
+                "target": a.get("target"),
+                "email": a.get("email"),
+                "value": None,
+                "filters": None,
+            })
+            continue
+
         target_raw = a.get("target")
         filters = a.get("filters")
         value = a.get("value")
@@ -497,12 +536,12 @@ def normalize_actions(actions, schema):
 # ---------------------------------------------------------
 # ✅ Main Extractor
 # ---------------------------------------------------------
-def extract_action_triggers_with_llm(user_message, current_state, previous_summary=None):
+def extract_action_triggers_with_llm(user, user_message, current_state, previous_summary=None, action=None):
     schema = build_model_schema()
     available_models = list(schema.keys())
 
-    print(f"\n\nSchema: {schema}\n\n")
-    print(f"\n\nAvailable_models: {available_models}\n\n")
+    # print(f"\n\nSchema: {schema}\n\n")
+    # print(f"\n\nAvailable_models: {available_models}\n\n")
 
     # -----------------------------------------------------
     # ✅ STRICT SYSTEM PROMPT
@@ -700,7 +739,7 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
 
     "actions": [
         {{
-            "operation": "CREATE | CLONE | UPDATE | DELETE",
+            "operation": "CREATE | CLONE | UPDATE | DELETE | EMAIL",
             "filters": {{ <FILTERS_FORMAT> }},
             "target": "<object_and_path>",
             "value": {{
@@ -1378,6 +1417,550 @@ def extract_action_triggers_with_llm(user_message, current_state, previous_summa
     ========================================================
     ALWAYS returd "completed" key as TRUE, ALWAYS.
     """
+
+    # -----------------------------------------------------
+    # Add email context to system_prompt if necessary
+    # -----------------------------------------------------
+    if action == "EMAIL":
+        # -----------------------------------------------------
+        # ✅ GET CURRENT USERS
+        # -----------------------------------------------------
+
+        users = list(
+            User.objects.values(
+                "username",
+                "first_name",
+                "last_name"
+            )
+        )
+
+        users_context = [
+            {
+                "username": u["username"],
+                "full_name": f'{u["first_name"]} {u["last_name"]}'.strip()
+            }
+            for u in users
+        ]
+
+        # -----------------------------------------------------
+        # ✅ GET CURRENT EMAIL TEMPLATES
+        # -----------------------------------------------------
+
+        email_templates = []
+
+        # -----------------------------------------------------
+        # ✅ BASE ROLES (HARDCODED)
+        # -----------------------------------------------------
+
+        roles_list = [
+            "creator",
+            "staff",
+            "superusers",
+            "admins",
+        ]
+
+        # -----------------------------------------------------
+        # ✅ ADD DJANGO GROUP NAMES
+        # -----------------------------------------------------
+
+        group_names = Group.objects.values_list("name", flat=True)
+
+        roles_list.extend(group_names)
+
+        # (opcional) eliminar duplicados y normalizar
+        roles_list = list(set(roles_list))
+
+        system_prompt += f"""
+        ========================================================
+        📧 EMAIL ACTION (STRICT — ENGINE COMPATIBLE)
+        ========================================================
+
+        EMAIL is a VALID action type executed by the Action Trigger Engine.
+
+        EMAIL is NOT a database operation.
+        EMAIL does NOT create, update, clone, or delete records.
+        EMAIL ONLY sends notifications.
+
+        --------------------------------------------------------
+        ✅ EMAIL ACTION FORMAT (STRICT)
+        --------------------------------------------------------
+
+        When the user requests sending an email, notification, alert, or email alert,
+        you MUST generate an action with:
+
+        {{
+            "operation": "EMAIL",
+            "target": "<EVENT_ROOT>",
+            "email": {{
+                "template": "<string>",
+                "subject": {{ <VALUE_FORMAT> }},
+                "recipients": {{ ... }},
+                "context": {{ ... }}
+            }}
+        }}
+
+        🚨 STRICT RULES:
+
+        1) "operation" MUST be exactly:
+        "EMAIL"
+
+        2) EMAIL actions MUST be placed inside the "actions" array.
+
+        3) EMAIL actions MUST NOT include:
+        - "value"
+        - "filters"
+        - "source_object"
+
+        --------------------------------------------------------
+        📄 EMAIL.template (STRICT — DEFAULT vs CUSTOM)
+        --------------------------------------------------------
+
+        Format:
+        "template": "<string>"
+
+        EMAIL.template ONLY supports TWO modes:
+
+        --------------------------------------------------------
+        1) DEFAULT TEMPLATE
+        --------------------------------------------------------
+
+        If the user does NOT explicitly mention an email template name,
+        you MUST ALWAYS output:
+
+        "template": "default"
+
+        This is the system default email template.
+
+        --------------------------------------------------------
+        2) CUSTOM TEMPLATE
+        --------------------------------------------------------
+
+        If the user explicitly mentions an email template name in the message,
+        you MUST:
+
+        - Compare the mentioned name against the list of AVAILABLE email templates
+        - The list of valid templates is provided in the variable:
+
+        ========================================================
+        EMAIL_TEMPLATES_NAMES
+        ========================================================
+        {json.dumps(email_templates, indent=2)}
+
+        Rules:
+        - You MUST ONLY use a template name if it EXACTLY matches
+        one of the values in email_templates
+        - Matching is CASE-INSENSITIVE
+        - The output MUST preserve the ORIGINAL template name as stored
+        in email_templates
+
+        Output format:
+
+        "template": "<EMAIL_TEMPLATE_NAME>"
+
+        --------------------------------------------------------
+        🚫 FORBIDDEN TEMPLATE BEHAVIOR
+        --------------------------------------------------------
+
+        - You MUST NOT invent template names
+        - You MUST NOT guess similar names
+        - You MUST NOT use partial matches
+        - You MUST NOT use expressions
+        - You MUST NOT use VALUE_FORMAT
+
+        ❌ INVALID:
+        {{
+            "template": {{
+                "type": "expression",
+                ...
+            }}
+        }}
+
+        ❌ INVALID:
+        "template": "custom_template_that_does_not_exist"
+
+        --------------------------------------------------------
+        🚨 TEMPLATE FALLBACK RULE (MANDATORY)
+        --------------------------------------------------------
+
+        If the user mentions a template name BUT it does NOT match
+        any value in email_templates:
+
+        - You MUST FALL BACK to:
+        "template": "default"
+
+        - You MUST NOT throw an error
+        - You MUST NOT invent a new template
+
+        --------------------------------------------------------
+        📌 EMAIL.subject
+        --------------------------------------------------------
+
+        EMAIL.subject MUST use <VALUE_FORMAT>.
+
+        Allowed types:
+        - static
+        - expression
+        - field
+
+        Examples:
+
+        STATIC:
+        {{
+            "type": "static",
+            "value": "New Account Created"
+        }}
+
+        EXPRESSION:
+        {{
+            "type": "expression",
+            "formula": "'New Account Created: ' + account.name"
+        }}
+
+        --------------------------------------------------------
+        👥 EMAIL.recipients (STRICT)
+        --------------------------------------------------------
+
+        Structure:
+        {{
+            "users": [...],
+            "roles": [...],
+            "fields": [...],
+            "external": [...]
+        }}
+
+        At least ONE of the above MUST be present.
+
+        --------------------------------------------------------
+        EMAIL.recipients.users (STRICT — USER RESOLUTION)
+        --------------------------------------------------------
+
+        EMAIL.recipients.users is a list of USERNAMES.
+
+        The user may refer to recipients using:
+        - a username
+        - a full name
+
+        However, the OUTPUT MUST ALWAYS contain USERNAMES ONLY.
+
+        --------------------------------------------------------
+        📋 AVAILABLE USERS
+        --------------------------------------------------------
+
+        The list of valid users is provided in:
+
+        ========================================================
+        USERNAMES_LIST
+        ========================================================
+        {json.dumps(users_context, indent=2)}
+
+        Each entry has the following structure:
+
+        {{
+            "username": "<string>",
+            "full_name": "<string>"
+        }}
+
+        --------------------------------------------------------
+        🔎 USER MATCHING RULES
+        --------------------------------------------------------
+
+        When resolving recipients.users:
+
+        1) USERNAME MATCH
+        - If the user explicitly mentions a username that exists in USERNAMES_LIST:
+        → add that username to recipients.users
+
+        2) FULL NAME MATCH
+        - If the user explicitly mentions a full name that matches
+        the "full_name" of a user in USERNAMES_LIST (case-insensitive):
+        → add the corresponding "username" to recipients.users
+
+        3) If the user explicitly specifies that the alert should be 
+        sent to themselves (for example by saying "send me", 
+        "notify me", "alert me"), then automatically include the 
+        username of the requesting user: {user.username}.
+
+        --------------------------------------------------------
+        🚫 FORBIDDEN BEHAVIOR
+        --------------------------------------------------------
+
+        - You MUST NOT invent usernames
+        - You MUST NOT invent full names
+        - You MUST NOT guess similar names
+        - You MUST NOT use partial or fuzzy matches
+        - You MUST NOT include full names in the output
+        - You MUST NOT include users not explicitly mentioned
+
+        --------------------------------------------------------
+        🧹 DUPLICATE HANDLING
+        --------------------------------------------------------
+
+        - If the same user is mentioned multiple times
+        (by username and/or full name),
+        include the username ONLY ONCE.
+
+        --------------------------------------------------------
+        🚨 FALLBACK RULE
+        --------------------------------------------------------
+
+        - If the user does NOT explicitly mention any valid user
+        (by username or full name),
+        you MUST OMIT the "users" key entirely.
+
+        --------------------------------------------------------
+        ✅ OUTPUT FORMAT
+        --------------------------------------------------------
+
+        Example:
+
+        "recipients": {{
+            "users": ["john_doe", "maria.smith"]
+        }}
+
+        --------------------------------------------------------
+         recipients.roles
+        --------------------------------------------------------
+
+        EMAIL.recipients.roles is a list of ROLE / GROUP NAMES.
+
+        The user may refer to recipients using group / role names.
+        The OUTPUT MUST contain ONLY valid group names.
+
+        --------------------------------------------------------
+        📋 AVAILABLE GROUPS
+        --------------------------------------------------------
+
+        The list of valid groups is provided in:
+        {json.dumps(roles_list, indent=2)}
+
+        --------------------------------------------------------
+        🔎 ROLE / GROUP MATCHING RULES
+        --------------------------------------------------------
+
+        When resolving recipients.roles:
+
+        1) If the user explicitly mentions a group or role name
+        AND it EXACTLY matches one of the values in AVAILABLE GROUPS
+        (case-insensitive),
+        → include it in recipients.roles using the canonical name.
+
+        2) If the user mentions a group or role name
+        that does NOT exist in AVAILABLE GROUPS,
+        → IGNORE it completely.
+
+        --------------------------------------------------------
+        🚫 FORBIDDEN BEHAVIOR
+        --------------------------------------------------------
+
+        - You MUST NOT invent group names
+        - You MUST NOT guess similar group names
+        - You MUST NOT normalize names
+        - You MUST NOT include groups not explicitly mentioned
+
+        --------------------------------------------------------
+        🧹 DUPLICATE HANDLING
+        --------------------------------------------------------
+
+        - If the same group is mentioned multiple times,
+        include it ONLY ONCE.
+
+        --------------------------------------------------------
+        🚨 FALLBACK RULE
+        --------------------------------------------------------
+
+        - If the user does NOT explicitly mention any valid group,
+        you MUST OMIT the "roles" key entirely.
+
+        --------------------------------------------------------
+        ✅ OUTPUT FORMAT
+        --------------------------------------------------------
+
+        Example:
+
+        "recipients": {{
+            "roles": ["admins", "finance_team"]
+        }}
+
+        --------------------------------------------------------
+        📨 recipients.fields
+        --------------------------------------------------------
+
+        EMAIL.recipients.fields defines dynamic email addresses
+        resolved from the EVENT ROOT object using a FIELD PATH.
+
+        --------------------------------------------------------
+        📌 FORMAT (STRICT)
+        --------------------------------------------------------
+
+        {{
+            "type": "field",
+            "object": "<EVENT_ROOT>",
+            "field_name": "<PATH>"
+        }}
+
+        --------------------------------------------------------
+        📐 PATH RESOLUTION RULES (CRITICAL)
+        --------------------------------------------------------
+
+        The "field_name" MUST be a VALID PATH built EXCLUSIVELY
+        using the MODEL_SCHEMA provided below.
+
+        You MUST construct the path step-by-step by navigating
+        through relations and fields defined in MODEL_SCHEMA.
+
+        --------------------------------------------------------
+        🔎 HOW TO BUILD A VALID PATH
+        --------------------------------------------------------
+
+        1) Start from the EVENT ROOT object
+        (event_type.object_name)
+
+        2) At each step:
+        - Check MODEL_SCHEMA[current_object]["fields"]
+        - Check MODEL_SCHEMA[current_object]["relations"]
+
+        3) You may ONLY:
+        - Traverse relations explicitly defined in MODEL_SCHEMA
+        - End the path at a scalar field (e.g. email, username)
+
+        4) The FINAL resolved value MUST be:
+        - a string email
+        - OR a list of string emails
+
+        --------------------------------------------------------
+        🚫 STRICT PROHIBITIONS
+        --------------------------------------------------------
+
+        - You MUST NOT invent fields
+        - You MUST NOT invent relations
+        - You MUST NOT skip relationship levels
+        - You MUST NOT use objects not reachable from EVENT ROOT
+        - You MUST NOT assume implicit relations
+        - You MUST NOT use paths not present in MODEL_SCHEMA
+
+        --------------------------------------------------------
+        🧠 NULL HANDLING
+        --------------------------------------------------------
+
+        - If the resolved value is null at runtime,
+        it will be ignored by the engine.
+        - You MUST STILL output the field definition
+        if the path itself is valid.
+
+        --------------------------------------------------------
+        ✅ VALID EXAMPLES
+        --------------------------------------------------------
+
+        If EVENT ROOT = "account" and MODEL_SCHEMA defines:
+
+        account
+        relations:
+            owner → user
+        fields:
+            name
+            created_at
+
+        user
+        fields:
+            email
+
+        VALID:
+        {{
+            "type": "field",
+            "object": "account",
+            "field_name": "owner.email"
+        }}
+
+        --------------------------------------------------------
+        ❌ INVALID EXAMPLES
+        --------------------------------------------------------
+
+        ❌ Field does not exist:
+        "field_name": "owner.mail"
+
+        ❌ Relation not defined:
+        "field_name": "manager.email"
+
+        ❌ Skipped relation:
+        "field_name": "email"
+
+        ❌ Unreachable object:
+        "field_name": "opportunity.owner.email"
+
+        --------------------------------------------------------
+        🚨 FALLBACK RULE
+        --------------------------------------------------------
+
+        - If the user mentions a dynamic email path
+        that CANNOT be resolved using MODEL_SCHEMA,
+        you MUST OMIT that recipients.fields entry entirely.
+
+        - You MUST NOT guess or approximate paths.
+
+        --------------------------------------------------------
+        🌐 recipients.external
+        --------------------------------------------------------
+
+        Static list of external emails.
+
+        Example:
+            "external": [
+            "sales@company.com",
+            "finance@company.com"
+        ]
+
+        --------------------------------------------------------
+        🧠 EMAIL.context
+        --------------------------------------------------------
+
+        EMAIL.context defines the variables available inside the email template.
+
+        Structure:
+        {{
+            "<variable_name>": {{ <VALUE_FORMAT> }}
+        }}
+
+        Rules:
+        - Each key becomes a template variable.
+        - VALUE_FORMAT rules apply strictly.
+        - object references MUST be reachable from EVENT ROOT.
+        - DO NOT invent objects or fields.
+
+        - You MUST ALWAYS include the EVENT ROOT object
+            as a context variable.
+
+        - The variable name MUST be "instance".
+
+        --------------------------------------------------------
+        ✅ DEFAULT CONTEXT FORMAT
+        --------------------------------------------------------
+
+        "context": {{
+            "instance": {{
+                "type": "field",
+                "object": "<event_root>",
+                "field_name": "id"
+            }}
+        }}
+
+        --------------------------------------------------------
+        🚨 EMAIL ACTION HARD FAIL RULES
+        --------------------------------------------------------
+
+        - If the user does NOT request an email → DO NOT generate EMAIL.
+        - If no recipients can be inferred → DO NOT guess recipients.
+        - If no subject can be inferred → generate a simple static subject.
+        - NEVER mix EMAIL with CREATE/UPDATE/CLONE/DELETE in the same action object.
+        - EMAIL MUST ALWAYS be its own action entry inside "actions".
+
+        --------------------------------------------------------
+        ✅ EMAIL ACTION SUMMARY RULE
+        --------------------------------------------------------
+
+        When an EMAIL action is generated:
+        - The description MUST mention that an email notification will be sent.
+        - The summary MUST mention EMAIL explicitly.
+        """
 
     # -----------------------------------------------------
     # User Prompt

@@ -16,6 +16,9 @@ from decimal import Decimal
 from cpq.actions.executor import CustomActionExecutor
 from cpq.models import ActionLog, CustomObject, CustomField, CustomFieldValue, CustomRecord
 
+# Get email handler
+from cpq.action_trigger.email.email_action import execute_email_action
+
 # Import helpers and format
 from cpq.action_trigger.helpers.helpers_and_format import (
     normalize_model_name,
@@ -277,7 +280,12 @@ class TriggerEngine:
                         if not matched:
                             continue
 
-                        exec_results = self._execute_trigger_actions(trig, instance, context)
+                        context["_trigger"] = trig
+                        try:
+                            exec_results = self._execute_trigger_actions(trig, instance, context)
+                        finally:
+                            # Limpieza garantizada, pase lo que pase
+                            context.pop("_trigger", None)
 
                         results.append({
                             "trigger_id": getattr(trig, "id", None),
@@ -2042,7 +2050,11 @@ class TriggerEngine:
         }
 
     def _handle_email(self, action, instance, context):
-        return {"emailed": True}
+        return execute_email_action(
+            action=action,
+            instance=instance,
+            context=context,
+        )
 
     def _handle_webhook(self, action, instance, context):
         return {"webhook": True}

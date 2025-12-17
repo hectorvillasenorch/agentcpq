@@ -468,7 +468,8 @@ function enhanceStructuredAgentMessagesHistoryChat() {
       'retrieved_records:',
       'inclusion_rules_details:',
       'action_triggers_details:',
-      'exclusion_rules_details'
+      'exclusion_rules_details',
+      'openGraphicBuilder'
     ];
 
     let jsonPart = null;
@@ -534,6 +535,14 @@ function enhanceStructuredAgentMessagesHistoryChat() {
           ? data
           : (data.action_triggers || data.action_triggers_details || data.triggers || data.rules || []);
         const html = renderActionTriggersDetails(fullMessage, triggers);
+        div.innerHTML = html;
+        return;
+      }
+
+      // === ACTION TRIGGERS ===
+      if (matchedKey === 'openGraphicBuilder:') {
+        console.log("Si es openGraphicBuilder")
+        const html = renderGraphicBuilderForActionTrigger(data);
         div.innerHTML = html;
         return;
       }
@@ -733,6 +742,18 @@ async function sendMessage() {
           //console.log(data.response);
           //console.log(data.response.retrieved_records)
           responseMessage += renderRetrievedRecords(data.response.message, data.response.retrieved_records);
+        }
+        // ✅ openGraphicBuilder - for Action Triggers graphic mode
+        else if (data.response && data.response.openGraphicBuilder) {
+
+          // 🔑 PASO 1: guardar schema global
+          modelSchema = data.response.cpq_model_schema || {};
+          console.log("📦 CPQ Model Schema loaded:", modelSchema);
+
+          // 🔑 PASO 2: renderizar builder
+          responseMessage += renderGraphicBuilderForActionTrigger(
+            data.response.openGraphicBuilder
+          );
         }
         // ✅ Default Response (Handle General Messages)
         else if (data.response && data.response.message) {
@@ -2844,8 +2865,6 @@ function renderExclusionRuleDetails(message, rules, read_only=false) {
 function renderActionTriggersDetails(message, action_triggers, read_only=false) {
   let html = "";
 
-  console.log(action_triggers);
-
   if (message) {
     const idx = message.indexOf("action_triggers_details:");
     if (idx !== -1) {
@@ -4185,4 +4204,755 @@ function openRecordsPopout(button) {
     window.removeEventListener('mousemove', () => {});
     window.removeEventListener('keydown', onKey);
   });
+}
+
+///////////////////////////////////////////////////////////
+///           GRAPHIC BUILDER ACTION TRIGGER            ///
+///////////////////////////////////////////////////////////
+
+/**
+ * JSON FINAL DEL ACTION TRIGGER
+ * 👉 Todos los nodos escriben aquí
+ */
+let actionTriggerJSON = {
+  description: "",
+  event_type: null,
+  conditions: {
+    logical_operator: "AND",
+    items: []
+  },
+  actions: []
+};
+
+/**
+ * Schema de modelos CPQ
+ * 👉 Viene del backend
+ */
+let modelSchema = {};   // { quote_line: { fields: {...} }, ... }
+
+/**
+ * Contexto disponible para drag & drop
+ * 👉 Se va llenando dinámicamente
+ */
+let contextSources = {}; // { quote_line: schema, account: schema }
+
+/**
+ * Estado del nodo EVENT
+ */
+let eventNodeState = {
+  configured: false,
+  data: null
+};
+
+/**
+ * Estado del nodo CONDITIONS
+ */
+let conditionsNodeState = {
+  created: false
+};
+
+let conditionsDraft = {
+  logical_operator: "AND",
+  items: []
+};
+
+let eventDraft = null;
+let eventSnapshot = null;
+
+function renderGraphicBuilderForActionTrigger(openGraphicBuilder) {
+  if (!openGraphicBuilder) return "";
+
+  return `
+    <div class="graphic-builder">
+
+      <div class="flow-canvas">
+
+        <!-- EVENT NODE -->
+        <div id="event-node" class="flow-node event-node hidden" onclick="openEventNodeEditor()">
+          <div class="node-title">Event</div>
+          <div id="event-node-summary" class="node-summary">
+            Not configured
+          </div>
+        </div>
+
+        <!-- ADD EVENT NODE -->
+        <div id="add-event-node" class="add-event-node" onclick="createEventNode()">
+          <div class="plus-box">+</div>
+          <div class="add-label">Add event node</div>
+        </div>
+
+        <!-- NODE EDITOR -->
+        <div id="node-editor" class="node-editor hidden">
+
+          <div class="editor-left">
+            <h3>Event Type</h3>
+
+            <div class="editor-section">
+              <label>Description</label>
+              <textarea id="event-description"
+                        oninput="updateEventPreview()"
+                        placeholder="Describe what this trigger does..."></textarea>
+            </div>
+
+            <div class="editor-section">
+              <label>Object</label>
+              <select id="event-object" onchange="updateEventPreview()">
+                <option value="">Select object</option>
+                ${renderCPQObjectOptions()}
+              </select>
+            </div>
+
+            <div class="editor-section">
+              <label>Action</label>
+              <select id="event-action" onchange="updateEventPreview()">
+                <option value="">Select action</option>
+                <option value="create">Create</option>
+                <option value="update">Update</option>
+                <option value="delete">Delete</option>
+              </select>
+            </div>
+
+            <div id="event-text-preview" class="preview-text">
+              Select an object and action to describe this trigger.
+            </div>
+
+            <div class="editor-actions">
+              <button class="btn-secondary" onclick="cancelEventEdit()">Cancel</button>
+              <button class="btn-primary" onclick="saveEventNode()">Done</button>
+            </div>
+          </div>
+
+          <div class="editor-right">
+            <h4>Event JSON</h4>
+            <pre id="event-json-preview">{}</pre>
+          </div>
+
+        </div>
+
+        <!-- EVENT → NEXT CONNECTOR -->
+        <div id="event-connector" class="event-connector hidden">
+          <div class="connector-line"></div>
+
+          <div class="connector-plus" onclick="toggleNextNodeMenu()">
+            +
+          </div>
+
+          <div id="next-node-menu" class="next-node-menu hidden">
+            <div class="next-node-option" onclick="createConditionsNode()">
+              Conditions
+            </div>
+            <div class="next-node-option disabled">
+              Actions (coming soon)
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  `;
+}
+
+function createEventNode() {
+  document.getElementById("add-event-node").classList.add("hidden");
+  document.getElementById("event-node").classList.remove("hidden");
+  openEventNodeEditor();
+}
+
+function openEventNodeEditor() {
+  // Snapshot del estado actual (lo guardado)
+  const saved = eventNodeState?.data?.event_type
+    ? {
+        description: eventNodeState.data.description || "",
+        object_name: eventNodeState.data.event_type.object_name || "",
+        action: (eventNodeState.data.event_type.action || "").toLowerCase()
+      }
+    : { description: "", object_name: "", action: "" };
+
+  eventSnapshot = JSON.parse(JSON.stringify(saved));
+  eventDraft = JSON.parse(JSON.stringify(saved));
+
+  // Cargar form con lo guardado
+  setEventFormData(saved);
+
+  // Mostrar editor
+  document.getElementById("node-editor").classList.remove("hidden");
+
+  // Pintar preview con lo cargado
+  updateEventPreview(true);
+}
+
+function renderCPQObjectOptions() {
+  const objects = [
+    "Opportunity",
+    "Quote",
+    "QuoteLine",
+    "Contract",
+    "Account",
+    "Subscription"
+  ];
+
+  return objects.map(o => {
+    let value;
+
+    if (o === "QuoteLine") {
+      value = "quote_line";   // 👈 caso especial
+    } else {
+      value = o.toLowerCase();
+    }
+
+    return `<option value="${value}">${o}</option>`;
+  }).join("");
+}
+
+function openEventTypePanel() {
+  document.getElementById("event-type-panel").classList.remove("hidden");
+}
+
+function openEventTypeEditor() {
+  document.getElementById("node-editor").classList.remove("hidden");
+}
+
+function updateEventPreview(fromSavedOrDraft = false) {
+  // Siempre leemos del form y lo ponemos en draft
+  const form = getEventFormData();
+
+  if (!eventDraft) eventDraft = { description: "", object_name: "", action: "" };
+  eventDraft.description = form.description;
+  eventDraft.object_name = form.object_name;
+  eventDraft.action = form.action;
+
+  const description = eventDraft.description;
+  const object = eventDraft.object_name;
+  const action = eventDraft.action;
+
+  let text = "Select an object and action to describe this trigger.";
+  let nodeSummary = eventNodeState?.configured ? (document.getElementById("event-node-summary").innerText || "Configured") : "Not configured";
+
+  if (object && action) {
+    const label = object.charAt(0).toUpperCase() + object.slice(1);
+
+    if (action === "create") text = `This trigger activates when a ${label} is created.`;
+    if (action === "update") text = `This trigger activates when a ${label} is updated.`;
+    if (action === "delete") text = `This trigger activates when a ${label} is deleted.`;
+
+    // Solo actualiza el resumen del nodo visualmente mientras editas
+    nodeSummary = `${label} · ${action.toUpperCase()}`;
+  }
+
+  document.getElementById("event-text-preview").innerText = text;
+
+  // OJO: aquí sí puedes mostrar el summary mientras editas (como n8n),
+  // pero si cancelas lo vamos a restaurar.
+  document.getElementById("event-node-summary").innerText = nodeSummary;
+
+  const json = {
+    description: description || "",
+    event_type: {
+      object_name: object || null,
+      action: action ? action.toUpperCase() : null
+    }
+  };
+
+  document.getElementById("event-json-preview").innerText =
+    JSON.stringify(json, null, 2);
+}
+
+
+function saveEventNode() {
+  if (!eventDraft) eventDraft = getEventFormData();
+
+  const description = eventDraft.description || "";
+  const object = eventDraft.object_name || "";
+  const action = eventDraft.action || "";
+
+  if (!object || !action) {
+    alert("Please select an object and an action.");
+    return;
+  }
+
+  eventNodeState.configured = true;
+  eventNodeState.data = {
+    description: description,
+    event_type: {
+      object_name: object,
+      action: action.toUpperCase()
+    }
+  };
+
+  document.getElementById("event-node").classList.add("configured");
+
+  // limpiar draft/snapshot
+  eventSnapshot = null;
+  eventDraft = null;
+
+  closeEventEditor();
+
+  // Mostrar conector hacia el siguiente nodo
+  document.getElementById("event-connector")?.classList.remove("hidden");
+
+  // Inicializar JSON global
+  actionTriggerJSON.description = description;
+  actionTriggerJSON.event_type = {
+    object_name: object,
+    action: action.toUpperCase()
+  };
+
+  // Inicializar Context Sources con el EVENT ROOT
+  contextSources = {
+    [object]: modelSchema[object]
+  };
+
+  console.log("✅ Event node saved:", eventNodeState.data);
+}
+
+
+function cancelEventEdit() {
+
+  // CASO 1️⃣: Nodo NO configurado → volver a "Add first step"
+  if (!eventNodeState.configured) {
+    // Ocultar nodo
+    document.getElementById("event-node").classList.add("hidden");
+
+    // Mostrar botón inicial
+    document.getElementById("add-event-node").classList.remove("hidden");
+
+    // Resetear summary
+    document.getElementById("event-node-summary").innerText = "Not configured";
+
+    // Limpiar preview JSON
+    document.getElementById("event-json-preview").innerText = "{}";
+
+    // Limpiar texto descriptivo
+    document.getElementById("event-text-preview").innerText =
+      "Select an object and action to describe this trigger.";
+
+  } 
+  // CASO 2️⃣: Nodo ya configurado → restaurar snapshot
+  else if (eventSnapshot) {
+
+    setEventFormData(eventSnapshot);
+
+    const obj = eventNodeState.data.event_type.object_name;
+    const act = eventNodeState.data.event_type.action;
+    const label = obj.charAt(0).toUpperCase() + obj.slice(1);
+
+    document.getElementById("event-node-summary").innerText =
+      `${label} · ${act}`;
+
+    eventDraft = JSON.parse(JSON.stringify(eventSnapshot));
+    updateEventPreview(true);
+  }
+
+  // Limpiar draft y snapshot
+  eventDraft = null;
+  eventSnapshot = null;
+
+  closeEventEditor();
+}
+
+function closeEventEditor() {
+  document.getElementById("node-editor").classList.add("hidden");
+}
+
+
+function getEventFormData() {
+  return {
+    description: document.getElementById("event-description")?.value || "",
+    object_name: document.getElementById("event-object")?.value || "",
+    action: document.getElementById("event-action")?.value || ""
+  };
+}
+
+function setEventFormData(data) {
+  document.getElementById("event-description").value = data?.description || "";
+  document.getElementById("event-object").value = data?.object_name || "";
+  document.getElementById("event-action").value = data?.action || "";
+
+  // Si usas Materialize selects, refresca UI
+  try {
+    const selects = document.querySelectorAll(".graphic-builder select");
+    M.FormSelect.init(selects);
+  } catch (e) {}
+}
+
+function toggleNextNodeMenu() {
+  document
+    .getElementById("next-node-menu")
+    .classList.toggle("hidden");
+}
+
+function createConditionsNode() {
+  document.getElementById("next-node-menu").classList.add("hidden");
+
+  if (conditionsNodeState.created) return;
+
+  conditionsNodeState.created = true;
+
+  const canvas = document.querySelector(".flow-canvas");
+  canvas.insertAdjacentHTML("beforeend", renderConditionsNode());
+
+  openConditionsEditor();
+
+  // 🔑 RE-INICIALIZAR MATERIALIZE SELECTS
+  try {
+    const selects = document.querySelectorAll(
+      ".graphic-builder .conditions-col-middle select"
+    );
+    M.FormSelect.init(selects);
+  } catch (e) {
+    console.warn("Materialize init failed", e);
+  }
+}
+
+function renderConditionsNode() {
+  return `
+    <!-- CONDITIONS NODE -->
+    <div id="conditions-node" class="flow-node conditions-node">
+      <div class="node-title">Conditions</div>
+      <div class="node-summary">Not configured</div>
+    </div>
+
+    <!-- CONDITIONS EDITOR -->
+    <div id="conditions-editor" class="node-editor hidden">
+
+      <!-- COLUMN 1 -->
+      <div class="conditions-col conditions-col-left">
+        ${renderConditionsColumnContext()}
+      </div>
+
+      <!-- COLUMN 2 (placeholder) -->
+      <div class="conditions-col conditions-col-middle">
+        <h3>Conditions</h3>
+        
+        <!-- LOGICAL OPERATOR -->
+        <div class="conditions-section">
+          <label class="section-label">Logical Operator</label>
+
+          <select id="conditions-logical-operator"
+                  onchange="updateConditionsLogicalOperator()">
+            <option value="AND">
+              All conditions must be true (AND)
+            </option>
+            <option value="OR">
+              Any condition can be true (OR)
+            </option>
+          </select>
+
+          <div class="section-divider"></div>
+        </div>
+
+        <!-- ITEMS -->
+        <div class="conditions-section">
+          <label class="section-label">Items</label>
+
+          <button class="add-item-btn" onclick="addConditionRow()">
+            +
+          </button>
+
+          <div id="conditions-items" class="conditions-items"></div>
+        </div>
+      </div>
+
+      <!-- COLUMN 3 (placeholder) -->
+      <div class="conditions-col conditions-col-right">
+        <h4>Preview</h4>
+        <pre>{}</pre>
+      </div>
+
+    </div>
+  `;
+}
+
+function renderConditionsColumnContext() {
+  const eventRoot = actionTriggerJSON.event_type?.object_name || "";
+
+  return `
+    <h3>When</h3>
+
+    <div class="when-box">
+      <strong>Event Root</strong>
+      <div class="event-root-label">${eventRoot}</div>
+    </div>
+
+    <h4 class="section-title">Context Sources</h4>
+
+    <div class="context-sources">
+      ${renderContextSourceTree(eventRoot)}
+    </div>
+  `;
+}
+
+function renderContextSourceTree(objectName, path = objectName, visited = new Set()) {
+
+  if (visited.has(objectName)) {
+    return `
+      <div class="context-cycle">
+        ↺ ${objectName} (cycle)
+      </div>
+    `;
+  }
+
+  const schema = modelSchema[objectName];
+  if (!schema) return "";
+
+  visited.add(objectName);
+
+  const fields = schema.fields || {};
+  const nodeId = `${path.replace(/\./g, "_")}`;
+
+  return `
+    <div class="context-object" data-node="${nodeId}">
+      <div class="context-object-header"
+           onclick="toggleContextNode('${nodeId}')">
+        <span class="arrow">▸</span> ${objectName}
+      </div>
+
+      <div class="context-fields hidden">
+        ${Object.entries(fields).map(([fieldName, meta]) => {
+          const fieldPath = `${path}.${fieldName}`;
+
+          if (meta.type === "fk") {
+            const fkNodeId = `${fieldPath.replace(/\./g, "_")}`;
+
+            return `
+              <div class="context-field fk">
+                <div class="context-field-label"
+                     onclick="toggleContextNode('${fkNodeId}')">
+                  <span class="arrow">▸</span> ${fieldName}
+                </div>
+
+                <div class="context-nested hidden" data-node="${fkNodeId}">
+                  ${renderObjectFields(
+                    meta.target,
+                    fieldPath,
+                    new Set(visited)
+                  )}
+                </div>
+              </div>
+            `;
+          }
+
+          return `
+            <div class="context-field"
+                 draggable="true"
+                 data-path="${fieldPath}">
+              ${fieldName}
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function toggleContextNode(nodeId) {
+  const container = document.querySelector(`[data-node="${nodeId}"]`);
+  if (!container) return;
+
+  let target;
+
+  // Caso 1️⃣: object root → abrir fields
+  if (container.classList.contains("context-object")) {
+    target = container.querySelector(".context-fields");
+  }
+  // Caso 2️⃣: FK → el propio container es el nested
+  else if (container.classList.contains("context-nested")) {
+    target = container;
+  }
+
+  if (!target) return;
+
+  // Flecha asociada
+  const arrow = document.querySelector(
+    `[onclick="toggleContextNode('${nodeId}')"] .arrow`
+  );
+
+  const isHidden = target.classList.contains("hidden");
+
+  target.classList.toggle("hidden");
+
+  if (arrow) {
+    arrow.textContent = isHidden ? "▾" : "▸";
+  }
+}
+
+function renderObjectFields(objectName, path, visited) {
+  if (visited.has(objectName)) {
+    return `<div class="context-cycle">↺ ${objectName} (cycle)</div>`;
+  }
+
+  const schema = modelSchema[objectName];
+  if (!schema) return "";
+
+  visited.add(objectName);
+
+  return Object.entries(schema.fields || {}).map(([fieldName, meta]) => {
+    const fieldPath = `${path}.${fieldName}`;
+
+    if (meta.type === "fk") {
+      const fkNodeId = fieldPath.replace(/\./g, "_");
+
+      return `
+        <div class="context-field fk">
+          <div class="context-field-label"
+               onclick="toggleContextNode('${fkNodeId}')">
+            <span class="arrow">▸</span> ${fieldName}
+          </div>
+
+          <div class="context-nested hidden" data-node="${fkNodeId}">
+            ${renderObjectFields(
+              meta.target,
+              fieldPath,
+              new Set(visited)
+            )}
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="context-field"
+           draggable="true"
+           data-path="${fieldPath}">
+        ${fieldName}
+      </div>
+    `;
+  }).join("");
+}
+
+function openConditionsEditor() {
+  document.getElementById("conditions-editor").classList.remove("hidden");
+}
+
+function closeConditionsEditor() {
+  document.getElementById("conditions-editor").classList.add("hidden");
+}
+
+// CONDITIONS NODE - COLUMN 2 FUNCTIONS
+
+function addConditionRow() {
+  const id = Date.now();
+
+  conditionsDraft.items.push({
+    id,
+    left: null,
+    operator: null,
+    right: null
+  });
+
+  renderConditionsItems();
+}
+
+function renderConditionsItems() {
+  const container = document.getElementById("conditions-items");
+  if (!container) return;
+
+  container.innerHTML = conditionsDraft.items.map(item => `
+    <div class="condition-row" data-id="${item.id}">
+
+      <!-- SOURCE -->
+      <div class="condition-field">
+        <label>Source</label>
+        <div class="condition-cell empty"
+             ondragover="allowDrop(event)"
+             ondrop="dropConditionField(event, ${item.id})">
+          ${item.left ? item.left.field_name : "Drop field here"}
+        </div>
+      </div>
+
+      <!-- OPERATOR -->
+      <div class="condition-field">
+        <label>Operator</label>
+        <select class="condition-operator"
+                onchange="setConditionOperator(${item.id}, this.value)">
+          <option value="">--</option>
+          <option value="=" ${item.operator === "=" ? "selected" : ""}>=</option>
+          <option value="!=" ${item.operator === "!=" ? "selected" : ""}>!=</option>
+          <option value=">" ${item.operator === ">" ? "selected" : ""}>></option>
+          <option value="<" ${item.operator === "<" ? "selected" : ""}><</option>
+          <option value="contains" ${item.operator === "contains" ? "selected" : ""}>contains</option>
+        </select>
+      </div>
+
+      <!-- TARGET -->
+      <div class="condition-field">
+        <label>Target</label>
+        <input type="text"
+               class="condition-cell"
+               placeholder="Value"
+               value="${item.right?.value ?? ""}"
+               onchange="setConditionRight(${item.id}, this.value)" />
+      </div>
+
+    </div>
+  `).join("");
+}
+
+function allowDrop(ev) {
+  ev.preventDefault();
+}
+
+document.addEventListener("dragstart", e => {
+  const path = e.target.dataset?.path;
+  if (path) {
+    e.dataTransfer.setData("text/plain", path);
+  }
+});
+
+function dropConditionField(ev, conditionId) {
+  ev.preventDefault();
+  const path = ev.dataTransfer.getData("text/plain");
+
+  const condition = conditionsDraft.items.find(c => c.id === conditionId);
+  if (!condition) return;
+
+  condition.left = {
+    source: "field",
+    field_name: path
+  };
+
+  renderConditionsItems();
+  syncConditionsToJSON();
+}
+
+function setConditionOperator(id, operator) {
+  const c = conditionsDraft.items.find(i => i.id === id);
+  if (!c) return;
+
+  c.operator = operator;
+  syncConditionsToJSON();
+}
+
+function setConditionRight(id, value) {
+  const c = conditionsDraft.items.find(i => i.id === id);
+  if (!c) return;
+
+  c.right = {
+    source: "static",
+    value: value
+  };
+
+  syncConditionsToJSON();
+}
+
+function updateConditionsLogicalOperator() {
+  const value = document.getElementById("conditions-logical-operator").value;
+  conditionsDraft.logical_operator = value;
+  syncConditionsToJSON();
+}
+
+function syncConditionsToJSON() {
+  actionTriggerJSON.conditions = {
+    logical_operator: conditionsDraft.logical_operator,
+    items: conditionsDraft.items
+      .filter(c => c.left && c.operator && c.right)
+      .map(({ left, operator, right }) => ({
+        left,
+        operator,
+        right
+      }))
+  };
+
+  // Preview (columna 3 luego)
+  console.log("✅ Conditions JSON", actionTriggerJSON.conditions);
 }

@@ -45,18 +45,30 @@ def get_action_triggers_details(action_triggers):
     for trigger in triggers_qs:
         actions = trigger.actions or []
 
-        # ✅ REORDENAR FIELDS SEGÚN MODELO DESTINO
         reordered_actions = []
 
         for action in actions:
+            op = action.get("operation")
+
+            # -------------------------------------------------
+            # 🔥 EMAIL ACTION — DO NOT TOUCH value / fields
+            # -------------------------------------------------
+            if op == "EMAIL":
+                reordered_actions.append(action)
+                continue
+
+            # -------------------------------------------------
+            # DB ACTIONS ONLY
+            # -------------------------------------------------
             target = action.get("target")
-            value = action.get("value", {})
-            fields = value.get("fields", {})
+            value = action.get("value") or {}
+            fields = value.get("fields") or {}
 
             model = _resolve_model_from_target(target)
 
-            if model:
+            if model and fields:
                 value["fields"] = _reorder_fields_by_model(fields, model)
+                action["value"] = value
 
             reordered_actions.append(action)
 
@@ -72,7 +84,6 @@ def get_action_triggers_details(action_triggers):
         })
 
     return trigger_details
-
 
 def _resolve_model_from_target(target: str):
     """
@@ -147,9 +158,21 @@ def action_trigger_creation_type_with_llm(user_message):
     2. Text Mode:  
     The user DOES specify action trigger details in the message.
 
+        Text Operation:
+        Add the "action" key to the JSON object specifying the exact action the user wants to perform after the conditions 
+        in the action trigger are met. Do not consider "action" to be the action of creating the action trigger itself. 
+        "Action" refers to what the user wants the engine to do after the action trigger executes. The options are: CREATE, CLONE, UPDATE, DELETE, and EMAIL.
+
     Your task is to return the following JSON:
+    If mode = graphic
     {
-    "mode": "graphic | text"
+        "mode": "graphic"
+    }
+
+    If mode = text
+    {
+        "mode": "text",
+        "action": "CREATE | CLONE | UPDATE | DELETE | EMAIL"
     }
     """
 
@@ -184,3 +207,42 @@ def action_trigger_creation_type_with_llm(user_message):
         return None
 
     return result
+
+def get_cpq_model_schema():
+    schema = {}
+
+    for model in apps.get_app_config("cpq").get_models():
+        model_name = model.__name__
+        object_name = model_name.lower()
+
+        if model_name == "QuoteLine":
+            object_name = "quote_line"
+
+        fields = {}
+
+        for field in model._meta.get_fields():
+
+            # 🔹 ForeignKey (navegable)
+            if field.is_relation and field.many_to_one and field.related_model:
+                fields[field.name] = {
+                    "type": "fk",
+                    "target": field.related_model.__name__.lower()
+                }
+
+            # 🔹 Campo normal
+            elif field.concrete:
+                fields[field.name] = {
+                    "type": "number"
+                        if field.get_internal_type() in [
+                            "IntegerField",
+                            "DecimalField",
+                            "FloatField"
+                        ]
+                        else "string"
+                }
+
+        schema[object_name] = {
+            "fields": fields
+        }
+
+    return schema
