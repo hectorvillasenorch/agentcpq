@@ -11,7 +11,7 @@ from django.db.models import JSONField
 from dateutil.relativedelta import relativedelta # type: ignore
 from django.contrib.auth.models import User
 from django.conf import settings
-import os , uuid
+import os , uuid, string, re
 import secrets
 from django.utils.timezone import now
 
@@ -39,6 +39,60 @@ def generate_agentcpq_id():
     base = base62_encode(number)
     branded = base[:4] + "ACPQ" + base[4:]
     return branded[:18].upper()
+
+def increment_alpha_code(code):
+    letters = string.ascii_uppercase
+    result = list(code)
+
+    i = len(result) - 1
+    while i >= 0:
+        if result[i] != 'Z':
+            result[i] = letters[letters.index(result[i]) + 1]
+            return ''.join(result)
+        result[i] = 'A'
+        i -= 1
+
+    return 'A' + ''.join(result)
+
+
+def get_alpha_prefix_for_custom_object(custom_object, base_prefix):
+    """
+    Devuelve SIEMPRE la misma letra para el mismo CustomObject.
+    Solo genera una nueva si el objeto aún no tiene records.
+    """
+
+    # 1️⃣ Si este custom object YA tiene records → reutilizar su letra
+    existing = CustomRecord.objects.filter(
+        object_type=custom_object,
+        custom_identifier__startswith=f"{base_prefix}-"
+    ).values_list("custom_identifier", flat=True).first()
+
+    if existing:
+        # extraer la letra ya asignada (ING-A-00001 → A)
+        match = re.match(rf"^{base_prefix}-([A-Z]+)-\d+", existing)
+        if match:
+            return match.group(1)
+
+    # 2️⃣ Si NO tiene records → buscar letras usadas por otros objetos
+    used = set()
+
+    pattern = re.compile(rf"^{base_prefix}-([A-Z]+)-\d+")
+
+    identifiers = CustomRecord.objects.filter(
+        custom_identifier__startswith=f"{base_prefix}-"
+    ).values_list("custom_identifier", flat=True)
+
+    for identifier in identifiers:
+        match = pattern.match(identifier)
+        if match:
+            used.add(match.group(1))
+
+    # 3️⃣ Obtener siguiente letra disponible
+    current = "A"
+    while current in used:
+        current = increment_alpha_code(current)
+
+    return current
 
 class Lead(models.Model):
     STATUS_CHOICES = [
@@ -1067,7 +1121,7 @@ class CustomObject(models.Model):
 
 #dummy model for all custom objects
 class CustomRecord(models.Model):
-    custom_identifier = models.CharField(max_length=10, unique=True, blank=True, null=True)
+    custom_identifier = models.CharField(max_length=30, unique=True, blank=True, null=True)
     object_type = models.ForeignKey(CustomObject, on_delete=models.CASCADE, related_name='records')
     record_id = models.UUIDField(null=True, blank=True)
 
@@ -1075,6 +1129,25 @@ class CustomRecord(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_custom_records')
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_custom_records')
+
+    def save(self, *args, **kwargs):
+        creating = self.pk is None
+
+        super().save(*args, **kwargs)
+
+        if creating and not self.custom_identifier:
+            label = self.object_type.label or self.object_type.name
+            base_prefix = label[:3].upper()
+
+            alpha = get_alpha_prefix_for_custom_object(
+                self.object_type,
+                base_prefix
+            )
+
+            padded_id = str(self.id).zfill(5)
+
+            self.custom_identifier = f"{base_prefix}-{alpha}-{padded_id}"
+            super().save(update_fields=["custom_identifier"])
 
     def __str__(self):
         label = f"{self.object_type.name} record"

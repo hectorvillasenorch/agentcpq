@@ -37,7 +37,7 @@ from django.conf import settings
 from django.core.mail import EmailMessage, EmailMultiAlternatives
 import smtplib
 from django.template.loader import render_to_string
-import re
+import re, string
 from .forms import SignupForm
 from django.contrib.auth.views import LogoutView
 
@@ -192,16 +192,21 @@ def get_user_accounts(user):
     return Account.objects.filter(owner=user)
 
 def get_values_by_record(custom_object):
-    records_custom_object = CustomRecord.objects.filter(object_type=custom_object).order_by('-created_at')
+    records_custom_object = (
+        CustomRecord.objects
+        .filter(object_type=custom_object)
+        .order_by('-created_at')
+        .prefetch_related("custom_field_values__field")
+    )
 
     field_values_by_record = {}
 
     for record in records_custom_object:
-        values = CustomFieldValue.objects.filter(record=record).select_related("field")
-        field_values_by_record[record.record_id] = {
-            val.field.label or val.field.name: val.value
-            for val in values
+        field_values_by_record[record.id] = {
+            val.field.id: val.value
+            for val in record.custom_field_values.all()
         }
+
     return records_custom_object, field_values_by_record
 
 def get_lookup_data_for_form(custom_object):

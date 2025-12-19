@@ -40,11 +40,6 @@ def set_custom_fields_to_quote_template(sender, instance, **kwargs):
 def update_quote_template_after_delete(sender, instance, **kwargs):
     set_custom_fields_into_quote_document_settings(["Product", "Quote"])
 
-@receiver(post_save, sender=CustomRecord)
-def set_or_create_custom_identifier_for_record(sender, instance, created, **kwargs):
-    if created:
-        set_custom_indentifier(instance)
-
 # 📧🔔 EMAIL NOTIFICATIONS SIGNALS
 from .utils import run_async
 # LEAD HAS BEEN CREATED

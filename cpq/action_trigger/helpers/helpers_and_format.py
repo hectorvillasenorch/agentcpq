@@ -89,3 +89,23 @@ def get_model_class(model_name_snake: str):
             return apps.get_model("cpq", model_name_snake)
         except LookupError:
             return None
+        
+def get_next_custom_identifier(last_identifier: str) -> Optional[str]:
+    """
+    Generates the next custom_identifier based on the previous one.
+
+    Format expected:
+        ABC-00001
+    """
+    if not last_identifier:
+        return None
+
+    match = re.match(r"^([A-Z]+)-(\d{5})$", str(last_identifier).strip())
+    if not match:
+        return None
+
+    prefix = match.group(1)
+    number = int(match.group(2))
+
+    next_number = number + 1
+    return f"{prefix}-{str(next_number).zfill(5)}"

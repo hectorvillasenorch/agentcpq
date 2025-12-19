@@ -27,6 +27,7 @@ from cpq.action_trigger.helpers.helpers_and_format import (
     normalize_number,
     make_json_safe,
     get_model_class,
+    get_next_custom_identifier
 )
 
 
@@ -107,63 +108,120 @@ class TriggerEngine:
                 self._executed_fingerprints = set()
 
             # --------------------------------------------------------------
-            # 2) Si este fingerprint ya se ejecutó → evitar duplicados
-            # --------------------------------------------------------------
-            if fingerprint in self._executed_fingerprints:
-                logger.debug(
-                    f"⚠️ Duplicate trigger prevented via fingerprint ({sender.__name__}, pk={instance.pk})"
-                )
-                return
-
-            # --------------------------------------------------------------
             # 3) Determinar acción (create / update / delete)
             # --------------------------------------------------------------
             created = kwargs.get("created", None)
             if timing in ("pre_delete", "post_delete"):
-                action = "delete"
+                action = "DELETE"
             elif created is True:
-                action = "create"
+                action = "CREATE"
             else:
-                action = "update"
-
-            object_type = self._normalize_model_name(sender.__name__)
-            event_type = f"{object_type}.{action}"
-
-            ActionTrigger = apps.get_model("cpq", "ActionTrigger")
-            active_triggers = [
-                t for t in ActionTrigger.objects.filter(active=True, signal_timing=timing)
-                if self._event_type_matches(t.event_type, event_type)
-            ]
-
-            if not active_triggers:
-                logger.debug(f"\n🕐 SIGNAL [{timing.upper()} → {event_type}] — No trigger actions\n")
-                return
-
-            logger.debug(
-                "\n" + "=" * 80 +
-                f"\n⚡ Trigger fired [{timing.upper()} → {event_type}]\n"
-                f"   📦 Model: {sender.__name__}\n"
-                f"   🔑 PK: {getattr(instance, 'pk', None)}\n"
-                f"   🕐 Instance: {instance}\n" +
-                "=" * 80
-            )
+                action = "UPDATE"
 
             # --------------------------------------------------------------
-            # 4) Registrar fingerprint como “ya ejecutado” para evitar loops
+            # 4) EVENTO TÉCNICO (modelo real)
             # --------------------------------------------------------------
-            self._executed_fingerprints.add(fingerprint)
+            real_object_type = self._normalize_model_name(sender.__name__)
+            real_event_type = f"{real_object_type}.{action.lower()}"
 
             # --------------------------------------------------------------
-            # 5) Ejecutar evento
+            # 5) EVENTOS VIRTUALES (Custom Objects)
             # --------------------------------------------------------------
-            try:
-                self._execute_event(event_type, instance, timing)
-            except Exception as exc:
-                logger.exception(
-                    "❌ Error handling event %s (%s): %s", event_type, timing, exc
+            virtual_events = self._resolve_virtual_events(sender, instance, action)
+
+            events_to_process = []
+
+            # Evento técnico (opcional, pero lo dejamos)
+            events_to_process.append({
+                "object_type": real_object_type,
+                "action": action.lower(),
+                "instance": instance,
+            })
+
+            # Eventos virtuales (negocio)
+            for ve in virtual_events:
+                events_to_process.append({
+                    "object_type": ve["object_type"],
+                    "action": ve["action"].lower(),
+                    "instance": ve["instance"],
+                })
+
+            # --------------------------------------------------------------
+            # 6) Ejecutar TODOS los eventos resueltos
+            # --------------------------------------------------------------
+            for evt in events_to_process:
+                evt_type = f"{evt['object_type']}.{evt['action']}"
+
+                ActionTrigger = apps.get_model("cpq", "ActionTrigger")
+                active_triggers = [
+                    t for t in ActionTrigger.objects.filter(active=True, signal_timing=timing)
+                    if self._event_type_matches(t.event_type, evt_type)
+                ]
+
+                if not active_triggers:
+                    logger.debug(f"\n🕐 SIGNAL [{timing.upper()} → {evt_type}] — No trigger actions\n")
+                    continue
+
+                logger.debug(
+                    "\n" + "=" * 80 +
+                    f"\n⚡ Trigger fired [{timing.upper()} → {evt_type}]\n"
+                    f"   📦 Model: {sender.__name__}\n"
+                    f"   🧩 Virtual Object: {evt['object_type']}\n"
+                    f"   🔑 PK: {getattr(evt['instance'], 'pk', None)}\n"
+                    f"   🕐 Instance: {evt['instance']}\n" +
+                    "=" * 80
                 )
 
+                # ----------------------------------------------------------
+                # Anti-loop: registrar fingerprint
+                # ----------------------------------------------------------
+                self._executed_fingerprints.add(fingerprint)
+
+                try:
+                    self._execute_event(
+                        evt_type,
+                        evt["instance"],     # 👈 IMPORTANTE: CustomRecord
+                        timing
+                    )
+                except Exception as exc:
+                    logger.exception(
+                        "❌ Error handling event %s (%s): %s", evt_type, timing, exc
+                    )
+
         return _receiver
+    
+    # ----------------------------------------------------------------------
+    # 🧠 EVENT VIRTUALIZATION (Custom Objects)
+    # ----------------------------------------------------------------------
+    def _resolve_virtual_events(self, sender, instance, action: str):
+        """
+        Traduce signals técnicos (CustomRecord / CustomFieldValue)
+        a eventos de negocio (<custom_object>__c.ACTION)
+
+        Retorna lista de:
+            {
+                "object_type": str,
+                "action": str,
+                "instance": Model
+            }
+        """
+        virtual_events = []
+
+        # --------------------------------------------------
+        # 🧩 CustomRecord → <custom_object>__c.(CREATE|UPDATE|DELETE)
+        # --------------------------------------------------
+        if isinstance(instance, CustomRecord):
+            try:
+                custom_object_name = instance.object_type.name
+                virtual_events.append({
+                    "object_type": custom_object_name,
+                    "action": action.upper(),
+                    "instance": instance,
+                })
+            except Exception:
+                pass
+
+        return virtual_events
 
 
     def _execute_event(self, event_type: str, instance: Model, signal_timing: str):
@@ -223,6 +281,13 @@ class TriggerEngine:
         event_type = f"{object_type}.{action}"
         logger.debug(f"⚙️ Processing triggers for event {event_type} [{signal_timing}]")
 
+        from django.db import transaction
+
+        is_custom_object_create = (
+            object_type.endswith("__c")
+            and action == "create"
+        )
+
         # ----------------------------------------------------------------------
         # ✅ Anti-Loop: bloquear reentradas mientras este evento está en proceso
         # ----------------------------------------------------------------------
@@ -271,150 +336,161 @@ class TriggerEngine:
         failed_context = None   # ✅ guardamos info del error aquí
 
 
-        try:
-            with transaction.atomic():
+        def _execute_triggers():
+            failed_context = None
 
-                for trig in triggers:
-                    try:
-                        matched, context = self._evaluate_trigger(trig, instance)
-                        if not matched:
-                            continue
+            try:
+                with transaction.atomic():
 
-                        context["_trigger"] = trig
+                    for trig in triggers:
                         try:
-                            exec_results = self._execute_trigger_actions(trig, instance, context)
-                        finally:
-                            # Limpieza garantizada, pase lo que pase
-                            context.pop("_trigger", None)
+                            matched, context = self._evaluate_trigger(trig, instance)
+                            if not matched:
+                                continue
 
-                        results.append({
-                            "trigger_id": getattr(trig, "id", None),
-                            "results": exec_results
-                        })
-
-                        def log_success():
+                            context["_trigger"] = trig
                             try:
-                                operation, target_model = self._resolve_operation_and_target_from_trigger(trig)
+                                exec_results = self._execute_trigger_actions(trig, instance, context)
+                            finally:
+                                # Limpieza garantizada, pase lo que pase
+                                context.pop("_trigger", None)
 
-                                exists = ActionLog.objects.filter(
-                                    trigger_name=trig.name,   # ✅ ahora cada trigger es único
-                                    target_pk=str(instance.pk),
-                                    operation=operation,     # ✅ mismo tipo de acción
-                                    event_type=event_type,
-                                    signal_timing=signal_timing,
-                                ).exists()
+                            results.append({
+                                "trigger_id": getattr(trig, "id", None),
+                                "results": exec_results
+                            })
 
-                                if exists:
-                                    return  # ✅ Evita duplicado real definitivo
+                            def log_success():
+                                try:
+                                    operation, target_model = self._resolve_operation_and_target_from_trigger(trig)
 
-                                result_payload = {"ok": True}
+                                    exists = ActionLog.objects.filter(
+                                        trigger_name=trig.name,   # ✅ ahora cada trigger es único
+                                        target_pk=str(instance.pk),
+                                        operation=operation,     # ✅ mismo tipo de acción
+                                        event_type=event_type,
+                                        signal_timing=signal_timing,
+                                    ).exists()
 
-                                # ✅ Extraer warnings de cualquier acción (CLONE, BULK, etc.)
-                                warnings = []
+                                    if exists:
+                                        return  # ✅ Evita duplicado real definitivo
 
-                                for r in exec_results:
-                                    action_result = r.get("result") or {}
-                                    if isinstance(action_result, dict):
-                                        w = action_result.get("warnings")
-                                        if isinstance(w, list):
-                                            warnings.extend(w)
+                                    result_payload = {"ok": True}
 
-                                if warnings:
-                                    result_payload["warnings"] = warnings
+                                    # ✅ Extraer warnings de cualquier acción (CLONE, BULK, etc.)
+                                    warnings = []
 
-                                ActionLog.objects.create(
-                                    trigger_name=trig.name,
-                                    operation=operation,
-                                    target_model=target_model,
-                                    target_pk=str(instance.pk),
-                                    event_type=event_type,
-                                    signal_timing=signal_timing,
-                                    status="success",
-                                    payload=exec_results,
-                                    result=result_payload
-                                )
+                                    for r in exec_results:
+                                        action_result = r.get("result") or {}
+                                        if isinstance(action_result, dict):
+                                            w = action_result.get("warnings")
+                                            if isinstance(w, list):
+                                                warnings.extend(w)
 
-                            except Exception as log_exc:
-                                logger.exception("⚠️ Error creando ActionLog (success): %s", log_exc)
+                                    if warnings:
+                                        result_payload["warnings"] = warnings
 
-                        transaction.on_commit(log_success)
+                                    ActionLog.objects.create(
+                                        trigger_name=trig.name,
+                                        operation=operation,
+                                        target_model=target_model,
+                                        target_pk=str(instance.pk),
+                                        event_type=event_type,
+                                        signal_timing=signal_timing,
+                                        status="success",
+                                        payload=exec_results,
+                                        result=result_payload
+                                    )
 
-                        for action_data in (trig.actions or []):
-                            raw_target = action_data.get("target")
+                                except Exception as log_exc:
+                                    logger.exception("⚠️ Error creando ActionLog (success): %s", log_exc)
 
-                            # Normalizar target en string
-                            if isinstance(raw_target, str):
-                                # target root model: "opportunity", "quote", "quote_line"
-                                parts = raw_target.split(".")
-                                target_root = parts[0]
-                                target_last = parts[-1]
-                            elif isinstance(raw_target, dict):
-                                target_root = raw_target.get("object", "")
-                                target_last = raw_target.get("path", "").split(".")[-1] if raw_target.get("path") else target_root
-                            else:
-                                target_root = ""
-                                target_last = ""
+                            transaction.on_commit(log_success)
 
-                            # ------------------------------------------------------
-                            # 🟢 Detectar cuándo recalcular QUOTE
-                            # ------------------------------------------------------
-                            # Caso 1: target = "quote"
-                            if target_root == "quote":
-                                quotes_to_recalc.add(instance.pk)
+                            for action_data in (trig.actions or []):
+                                raw_target = action_data.get("target")
 
-                            # Caso 2: target es quote_line
-                            if target_root == "quote_line" and getattr(instance, "quote_id", None):
-                                quotes_to_recalc.add(instance.quote_id)
+                                # Normalizar target en string
+                                if isinstance(raw_target, str):
+                                    # target root model: "opportunity", "quote", "quote_line"
+                                    parts = raw_target.split(".")
+                                    target_root = parts[0]
+                                    target_last = parts[-1]
+                                elif isinstance(raw_target, dict):
+                                    target_root = raw_target.get("object", "")
+                                    target_last = raw_target.get("path", "").split(".")[-1] if raw_target.get("path") else target_root
+                                else:
+                                    target_root = ""
+                                    target_last = ""
 
-                            # Caso 3: target es un path que termina en "quote"
-                            if target_last == "quote":
-                                quotes_to_recalc.add(instance.pk)
+                                # ------------------------------------------------------
+                                # 🟢 Detectar cuándo recalcular QUOTE
+                                # ------------------------------------------------------
+                                # Caso 1: target = "quote"
+                                if target_root == "quote":
+                                    quotes_to_recalc.add(instance.pk)
 
-                            # Caso 4: target es un path que termina en "quote_line"
-                            if target_last == "quote_line" and getattr(instance, "quote_id", None):
-                                quotes_to_recalc.add(instance.quote_id)
+                                # Caso 2: target es quote_line
+                                if target_root == "quote_line" and getattr(instance, "quote_id", None):
+                                    quotes_to_recalc.add(instance.quote_id)
 
-                    except Exception as exc:
-                        # ✅ SOLO guardamos el error, NO escribimos BD aquí
-                        failed_context = {
-                            "trig": trig,
-                            "exception": exc
-                        }
+                                # Caso 3: target es un path que termina en "quote"
+                                if target_last == "quote":
+                                    quotes_to_recalc.add(instance.pk)
 
-                        logger.exception(
-                            "❌ Trigger %s execution error (ROLLBACK): %s",
-                            getattr(trig, "id", "?"),
-                            exc
+                                # Caso 4: target es un path que termina en "quote_line"
+                                if target_last == "quote_line" and getattr(instance, "quote_id", None):
+                                    quotes_to_recalc.add(instance.quote_id)
+
+                        except Exception as exc:
+                            # ✅ SOLO guardamos el error, NO escribimos BD aquí
+                            failed_context = {
+                                "trig": trig,
+                                "exception": exc
+                            }
+
+                            logger.exception(
+                                "❌ Trigger %s execution error (ROLLBACK): %s",
+                                getattr(trig, "id", "?"),
+                                exc
+                            )
+
+                            raise   # 🔥 fuerza rollback total del atomic
+
+            except Exception:
+                logger.exception("❌ TRANSACTION ROLLED BACK for event %s", event_type)
+
+                # ✅ ✅ ✅ AQUÍ SÍ SE GUARDA EL ACTION LOG FAILED (FUERA DEL ATOMIC)
+                if failed_context:
+                    trig = failed_context["trig"]
+                    exc = failed_context["exception"]
+
+                    try:
+                        operation, target_model = self._resolve_operation_and_target_from_trigger(trig)
+
+                        ActionLog.objects.create(
+                            trigger_name=trig.name,
+                            operation=operation,
+                            target_model=target_model,
+                            target_pk=str(instance.pk),
+                            event_type=f"{object_type}.{action}",
+                            signal_timing=signal_timing,
+                            status="failed",
+                            payload={},
+                            result={"error": str(exc)}
                         )
+                    except Exception as log_exc:
+                        logger.exception("⚠️ Error escribiendo ActionLog (failed): %s", log_exc)
 
-                        raise   # 🔥 fuerza rollback total del atomic
-
-        except Exception:
-            logger.exception("❌ TRANSACTION ROLLED BACK for event %s", event_type)
-
-            # ✅ ✅ ✅ AQUÍ SÍ SE GUARDA EL ACTION LOG FAILED (FUERA DEL ATOMIC)
-            if failed_context:
-                trig = failed_context["trig"]
-                exc = failed_context["exception"]
-
-                try:
-                    operation, target_model = self._resolve_operation_and_target_from_trigger(trig)
-
-                    ActionLog.objects.create(
-                        trigger_name=trig.name,
-                        operation=operation,
-                        target_model=target_model,
-                        target_pk=str(instance.pk),
-                        event_type=f"{object_type}.{action}",
-                        signal_timing=signal_timing,
-                        status="failed",
-                        payload={},
-                        result={"error": str(exc)}
-                    )
-                except Exception as log_exc:
-                    logger.exception("⚠️ Error escribiendo ActionLog (failed): %s", log_exc)
-
-            return []
+                return []
+            
+        if is_custom_object_create:
+            # 🔥 Ejecutar DESPUÉS del commit
+            print(f"\n\nSe ejecuta despues de que se crean los custom fields")
+            transaction.on_commit(_execute_triggers)
+        else:
+            # 🟢 Ejecutar como siempre
+            _execute_triggers()
 
         # ------------------------------------------------------------------
         # Recalcular quotes afectadas
@@ -969,7 +1045,15 @@ class TriggerEngine:
                 continue
 
             # ==================================================================
-            # 🟩 CREATE SIMPLE (sin filtros)
+            # ✅ Custom Object CREATE (target endswith __c) → usar _handle_create
+            # ==================================================================
+            if op == "CREATE" and isinstance(target, str) and target.endswith("__c"):
+                result = self._handle_create(action, instance, context)
+                results.append({"action": action, "status": "ok", "result": result})
+                continue
+
+            # ==================================================================
+            # ✅ CREATE SIMPLE (sin filtros)
             # ==================================================================
             if op == "CREATE":
                 model_name = None
@@ -1718,6 +1802,15 @@ class TriggerEngine:
             return {"updated": False, "reason": "no se pudo resolver instancia del target"}
 
         # ============================================================
+        # 🔥 DETECCIÓN CLAVE: UPDATE SOBRE CUSTOM OBJECT (__c)
+        # ============================================================
+        is_custom_object_update = (
+            isinstance(target_def, str)
+            and target_def.endswith("__c")
+            and target_inst.__class__.__name__ == "CustomRecord"
+        )
+
+        # ============================================================
         # ✅ NUEVO FORMATO: value.fields { "<field_name>": { ... } }
         # ============================================================
         if isinstance(value_def.get("fields"), dict) and value_def["fields"]:
@@ -1741,11 +1834,17 @@ class TriggerEngine:
                     )
                     continue
 
+                # ----------------------------------------------------
                 # 1) Campo __c → CustomFieldValue
+                # ----------------------------------------------------
                 if fname.endswith("__c"):
                     try:
                         ct = ContentType.objects.get_for_model(target_inst.__class__)
-                        model_name = target_inst.__class__.__name__
+
+                        if isinstance(target_inst, CustomRecord):
+                            model_name = target_inst.object_type.name
+                        else:
+                            model_name = target_inst.__class__.__name__
 
                         cf = (
                             CustomField.objects.filter(
@@ -1762,11 +1861,17 @@ class TriggerEngine:
                             logger.warning(f"⚠️ No se encontró CustomField '{fname}' para {model_name}")
                             continue
 
-                        if target_inst.__class__.__name__ == "CustomRecord":
+                        if isinstance(target_inst, CustomRecord):
+                            content_type = ContentType.objects.get_for_model(target_inst)
+
                             cfv, created = CustomFieldValue.objects.update_or_create(
                                 field=cf,
-                                record=target_inst,
-                                defaults={"value": str(new_val)},
+                                record=target_inst,  # 🔑 CLAVE LÓGICA REAL
+                                defaults={
+                                    "content_type": content_type,
+                                    "object_id": target_inst.pk,
+                                    "value": str(new_val),
+                                },
                             )
                         else:
                             cfv, created = CustomFieldValue.objects.update_or_create(
@@ -1786,7 +1891,9 @@ class TriggerEngine:
                         logger.exception(f"❌ Error actualizando CustomFieldValue {fname}: {e}")
                         continue
 
+                # ----------------------------------------------------
                 # 2) Campo nativo
+                # ----------------------------------------------------
                 else:
                     setattr(target_inst, fname, new_val)
                     updated_native.append(fname)
@@ -1815,6 +1922,15 @@ class TriggerEngine:
                 "pk": target_inst.pk,
                 "fields": updated_native,
                 "custom_fields": updated_custom,
+            }
+
+        # ============================================================
+        # 🚫 BLOQUEO LEGACY PARA CUSTOM OBJECTS
+        # ============================================================
+        if is_custom_object_update:
+            return {
+                "updated": False,
+                "reason": "custom object update requires value.fields"
             }
 
         # ============================================================
@@ -1896,11 +2012,106 @@ class TriggerEngine:
         return {"updated": True, "pk": target_inst.pk}
 
     def _handle_create(self, action, instance, context):
-        return {"created": False}
-    
-    def _handle_create(self, action, instance, context):
-        # legacy path - bulk create handled earlier
-        return {"created": False}
+        """
+        CREATE handler con soporte para Custom Objects (__c).
+
+        - Crea CustomRecord
+        - Genera custom_identifier automáticamente
+        - Crea CustomFieldValue usando helper centralizado
+        - Retorna el CustomRecord
+        """
+
+        from uuid import uuid4
+        from django.db import transaction
+
+        target = action.get("target")
+        value_def = action.get("value") or {}
+
+        # --------------------------------------------------
+        # 1️⃣ Detectar CREATE de Custom Object
+        # --------------------------------------------------
+        if not isinstance(target, str) or not target.endswith("__c"):
+            return {"created": False, "reason": "not a custom object create"}
+
+        custom_object_name = target
+
+        # --------------------------------------------------
+        # 2️⃣ Obtener CustomObject
+        # --------------------------------------------------
+        try:
+            custom_object = CustomObject.objects.get(name=custom_object_name)
+        except CustomObject.DoesNotExist:
+            return {
+                "created": False,
+                "reason": f"CustomObject '{custom_object_name}' not found"
+            }
+
+        # --------------------------------------------------
+        # 3️⃣ Generar custom_identifier
+        # --------------------------------------------------
+        last_record = custom_object.records.order_by("-created_at").first()
+
+        if last_record and last_record.custom_identifier:
+            next_identifier = get_next_custom_identifier(
+                last_record.custom_identifier
+            )
+        else:
+            label = custom_object.label or custom_object.name
+            prefix = label[:3].upper() if len(label) >= 3 else label[:1].upper()
+            next_identifier = f"{prefix}-00001"
+
+        # --------------------------------------------------
+        # 4️⃣ Crear CustomRecord + Fields
+        # --------------------------------------------------
+        with transaction.atomic():
+            custom_record = CustomRecord.objects.create(
+                object_type=custom_object,
+                custom_identifier=next_identifier,
+                record_id=uuid4(),
+                created_by=context.get("_user"),
+                updated_by=context.get("_user"),
+            )
+
+            # --------------------------------------------------
+            # 5️⃣ Resolver value.fields
+            # --------------------------------------------------
+            resolved_fields = self._resolve_value_for_action(
+                value_def,
+                instance,
+                context,
+            ) or {}
+
+            # --------------------------------------------------
+            # 6️⃣ Crear CustomFieldValue (USANDO HELPER)
+            # --------------------------------------------------
+            for field_name, field_value in resolved_fields.items():
+                if not field_name.endswith("__c"):
+                    continue
+
+                cf = CustomField.objects.filter(
+                    name=field_name,
+                    custom_object=custom_object
+                ).first()
+
+                if not cf:
+                    continue
+
+                self._create_custom_field_value(
+                    record=custom_record,
+                    custom_field=cf,
+                    value=field_value,
+                    user=context.get("_user"),
+                )
+
+        # --------------------------------------------------
+        # 7️⃣ Resultado
+        # --------------------------------------------------
+        return {
+            "created": True,
+            "pk": custom_record.pk,
+            "custom_identifier": custom_record.custom_identifier,
+            "instance": custom_record,  # 🔥 CLAVE
+        }
 
     def _handle_delete(self, action, instance, context):
         """
@@ -2347,15 +2558,6 @@ class TriggerEngine:
             return s
         return s
 
-    def _fallback_custom_record_from_alias_map(self, alias_map: Dict[Optional[str], Any], custom_object_name: str):
-        matches = [
-            rec for rec in alias_map.values()
-            if isinstance(rec, CustomRecord) and getattr(rec.object_type, "name", None) == custom_object_name
-        ]
-        if len(matches) == 1:
-            return matches[0]
-        return None
-
     def _resolve_target_instance_and_field(
         self,
         target_def: Any,
@@ -2365,21 +2567,18 @@ class TriggerEngine:
         """
         Resuelve la instancia objetivo y, opcionalmente, el nombre del campo.
 
-        Nuevo comportamiento (alineado con tus reglas de target):
-
-        - target puede ser string path ("opportunity.primary_quote.account.name")
-          o dict {object, path}
-        - Siempre intentamos llegar al ÚLTIMO objeto navegable por FK.
-        - Si el último segmento es un campo normal:
-            - Se usa el ÚLTIMO objeto FK como target_inst
-            - El campo final se IGNORA para el flujo nuevo (value.fields)
-        - Para el formato legacy (value.type + target.path sin FKs), se mantiene:
-            - ej: object="quote", path="name" → target_inst=quote, field="name"
+        Reglas clave:
+        - Custom Objects (__c) NO navegan paths
+        - __c siempre resuelve a CustomRecord
+        - No hay fallbacks para __c
         """
+
         if not target_def:
             return None, None
 
-        # Normalizamos a (obj_name, path)
+        # --------------------------------------------------
+        # Normalizar target a (obj_name, path)
+        # --------------------------------------------------
         if isinstance(target_def, str):
             raw = target_def.strip()
             if not raw:
@@ -2394,10 +2593,30 @@ class TriggerEngine:
         if not obj_name:
             return None, None
 
-        # Punto de inicio
+        # ==================================================
+        # 🔴 CASO ESPECIAL: CUSTOM OBJECT (__c)
+        # ==================================================
+        if isinstance(obj_name, str) and obj_name.endswith("__c"):
+            # El instance del evento YA debe ser CustomRecord
+            if isinstance(instance, CustomRecord) and instance.object_type.name == obj_name:
+                return instance, None
+
+            # Buscar CustomRecord en el contexto (LOOKUP_*)
+            # 🔥 NUEVO: resolver target desde LOOKUP_* en contexto
+            for v in context.values():
+                if isinstance(v, CustomRecord) and v.object_type.name == obj_name:
+                    return v, None
+
+            # ❌ No inventamos instancias para __c
+            return None, None
+
+        # ==================================================
+        # 🟢 LÓGICA NORMAL (MODELOS DJANGO)
+        # ==================================================
+
         inst = None
 
-        # 1) Contexto (alias / LOOKUP_ / etc.)
+        # 1) Contexto directo
         if obj_name in context and isinstance(context[obj_name], Model):
             inst = context[obj_name]
 
@@ -2414,16 +2633,15 @@ class TriggerEngine:
                     inst = rec
                     break
 
-        # Fallback: instancia principal
+        # ❌ Si no se resolvió, no forzamos fallback
         if inst is None:
-            inst = instance
+            return None, None
 
         # Sin path → target es el propio objeto
         if not path:
             return inst, None
 
         parts = path.split(".")
-
         current = inst
         last_model_inst: Optional[Model] = inst
 
@@ -2433,10 +2651,8 @@ class TriggerEngine:
             if current is None:
                 break
 
-            # Navegación usando la misma lógica de _resolve_path
             next_val = self._resolve_path(current, seg)
 
-            # ¿Este segmento es un FK / O2O en el modelo actual?
             is_fk = False
             try:
                 field = current.__class__._meta.get_field(seg)
@@ -2450,22 +2666,17 @@ class TriggerEngine:
 
             current = next_val
 
-        # Caso 1: terminamos exactamente en un modelo → ese es el objeto target
+        # Caso 1: terminamos en un modelo
         if isinstance(current, Model):
             return current, None
 
-        # Caso 2: no es modelo, pero sí pasamos por al menos un FK
-        # Ej: opportunity.primary_quote.account.name → current = "Jahir", last_model_inst = Account
+        # Caso 2: terminamos en un campo, pero hubo FK antes
         if isinstance(last_model_inst, Model) and last_model_inst is not inst:
             return last_model_inst, None
 
-        # Caso 3 (LEGACY): no había FKs, o todo era campos normales
-        # ej: object="quote", path="name" → queremos quote.name
+        # Caso 3: legacy simple (quote.name)
         last_seg = parts[-1]
-        if isinstance(inst, Model):
-            return inst, last_seg
-
-        return None, None
+        return inst, last_seg
     
     def _evaluate_expression(self, formula: str, instance: Model, context: Dict[str, Any]):
         """
@@ -3002,11 +3213,15 @@ class TriggerEngine:
     
     def _resolve_lookup(self, lookup_def: Dict[str, Any], instance: Model, context: Dict[str, Any]):
         """
-        Generic FK lookup resolver.
+        Generic lookup resolver.
+
+        🔹 Soporta:
+        - Django models (ORM)
+        - Custom Objects (__c) → CustomRecord + CustomFieldValue
 
         lookup = {
             "type": "lookup",
-            "model": "opportunity",
+            "model": "opportunity" | "proyecto__c",
             "where": {
                 "logic": "AND",
                 "items": [
@@ -3014,9 +3229,6 @@ class TriggerEngine:
                 ]
             }
         }
-
-        Cambios:
-        - Usa field_name (nuevo) pero soporta field (legacy)
         """
 
         model_name = lookup_def.get("model")
@@ -3026,13 +3238,69 @@ class TriggerEngine:
             logger.debug("⚠️ LOOKUP inválido: falta model o where")
             return None
 
+        logic = (where.get("logic") or "AND").upper()
+        items = where.get("items") or []
+
+        # ==========================================================
+        # 🟢 CASO 1: CUSTOM OBJECT (__c)
+        # ==========================================================
+        if self._is_custom_object(model_name):
+            try:
+                custom_object = CustomObject.objects.get(name=model_name)
+            except CustomObject.DoesNotExist:
+                logger.debug(f"⚠️ LOOKUP CustomObject '{model_name}' no existe")
+                return None
+
+            records = CustomRecord.objects.filter(object_type=custom_object)
+
+            matched_records = []
+
+            for rec in records:
+                checks = []
+
+                for cond in items:
+                    field_name = cond.get("field_name") or cond.get("field")
+                    operator = cond.get("operator", "==")
+                    val_block = cond.get("value", {})
+
+                    if not field_name:
+                        continue
+
+                    expected = self._resolve_value_for_action(val_block, instance, context)
+                    actual = self._resolve_custom_field_value(rec, field_name)
+
+                    # Normalización global (números, fechas, etc.)
+                    actual, expected = self._normalize_pair(actual, expected)
+
+                    ok = self._compare(actual, expected, operator)
+                    checks.append(ok)
+
+                    if logic == "AND" and not ok:
+                        break
+
+                    if logic == "OR" and ok:
+                        break
+
+                if (logic == "AND" and all(checks)) or (logic == "OR" and any(checks)):
+                    matched_records.append(rec)
+
+            if not matched_records:
+                logger.debug(f"⚠️ LOOKUP {model_name}: 0 CustomRecord encontrados")
+                return None
+
+            if len(matched_records) > 1:
+                logger.debug(f"⚠️ LOOKUP {model_name}: {len(matched_records)} resultados ambiguos")
+                return None
+
+            return matched_records[0]
+
+        # ==========================================================
+        # 🟢 CASO 2: DJANGO MODEL (COMPORTAMIENTO ORIGINAL)
+        # ==========================================================
         ModelClass = self._get_model_class(model_name)
         if ModelClass is None:
             logger.debug(f"⚠️ LOOKUP model '{model_name}' no encontrado")
             return None
-
-        logic = (where.get("logic") or "AND").upper()
-        items = where.get("items") or []
 
         orm_filters = {}
 
@@ -3175,6 +3443,9 @@ class TriggerEngine:
             - Si un segmento NO es FK, se detiene y devuelve el último modelo válido
               (ej: opportunity.primary_quote.account.name → Account)
         """
+        if isinstance(raw_target, str) and raw_target.strip().endswith("__c"):
+            return raw_target.strip()  # es custom object, no intentar apps.get_model
+        
         # Dict legacy: {"object": "opportunity", "path": "..." }
         if isinstance(raw_target, dict):
             obj = (raw_target.get("object") or "").strip()
@@ -3232,6 +3503,41 @@ class TriggerEngine:
                 uniques.append(f.name)
 
         return uniques
+    
+    def _create_custom_field_value(
+        self,
+        *,
+        record: CustomRecord,
+        custom_field: CustomField,
+        value: Any,
+        user=None,
+    ):
+        """
+        Crea un CustomFieldValue de forma consistente con UI y DB.
+
+        🔒 Reglas:
+        - SIEMPRE setea content_type + object_id
+        - SIEMPRE apunta a CustomRecord
+        - record NO sustituye el GenericForeignKey
+        """
+
+        from django.contrib.contenttypes.models import ContentType
+
+        content_type = ContentType.objects.get_for_model(record)
+
+        return CustomFieldValue.objects.create(
+            field=custom_field,
+
+            # 🔑 Generic FK (OBLIGATORIO)
+            content_type=content_type,
+            object_id=record.pk,
+
+            # 🔗 Relación directa
+            record=record,
+
+            value=str(value) if value is not None else "",
+            updated_by_user=user,
+        )
 
 # Instancia global del engine
 engine = TriggerEngine()

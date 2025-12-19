@@ -84,7 +84,7 @@ def get_model_choices():
 class CustomFieldForm(forms.ModelForm):
     lookup_model = forms.ChoiceField(
         required=False,
-        choices=get_model_choices(),  # dynamically populated
+        choices=[],
         widget=forms.Select(attrs={'class': 'browser-default'})
     )
     data_type = forms.ChoiceField(
@@ -103,9 +103,39 @@ class CustomFieldForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
         self.fields['custom_object'].required = False
         self.fields['object_type'].required = False
         self.fields['lookup_model'].required = False
+
+        # --------------------------------------------------
+        # 🔹 BUILD LOOKUP MODEL CHOICES
+        # --------------------------------------------------
+
+        lookup_choices = []
+
+        # ✅ 1. Standard / Django models (lo que ya tenías)
+        try:
+            standard_choices = get_model_choices()
+            lookup_choices.extend(standard_choices)
+        except Exception:
+            pass
+
+        # ✅ 2. Custom Objects (NUEVO)
+        custom_object_choices = [
+            (
+                f"{obj.name}",          # valor guardado
+                f"{obj.name} (Custom Object)" # label visible
+            )
+            for obj in CustomObject.objects.all()
+        ]
+
+        lookup_choices.extend(custom_object_choices)
+
+        # 🔁 Orden opcional (UX)
+        lookup_choices = sorted(lookup_choices, key=lambda x: x[1].lower())
+
+        self.fields['lookup_model'].choices = lookup_choices
 
         def append_classes(widget, *class_names):
             existing = widget.attrs.get('class', '')
@@ -130,6 +160,7 @@ class CustomFieldForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+
         object_type = cleaned_data.get("object_type")
         custom_object = cleaned_data.get("custom_object")
         data_type = cleaned_data.get("data_type")

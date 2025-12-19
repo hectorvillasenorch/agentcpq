@@ -604,15 +604,29 @@ def edit_custom_record(request, record_id):
         if form.is_valid():
             content_type = ContentType.objects.get_for_model(record)
             for field_name, value in form.cleaned_data.items():
-                custom_field = CustomField.objects.get(name=field_name, custom_object=record.object_type)
+                custom_field = CustomField.objects.get(
+                    name=field_name,
+                    custom_object=record.object_type
+                )
+
                 cfv, created = CustomFieldValue.objects.get_or_create(
                     record=record,
                     field=custom_field,
-                    defaults={'content_type': content_type, 'object_id': record.id}
+                    defaults={
+                        'content_type': content_type,
+                        'object_id': record.id,
+                        'value': value if value not in (None, "", []) else "---"
+                    }
                 )
+
+                # 🔒 PROTECCIÓN CONTRA NULL / PISADO DE TRIGGERS
                 if not created:
+                    # Si el form no envió valor, NO pises lo existente
+                    if value in (None, "", []):
+                        continue
+
                     cfv.value = value
-                    cfv.save()
+                    cfv.save(update_fields=["value"])
             messages.success(request, f"{record.object_type.label} record updated successfully.")
 
             # Actualizar usuario y fecha
@@ -955,32 +969,50 @@ def create_custom_record(request, object_name, user_id):
         form = DynamicForm(request.POST)
         if form.is_valid():
             user = User.objects.get(id=user_id)
+
             record = CustomRecord.objects.create(
-                    object_type=custom_object,
-                    created_by = user,
-                    updated_by = user
-                )
+                object_type=custom_object,
+                created_by=user,
+                updated_by=user
+            )
 
             content_type = ContentType.objects.get_for_model(record)
 
             for field_name, value in form.cleaned_data.items():
                 try:
-                    custom_field = CustomField.objects.get(name=field_name, custom_object=custom_object)
-                    if not value:
+                    custom_field = CustomField.objects.get(
+                        name=field_name,
+                        custom_object=custom_object
+                    )
+
+                    if value in (None, "", []):
                         value = "---"
 
-                    CustomFieldValue.objects.create(
+                    # 🔥 CAMBIO CLAVE AQUÍ
+                    cfv, created = CustomFieldValue.objects.get_or_create(
                         record=record,
                         field=custom_field,
-                        value=value,
-                        content_type=content_type,
-                        object_id=record.id
+                        defaults={
+                            "value": value,
+                            "content_type": content_type,
+                            "object_id": record.id
+                        }
                     )
+
+                    # 🔑 SOLO si el campo YA EXISTÍA y estaba vacío, poner default
+                    if not created and cfv.value in (None, "", "---"):
+                        cfv.value = value
+                        cfv.save(update_fields=["value"])
 
                 except CustomField.DoesNotExist:
                     print(f"Field not found: {field_name}")
-            messages.success(request, f"{custom_object.label} record created successfully.")
+
+            messages.success(
+                request,
+                f"{custom_object.label} record created successfully."
+            )
             return redirect(request.META.get('HTTP_REFERER', '/dashboard/'))
+
     else:
         form = DynamicForm()
 
