@@ -31,6 +31,7 @@ def handle_create_action_trigger(user, completed_action_triggers, response_messa
             actions = trigger_data.get("actions", [])
             active = trigger_data.get("active", True)
             priority = trigger_data.get("priority", 100)
+            signal_timing = trigger_data.get("signal_timing", "post_save")
 
             # --- 🔍 VALIDACIONES ---
             if not description:
@@ -85,7 +86,8 @@ def handle_create_action_trigger(user, completed_action_triggers, response_messa
                 actions=actions,
                 active=active,
                 created_by=user,
-                priority=priority
+                priority=priority,
+                signal_timing=signal_timing
             )
 
             action_triggers_created.append(new_trigger)

@@ -25,6 +25,9 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 def to_snake_case(name):
     return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
 
+def is_custom_object(obj_name: str) -> bool:
+    return isinstance(obj_name, str) and obj_name.endswith("__c")
+
 
 def get_field_type(field):
     t = field.get_internal_type().lower()
@@ -2021,6 +2024,12 @@ def extract_action_triggers_with_llm(user, user_message, current_state, previous
                 evt = normalize_event_type(data.get("event_type"), available_models)
                 data["event_type"] = evt
 
+                # -------------------------------------------------
+                # 🔥 AUTO-SET signal_timing FOR CUSTOM OBJECTS
+                # -------------------------------------------------
+                if evt and is_custom_object(evt.get("object_name")):
+                    data["signal_timing"] = "virtual"
+
                 event_root = evt["object_name"] if evt else None
 
                 # -----------------------------------------
@@ -2076,15 +2085,21 @@ def extract_action_triggers_with_llm(user, user_message, current_state, previous
         except Exception:
             priority_value = 100
 
+        normalized_data = {
+            "description": data.get("description"),
+            "event_type": evt,
+            "conditions": conditions,
+            "actions": actions,
+            "active": data.get("active", True),
+            "priority": priority_value,
+        }
+
+        # 🔥 PRESERVE signal_timing IF PRESENT
+        if "signal_timing" in data:
+            normalized_data["signal_timing"] = data["signal_timing"]
+
         norm.append({
-            "data": {
-                "description": data.get("description"),
-                "event_type": evt,
-                "conditions": conditions,
-                "actions": actions,
-                "active": data.get("active", True),
-                "priority": priority_value,
-            },
+            "data": normalized_data,
             "completed": completed_flag,
         })
 

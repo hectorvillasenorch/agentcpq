@@ -12,6 +12,7 @@ from django.db.models import Model
 from django.contrib.contenttypes.models import ContentType
 from datetime import datetime, date
 from decimal import Decimal
+import re
 
 from cpq.actions.executor import CustomActionExecutor
 from cpq.models import ActionLog, CustomObject, CustomField, CustomFieldValue, CustomRecord
@@ -281,6 +282,17 @@ class TriggerEngine:
         event_type = f"{object_type}.{action}"
         logger.debug(f"⚙️ Processing triggers for event {event_type} [{signal_timing}]")
 
+        # ------------------------------------------------------------------
+        # 🔒 GUARD: Custom Objects solo se ejecutan vía eventos virtuales
+        # ------------------------------------------------------------------
+        if object_type.endswith("__c") and signal_timing != "virtual":
+            logger.debug(
+                "⛔ Skipping NON-virtual trigger for CustomObject %s (%s)",
+                object_type,
+                signal_timing,
+            )
+            return []
+
         from django.db import transaction
 
         is_custom_object_create = (
@@ -347,6 +359,16 @@ class TriggerEngine:
                             matched, context = self._evaluate_trigger(trig, instance)
                             if not matched:
                                 continue
+
+                            # --------------------------------------------------
+                            # 🧩 Inyectar metadata del evento
+                            # --------------------------------------------------
+                            context["_event"] = self._build_event_context(
+                                object_type=object_type,
+                                action=action,
+                                instance=instance,
+                                signal_timing=signal_timing,
+                            )
 
                             context["_trigger"] = trig
                             try:
@@ -546,6 +568,45 @@ class TriggerEngine:
             self._processing_events.remove(event_key)
 
         return results
+    
+    def handle_virtual_event(self, *, event_name: str, instance, source: str = None):
+        """
+        Entry point para eventos virtuales (__c).
+
+        Traduce el evento virtual al pipeline REAL del engine.
+        """
+
+        if not event_name or not instance:
+            return
+
+        try:
+            object_name, action = event_name.split(".", 1)
+        except ValueError:
+            logger.warning(f"⚠️ Invalid virtual event_name '{event_name}'")
+            return
+
+        logger.debug(
+            "\n"
+            "================================================================================\n"
+            "⚡ Trigger fired [VIRTUAL → %s]\n"
+            "📦 Model: CustomRecord\n"
+            "🧩 Virtual Object: %s\n"
+            "🔑 PK: %s\n"
+            "🕐 Source: %s\n"
+            "================================================================================",
+            event_name,
+            object_name,
+            instance.pk,
+            source,
+        )
+
+        # 🔥 USAR EL PIPELINE REAL QUE YA EXISTE
+        self.handle_event(
+            object_type=object_name,
+            action=action,
+            instance=instance,
+            signal_timing="virtual",   # ← CLAVE
+        )
 
 
     # -------------------------------------------------------------------------
@@ -999,6 +1060,9 @@ class TriggerEngine:
         - target puede ser string path o dict (compatibilidad)
         - UPDATE simple ahora usa siempre value.fields
         """
+        # ✅ Asegurar contexto raíz de CustomObject (income__c, project__c, etc.)
+        self._ensure_event_root_in_context(context, instance)
+
         results = []
 
         for action in (trigger.actions or []):
@@ -2495,20 +2559,53 @@ class TriggerEngine:
     def _resolve_custom_field_value(self, obj: Any, field_name: str):
         from django.contrib.contenttypes.models import ContentType
 
+        # -------------------------------------------------
+        # CASE 1: CustomRecord (virtual object)
+        # -------------------------------------------------
         if isinstance(obj, CustomRecord):
             cobj = obj.object_type
-            cf = CustomField.objects.filter(custom_object=cobj, name=field_name).first()
+
+            cf = CustomField.objects.filter(
+                custom_object=cobj,
+                name=field_name
+            ).first()
+
             if not cf:
                 logger.debug(f"⚠️ No existe CustomField '{field_name}' en {cobj.name}")
                 return None
 
-            cfv = CustomFieldValue.objects.filter(field=cf, record=obj).first()
+            cfv = CustomFieldValue.objects.filter(
+                field=cf,
+                record=obj
+            ).first()
+
             if not cfv:
                 logger.debug(f"⚠️ CustomRecord {obj.pk} no tiene valor para '{field_name}'")
                 return None
 
+            # 🔥 LOOKUP HANDLING (delegado)
+            if cf.data_type == "lookup":
+                raw_value = cfv.value
+                if not raw_value:
+                    return None
+
+                if not cf.lookup_model:
+                    logger.debug(f"⚠️ Lookup field '{field_name}' sin lookup_model definido")
+                    return None
+
+                return self._resolve_lookup_flexible(
+                    lookup_model=cf.lookup_model,
+                    raw_value=raw_value
+                )
+
+            # -----------------------------
+            # NORMAL CUSTOM FIELD
+            # -----------------------------
             return self._return_custom_value(cf, cfv)
 
+        # -------------------------------------------------
+        # CASE 2: Standard Django model
+        # -------------------------------------------------
         ct = ContentType.objects.get_for_model(obj.__class__)
         cfs = CustomFieldValue.objects.filter(
             content_type=ct,
@@ -2517,19 +2614,59 @@ class TriggerEngine:
 
         for cfv in cfs:
             if cfv.field.name == field_name:
-                return self._return_custom_value(cfv.field, cfv)
+                cf = cfv.field
+
+                # 🔥 LOOKUP HANDLING (delegado)
+                if cf.data_type == "lookup":
+                    raw_value = cfv.value
+                    if not raw_value:
+                        return None
+
+                    if not cf.lookup_model:
+                        logger.debug(f"⚠️ Lookup field '{field_name}' sin lookup_model definido")
+                        return None
+
+                    return self._resolve_lookup_flexible(
+                        lookup_model=cf.lookup_model,
+                        raw_value=raw_value
+                    )
+
+                return self._return_custom_value(cf, cfv)
 
         logger.debug(f"⚠️ No se encontró valor para {obj} → {field_name}")
         return None
 
     def _return_custom_value(self, field, cfv):
-        if field.data_type and field.data_type.lower().strip() == "lookup" and field.lookup_model:
-            target_obj = cfv.content_object or cfv.record
-            next_field = getattr(self, "_next_custom_field", None)
-            if next_field and next_field.endswith("__c"):
-                return self._resolve_custom_field_value(target_obj, next_field)
-            return target_obj
+        """
+        🔥 FIX REAL:
+        - Si el CustomField es lookup, NO debe devolver cfv.record/cfv.content_object (eso es el mismo record).
+        - Debe resolver el target a partir de cfv.value + field.lookup_model.
+        - Mantiene fallback al comportamiento anterior para no romper casos viejos.
+        """
+        try:
+            if field.data_type and field.data_type.lower().strip() == "lookup" and field.lookup_model:
+                # 1) Resolver el objeto referenciado por el valor guardado
+                raw_value = getattr(cfv, "value", None)
+
+                target_obj = self._resolve_lookup_target_instance(field=field, raw_value=raw_value)
+
+                # 2) Fallback legacy (por compatibilidad)
+                if target_obj is None:
+                    target_obj = cfv.content_object or cfv.record
+
+                # 3) Soportar lookups encadenados (__c.__c.__c)
+                next_field = getattr(self, "_next_custom_field", None)
+                if next_field and next_field.endswith("__c"):
+                    return self._resolve_custom_field_value(target_obj, next_field)
+
+                return target_obj
+
+        except Exception:
+            # fallback duro por compatibilidad
+            pass
+
         return self._cast_custom_value(cfv.value, field.data_type)
+
 
     def _cast_custom_value(self, raw: Any, data_type: Optional[str]):
         if raw is None:
@@ -2597,18 +2734,71 @@ class TriggerEngine:
         # 🔴 CASO ESPECIAL: CUSTOM OBJECT (__c)
         # ==================================================
         if isinstance(obj_name, str) and obj_name.endswith("__c"):
-            # El instance del evento YA debe ser CustomRecord
-            if isinstance(instance, CustomRecord) and instance.object_type.name == obj_name:
-                return instance, None
 
-            # Buscar CustomRecord en el contexto (LOOKUP_*)
-            # 🔥 NUEVO: resolver target desde LOOKUP_* en contexto
-            for v in context.values():
-                if isinstance(v, CustomRecord) and v.object_type.name == obj_name:
-                    return v, None
+            # 1) Resolver raíz (root CustomRecord)
+            root = None
+
+            # El instance del evento YA debe ser CustomRecord del mismo object
+            if isinstance(instance, CustomRecord) and instance.object_type.name == obj_name:
+                root = instance
+
+            # Buscar CustomRecord en el contexto (LOOKUP_* u otros)
+            if root is None:
+                for v in context.values():
+                    if isinstance(v, CustomRecord) and v.object_type.name == obj_name:
+                        root = v
+                        break
 
             # ❌ No inventamos instancias para __c
-            return None, None
+            if root is None:
+                return None, None
+
+            # Sin path => target es el propio CustomRecord
+            if not path:
+                return root, None
+
+            # 2) Navegar path MIXTO:
+            #    - segmentos __c => custom lookup (CustomRecord)
+            #    - segmentos normales => getattr (Django model / attrs)
+            parts = path.split(".")
+            current = root
+            last_model_inst = root  # puede ser CustomRecord o Django Model
+
+            from django.db.models import ForeignKey, OneToOneField
+
+            for seg in parts:
+                if current is None:
+                    break
+
+                # resolver un segmento a la vez (reutiliza tu _resolve_path y el nuevo lookup)
+                next_val = self._resolve_path(current, seg)
+
+                # Track del "último modelo/instancia válida"
+                if isinstance(next_val, (CustomRecord, Model)):
+                    last_model_inst = next_val
+                else:
+                    # Si current es Django model, intentamos detectar FK/O2O para mantener last_model_inst
+                    try:
+                        if isinstance(current, Model):
+                            field = current.__class__._meta.get_field(seg)
+                            if isinstance(field, (ForeignKey, OneToOneField)) and isinstance(next_val, Model):
+                                last_model_inst = next_val
+                    except Exception:
+                        pass
+
+                current = next_val
+
+            # 3) Determinar instancia final para UPDATE/CREATE/DELETE
+            if isinstance(current, (CustomRecord, Model)):
+                return current, None
+
+            if isinstance(last_model_inst, (CustomRecord, Model)) and last_model_inst is not root:
+                # ej: income__c.project__c.quote.account.name  -> last_model_inst = Account
+                return last_model_inst, None
+
+            # fallback legacy: target era algo tipo "income__c.some_scalar"
+            last_seg = parts[-1] if parts else None
+            return root, last_seg
 
         # ==================================================
         # 🟢 LÓGICA NORMAL (MODELOS DJANGO)
@@ -3538,6 +3728,334 @@ class TriggerEngine:
             value=str(value) if value is not None else "",
             updated_by_user=user,
         )
+    
+    def _ensure_event_root_in_context(self, context: Dict[str, Any], instance: Model):
+        """
+        Asegura que el objeto raíz del evento esté disponible en context
+        bajo su nombre "de negocio".
+
+        Ej:
+        instance = CustomRecord(object_type.name="income__c")
+        => context["income__c"] = instance
+        """
+        try:
+            if isinstance(instance, CustomRecord):
+                key = instance.object_type.name
+                if key and key not in context:
+                    context[key] = instance
+        except Exception:
+            pass
+
+
+    def _extract_customrecord_id_from_any(self, raw: Any) -> Optional[int]:
+        """
+        Acepta:
+        - int/str "66"  -> 66
+        - custom_identifier "PRO-A-00066" -> 66 (último bloque numérico)
+        """
+        if raw is None:
+            return None
+
+        if isinstance(raw, int):
+            return raw
+
+        s = str(raw).strip()
+        if not s:
+            return None
+
+        # Direct numeric
+        if s.isdigit():
+            try:
+                return int(s)
+            except Exception:
+                return None
+
+        # Find last numeric group (e.g. PRO-A-00066 -> 00066)
+        nums = re.findall(r"(\d+)", s)
+        if not nums:
+            return None
+
+        try:
+            return int(nums[-1])
+        except Exception:
+            return None
+
+
+    def _parse_lookup_model(self, lookup_model: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        """
+        lookup_model puede venir como:
+        - "project__c" (CustomObject)
+        - "cpq.account" (app_label.model)
+        - "admin.LogEntry" (app_label.ModelName)
+        Retorna (kind, app_label, model_name)
+        kind:
+            - "custom_object" (si termina en __c)
+            - "django_model"  (si tiene app + model)
+        """
+        if not lookup_model:
+            return None, None, None
+
+        lm = str(lookup_model).strip()
+        if not lm:
+            return None, None, None
+
+        if lm.endswith("__c"):
+            return "custom_object", None, lm
+
+        if "." in lm:
+            app_label, model_name = lm.split(".", 1)
+            app_label = app_label.strip()
+            model_name = model_name.strip()
+            if not app_label or not model_name:
+                return None, None, None
+            return "django_model", app_label, model_name
+
+        # fallback (no sabemos)
+        return None, None, None
+
+
+    def _resolve_lookup_target_instance(self, *, field: CustomField, raw_value: Any) -> Any:
+        """
+        Resuelve a qué instancia apunta un CustomField lookup.
+
+        - Si lookup_model es "__c" => CustomRecord del CustomObject correspondiente
+        usando raw_value como (id o custom_identifier).
+        - Si lookup_model es "app.Model" o "app.model" => Django model por pk.
+        """
+        if not field or not getattr(field, "lookup_model", None):
+            return None
+
+        kind, app_label, model_name = self._parse_lookup_model(field.lookup_model)
+
+        # -------------------------------
+        # LOOKUP a CustomObject (__c)
+        # -------------------------------
+        if kind == "custom_object":
+            try:
+                obj = CustomObject.objects.filter(name=model_name).first()
+                if not obj:
+                    return None
+
+                # Soporta id o custom_identifier
+                # 1) si es id directo -> filtra por pk
+                cr_id = self._extract_customrecord_id_from_any(raw_value)
+
+                if cr_id is not None:
+                    rec = CustomRecord.objects.filter(object_type=obj, pk=cr_id).first()
+                    if rec:
+                        return rec
+
+                # 2) intenta por custom_identifier exacto
+                s = str(raw_value).strip() if raw_value is not None else ""
+                if s:
+                    rec = CustomRecord.objects.filter(object_type=obj, custom_identifier=s).first()
+                    if rec:
+                        return rec
+
+                return None
+            except Exception:
+                return None
+
+        # -------------------------------
+        # LOOKUP a Django Model (app.Model)
+        # -------------------------------
+        if kind == "django_model":
+            try:
+                ModelClass = apps.get_model(app_label, model_name)
+            except Exception:
+                # fallback: a veces viene "cpq.account" (lower), Django lo acepta pero por si acaso:
+                try:
+                    ModelClass = apps.get_model(app_label, model_name.title())
+                except Exception:
+                    return None
+
+            if ModelClass is None:
+                return None
+
+            # pk debe existir
+            pk = raw_value
+            if pk is None:
+                return None
+
+            # extraer int si viene tipo "ACC-00010" (no ideal, pero evita explotar)
+            if isinstance(pk, str) and not pk.isdigit():
+                maybe = self._extract_customrecord_id_from_any(pk)
+                if maybe is not None:
+                    pk = maybe
+
+            try:
+                return ModelClass.objects.filter(pk=pk).first()
+            except Exception:
+                return None
+
+        return None
+    
+    def _build_event_context(self, *, object_type, action, instance, signal_timing, source=None):
+        return {
+            "object": object_type,
+            "action": action,
+            "pk": getattr(instance, "pk", None),
+            "source": source,
+            "signal_timing": signal_timing,
+            "is_virtual": signal_timing == "virtual",
+        }
+    
+    def _resolve_lookup_flexible(self, *, lookup_model, raw_value):
+        from django.apps import apps
+
+        if raw_value in (None, "", "---"):
+            return None
+
+        raw_str = str(raw_value).strip()
+
+        # -------------------------------------------------
+        # 1️⃣ PK directo (int o string numérico)
+        # -------------------------------------------------
+        if raw_str.isdigit():
+            pk = int(raw_str)
+            return self._resolve_lookup_by_pk(lookup_model, pk)
+
+        # -------------------------------------------------
+        # 2️⃣ Custom Identifier completo
+        # -------------------------------------------------
+        inst = self._resolve_lookup_by_identifier(
+            lookup_model=lookup_model,
+            identifier_value=raw_str
+        )
+        if inst:
+            return inst
+
+        # -------------------------------------------------
+        # 3️⃣ Sufijo numérico (últimos dígitos)
+        # -------------------------------------------------
+        match = re.search(r"(\d+)$", raw_str)
+        if match:
+            pk = int(match.group(1))
+            return self._resolve_lookup_by_pk(lookup_model, pk)
+
+        return None
+    
+    def _resolve_lookup_by_pk(self, lookup_model, pk):
+        from django.apps import apps
+
+        try:
+            if lookup_model.endswith("__c"):
+                return CustomRecord.objects.filter(
+                    object_type__name=lookup_model,
+                    pk=pk
+                ).first()
+
+            app_label, model_name = lookup_model.split(".")
+            Model = apps.get_model(app_label, model_name)
+            return Model.objects.filter(pk=pk).first()
+
+        except Exception:
+            logger.exception(f"❌ Error resolving lookup by pk → {lookup_model}:{pk}")
+            return None
+        
+    def _resolve_lookup_by_identifier(self, lookup_model: str, identifier_value: str):
+        """
+        Resolve a lookup value that may be:
+        - pk (int / numeric string)
+        - custom_identifier (e.g. PRO-A-00066)
+        - numeric suffix of custom_identifier (e.g. 00066)
+
+        Supports:
+        - Custom Objects (__c → CustomRecord)
+        - Django models (app.Model)
+
+        Returns:
+        - Model instance or None
+        """
+        from django.apps import apps
+
+        if not identifier_value or not lookup_model:
+            return None
+
+        raw = str(identifier_value).strip()
+
+        # -------------------------------------------------
+        # 1️⃣ Direct PK resolution (fast path)
+        # -------------------------------------------------
+        if raw.isdigit():
+            pk = int(raw)
+
+            # Custom Object
+            if lookup_model.endswith("__c"):
+                obj = CustomRecord.objects.filter(
+                    object_type__name=lookup_model,
+                    pk=pk
+                ).first()
+                if obj:
+                    return obj
+
+            # Django model
+            else:
+                try:
+                    app_label, model_name = lookup_model.split(".")
+                    Model = apps.get_model(app_label, model_name)
+                    obj = Model.objects.filter(pk=pk).first()
+                    if obj:
+                        return obj
+                except Exception:
+                    pass
+
+        # -------------------------------------------------
+        # 2️⃣ Custom Object resolution by identifier
+        # -------------------------------------------------
+        if lookup_model.endswith("__c"):
+            qs = CustomRecord.objects.filter(
+                object_type__name=lookup_model
+            )
+
+            # 2.a Exact custom_identifier match
+            obj = qs.filter(custom_identifier=raw).first()
+            if obj:
+                return obj
+
+            # 2.b Numeric suffix (e.g. PRO-A-00066 → 66)
+            digits = "".join(c for c in raw if c.isdigit())
+            if digits:
+                try:
+                    pk = int(digits.lstrip("0") or "0")
+                    obj = qs.filter(pk=pk).first()
+                    if obj:
+                        return obj
+                except Exception:
+                    pass
+
+            return None
+
+        # -------------------------------------------------
+        # 3️⃣ Django model resolution by identifier (best effort)
+        # -------------------------------------------------
+        try:
+            app_label, model_name = lookup_model.split(".")
+            Model = apps.get_model(app_label, model_name)
+        except Exception:
+            return None
+
+        qs = Model.objects.all()
+
+        # 3.a Try common identifier fields if they exist
+        for field in ["custom_identifier", "identifier", "code", "external_id"]:
+            if hasattr(Model, field):
+                obj = qs.filter(**{field: raw}).first()
+                if obj:
+                    return obj
+
+        # 3.b Numeric suffix fallback
+        digits = "".join(c for c in raw if c.isdigit())
+        if digits:
+            try:
+                pk = int(digits.lstrip("0") or "0")
+                obj = qs.filter(pk=pk).first()
+                if obj:
+                    return obj
+            except Exception:
+                pass
+
+        return None
 
 # Instancia global del engine
 engine = TriggerEngine()

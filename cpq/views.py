@@ -49,6 +49,7 @@ from cpq.models import default_rendered_fields_for_quote_document_settings, defa
 from django.utils.html import escape
 from django.urls import reverse
 from django.utils.http import urlencode
+from django.db import transaction
 
 # HubSpot sync
 from hubspot.views import sync_opportunity_to_hubspot
@@ -960,6 +961,7 @@ def create_business_rule(request):
     })
 
 
+
 def create_custom_record(request, object_name, user_id):
 
     custom_object = get_object_or_404(CustomObject, name=object_name)
@@ -970,43 +972,45 @@ def create_custom_record(request, object_name, user_id):
         if form.is_valid():
             user = User.objects.get(id=user_id)
 
-            record = CustomRecord.objects.create(
-                object_type=custom_object,
-                created_by=user,
-                updated_by=user
-            )
+            # 🔥 CLAVE: UNA sola transacción para TODO el flujo
+            with transaction.atomic():
 
-            content_type = ContentType.objects.get_for_model(record)
+                record = CustomRecord.objects.create(
+                    object_type=custom_object,
+                    created_by=user,
+                    updated_by=user
+                )
 
-            for field_name, value in form.cleaned_data.items():
-                try:
-                    custom_field = CustomField.objects.get(
-                        name=field_name,
-                        custom_object=custom_object
-                    )
+                content_type = ContentType.objects.get_for_model(record)
 
-                    if value in (None, "", []):
-                        value = "---"
+                for field_name, value in form.cleaned_data.items():
+                    try:
+                        custom_field = CustomField.objects.get(
+                            name=field_name,
+                            custom_object=custom_object
+                        )
 
-                    # 🔥 CAMBIO CLAVE AQUÍ
-                    cfv, created = CustomFieldValue.objects.get_or_create(
-                        record=record,
-                        field=custom_field,
-                        defaults={
-                            "value": value,
-                            "content_type": content_type,
-                            "object_id": record.id
-                        }
-                    )
+                        if value in (None, "", []):
+                            value = "---"
 
-                    # 🔑 SOLO si el campo YA EXISTÍA y estaba vacío, poner default
-                    if not created and cfv.value in (None, "", "---"):
-                        cfv.value = value
-                        cfv.save(update_fields=["value"])
+                        cfv, created = CustomFieldValue.objects.get_or_create(
+                            record=record,
+                            field=custom_field,
+                            defaults={
+                                "value": value,
+                                "content_type": content_type,
+                                "object_id": record.id
+                            }
+                        )
 
-                except CustomField.DoesNotExist:
-                    print(f"Field not found: {field_name}")
+                        if not created and cfv.value in (None, "", "---"):
+                            cfv.value = value
+                            cfv.save(update_fields=["value"])
 
+                    except CustomField.DoesNotExist:
+                        print(f"Field not found: {field_name}")
+
+            # 👈 AQUÍ ocurre el COMMIT ÚNICO
             messages.success(
                 request,
                 f"{custom_object.label} record created successfully."
@@ -1020,6 +1024,7 @@ def create_custom_record(request, object_name, user_id):
         'form': form,
         'custom_object': custom_object
     })
+
 
 
 def get_lookup_data_for_form(custom_object):

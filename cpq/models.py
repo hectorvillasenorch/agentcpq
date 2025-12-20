@@ -1613,6 +1613,7 @@ class ActionTrigger(models.Model):
         ("post_save", "After Save"),
         ("pre_delete", "Before Delete"),
         ("post_delete", "After Delete"),
+        ("virtual", "Virtual")
     ]
 
     name = models.CharField(max_length=255, unique=True)
