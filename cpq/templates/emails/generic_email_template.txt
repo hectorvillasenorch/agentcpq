@@ -1,3 +1,12 @@
+Hello,
+
+{{ message|default:'You have a new notification in AgentCPQ.' }}
+
+Thanks,
+AgentCPQ
+
+------------------- LEAD CREATED -----------------------
+
 {% if user %}Hello {{ user.first_name|default:user.username }},{% else %}Hello,{% endif %}
 
 A new lead "{{ lead.name }}" has been created{% if lead.created_by %} by {{ lead.created_by.first_name|default:lead.created_by.username }}.{% endif %}

@@ -1,4 +1,6 @@
 {% load custom_filters %}
+{% load dict_extras %}
+
 <style>
   .records-panel .fields-panel__header {
     align-items: center;
@@ -253,6 +255,7 @@
   }
 </style>
 
+
 <div class="fields-panel records-panel">
   <div class="fields-panel__header">
     <div>
@@ -265,22 +268,22 @@
   </div>
 
   {% if records_custom_object %}
+    {% with records_custom_object.0.object_type.custom_fields.all as custom_fields %}
     <div class="records-table-wrapper">
       <div class="records-table-container">
         <table class="records-table">
           <thead>
             <tr>
               <th>ID</th>
-              {% with records_custom_object.0.object_type.custom_fields.all as custom_fields %}
-                {% for field in custom_fields %}
-                  <th>{{ field.label }}</th>
-                {% endfor %}
-              {% endwith %}
+              {% for field in custom_fields %}
+                <th>{{ field.label }}</th>
+              {% endfor %}
               <th>Last Modified</th>
               <th>Created</th>
               <th class="align-right">Actions</th>
             </tr>
           </thead>
+
           <tbody>
             {% for record in records_custom_object %}
               <tr>
@@ -294,18 +297,25 @@
                     {% else %}
                         <td>{{ value.value|default:"—" }}</td>
                     {% endif %}
+
+                {% with field_values_by_record|get_item:record.id as record_values %}
+                  {% for field in custom_fields %}
+                    <td>{{ record_values|get_item:field.id|default:"—" }}</td>
                   {% endfor %}
                 {% endwith %}
+
                 <td>
                   <span class="muted">{{ record.updated_by|default:"—" }}</span>
                   <span class="datetime">{{ record.updated_at|date:"c" }}</span>
                 </td>
+
                 <td>
                   <span class="muted">{{ record.created_by|default:"—" }}</span>
                   <span class="datetime">{{ record.created_at|date:"c" }}</span>
                 </td>
+
                 <td class="align-right">
-                  <button class="btn-flat edit-btn" data-record-id="{{ record.id }}" title="Edit">
+                  <button class="btn-flat edit-btn" data-record-id="{{ record.id }}">
                     <i class="material-icons">edit</i>
                   </button>
                 </td>
@@ -315,6 +325,7 @@
         </table>
       </div>
     </div>
+    {% endwith %}
   {% else %}
     <div class="records-empty">
       <i class="material-icons">inbox</i>
@@ -330,7 +341,7 @@
 <div id="recordModal" class="modal-overlay" aria-hidden="true">
   <div class="modal-content">
     <span class="close-button" onclick="toggleModal()">&times;</span>
-    <h2>New {{ custom_object.label }} ({{ next_identifier }})</h2>
+    <h2>New {{ custom_object.label }} record</h2>
     <form method="post" action="{% url 'cpq:create_custom_record' object_name=custom_object.name user_id=user.id %}">
       {% csrf_token %}
       <div class="form-grid">

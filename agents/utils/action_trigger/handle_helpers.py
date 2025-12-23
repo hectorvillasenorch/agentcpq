@@ -24,7 +24,6 @@ def handle_create_action_trigger(user, completed_action_triggers, response_messa
 
     for trigger_data in completed_action_triggers:
         try:
-            print(f"\n\nTrigger Data: {trigger_data}\n\n")
 
             description = trigger_data.get("description") or trigger_data.get("name")
             event_type = trigger_data.get("event_type", {})
@@ -32,6 +31,7 @@ def handle_create_action_trigger(user, completed_action_triggers, response_messa
             actions = trigger_data.get("actions", [])
             active = trigger_data.get("active", True)
             priority = trigger_data.get("priority", 100)
+            signal_timing = trigger_data.get("signal_timing", "post_save")
 
             # --- 🔍 VALIDACIONES ---
             if not description:
@@ -42,18 +42,18 @@ def handle_create_action_trigger(user, completed_action_triggers, response_messa
                 response_message += f"❌ event_type must be a dictionary, got {type(event_type).__name__}.<br>"
                 continue
 
-            object_type = event_type.get("object_type")
+            object_name = event_type.get("object_name")
             action_name = event_type.get("action")
 
-            if not object_type or not action_name:
-                response_message += "❌ event_type must contain 'object_type' and 'action'.<br>"
+            if not object_name or not action_name:
+                response_message += "❌ event_type must contain 'object_name' and 'action'.<br>"
                 continue
 
-            if not isinstance(object_type, str) or not isinstance(action_name, str):
-                response_message += f"❌ object_type and action must be strings. Got {event_type}.<br>"
+            if not isinstance(object_name, str) or not isinstance(action_name, str):
+                response_message += f"❌ object_name and action must be strings. Got {event_type}.<br>"
                 continue
 
-            if not object_type.isidentifier() or not action_name.isidentifier():
+            if not object_name.isidentifier() or not action_name.isidentifier():
                 response_message += f"❌ Invalid identifiers in event_type: {event_type}.<br>"
                 continue
 
@@ -86,7 +86,8 @@ def handle_create_action_trigger(user, completed_action_triggers, response_messa
                 actions=actions,
                 active=active,
                 created_by=user,
-                priority=priority
+                priority=priority,
+                signal_timing=signal_timing
             )
 
             action_triggers_created.append(new_trigger)

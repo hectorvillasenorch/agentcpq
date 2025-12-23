@@ -952,7 +952,8 @@ function enhanceStructuredAgentMessagesHistoryChat() {
       'retrieved_records:',
       'inclusion_rules_details:',
       'action_triggers_details:',
-      'exclusion_rules_details'
+      'exclusion_rules_details',
+      'openGraphicBuilder'
     ];
 
     let jsonPart = null;
@@ -1029,6 +1030,14 @@ function enhanceStructuredAgentMessagesHistoryChat() {
           ? data
           : (data.action_triggers || data.action_triggers_details || data.triggers || data.rules || []);
         const html = renderActionTriggersDetails(fullMessage, triggers);
+        div.innerHTML = html;
+        return;
+      }
+
+      // === ACTION TRIGGERS ===
+      if (matchedKey === 'openGraphicBuilder:') {
+        console.log("Si es openGraphicBuilder")
+        const html = renderGraphicBuilderForActionTrigger(data);
         div.innerHTML = html;
         return;
       }
@@ -1237,6 +1246,18 @@ async function sendMessage() {
           //console.log(data.response);
           //console.log(data.response.retrieved_records)
           responseMessage += renderRetrievedRecords("", data.response.retrieved_records);
+        }
+        // ✅ openGraphicBuilder - for Action Triggers graphic mode
+        else if (data.response && data.response.openGraphicBuilder) {
+
+          // 🔑 PASO 1: guardar schema global
+          modelSchema = data.response.cpq_model_schema || {};
+          console.log("📦 CPQ Model Schema loaded:", modelSchema);
+
+          // 🔑 PASO 2: renderizar builder
+          responseMessage += renderGraphicBuilderForActionTrigger(
+            data.response.openGraphicBuilder
+          );
         }
         // ✅ Default Response (Handle General Messages)
         else if (data.response && data.response.message) {
@@ -4901,7 +4922,7 @@ function prettyName(str) {
 function renderEventTypeReadable(ev) {
   if (!ev) return "<em>No event type defined</em>";
 
-  const obj = prettyName(ev.object_type);
+  const obj = prettyName(ev.object_name);
   const action = ev.action === "create" ? "created"
                : ev.action === "update" ? "updated"
                : "deleted";
@@ -4924,7 +4945,7 @@ function renderEventTypeReadable(ev) {
             border-radius:6px;
             display:inline-block;
             ">
-            Runs when <strong>${obj}</strong> is <strong>${action}</strong>
+            Runs when <b>${obj}</b> is <strong>${action}</strong>
           </div>
       </li>
   `;
@@ -4939,8 +4960,8 @@ function renderConditionsReadable(conditions) {
 
   conditions.items.forEach((cond, idx) => {
 
-    const left = buildReadableObjectPath(cond.left);
-    const right = buildReadableObjectPath(cond.right);
+    const source = buildReadableObjectPath(cond.source);
+    const target = buildReadableObjectPath(cond.target);
     const op = operatorColored(cond.operator);
 
     html += `
@@ -4959,7 +4980,7 @@ function renderConditionsReadable(conditions) {
             border-radius:6px;
             display:inline-block;
             ">
-            <strong>If</strong> ${left} ${op} ${right}
+            <strong>If</strong> ${source} ${op} ${target}
           </div>
 
         </div>
@@ -5009,19 +5030,19 @@ ${buildTechnicalCondition(cond)}
 function buildReadableObjectPath(ref) {
   if (!ref) return "";
 
-  if (ref.type === "static") return `"${ref.data}"`;
+  if (ref.type === "static") return `"${ref.value}"`;
 
   // ✅ FIELD
-  if (ref.type === "field" && ref.object && ref.path) {
+  if (ref.type === "field" && ref.object && ref.field_name) {
     const obj = prettyName(ref.object);
-    const path = ref.path.split(".").map(p => prettyName(p)).join(" → ");
+    const path = ref.field_name.split(".").map(p => prettyName(p)).join(" → ");
     return `${obj} → ${path}`;
   }
 
   // ✅ LEFT SIDE
-  if (!ref.type && ref.object && ref.path) {
+  if (!ref.type && ref.object && ref.field_name) {
     const obj = prettyName(ref.object);
-    const path = ref.path.split(".").map(p => prettyName(p)).join(" → ");
+    const path = ref.field_name.split(".").map(p => prettyName(p)).join(" → ");
     return `${obj} → ${path}`;
   }
 
@@ -5043,95 +5064,241 @@ function operatorLabel(op) {
 }
 
 function buildTechnicalCondition(cond) {
-  const left = cond.left?.object && cond.left?.path
-    ? `${cond.left.object}.${cond.left.path}`
-    : cond.left?.path || cond.left?.alias || "<?>";
+  const source = cond.source?.object && cond.source?.field_name
+    ? `${cond.source.object}.${cond.source.field_name}`
+    : cond.source?.field_name || cond.source?.alias || "<?>";
   
-  const right = cond.right?.object && cond.right?.path
-    ? `${cond.right.object}.${cond.right.path}`
-    : cond.right?.data !== undefined
-      ? JSON.stringify(cond.right.data)
-      : cond.right?.alias || "<?>";
+  const target = cond.target?.object && cond.target?.field_name
+    ? `${cond.target.object}.${cond.target.field_name}`
+    : cond.target?.data !== undefined
+      ? JSON.stringify(cond.target.data)
+      : cond.target?.alias || "<?>";
 
-  return `${left} ${cond.operator} ${right}`;
+  return `${source} ${cond.operator} ${target}`;
 }
 
 function renderActionsReadable(actions) {
-  if (!actions || actions.length === 0) return "<em>No actions</em>";
+  if (!actions || actions.length === 0) {
+    return "<em>No actions defined</em>";
+  }
 
-  let html = "<ul>";
+  let html = `<ul style="padding-left:0;">`;
 
   actions.forEach(a => {
+
     const obj = prettyName(a.target.object);
 
-    // ✅ Colores según operación
+    let pathLabel = "";
+    if (a.target) {
+      pathLabel =
+        " → " +
+        a.target
+          .split(".")
+          .map(p => prettyName(p))
+          .join(" → ");
+    }
+
     const opColor =
       a.operation === "CREATE" ? "#2e7d32" :
       a.operation === "UPDATE" ? "#ef6c00" :
+      a.operation === "CLONE"  ? "#1565c0" :
       "#c62828";
 
-    // ✅ Mostrar qué hace la acción
     let actionLabel = `
       <div style="
-        padding:6px 10px;
-        background:#f0f0f0;
-        border-radius:6px;
         display:inline-block;
-        margin-bottom:6px;
+        padding:8px 14px;
+        background:#f4f6f8;
+        border-radius:10px;
+        border:1px solid #ddd;
+        margin-bottom:10px;
       ">
-        <span style="color:${opColor}; font-weight:700;">${a.operation}</span>
-        <span style="color:#444;">${obj}</span>
+        <span style="color:${opColor}; font-weight:700; margin-right:6px;">
+          ${a.operation}
+        </span>
+        <span style="color:#333;">
+          ${obj}${pathLabel}
+        </span>
       </div>
     `;
 
+    // =========================
+    // ✅ PREFILTER
+    // =========================
+    let preFilterHtml = "";
+
+    if (a.filters?.items?.length && a.filters.source_object) {
+      preFilterHtml += `
+        <div style="
+          margin-bottom:16px;
+          padding:12px;
+          background:#fafafa;
+          border:1px dashed #ccc;
+          border-radius:10px;
+        ">
+          <div style="font-weight:700; margin-bottom:6px;">
+            🔍 Searching records in <span style="color:#1976d2;">${prettyName(a.filters.source_object)}</span>
+          </div>
+          <ul style="margin-top:6px; padding-left:18px;">
+      `;
+
+      a.filters.items.forEach(f => {
+        const left = prettyName(f.field);
+        const op = operatorColored(f.operator);
+
+        let right = "";
+        if (f.value.type === "field") {
+          right = `${prettyName(f.value.object)} → ${prettyName(f.value.field_name)}`;
+        } 
+        else if (f.value.type === "expression") {
+          right = `<code>${f.value.formula}</code>`;
+        }
+        else {
+          right = JSON.stringify(f.value.value);
+        }
+
+        preFilterHtml += `<li>If ${left} ${op} ${right}</li>`;
+      });
+
+      preFilterHtml += `</ul></div>`;
+    }
+
+    // =========================
+    // ✅ NORMAL FIELDS
+    // =========================
     let fieldsHtml = "";
 
-    // ✅ CASE 1: CREATE (value.fields)
-    if (a.operation === "CREATE" && a.value?.fields) {
+    if (a.operation != "CLONE" && a.value?.fields) {
       for (const [fieldName, fv] of Object.entries(a.value.fields)) {
         const fieldPretty = prettyName(fieldName);
 
         if (fv.type === "static") {
-          fieldsHtml += `<li>${fieldPretty} = "${fv.data}"</li>`;
-        } else if (fv.type === "field") {
-          fieldsHtml += `<li>${fieldPretty} = ${prettyName(fv.object)} → ${prettyName(fv.path)}</li>`;
+          fieldsHtml += `<li>${fieldPretty} <span class="badge-static">static</span> = "${fv.value}"</li>`;
+        }
+        else if (fv.type === "field") {
+          const field_name = fv.field_name ? prettyName(fv.field_name) : "(self)";
+          fieldsHtml += `<li>${fieldPretty} <span class="badge-field">field</span> = ${prettyName(fv.object)} → ${field_name}</li>`;
+        }
+        else if (fv.type === "expression") {
+          fieldsHtml += `<li>${fieldPretty} <span class="badge-expression">expression</span> <span class="formula-box">${fv.formula}</span></li>`;
+        }
+        else if (fv.type === "date") {
+          fieldsHtml += `<li>${fieldPretty} <span class="badge-date">date</span> <span class="formula-box">${fv.formula}</span></li>`;
+        }
+        else if (fv.type === "sequence") {
+          fieldsHtml += `<li>${fieldPretty} <span class="badge-sequence">sequence</span> = ${fv.prefix || ""}${"0".repeat(fv.padding || 0)}</li>`;
+        }
+
+        // ✅ LOOKUP CON DETALLE DEL WHERE ✅✅✅
+        else if (fv.type === "lookup") {
+          const whereLines = (fv.where?.items || []).map(w => {
+            const left = prettyName(w.field_name);
+            const op = operatorColored(w.operator);
+
+            let right = "";
+            if (w.value?.type === "expression") {
+              right = `<code>${w.value.formula}</code>`;
+            } else if (w.value?.type === "field") {
+              right = `${prettyName(w.value.object)} → ${prettyName(w.value.field_name)}`;
+            } else {
+              right = JSON.stringify(w.value?.data);
+            }
+
+            return `<div style="margin-left:16px; font-size:0.85rem; color:#444;">• ${left} ${op} ${right}</div>`;
+          }).join("");
+
+          fieldsHtml += `
+            <li>${fieldPretty}
+              <span class="badge-lookup">lookup</span>
+              → ${prettyName(fv.model)}
+              ${whereLines}
+            </li>`;
         }
       }
     }
 
-    // ✅ CASE 2: UPDATE (value type "field" or "static")
-    else if (a.operation === "UPDATE" && a.value) {
-      const fieldPretty = prettyName(a.target.path);
+    // =========================
+    // ✅ CLONE MODIFIED FIELDS
+    // =========================
+    let cloneFieldsHtml = "";
 
-      if (a.value.type === "field") {
-        fieldsHtml += `
-          <li>${fieldPretty} = ${prettyName(a.value.object)} → ${prettyName(a.value.path)}</li>
-        `;
-      } else if (a.value.type === "static") {
-        fieldsHtml += `
-          <li>${fieldPretty} = "${a.value.data}"</li>
-        `;
+    if (a.operation === "CLONE" && a.value?.fields && Object.keys(a.value.fields).length) {
+      cloneFieldsHtml += `
+        <div style="
+          margin-top:12px;
+          padding:12px;
+          background:#f8fbff;
+          border:1px solid #d0e2ff;
+          border-radius:10px;
+        ">
+          <div style="font-weight:700; margin-bottom:6px;">
+            ✏️ Modified fields
+          </div>
+          <ul style="padding-left:18px;">
+      `;
+
+      for (const [fname, fv] of Object.entries(a.value.fields)) {
+        const fieldPretty = prettyName(fname);
+
+        if (fv.type === "lookup") {
+          const whereLines = (fv.where?.items || []).map(w => {
+            const left = prettyName(w.field_name);
+            const op = operatorColored(w.operator);
+
+            let right = "";
+            if (w.value?.type === "expression") {
+              right = `<code>${w.value.formula}</code>`;
+            } else if (w.value?.type === "field") {
+              right = `${prettyName(w.value.object)} → ${prettyName(w.value.field_name)}`;
+            } else {
+              right = JSON.stringify(w.value?.value);
+            }
+
+            return `<div style="margin-left:16px; font-size:0.85rem; color:#444;">• ${left} ${op} ${right}</div>`;
+          }).join("");
+
+          cloneFieldsHtml += `
+            <li>${fieldPretty}
+              <span class="badge-lookup">lookup</span>
+              → ${prettyName(fv.model)}
+              ${whereLines}
+            </li>`;
+        }
+
+        else if (fv.type === "field") {
+          cloneFieldsHtml += `<li>${fieldPretty} <span class="badge-field">field</span> = ${prettyName(fv.object)} → ${prettyName(fv.field_name)}</li>`;
+        }
+        else if (fv.type === "static") {
+          cloneFieldsHtml += `<li>${fieldPretty} <span class="badge-static">static</span> = "${fv.value}"</li>`;
+        }
+        else if (fv.type === "expression") {
+          cloneFieldsHtml += `<li>${fieldPretty} <span class="badge-expression">expression</span> <span class="formula-box">${fv.formula}</span></li>`;
+        }
       }
+
+      cloneFieldsHtml += `</ul></div>`;
     }
 
-    // ✅ CASE 3: DELETE (no fields)
-    else if (a.operation === "DELETE") {
-      fieldsHtml += `<li>Record will be deleted.</li>`;
-    }
-
-    // ✅ Technical details formatted
     const techDetails = JSON.stringify(a, null, 2);
 
     html += `
-      <li style="margin-bottom:20px;">
+      <li style="
+        list-style:none;
+        margin-bottom:26px;
+        padding-bottom:18px;
+        border-bottom:1px solid #eee;
+      ">
+        ${preFilterHtml}
         ${actionLabel}
 
-        <ul style="margin-left:10px;">${fieldsHtml}</ul>
+        ${fieldsHtml ? `<ul style="margin-left:12px; margin-top:10px;">${fieldsHtml}</ul>` : ""}
+
+        ${cloneFieldsHtml}
 
         <a href="#"
            onclick="this.nextElementSibling.style.display=
              this.nextElementSibling.style.display==='none'?'block':'none'; return false;"
-           style="font-size:0.85rem; margin-top:6px; display:block;">
+           style="font-size:0.85rem; margin-top:10px; display:block;">
            (Show technical)
         </a>
 
@@ -5143,6 +5310,8 @@ function renderActionsReadable(actions) {
   html += "</ul>";
   return html;
 }
+
+
 
 function renderActionFields(valueDef) {
   if (!valueDef || !valueDef.fields) return "";
@@ -5320,12 +5489,12 @@ function renderActionsBlock(actions) {
 
 function operatorColored(op) {
   const map = {
-    "==": { label: "equals", color: "#0073e6" },
-    "!=": { label: "does not equal", color: "#e63946" },
-    ">":  { label: "is greater than", color: "#8d39e6" },
-    "<":  { label: "is less than", color: "#8d39e6" },
-    ">=": { label: "is greater or equal", color: "#c77d1a" },
-    "<=": { label: "is less or equal", color: "#c77d1a" },
+    "==": { label: "equals (==)", color: "#0073e6" },
+    "!=": { label: "does not equal (!=)", color: "#e63946" },
+    ">":  { label: "is greater than (>)", color: "#8d39e6" },
+    "<":  { label: "is less than (<)", color: "#8d39e6" },
+    ">=": { label: "is greater or equal (>=)", color: "#c77d1a" },
+    "<=": { label: "is less or equal (<=)", color: "#c77d1a" },
     "contains": { label: "contains", color: "#009688" },
     "in": { label: "in", color: "#5c6bc0" },
     "not in": { label: "not in", color: "#5c6bc0" },
@@ -6377,4 +6546,755 @@ function openRecordsPopout(button) {
     window.removeEventListener('mousemove', () => {});
     window.removeEventListener('keydown', onKey);
   });
+}
+
+///////////////////////////////////////////////////////////
+///           GRAPHIC BUILDER ACTION TRIGGER            ///
+///////////////////////////////////////////////////////////
+
+/**
+ * JSON FINAL DEL ACTION TRIGGER
+ * 👉 Todos los nodos escriben aquí
+ */
+let actionTriggerJSON = {
+  description: "",
+  event_type: null,
+  conditions: {
+    logical_operator: "AND",
+    items: []
+  },
+  actions: []
+};
+
+/**
+ * Schema de modelos CPQ
+ * 👉 Viene del backend
+ */
+let modelSchema = {};   // { quote_line: { fields: {...} }, ... }
+
+/**
+ * Contexto disponible para drag & drop
+ * 👉 Se va llenando dinámicamente
+ */
+let contextSources = {}; // { quote_line: schema, account: schema }
+
+/**
+ * Estado del nodo EVENT
+ */
+let eventNodeState = {
+  configured: false,
+  data: null
+};
+
+/**
+ * Estado del nodo CONDITIONS
+ */
+let conditionsNodeState = {
+  created: false
+};
+
+let conditionsDraft = {
+  logical_operator: "AND",
+  items: []
+};
+
+let eventDraft = null;
+let eventSnapshot = null;
+
+function renderGraphicBuilderForActionTrigger(openGraphicBuilder) {
+  if (!openGraphicBuilder) return "";
+
+  return `
+    <div class="graphic-builder">
+
+      <div class="flow-canvas">
+
+        <!-- EVENT NODE -->
+        <div id="event-node" class="flow-node event-node hidden" onclick="openEventNodeEditor()">
+          <div class="node-title">Event</div>
+          <div id="event-node-summary" class="node-summary">
+            Not configured
+          </div>
+        </div>
+
+        <!-- ADD EVENT NODE -->
+        <div id="add-event-node" class="add-event-node" onclick="createEventNode()">
+          <div class="plus-box">+</div>
+          <div class="add-label">Add event node</div>
+        </div>
+
+        <!-- NODE EDITOR -->
+        <div id="node-editor" class="node-editor hidden">
+
+          <div class="editor-left">
+            <h3>Event Type</h3>
+
+            <div class="editor-section">
+              <label>Description</label>
+              <textarea id="event-description"
+                        oninput="updateEventPreview()"
+                        placeholder="Describe what this trigger does..."></textarea>
+            </div>
+
+            <div class="editor-section">
+              <label>Object</label>
+              <select id="event-object" onchange="updateEventPreview()">
+                <option value="">Select object</option>
+                ${renderCPQObjectOptions()}
+              </select>
+            </div>
+
+            <div class="editor-section">
+              <label>Action</label>
+              <select id="event-action" onchange="updateEventPreview()">
+                <option value="">Select action</option>
+                <option value="create">Create</option>
+                <option value="update">Update</option>
+                <option value="delete">Delete</option>
+              </select>
+            </div>
+
+            <div id="event-text-preview" class="preview-text">
+              Select an object and action to describe this trigger.
+            </div>
+
+            <div class="editor-actions">
+              <button class="btn-secondary" onclick="cancelEventEdit()">Cancel</button>
+              <button class="btn-primary" onclick="saveEventNode()">Done</button>
+            </div>
+          </div>
+
+          <div class="editor-right">
+            <h4>Event JSON</h4>
+            <pre id="event-json-preview">{}</pre>
+          </div>
+
+        </div>
+
+        <!-- EVENT → NEXT CONNECTOR -->
+        <div id="event-connector" class="event-connector hidden">
+          <div class="connector-line"></div>
+
+          <div class="connector-plus" onclick="toggleNextNodeMenu()">
+            +
+          </div>
+
+          <div id="next-node-menu" class="next-node-menu hidden">
+            <div class="next-node-option" onclick="createConditionsNode()">
+              Conditions
+            </div>
+            <div class="next-node-option disabled">
+              Actions (coming soon)
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  `;
+}
+
+function createEventNode() {
+  document.getElementById("add-event-node").classList.add("hidden");
+  document.getElementById("event-node").classList.remove("hidden");
+  openEventNodeEditor();
+}
+
+function openEventNodeEditor() {
+  // Snapshot del estado actual (lo guardado)
+  const saved = eventNodeState?.data?.event_type
+    ? {
+        description: eventNodeState.data.description || "",
+        object_name: eventNodeState.data.event_type.object_name || "",
+        action: (eventNodeState.data.event_type.action || "").toLowerCase()
+      }
+    : { description: "", object_name: "", action: "" };
+
+  eventSnapshot = JSON.parse(JSON.stringify(saved));
+  eventDraft = JSON.parse(JSON.stringify(saved));
+
+  // Cargar form con lo guardado
+  setEventFormData(saved);
+
+  // Mostrar editor
+  document.getElementById("node-editor").classList.remove("hidden");
+
+  // Pintar preview con lo cargado
+  updateEventPreview(true);
+}
+
+function renderCPQObjectOptions() {
+  const objects = [
+    "Opportunity",
+    "Quote",
+    "QuoteLine",
+    "Contract",
+    "Account",
+    "Subscription"
+  ];
+
+  return objects.map(o => {
+    let value;
+
+    if (o === "QuoteLine") {
+      value = "quote_line";   // 👈 caso especial
+    } else {
+      value = o.toLowerCase();
+    }
+
+    return `<option value="${value}">${o}</option>`;
+  }).join("");
+}
+
+function openEventTypePanel() {
+  document.getElementById("event-type-panel").classList.remove("hidden");
+}
+
+function openEventTypeEditor() {
+  document.getElementById("node-editor").classList.remove("hidden");
+}
+
+function updateEventPreview(fromSavedOrDraft = false) {
+  // Siempre leemos del form y lo ponemos en draft
+  const form = getEventFormData();
+
+  if (!eventDraft) eventDraft = { description: "", object_name: "", action: "" };
+  eventDraft.description = form.description;
+  eventDraft.object_name = form.object_name;
+  eventDraft.action = form.action;
+
+  const description = eventDraft.description;
+  const object = eventDraft.object_name;
+  const action = eventDraft.action;
+
+  let text = "Select an object and action to describe this trigger.";
+  let nodeSummary = eventNodeState?.configured ? (document.getElementById("event-node-summary").innerText || "Configured") : "Not configured";
+
+  if (object && action) {
+    const label = object.charAt(0).toUpperCase() + object.slice(1);
+
+    if (action === "create") text = `This trigger activates when a ${label} is created.`;
+    if (action === "update") text = `This trigger activates when a ${label} is updated.`;
+    if (action === "delete") text = `This trigger activates when a ${label} is deleted.`;
+
+    // Solo actualiza el resumen del nodo visualmente mientras editas
+    nodeSummary = `${label} · ${action.toUpperCase()}`;
+  }
+
+  document.getElementById("event-text-preview").innerText = text;
+
+  // OJO: aquí sí puedes mostrar el summary mientras editas (como n8n),
+  // pero si cancelas lo vamos a restaurar.
+  document.getElementById("event-node-summary").innerText = nodeSummary;
+
+  const json = {
+    description: description || "",
+    event_type: {
+      object_name: object || null,
+      action: action ? action.toUpperCase() : null
+    }
+  };
+
+  document.getElementById("event-json-preview").innerText =
+    JSON.stringify(json, null, 2);
+}
+
+
+function saveEventNode() {
+  if (!eventDraft) eventDraft = getEventFormData();
+
+  const description = eventDraft.description || "";
+  const object = eventDraft.object_name || "";
+  const action = eventDraft.action || "";
+
+  if (!object || !action) {
+    alert("Please select an object and an action.");
+    return;
+  }
+
+  eventNodeState.configured = true;
+  eventNodeState.data = {
+    description: description,
+    event_type: {
+      object_name: object,
+      action: action.toUpperCase()
+    }
+  };
+
+  document.getElementById("event-node").classList.add("configured");
+
+  // limpiar draft/snapshot
+  eventSnapshot = null;
+  eventDraft = null;
+
+  closeEventEditor();
+
+  // Mostrar conector hacia el siguiente nodo
+  document.getElementById("event-connector")?.classList.remove("hidden");
+
+  // Inicializar JSON global
+  actionTriggerJSON.description = description;
+  actionTriggerJSON.event_type = {
+    object_name: object,
+    action: action.toUpperCase()
+  };
+
+  // Inicializar Context Sources con el EVENT ROOT
+  contextSources = {
+    [object]: modelSchema[object]
+  };
+
+  console.log("✅ Event node saved:", eventNodeState.data);
+}
+
+
+function cancelEventEdit() {
+
+  // CASO 1️⃣: Nodo NO configurado → volver a "Add first step"
+  if (!eventNodeState.configured) {
+    // Ocultar nodo
+    document.getElementById("event-node").classList.add("hidden");
+
+    // Mostrar botón inicial
+    document.getElementById("add-event-node").classList.remove("hidden");
+
+    // Resetear summary
+    document.getElementById("event-node-summary").innerText = "Not configured";
+
+    // Limpiar preview JSON
+    document.getElementById("event-json-preview").innerText = "{}";
+
+    // Limpiar texto descriptivo
+    document.getElementById("event-text-preview").innerText =
+      "Select an object and action to describe this trigger.";
+
+  } 
+  // CASO 2️⃣: Nodo ya configurado → restaurar snapshot
+  else if (eventSnapshot) {
+
+    setEventFormData(eventSnapshot);
+
+    const obj = eventNodeState.data.event_type.object_name;
+    const act = eventNodeState.data.event_type.action;
+    const label = obj.charAt(0).toUpperCase() + obj.slice(1);
+
+    document.getElementById("event-node-summary").innerText =
+      `${label} · ${act}`;
+
+    eventDraft = JSON.parse(JSON.stringify(eventSnapshot));
+    updateEventPreview(true);
+  }
+
+  // Limpiar draft y snapshot
+  eventDraft = null;
+  eventSnapshot = null;
+
+  closeEventEditor();
+}
+
+function closeEventEditor() {
+  document.getElementById("node-editor").classList.add("hidden");
+}
+
+
+function getEventFormData() {
+  return {
+    description: document.getElementById("event-description")?.value || "",
+    object_name: document.getElementById("event-object")?.value || "",
+    action: document.getElementById("event-action")?.value || ""
+  };
+}
+
+function setEventFormData(data) {
+  document.getElementById("event-description").value = data?.description || "";
+  document.getElementById("event-object").value = data?.object_name || "";
+  document.getElementById("event-action").value = data?.action || "";
+
+  // Si usas Materialize selects, refresca UI
+  try {
+    const selects = document.querySelectorAll(".graphic-builder select");
+    M.FormSelect.init(selects);
+  } catch (e) {}
+}
+
+function toggleNextNodeMenu() {
+  document
+    .getElementById("next-node-menu")
+    .classList.toggle("hidden");
+}
+
+function createConditionsNode() {
+  document.getElementById("next-node-menu").classList.add("hidden");
+
+  if (conditionsNodeState.created) return;
+
+  conditionsNodeState.created = true;
+
+  const canvas = document.querySelector(".flow-canvas");
+  canvas.insertAdjacentHTML("beforeend", renderConditionsNode());
+
+  openConditionsEditor();
+
+  // 🔑 RE-INICIALIZAR MATERIALIZE SELECTS
+  try {
+    const selects = document.querySelectorAll(
+      ".graphic-builder .conditions-col-middle select"
+    );
+    M.FormSelect.init(selects);
+  } catch (e) {
+    console.warn("Materialize init failed", e);
+  }
+}
+
+function renderConditionsNode() {
+  return `
+    <!-- CONDITIONS NODE -->
+    <div id="conditions-node" class="flow-node conditions-node">
+      <div class="node-title">Conditions</div>
+      <div class="node-summary">Not configured</div>
+    </div>
+
+    <!-- CONDITIONS EDITOR -->
+    <div id="conditions-editor" class="node-editor hidden">
+
+      <!-- COLUMN 1 -->
+      <div class="conditions-col conditions-col-left">
+        ${renderConditionsColumnContext()}
+      </div>
+
+      <!-- COLUMN 2 (placeholder) -->
+      <div class="conditions-col conditions-col-middle">
+        <h3>Conditions</h3>
+        
+        <!-- LOGICAL OPERATOR -->
+        <div class="conditions-section">
+          <label class="section-label">Logical Operator</label>
+
+          <select id="conditions-logical-operator"
+                  onchange="updateConditionsLogicalOperator()">
+            <option value="AND">
+              All conditions must be true (AND)
+            </option>
+            <option value="OR">
+              Any condition can be true (OR)
+            </option>
+          </select>
+
+          <div class="section-divider"></div>
+        </div>
+
+        <!-- ITEMS -->
+        <div class="conditions-section">
+          <label class="section-label">Items</label>
+
+          <button class="add-item-btn" onclick="addConditionRow()">
+            +
+          </button>
+
+          <div id="conditions-items" class="conditions-items"></div>
+        </div>
+      </div>
+
+      <!-- COLUMN 3 (placeholder) -->
+      <div class="conditions-col conditions-col-right">
+        <h4>Preview</h4>
+        <pre>{}</pre>
+      </div>
+
+    </div>
+  `;
+}
+
+function renderConditionsColumnContext() {
+  const eventRoot = actionTriggerJSON.event_type?.object_name || "";
+
+  return `
+    <h3>When</h3>
+
+    <div class="when-box">
+      <strong>Event Root</strong>
+      <div class="event-root-label">${eventRoot}</div>
+    </div>
+
+    <h4 class="section-title">Context Sources</h4>
+
+    <div class="context-sources">
+      ${renderContextSourceTree(eventRoot)}
+    </div>
+  `;
+}
+
+function renderContextSourceTree(objectName, path = objectName, visited = new Set()) {
+
+  if (visited.has(objectName)) {
+    return `
+      <div class="context-cycle">
+        ↺ ${objectName} (cycle)
+      </div>
+    `;
+  }
+
+  const schema = modelSchema[objectName];
+  if (!schema) return "";
+
+  visited.add(objectName);
+
+  const fields = schema.fields || {};
+  const nodeId = `${path.replace(/\./g, "_")}`;
+
+  return `
+    <div class="context-object" data-node="${nodeId}">
+      <div class="context-object-header"
+           onclick="toggleContextNode('${nodeId}')">
+        <span class="arrow">▸</span> ${objectName}
+      </div>
+
+      <div class="context-fields hidden">
+        ${Object.entries(fields).map(([fieldName, meta]) => {
+          const fieldPath = `${path}.${fieldName}`;
+
+          if (meta.type === "fk") {
+            const fkNodeId = `${fieldPath.replace(/\./g, "_")}`;
+
+            return `
+              <div class="context-field fk">
+                <div class="context-field-label"
+                     onclick="toggleContextNode('${fkNodeId}')">
+                  <span class="arrow">▸</span> ${fieldName}
+                </div>
+
+                <div class="context-nested hidden" data-node="${fkNodeId}">
+                  ${renderObjectFields(
+                    meta.target,
+                    fieldPath,
+                    new Set(visited)
+                  )}
+                </div>
+              </div>
+            `;
+          }
+
+          return `
+            <div class="context-field"
+                 draggable="true"
+                 data-path="${fieldPath}">
+              ${fieldName}
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function toggleContextNode(nodeId) {
+  const container = document.querySelector(`[data-node="${nodeId}"]`);
+  if (!container) return;
+
+  let target;
+
+  // Caso 1️⃣: object root → abrir fields
+  if (container.classList.contains("context-object")) {
+    target = container.querySelector(".context-fields");
+  }
+  // Caso 2️⃣: FK → el propio container es el nested
+  else if (container.classList.contains("context-nested")) {
+    target = container;
+  }
+
+  if (!target) return;
+
+  // Flecha asociada
+  const arrow = document.querySelector(
+    `[onclick="toggleContextNode('${nodeId}')"] .arrow`
+  );
+
+  const isHidden = target.classList.contains("hidden");
+
+  target.classList.toggle("hidden");
+
+  if (arrow) {
+    arrow.textContent = isHidden ? "▾" : "▸";
+  }
+}
+
+function renderObjectFields(objectName, path, visited) {
+  if (visited.has(objectName)) {
+    return `<div class="context-cycle">↺ ${objectName} (cycle)</div>`;
+  }
+
+  const schema = modelSchema[objectName];
+  if (!schema) return "";
+
+  visited.add(objectName);
+
+  return Object.entries(schema.fields || {}).map(([fieldName, meta]) => {
+    const fieldPath = `${path}.${fieldName}`;
+
+    if (meta.type === "fk") {
+      const fkNodeId = fieldPath.replace(/\./g, "_");
+
+      return `
+        <div class="context-field fk">
+          <div class="context-field-label"
+               onclick="toggleContextNode('${fkNodeId}')">
+            <span class="arrow">▸</span> ${fieldName}
+          </div>
+
+          <div class="context-nested hidden" data-node="${fkNodeId}">
+            ${renderObjectFields(
+              meta.target,
+              fieldPath,
+              new Set(visited)
+            )}
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="context-field"
+           draggable="true"
+           data-path="${fieldPath}">
+        ${fieldName}
+      </div>
+    `;
+  }).join("");
+}
+
+function openConditionsEditor() {
+  document.getElementById("conditions-editor").classList.remove("hidden");
+}
+
+function closeConditionsEditor() {
+  document.getElementById("conditions-editor").classList.add("hidden");
+}
+
+// CONDITIONS NODE - COLUMN 2 FUNCTIONS
+
+function addConditionRow() {
+  const id = Date.now();
+
+  conditionsDraft.items.push({
+    id,
+    left: null,
+    operator: null,
+    right: null
+  });
+
+  renderConditionsItems();
+}
+
+function renderConditionsItems() {
+  const container = document.getElementById("conditions-items");
+  if (!container) return;
+
+  container.innerHTML = conditionsDraft.items.map(item => `
+    <div class="condition-row" data-id="${item.id}">
+
+      <!-- SOURCE -->
+      <div class="condition-field">
+        <label>Source</label>
+        <div class="condition-cell empty"
+             ondragover="allowDrop(event)"
+             ondrop="dropConditionField(event, ${item.id})">
+          ${item.left ? item.left.field_name : "Drop field here"}
+        </div>
+      </div>
+
+      <!-- OPERATOR -->
+      <div class="condition-field">
+        <label>Operator</label>
+        <select class="condition-operator"
+                onchange="setConditionOperator(${item.id}, this.value)">
+          <option value="">--</option>
+          <option value="=" ${item.operator === "=" ? "selected" : ""}>=</option>
+          <option value="!=" ${item.operator === "!=" ? "selected" : ""}>!=</option>
+          <option value=">" ${item.operator === ">" ? "selected" : ""}>></option>
+          <option value="<" ${item.operator === "<" ? "selected" : ""}><</option>
+          <option value="contains" ${item.operator === "contains" ? "selected" : ""}>contains</option>
+        </select>
+      </div>
+
+      <!-- TARGET -->
+      <div class="condition-field">
+        <label>Target</label>
+        <input type="text"
+               class="condition-cell"
+               placeholder="Value"
+               value="${item.right?.value ?? ""}"
+               onchange="setConditionRight(${item.id}, this.value)" />
+      </div>
+
+    </div>
+  `).join("");
+}
+
+function allowDrop(ev) {
+  ev.preventDefault();
+}
+
+document.addEventListener("dragstart", e => {
+  const path = e.target.dataset?.path;
+  if (path) {
+    e.dataTransfer.setData("text/plain", path);
+  }
+});
+
+function dropConditionField(ev, conditionId) {
+  ev.preventDefault();
+  const path = ev.dataTransfer.getData("text/plain");
+
+  const condition = conditionsDraft.items.find(c => c.id === conditionId);
+  if (!condition) return;
+
+  condition.left = {
+    source: "field",
+    field_name: path
+  };
+
+  renderConditionsItems();
+  syncConditionsToJSON();
+}
+
+function setConditionOperator(id, operator) {
+  const c = conditionsDraft.items.find(i => i.id === id);
+  if (!c) return;
+
+  c.operator = operator;
+  syncConditionsToJSON();
+}
+
+function setConditionRight(id, value) {
+  const c = conditionsDraft.items.find(i => i.id === id);
+  if (!c) return;
+
+  c.right = {
+    source: "static",
+    value: value
+  };
+
+  syncConditionsToJSON();
+}
+
+function updateConditionsLogicalOperator() {
+  const value = document.getElementById("conditions-logical-operator").value;
+  conditionsDraft.logical_operator = value;
+  syncConditionsToJSON();
+}
+
+function syncConditionsToJSON() {
+  actionTriggerJSON.conditions = {
+    logical_operator: conditionsDraft.logical_operator,
+    items: conditionsDraft.items
+      .filter(c => c.left && c.operator && c.right)
+      .map(({ left, operator, right }) => ({
+        left,
+        operator,
+        right
+      }))
+  };
+
+  // Preview (columna 3 luego)
+  console.log("✅ Conditions JSON", actionTriggerJSON.conditions);
 }

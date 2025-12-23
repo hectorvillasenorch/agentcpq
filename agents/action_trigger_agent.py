@@ -15,7 +15,7 @@ from .utils.action_trigger.llm_helpers import extract_action_triggers_with_llm
 from .utils.action_trigger.handle_helpers import handle_create_action_trigger
 
 # General Helpers
-from .utils.action_trigger.general_helpers import get_action_triggers_details
+from .utils.action_trigger.general_helpers import get_action_triggers_details, action_trigger_creation_type_with_llm, get_cpq_model_schema
 
 def action_trigger_agent(user, action, user_message, session_data):
 
@@ -36,15 +36,31 @@ def create_action_trigger(user, user_message, session_data):
 
     current_state, previous_summary = get_session_context("create_action_trigger", session_data)
 
+    first_llm_result = action_trigger_creation_type_with_llm(
+        user_message=user_message
+    )
+
+    if first_llm_result["mode"] == "graphic":
+        
+        return {
+            "message": "Opening graphic mode...",
+            "openGraphicBuilder": True,
+            "cpq_model_schema": get_cpq_model_schema()
+        }
+    
 
     # --- Initial call to LLM to extract action triggers ---
     llm_result = extract_action_triggers_with_llm(
+        user=user,
         user_message=user_message,
         current_state=current_state,
-        previous_summary=previous_summary
+        previous_summary=previous_summary,
+        action = first_llm_result["action"]
     )
 
     print(f"\n\nLLM result: {llm_result}\n\n")
+
+    # print(f"\n\nLLM result: {llm_result}\n\n")
 
     completed_action_triggers = []
     remaining_action_triggers = []
@@ -66,8 +82,6 @@ def create_action_trigger(user, user_message, session_data):
         }
     
     response_message = ""
-
-    print(f"\n\nCompleted action triggers: {completed_action_triggers}\n\n")
 
     # ✅ Handle create inclusion rule
     response_message, action_triggers_created = handle_create_action_trigger(user, completed_action_triggers, response_message)

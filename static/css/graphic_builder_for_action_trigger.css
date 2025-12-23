@@ -1,0 +1,511 @@
+.graphic-builder {
+  margin-top: 10px;
+}
+
+/* CANVAS */
+.flow-canvas {
+  position: relative;
+  height: 70vh;
+  min-height: 650px;
+  border-radius: 10px;
+  background-color: #1e1e1e;
+  background-image: radial-gradient(#2e2e2e 1px, transparent 1px);
+  background-size: 20px 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* ADD EVENT NODE */
+.add-event-node {
+  text-align: center;
+  cursor: pointer;
+}
+
+.plus-box {
+  width: 60px;
+  height: 60px;
+  border: 2px dashed #aaa;
+  border-radius: 8px;
+  color: #aaa;
+  font-size: 34px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: auto;
+}
+
+.add-label {
+  margin-top: 8px;
+  color: #aaa;
+  font-size: 13px;
+}
+
+/* NODE EDITOR */
+.node-editor {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 85%;          /* 🔑 no full width */
+  max-width: 1100px;   /* 🔑 límite visual */
+  height: calc(100% - 120px);
+  background: #252526;
+  border-radius: 12px;
+  display: flex;
+  overflow: hidden;
+  box-shadow: 0 15px 40px rgba(0,0,0,.7);
+}
+
+/* LEFT / RIGHT */
+.editor-left,
+.editor-right {
+  padding: 20px;
+  color: #e5e5e5;
+  overflow-y: auto;
+}
+
+.editor-left {
+  width: 55%;
+  border-right: 1px solid #333;
+}
+
+.editor-left h3 {
+  font-size: 22px;      /* antes se veía enorme */
+  font-weight: 600;
+  margin-bottom: 18px;
+}
+
+.editor-right {
+  width: 45%;
+  background: #111827;      /* azul oscuro tipo n8n */
+  border-left: 1px solid #1f2937;
+}
+
+.editor-right h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #e5e7eb;       /* 🔑 antes se perdía */
+  margin-bottom: 10px;
+}
+
+/* SECTIONS */
+.editor-section {
+  margin-bottom: 16px;
+}
+
+label {
+  font-size: 12px;
+  color: #aaa;
+  display: block;
+  margin-bottom: 6px;
+}
+
+textarea,
+select {
+  width: 100%;
+  background: #2d2d2d;
+  border: 1px solid #444;
+  color: #eee;
+  padding: 8px;
+  border-radius: 6px;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 70px;
+  max-height: 180px;
+}
+
+/* TEXT PREVIEW */
+.preview-text {
+  background: #2a2a2a;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #ccc;
+}
+
+/* JSON */
+.editor-right pre {
+  background: #020617;
+  color: #e5e7eb;
+  padding: 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  height: auto;
+  min-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;     /* 🔑 importante */
+  word-break: break-word;    /* 🔑 importante */
+}
+
+.hidden {
+  display: none;
+}
+
+.flow-node {
+  position: absolute;
+  top: 120px;
+  padding: 12px 16px;
+  background: #2b2b2b;
+  border-radius: 8px;
+  border: 1px solid #444;
+  color: #eee;
+  cursor: pointer;
+  min-width: 160px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.5);
+}
+
+.event-node {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.node-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.node-summary {
+  font-size: 12px;
+  color: #aaa;
+}
+
+.flow-node.configured {
+  border-color: #22c55e;
+}
+
+.flow-node.configured .node-summary {
+  color: #86efac;
+}
+
+
+
+/* CSS FOR BUTTONS */
+.editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.btn-primary {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: #ccc;
+  border: 1px solid #444;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================= */
+/* MATERIALIZE SELECT — SCOPED  */
+/* ============================= */
+
+.graphic-builder .editor-left .select-wrapper input.select-dropdown {
+  color: #ffffff !important;
+  border-bottom: 1px solid #555;
+}
+
+.graphic-builder .editor-left 
+.select-wrapper input.select-dropdown::placeholder {
+  color: #9ca3af !important;
+}
+
+/* Dropdown menu */
+.graphic-builder .editor-left .dropdown-content {
+  background-color: #ffffff;
+}
+
+.graphic-builder .editor-left .dropdown-content li > span {
+  color: #111827;
+}
+
+.graphic-builder .editor-left .dropdown-content li:hover,
+.graphic-builder .editor-left .dropdown-content li.active {
+  background-color: #e5e7eb;
+}
+
+/* Label */
+.graphic-builder .editor-left label {
+  color: #9ca3af;
+}
+
+/* ============================= */
+/* EVENT → NEXT CONNECTOR       */
+/* ============================= */
+
+.event-connector {
+  position: absolute;
+  top: 140px;                 /* alineado al event node */
+  left: calc(50% + 90px);     /* sale del lado derecho */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.connector-line {
+  width: 80px;
+  height: 2px;
+  background: #ffffff;
+  opacity: 0.9;
+}
+
+.connector-plus {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: white;
+  font-size: 18px;
+  line-height: 26px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Menu */
+.next-node-menu {
+  position: absolute;
+  top: -10px;
+  left: 120px;
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  overflow: hidden;
+  z-index: 20;
+}
+
+.next-node-option {
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #e5e7eb;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.next-node-option:hover {
+  background: #1f2937;
+}
+
+.next-node-option.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hidden {
+  display: none;
+}
+
+/* ============================= */
+/* CONDITIONS NODE               */
+/* ============================= */
+
+.conditions-node {
+  top: 120px;
+  left: calc(50% + 200px);
+}
+
+/* Columns */
+.conditions-col {
+  padding: 20px;
+  color: #e5e5e5;
+  overflow-y: auto;
+}
+
+.conditions-col-left {
+  width: 25%;
+  border-right: 1px solid #333;
+}
+
+.conditions-col-middle {
+  width: 45%;
+  border-right: 1px solid #333;
+}
+
+.conditions-col-right {
+  width: 30%;
+  background: #020617;
+}
+
+/* When */
+.when-box {
+  background: #1f2937;
+  padding: 10px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  font-size: 13px;
+}
+
+.event-root-label {
+  margin-top: 6px;
+  font-weight: bold;
+  color: #22c55e;
+}
+
+/* Context Sources */
+.section-title {
+  margin: 10px 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.context-object {
+  margin-bottom: 10px;
+}
+
+.context-object-header {
+  font-size: 13px;
+  cursor: pointer;
+  color: #93c5fd;
+}
+
+.context-fields {
+  margin-left: 12px;
+  margin-top: 6px;
+}
+
+.context-field {
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: grab;
+}
+
+.context-field:hover {
+  background: #1f2937;
+}
+
+.context-field.fk > .context-field-label {
+  cursor: pointer;
+  color: #facc15;
+}
+
+.context-nested {
+  margin-left: 12px;
+}
+
+.context-cycle {
+  font-size: 11px;
+  color: #f87171;
+  margin-left: 12px;
+  opacity: 0.7;
+}
+
+.context-object-header,
+.context-field-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.context-object-header .arrow,
+.context-field-label .arrow {
+  width: 12px;
+  display: inline-block;
+}
+
+/* CONDITIONS NODE - COLUMN 2*/
+.conditions-header {
+  margin-bottom: 14px;
+}
+
+.conditions-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.condition-row {
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 2fr 1fr 2fr; /* Source | Operator | Target */
+  gap: 12px;
+  align-items: start;
+}
+
+.condition-cell {
+  flex: 1;
+  background: #020617;
+  border: 1px dashed #334155;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #e5e7eb;
+  border-radius: 4px;
+}
+
+.condition-cell.empty {
+  color: #64748b;
+}
+
+.condition-operator {
+  width: 100%;
+}
+
+.add-condition-btn {
+  margin-top: 10px;
+}
+
+/* CONDITIONS COLUMN 2 STRUCTURE */
+
+.conditions-section {
+  margin-bottom: 16px;
+}
+
+.section-label {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.section-divider {
+  height: 1px;
+  background: #374151;
+  margin-top: 10px;
+}
+
+.add-item-btn {
+  width: 100%;
+  height: 36px;
+  border: 1px dashed #475569;
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 20px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.add-item-btn:hover {
+  background: #1f2937;
+}
+
+.condition-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.condition-field label {
+  font-size: 11px;
+  color: #9ca3af;
+}

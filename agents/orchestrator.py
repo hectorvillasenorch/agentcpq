@@ -242,6 +242,14 @@ def orchestrate_request(user, user_message, session_data):
     messages.append({
         "role": "system",
         "content": f"""
+        CRITICAL CLASSIFICATION RULES (HIGHEST PRIORITY):
+
+        1) DETERMINISTIC PREFIX RULE:
+        If the user message STARTS WITH the exact text:
+        "create action trigger"
+        You MUST ALWAYS return the label:
+        "CreateActionTrigger"
+
         Possible labels:
         - "CreateQuote"
         - "AddProductToQuote"
@@ -400,7 +408,7 @@ def orchestrate_request(user, user_message, session_data):
             if key not in (
                 "message", "session_id", "hiddenMessage", "temporaryMessage",
                 "update_details", "iterations", "success", "quote_id", "notes",
-                "tokens", "cost", "session_summary", "rules_created"
+                "tokens", "cost", "session_summary", "rules_created", "openGraphicBuilder", "cpq_model_schema"
             ):
                 agent_message += f"\n\n{key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 

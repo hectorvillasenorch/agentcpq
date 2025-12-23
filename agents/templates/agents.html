@@ -10,7 +10,11 @@
     <script>
       window.isAdmin = {{ request.user.is_staff|yesno:"true,false" }};
     </script>
+    <link rel="stylesheet" href="{% static 'css/graphic_builder_for_action_trigger.css' %}">
+
+    <script src="{% static 'js/agents/graphic_builder_for_action_trigger.js' %}" defer></script>
     <script src="{% static 'js/agents/agent_main.js' %}" defer></script>
+
     <!-- Flatpickr JS & CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
