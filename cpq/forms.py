@@ -9,11 +9,15 @@ from django.db import models
 from django.contrib.auth.models import User
 from .models import EmailAlert
 import json
+import re
+from decimal import Decimal, InvalidOperation
 
 
 DATA_TYPE_CHOICES = [
     ('text', 'Text'),
     ('number', 'Number'),
+    ('currency', 'Currency'),
+    ('percent', 'Percent'),
     ('date', 'Date'),
     ('boolean', 'Boolean'),
     ('dropdown', 'Dropdown'),
@@ -51,9 +55,86 @@ PRODUCT_FIELDS = [
     ("term", "Term")
 ]
 
+
+def _parse_loose_decimal(value):
+    if value is None:
+        return None
+
+    if isinstance(value, Decimal):
+        return value
+
+    if isinstance(value, (int, float)):
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    # Allow currency-like / percent-like inputs: "$1,234.56", "1.234,56", "12%", "MXN 500"
+    text = re.sub(r"[^0-9,.\-]+", "", text)
+    if not text:
+        return None
+
+    has_dot = "." in text
+    has_comma = "," in text
+
+    if has_dot and has_comma:
+        # Decide decimal separator by last occurrence.
+        if text.rfind(",") > text.rfind("."):
+            # "1.234,56" -> "1234.56"
+            text = text.replace(".", "")
+            text = text.replace(",", ".")
+        else:
+            # "1,234.56" -> "1234.56"
+            text = text.replace(",", "")
+    elif has_comma and not has_dot:
+        # "1234,56" -> "1234.56" (assume decimal comma if it looks like cents)
+        parts = text.split(",")
+        if len(parts) == 2 and 1 <= len(parts[1]) <= 2:
+            text = ".".join(parts)
+        else:
+            text = text.replace(",", "")
+
+    try:
+        return Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None
+
+
+class CurrencyField(forms.DecimalField):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("decimal_places", 2)
+        kwargs.setdefault("max_digits", 18)
+        super().__init__(*args, **kwargs)
+
+    def to_python(self, value):
+        decimal_value = _parse_loose_decimal(value)
+        if decimal_value is None:
+            return None
+        return decimal_value.quantize(Decimal("0.01"))
+
+
+class PercentField(forms.DecimalField):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("decimal_places", 2)
+        kwargs.setdefault("max_digits", 8)
+        super().__init__(*args, **kwargs)
+
+    def to_python(self, value):
+        decimal_value = _parse_loose_decimal(value)
+        if decimal_value is None:
+            return None
+        return decimal_value.quantize(Decimal("0.01"))
+
+
 DATA_TYPE_MAPPING = {
     "text": forms.CharField,
     "number": forms.DecimalField,  # o forms.IntegerField si quieres solo enteros
+    "currency": CurrencyField,
+    "percent": PercentField,
     "date": forms.DateField,
     "boolean": forms.BooleanField,
     "dropdown": forms.ChoiceField,
@@ -64,6 +145,8 @@ DATA_TYPE_MAPPING = {
 WIDGET_MAPPING = {
     "text": forms.TextInput(attrs={"class": "w-full border rounded p-2"}),
     "number": forms.NumberInput(attrs={"class": "w-full border rounded p-2"}),
+    "currency": forms.NumberInput(attrs={"class": "w-full border rounded p-2", "step": "0.01", "inputmode": "decimal"}),
+    "percent": forms.NumberInput(attrs={"class": "w-full border rounded p-2", "step": "0.01", "inputmode": "decimal"}),
     "date": forms.DateInput(attrs={"type": "date", "class": "w-full border rounded p-2"}),
     "boolean": forms.CheckboxInput(),
     "dropdown": forms.Select(attrs={"class": "w-full border rounded p-2"}),
@@ -563,8 +646,8 @@ def get_dynamic_form(model_class, crm, object_type):
                             widget=widget
                         )
 
-                    # --- Number ---
-                    elif field.data_type == "number":
+                    # --- Number / Currency / Percent ---
+                    elif field.data_type in {"number", "currency", "percent"}:
                         self.fields[field_name] = field_class(
                             label=field.label or field.name,
                             required=field.required,
@@ -623,8 +706,10 @@ def get_dynamic_form(model_class, crm, object_type):
                 )
                 if field.data_type == "lookup" and value:
                     value_to_store = str(value.pk)
+                elif isinstance(value, bool):
+                    value_to_store = str(value)
                 else:
-                    value_to_store = value or ""
+                    value_to_store = "" if value is None else str(value)
 
                 cfv.value = value_to_store
                 if hasattr(cfv, 'updated_by_user'):

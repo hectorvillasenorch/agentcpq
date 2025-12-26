@@ -40,7 +40,7 @@ BASE_MODEL_MAP = {
 }
 
 TEXT_LIKE_TYPES = {"text", "textarea", "dropdown", "lookup"}
-NUMERIC_TYPES = {"number"}
+NUMERIC_TYPES = {"number", "currency", "percent"}
 DATE_TYPES = {"date"}
 BOOLEAN_TYPES = {"boolean"}
 

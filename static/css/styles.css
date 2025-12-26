@@ -17,7 +17,7 @@ h2{
   font-optical-sizing: auto;
   font-weight: 700;
   font-style: normal;
-  color: #fc6a3d !important;
+  color: #182740 !important;
   font-size: 2.3rem !important;
 }
 h4{
@@ -503,7 +503,7 @@ body.email-alert-page .main-content {
   flex-direction: column;
   /* background-color: white; */
   padding: 0 20px;
-  width: 78%;
+  width: 95%;
   margin: 2px auto;
   /* overflow-y: auto; */
   border-radius: 5px;
@@ -684,7 +684,7 @@ tr:hover {
     flex-direction: column;
     /* background-color: white; */
     padding: 10px;
-    width: 90%;
+    width: 95%;
     margin: 0px;
     overflow-y: auto;
     border-radius: -4px;

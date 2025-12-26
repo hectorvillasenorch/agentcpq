@@ -1,5 +1,6 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.urls import reverse
+from django.core.files.storage import default_storage
 from .models import (
     Product,
     SystemFieldMapping,
@@ -55,7 +56,6 @@ from django.utils import timezone
 from .models import EmailAlert
 from cpq.models import default_rendered_fields_for_quote_document_settings, default_omitted_fields_for_quote_document_settings
 from django.utils.html import escape
-from django.urls import reverse
 from django.utils.http import urlencode
 import boto3
 from botocore.config import Config
@@ -82,8 +82,6 @@ def _estimate_queryset_size(qs, field_names=None, chunk_size=250):
 
 
 def _sum_file_field_sizes(qs, field_name):
-    from django.core.files.storage import default_storage
-
     total = 0
     for instance in qs.iterator(chunk_size=100):
         file_field = getattr(instance, field_name, None)
@@ -815,7 +813,6 @@ def get_company_information(request):
     # Determine logo URL (public link)
     logo_url = ''
     if company and company.logo:
-        from django.core.files.storage import default_storage
         logo_url = default_storage.url(company.logo.name)
 
     return render(request, 'company_information.html', {
@@ -898,7 +895,7 @@ def edit_custom_record(request, record_id):
                 elif isinstance(value, bool):
                     value_to_store = str(value)
                 else:
-                    value_to_store = value or ""
+                    value_to_store = "" if value is None else str(value)
 
                 cfv.value = value_to_store
                 if not cfv.content_type_id:
@@ -1270,15 +1267,21 @@ def create_custom_record(request, object_name, user_id):
 
                 content_type = ContentType.objects.get_for_model(record)
 
-            for field_name, value in form.cleaned_data.items():
-                try:
-                    custom_field = CustomField.objects.get(name=field_name, custom_object=custom_object)
+                for field_name, value in form.cleaned_data.items():
+                    custom_field = (
+                        CustomField.objects.filter(name=field_name, custom_object=custom_object)
+                        .order_by("-updated_at", "-id")
+                        .first()
+                    )
+                    if not custom_field:
+                        continue
+
                     if custom_field.data_type == "lookup" and value:
                         value_to_store = str(value.pk)
                     elif isinstance(value, bool):
                         value_to_store = str(value)
                     else:
-                        value_to_store = value or ""
+                        value_to_store = "" if value is None else str(value)
 
                     CustomFieldValue.objects.create(
                         record=record,
@@ -1287,32 +1290,6 @@ def create_custom_record(request, object_name, user_id):
                         content_type=content_type,
                         object_id=record.id
                     )
-                for field_name, value in form.cleaned_data.items():
-                    try:
-                        custom_field = CustomField.objects.get(
-                            name=field_name,
-                            custom_object=custom_object
-                        )
-
-                        if value in (None, "", []):
-                            value = "---"
-
-                        cfv, created = CustomFieldValue.objects.get_or_create(
-                            record=record,
-                            field=custom_field,
-                            defaults={
-                                "value": value,
-                                "content_type": content_type,
-                                "object_id": record.id
-                            }
-                        )
-
-                        if not created and cfv.value in (None, "", "---"):
-                            cfv.value = value
-                            cfv.save(update_fields=["value"])
-
-                    except CustomField.DoesNotExist:
-                        print(f"Field not found: {field_name}")
 
             # 👈 AQUÍ ocurre el COMMIT ÚNICO
             messages.success(

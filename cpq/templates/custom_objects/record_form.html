@@ -285,29 +285,27 @@
           </thead>
 
           <tbody>
-            {% for record in records_custom_object %}
-              <tr>
-                <td>{{ record.custom_identifier }}</td>
-                {% with record.custom_field_values.all as field_values %}
-                  {% for value in field_values %}
-                    {% if value.field.data_type == 'lookup' %}
-                      {% with options=lookup_options|get_item:value.field.name %}
-                        <td>{{ options|label_from_options:value.value|default:"—" }}</td>
-                      {% endwith %}
-                    {% else %}
-                        <td>{{ value.value|default:"—" }}</td>
-                    {% endif %}
+	            {% for record in records_custom_object %}
+	              <tr>
+	                <td>{{ record.custom_identifier }}</td>
+	                {% with field_values_by_record|get_item:record.id as record_values %}
+	                  {% for field in custom_fields %}
+	                    {% with v=record_values|get_item:field.id %}
+	                      {% if field.data_type|lower == 'lookup' %}
+	                        {% with options=lookup_options|get_item:field.name %}
+	                          <td>{{ options|label_from_options:v|default:"—" }}</td>
+	                        {% endwith %}
+	                      {% else %}
+	                        <td>{{ v|format_custom_value:field.data_type|default:"—" }}</td>
+	                      {% endif %}
+	                    {% endwith %}
+	                  {% endfor %}
+	                {% endwith %}
 
-                {% with field_values_by_record|get_item:record.id as record_values %}
-                  {% for field in custom_fields %}
-                    <td>{{ record_values|get_item:field.id|default:"—" }}</td>
-                  {% endfor %}
-                {% endwith %}
-
-                <td>
-                  <span class="muted">{{ record.updated_by|default:"—" }}</span>
-                  <span class="datetime">{{ record.updated_at|date:"c" }}</span>
-                </td>
+	                <td>
+	                  <span class="muted">{{ record.updated_by|default:"—" }}</span>
+	                  <span class="datetime">{{ record.updated_at|date:"c" }}</span>
+	                </td>
 
                 <td>
                   <span class="muted">{{ record.created_by|default:"—" }}</span>

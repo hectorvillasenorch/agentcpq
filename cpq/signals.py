@@ -11,6 +11,9 @@ from cpq.action_trigger.virtual_events import get_collector, schedule_flush_on_c
 
 User = get_user_model()
 
+# Async helper used by some notification signals
+from .utils import run_async
+
 # EMAIL ALERT FUNCTIONS
 from .notifications.notifications import (
     notify_lead_created,
@@ -119,15 +122,15 @@ def collect_custom_field_value_event(sender, instance, created, **kwargs):
 # OPPORTUNITY HAS CHANGE STAGE TO CLOSED WON OR CLOSED LOST
 @receiver(pre_save, sender=Opportunity)
 def check_opportunity_stage_change(sender, instance, **kwargs):
-   if not instance.pk:
-       return
-   try:
-       old_instance = Opportunity.objects.get(pk=instance.pk)
-   except Opportunity.DoesNotExist:
-       return
+    if not instance.pk:
+        return
+    try:
+        old_instance = Opportunity.objects.get(pk=instance.pk)
+    except Opportunity.DoesNotExist:
+        return
 
-   if old_instance.stage != instance.stage:
-       if instance.stage == "closedwon":
+    if old_instance.stage != instance.stage:
+        if instance.stage == "closedwon":
             print(f"\n{instance.name} moved to Closed Won ✅.\n")
             create_contract_after_closed_won(instance)
             run_async(notify_opportunity_closed_won, instance)
@@ -140,9 +143,9 @@ def check_opportunity_stage_change(sender, instance, **kwargs):
                 signal_timing="post_save",
             )
 
-       elif instance.stage == "closedlost":
-           print(f"Opportunity {instance.name} moved to Closed Lost ❌")
-           run_async(notify_opportunity_closed_lost, instance)
+        elif instance.stage == "closedlost":
+            print(f"Opportunity {instance.name} moved to Closed Lost ❌")
+            run_async(notify_opportunity_closed_lost, instance)
 
 
 # QUOTE IS SENT FOR APPROVAL
@@ -197,8 +200,8 @@ def check_opportunity_stage_change(sender, instance, **kwargs):
 #        return
 
     # Compare previous status with the new status
-    if old_instance.status != instance.status:
-        if instance.status == "Rejected":
-            logging.info(f"Quote {instance.id} changed to Rejected ❌")
-            # Call your notification or post-rejection logic here
-            run_async(notify_quote_rejected, instance)
+    # (Disabled: this block was part of a commented-out signal and should not run at module import time.)
+    # if old_instance.status != instance.status:
+    #     if instance.status == "Rejected":
+    #         logging.info(f"Quote {instance.id} changed to Rejected ❌")
+    #         run_async(notify_quote_rejected, instance)

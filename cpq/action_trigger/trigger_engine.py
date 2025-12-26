@@ -1296,35 +1296,9 @@ class TriggerEngine:
             # 📝 UPDATE SIMPLE (SET) → ahora siempre con value.fields
             # ==================================================================
             if op == "UPDATE":
-                if not target_field:
-                    logger.debug("⚠️ UPDATE sin target_field válido, acción saltada")
-                    continue
-
-                # Resolver VALUE
-                value = self._resolve_value_for_action(value_def, instance, context)
-                if value is None:
-                    logger.debug("⚠️ Valor no resuelto, UPDATE omitido.")
-                    continue
-
-                # Campo custom → redirigir a _handle_set()
-                if target_field.endswith("__c"):
-                    logger.debug("🔁 UPDATE para campo __c → redirigiendo a _handle_set()")
-                    self._handle_set(action, instance, context)
-                    continue
-
-                # Construir action temporal para executor
-                update_stub = type("TempAction", (), {
-                    "pk": f"temp-{uuid.uuid4().hex[:6]}",
-                    "method": "UPDATE",
-                    "target_content_type": target_ct,
-                    "target_lookup": {"pk": target_inst.pk},
-                    "target_filters": None,
-                    "data": {target_field: value},
-                    "is_active": True,
-                })()
-
-                logger.debug(f"🔥 UPDATE {target_model_snake}.{target_field} = {value}")
-                result = executor.dispatch(update_stub)
+                # All UPDATEs (standard + custom) flow through _handle_set.
+                # - New format: value.fields (multi-field) ✅
+                # - Legacy format: value.type + target.path ✅
                 result = self._handle_set(action, instance, context)
                 results.append({"action": action, "status": "ok", "result": result})
                 continue
@@ -2838,7 +2812,7 @@ class TriggerEngine:
                 return int(float(s))
             except Exception:
                 return None
-        if t in ("decimal", "float", "double", "currency"):
+        if t in ("decimal", "float", "double", "currency", "percent", "percentage"):
             try:
                 return float(s)
             except Exception:

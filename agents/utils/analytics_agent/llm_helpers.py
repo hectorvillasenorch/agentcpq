@@ -111,7 +111,7 @@ def build_whitelist_fields():
         sortable_custom_fields = [
             field.name
             for field in custom_obj.custom_fields.all()
-            if (field.data_type or "").lower() in {"text", "textarea", "dropdown", "number", "date", "lookup"}
+            if (field.data_type or "").lower() in {"text", "textarea", "dropdown", "number", "currency", "percent", "date", "lookup"}
         ]
 
         whitelist[custom_obj.name] = {

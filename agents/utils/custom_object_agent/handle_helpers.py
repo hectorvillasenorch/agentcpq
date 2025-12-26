@@ -553,7 +553,7 @@ def handle_custom_fields_updates(user, extracted_custom_fields_updates, response
         else:
             custom_object_to_update = None
 
-        allowed_data_types = ["Text", "Number", "Date", "Boolean", "Dropdown", "Text Area", "Look Up"]
+        allowed_data_types = ["Text", "Number", "Currency", "Percent", "Date", "Boolean", "Dropdown", "Text Area", "Look Up"]
 
         if data_type_to_update and data_type_to_update not in allowed_data_types:
             valid_types_display = ", ".join(allowed_data_types)

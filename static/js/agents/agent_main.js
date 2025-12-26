@@ -516,9 +516,24 @@ function setupChatListeners() {
   }
 
   button.addEventListener("click", sendMessage);
-  inputField.addEventListener("keypress", function (event) {
-      if (event.key === "Enter") sendMessage();
+  inputField.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    if (event.shiftKey) return; // allow newline
+    event.preventDefault();
+    sendMessage();
   });
+
+  const autosize = () => {
+    if (inputField.tagName !== "TEXTAREA") return;
+    inputField.style.height = "auto";
+    const maxHeight = 160;
+    const nextHeight = Math.min(inputField.scrollHeight, maxHeight);
+    inputField.style.height = `${nextHeight}px`;
+    inputField.style.overflowY = inputField.scrollHeight > maxHeight ? "auto" : "hidden";
+  };
+
+  inputField.addEventListener("input", autosize);
+  autosize();
 
   console.log("Chat listeners attached.");
 }
@@ -1135,9 +1150,14 @@ async function sendMessage() {
     if (!userMessage) return;
 
     // Append user message to chat
-    appendMessage("user", `<div class="sender">You: </div> <div class="message">${userMessage}</div>`)
+    const safeUserMessage = escapeHtml(userMessage).replace(/\n/g, "<br>");
+    appendMessage("user", `<div class="sender">You: </div> <div class="message">${safeUserMessage}</div>`)
 
     inputField.value = ""; // Clear input field
+    if (inputField && inputField.tagName === "TEXTAREA") {
+      inputField.style.height = "auto";
+      inputField.style.overflowY = "hidden";
+    }
 
     // Auto-scroll chat
     scrollToBottom("sendMessage:user", true);
