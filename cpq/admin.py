@@ -803,7 +803,12 @@ class ActionTriggerAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
         actions = forms.CharField(
             required=False,
             widget=JSONPrettyTextarea(rows=14),
-            help_text="JSON list of actions",
+            help_text=(
+                "JSON list of actions. EMAIL actions support optional `email.title` and `email.message` "
+                "(inline Django template strings, e.g. \"Ingreso {{ instance.custom_identifier }} creado\"). "
+                "EMAIL actions also support `email.fields` to control the 'Record Details' table (list of paths, "
+                "or [{label,value}] entries), plus optional `email.fields_mode` = 'replace' (default) or 'append'."
+            ),
         )
 
         class Meta:

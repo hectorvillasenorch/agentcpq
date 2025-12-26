@@ -80,7 +80,9 @@
     <div class="container-mail">
 
       <!-- MESSAGE -->
-      <p>{{ message }}</p>
+      {% if message %}
+        <p>{{ message|linebreaksbr }}</p>
+      {% endif %}
 
       <!-- CONDITIONS -->
       {% if trigger.conditions %}

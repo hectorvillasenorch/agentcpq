@@ -1497,6 +1497,10 @@ def extract_action_triggers_with_llm(user, user_message, current_state, previous
             "email": {{
                 "template": "<string>",
                 "subject": {{ <VALUE_FORMAT> }},
+                "title": "<optional inline template string>",
+                "message": "<optional inline template string>",
+                "fields_mode": "replace|append",
+                "fields": ["<path>", "..."] OR [{{"label":"...","value":{{<VALUE_FORMAT>}}}}, ...],
                 "recipients": {{ ... }},
                 "context": {{ ... }}
             }}
@@ -1513,6 +1517,46 @@ def extract_action_triggers_with_llm(user, user_message, current_state, previous
         - "value"
         - "filters"
         - "source_object"
+
+        --------------------------------------------------------
+        🧩 EMAIL.title / EMAIL.message (MERGE FIELDS)
+        --------------------------------------------------------
+
+        The engine supports optional inline template strings for the default email template:
+
+        - email.title: short header text
+        - email.message: main body text
+
+        They support Django-template merge fields using the variables in context
+        (at minimum: instance, record, trigger, event).
+
+        Example:
+            "title": "Opportunity {{ instance.name }}",
+            "message": "Amount: {{ instance.amount }}\\nStage: {{ instance.stage }}"
+
+        --------------------------------------------------------
+        ✅ EMAIL.fields (CONTROL WHICH FIELDS SHOW)
+        --------------------------------------------------------
+
+        If the user asks to include specific fields in the email body/table,
+        you MUST add:
+
+        - email.fields_mode: "replace" (default) or "append"
+        - email.fields: list of field paths to show in the Record Details table
+
+        Supported formats:
+        1) Paths (recommended):
+            "fields": ["name", "amount", "account.name", "owner.username"]
+
+        2) Label/value entries (advanced):
+            "fields": [
+              {{"label": "Amount", "value": {{"type":"field","object":"opportunity","field_name":"amount"}}}}
+            ]
+
+        NOTE:
+        - For numeric IDs in expressions, use CONCAT with `.pk` (NOT `.id`):
+            "formula": "CONCAT('New record: ', opportunity.pk, ' Created')"
+        - `.id` is NOT reliable inside expressions; prefer `.pk`.
 
         --------------------------------------------------------
         📄 EMAIL.template (STRICT — DEFAULT vs CUSTOM)
@@ -1942,7 +1986,7 @@ def extract_action_triggers_with_llm(user, user_message, current_state, previous
             "instance": {{
                 "type": "field",
                 "object": "<event_root>",
-                "field_name": "id"
+                "field_name": ""
             }}
         }}
 
