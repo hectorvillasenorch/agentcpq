@@ -80,12 +80,12 @@ h4{
   align-items: stretch;
   padding: 24px 5px 24px;
   gap: 16px;
-  color: white;
+  color: var(--sidenav-text, white);
   transition: transform 0.3s ease-in-out;
   /* ✅ Gradient from black to dark blue */
   /* background: linear-gradient(135deg, #4b58b7, #182848); */
-  background: linear-gradient(135deg, #041530, #233049);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, var(--sidenav-bg-1, #041530), var(--sidenav-bg-2, #233049));
+  border: 1px solid var(--sidenav-divider, rgba(255, 255, 255, 0.1));
   box-shadow: 3px 0px 2px rgba(0, 0, 0, 0.3);
   box-sizing: border-box;
 }
@@ -106,14 +106,14 @@ h4{
   flex-direction: column;
   gap: 4px;
   padding: 12px 0 0;
-  border-top: 1px solid #616161;
+  border-top: 1px solid var(--sidenav-divider, #616161);
   overflow-y: auto;
   min-height: 0;
   padding-right: 6px;
 }
 
 .session-list-title {
-  color: #bdbdbd;
+  color: var(--sidenav-muted, #bdbdbd);
   font-size: 14px;
   font-weight: 600;
   padding: 0 4px 8px;
@@ -125,7 +125,7 @@ h4{
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  color: #eeeeee;
+  color: var(--sidenav-text, #eeeeee);
   font-size: 15px !important;
   text-decoration: none;
   transition: background-color 0.2s ease;
@@ -137,7 +137,7 @@ h4{
 .chat-history-item i {
   flex-shrink: 0;
   font-size: 18px;
-  color: #9e9e9e;
+  color: var(--sidenav-icon-muted, #9e9e9e);
 }
 
 .chat-history-title {
@@ -184,21 +184,21 @@ h4{
 }
 
 .chat-history-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background: var(--sidenav-hover-bg, rgba(255, 255, 255, 0.08));
+  color: var(--sidenav-text, #ffffff);
   outline: none;
 }
 
 .chat-history-item.active {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--sidenav-hover-bg, rgba(255, 255, 255, 0.08));
   font-weight: bold;
   outline: none;
-  color: #ffffff;
+  color: var(--sidenav-text, #ffffff);
 }
 
 /* ✅ Sidebar Links */
 .sidenav-fixed a {
-  color: white;
+  color: var(--sidenav-text, white);
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -214,8 +214,8 @@ h4{
 
 .sidenav-fixed a:hover,
 .sidenav-fixed a:focus {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background: var(--sidenav-hover-bg, rgba(255, 255, 255, 0.08));
+  color: var(--sidenav-text, #ffffff);
   outline: none;
 }
 
@@ -268,7 +268,7 @@ h4{
 
 .nav-action-btn:hover,
 .nav-action-btn:focus {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--sidenav-hover-bg, rgba(255, 255, 255, 0.08));
   outline: none;
 }
 
@@ -296,7 +296,7 @@ h4{
 
 .nav-collapse-btn:hover,
 .nav-collapse-btn:focus {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--sidenav-hover-bg, rgba(255, 255, 255, 0.08));
   outline: none;
 }
 
@@ -314,12 +314,12 @@ h4{
 .nav-user-card {
     width: 100%;
     padding: 5px 16px;
-    background: #00000078;
+    background: var(--sidenav-card-bg, #00000078);
     border-radius: 10px;
     display: flex;
     align-items: center;
     gap: 12px;
-    color: #ffffff;
+    color: var(--sidenav-text, #ffffff);
     pointer-events: auto;
 }
 
@@ -373,9 +373,9 @@ h4{
   gap: 16px;
   margin-top: auto;
   flex-shrink: 0;
-  background: linear-gradient(135deg, rgba(4, 21, 48, 0.95), rgba(35, 48, 73, 0.95));
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.35);
+  /* background: linear-gradient(135deg, var(--sidenav-bg-1, rgba(4, 21, 48, 0.95)), var(--sidenav-bg-2, rgba(35, 48, 73, 0.95))); */
+  border: none;
+  box-shadow: none;
 }
 
 .sidenav-fixed.collapse_sidebar .nav-bottom-fixed {

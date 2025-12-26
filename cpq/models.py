@@ -9,7 +9,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.contrib.postgres.fields import JSONField
 from django.db.models import JSONField
 from dateutil.relativedelta import relativedelta # type: ignore
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 from django.conf import settings
 import os , uuid, string, re
 import secrets
@@ -1184,6 +1184,9 @@ class Tenant(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     primary_color = models.CharField(max_length=7, blank=True, null=True)
     secondary_color = models.CharField(max_length=7, blank=True, null=True)
+    sidebar_bg_color_1 = models.CharField(max_length=7, blank=True, null=True, default="#041530")
+    sidebar_bg_color_2 = models.CharField(max_length=7, blank=True, null=True, default="#233049")
+    sidebar_text_color = models.CharField(max_length=7, blank=True, null=True, default="#ffffff")
     api_key = models.CharField(max_length=43,null=True,editable=False,default=gen_api_key,help_text="Public API key, auto-generated")
     api_secret = models.CharField(max_length=43,null=True,editable=False,default=gen_api_key,help_text="Private key used for request signing")
 
@@ -1281,6 +1284,35 @@ class CustomObject(models.Model):
     class Meta:
         verbose_name = "Custom Object"
         verbose_name_plural = "Custom Objects"
+
+
+class CustomObjectPermission(models.Model):
+    group = models.ForeignKey(
+        Group,
+        on_delete=models.CASCADE,
+        related_name="custom_object_permissions",
+    )
+    custom_object = models.ForeignKey(
+        CustomObject,
+        on_delete=models.CASCADE,
+        related_name="group_permissions",
+    )
+
+    can_view = models.BooleanField(default=False)
+    can_add = models.BooleanField(default=False)
+    can_change = models.BooleanField(default=False)
+    can_delete = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Custom Object Permission"
+        verbose_name_plural = "Custom Object Permissions"
+        unique_together = ("group", "custom_object")
+
+    def __str__(self):
+        return f"{self.group.name}: {self.custom_object.label or self.custom_object.name}"
 
 #dummy model for all custom objects
 class CustomRecord(models.Model):

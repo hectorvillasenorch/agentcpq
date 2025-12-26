@@ -23,7 +23,11 @@
   <script src="{% static 'js/agents/login.js' %}" defer></script>
   <div class="login-wrapper">
     <section class="login-left z-depth-1">
-     <img src="{% static 'img/logo-bg-white.png' %}" alt="AgentCPQ Logo" class="login-logo" />
+     {% if tenant_logo_url %}
+       <img src="{{ tenant_logo_url }}" alt="Company Logo" class="login-logo" />
+     {% else %}
+       <img src="{% static 'img/logo-bg-white.png' %}" alt="AgentCPQ Logo" class="login-logo" />
+     {% endif %}
       <form class="login-form" method="post" action="{% url 'login' %}">
         {% csrf_token %}
         {{ form.non_field_errors }}

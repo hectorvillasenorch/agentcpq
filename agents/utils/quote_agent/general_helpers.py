@@ -478,8 +478,8 @@ def get_document_pdf(quote, session_data=None):
 
         # MODERN TEMPLATE
         if template.template_style == 'modern':
-            PCOLOR = company.primary_color
-            SCOLOR = company.secondary_color
+            PCOLOR = (company.primary_color or "").strip() or "#fc6a3d"
+            SCOLOR = (company.secondary_color or "").strip() or "#182740"
         elif template.template_style == 'classic':
             PCOLOR = CBLACK
             SCOLOR = CBLACK
@@ -491,7 +491,7 @@ def get_document_pdf(quote, session_data=None):
 
         # ✅ Quote Header
         pdf.setFont("Helvetica-Bold", 26)
-        pdf.setFillColor(HexColor(SCOLOR))
+        pdf.setFillColor(HexColor(PCOLOR))
         pdf.drawString(50, 730, f"Quote: {quote.name}")
         pdf.setFillColor(HexColor(CBLACK))
 
@@ -510,7 +510,7 @@ def get_document_pdf(quote, session_data=None):
                     )
 
         # ------------------------------------
-        pdf.setStrokeColor(HexColor(SCOLOR))
+        pdf.setStrokeColor(HexColor(PCOLOR))
         pdf.setLineWidth(2)
         pdf.line(32, 700, 580, 700)
 
@@ -735,7 +735,7 @@ def get_document_pdf(quote, session_data=None):
             # Le quitamos 15 puntos a Y para imprimir la linea divisora
             y_position -= 15
             # ------------------------------------ Imprimimos la linea divisora
-            pdf.setStrokeColor(HexColor(SCOLOR))
+            pdf.setStrokeColor(HexColor(PCOLOR))
             pdf.setLineWidth(1)
             pdf.line(50, y_position, 562, y_position)
             # Restamos 27 puntos para comenzar a imprimir los elementos de la tabla
@@ -762,7 +762,7 @@ def get_document_pdf(quote, session_data=None):
                 if y_position < 70:  # Si nos acercamos al final de la hoja reseteamos los encabezados
                     right_margin = 562
                     y_position += 15
-                    pdf.setStrokeColor(HexColor(SCOLOR))
+                    pdf.setStrokeColor(HexColor(PCOLOR))
                     pdf.setLineWidth(1)
                     pdf.line(50, y_position, right_margin, y_position)
                     pdf.showPage()
@@ -797,7 +797,7 @@ def get_document_pdf(quote, session_data=None):
 
                     y_position -= 15
                     # ------------------------------------
-                    pdf.setStrokeColor(HexColor(SCOLOR))
+                    pdf.setStrokeColor(HexColor(PCOLOR))
                     pdf.setLineWidth(1)
                     pdf.line(50, y_position, 562, y_position)
                     y_position -= 27

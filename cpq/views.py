@@ -61,6 +61,7 @@ import boto3
 from botocore.config import Config
 import stripe
 from django.db import transaction
+from cpq.permissions import get_custom_object_perms, perms_to_template_dict, user_can_access_custom_object
 
 # HubSpot sync
 from hubspot.views import sync_opportunity_to_hubspot
@@ -792,6 +793,9 @@ def get_company_information(request):
         company.phone_number = request.POST.get('phone_number', '')
         company.primary_color = request.POST.get('primary_color', '')
         company.secondary_color = request.POST.get('secondary_color', '')
+        company.sidebar_bg_color_1 = request.POST.get('sidebar_bg_color_1', '') or company.sidebar_bg_color_1
+        company.sidebar_bg_color_2 = request.POST.get('sidebar_bg_color_2', '') or company.sidebar_bg_color_2
+        company.sidebar_text_color = request.POST.get('sidebar_text_color', '') or company.sidebar_text_color
         company.street_address = request.POST.get('street_address', '')
         company.city = request.POST.get('city', '')
         company.state = request.POST.get('state', '')
@@ -839,6 +843,8 @@ def create_custom_object(request):
 @login_required
 def get_custom_record_form(request, record_id):
     record = get_object_or_404(CustomRecord, id=record_id)
+    if not user_can_access_custom_object(request.user, record.object_type, "change"):
+        return HttpResponseForbidden("You do not have permission to edit records for this object.")
     DynamicForm = generate_dynamic_form(record.object_type)
 
     initial_data = {}
@@ -869,6 +875,8 @@ def get_custom_record_form(request, record_id):
 @login_required
 def edit_custom_record(request, record_id):
     record = get_object_or_404(CustomRecord, id=record_id)
+    if not user_can_access_custom_object(request.user, record.object_type, "change"):
+        return HttpResponseForbidden("You do not have permission to edit records for this object.")
     DynamicForm = generate_dynamic_form(record.object_type)
 
     if request.method == "POST":
@@ -929,6 +937,8 @@ def edit_custom_record(request, record_id):
 def delete_custom_record(request, record_id):
     if request.method == "POST":
         record = get_object_or_404(CustomRecord, id=record_id)
+        if not user_can_access_custom_object(request.user, record.object_type, "delete"):
+            return JsonResponse({"status": "error", "error": "You do not have permission to delete this record."}, status=403)
         record.delete()
         return JsonResponse({'status': 'success'})
     return JsonResponse({'status': 'error'}, status=400)
@@ -1249,6 +1259,8 @@ def create_business_rule(request):
 def create_custom_record(request, object_name, user_id):
 
     custom_object = get_object_or_404(CustomObject, name=object_name)
+    if not user_can_access_custom_object(request.user, custom_object, "add"):
+        return HttpResponseForbidden("You do not have permission to create records for this object.")
     DynamicForm = generate_dynamic_form(custom_object)
 
     if request.method == 'POST':
@@ -1307,6 +1319,7 @@ def create_custom_record(request, object_name, user_id):
         'form': form,
         'custom_object': custom_object,
         'lookup_options': lookup_options,
+        'custom_object_perms': perms_to_template_dict(get_custom_object_perms(request.user, custom_object)),
     })
 
 

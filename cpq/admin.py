@@ -1,6 +1,8 @@
 from django.contrib import admin
 from django import forms
 import json
+from django.contrib.auth.admin import GroupAdmin as DjangoGroupAdmin
+from django.contrib.auth.models import Group
 from .models import (
     Quote,
     QuoteLine,
@@ -12,6 +14,7 @@ from .models import (
     Account,
     Activity,
     CustomObject,
+    CustomObjectPermission,
     CustomField,
     Option,
     BusinessRule,
@@ -102,6 +105,33 @@ class DynamicCustomFieldAdmin(admin.ModelAdmin):
 class CustomObjectAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(CustomObject, crm="AgentCPQ", object_type="CustomObject")
     list_display = ('name', 'label', 'description', 'created_by', 'created_at_js')  # Adjust as needed
+    search_fields = ("name", "label")
+
+
+@admin.register(CustomObjectPermission)
+class CustomObjectPermissionAdmin(admin.ModelAdmin):
+    list_display = ("group", "custom_object", "can_view", "can_add", "can_change", "can_delete", "created_at", "updated_at")
+    list_filter = ("custom_object", "group", "can_view", "can_add", "can_change", "can_delete")
+    search_fields = ("group__name", "custom_object__name", "custom_object__label")
+    autocomplete_fields = ("group", "custom_object")
+
+
+class CustomObjectPermissionInline(admin.TabularInline):
+    model = CustomObjectPermission
+    extra = 0
+    fields = ("custom_object", "can_view", "can_add", "can_change", "can_delete")
+    autocomplete_fields = ("custom_object",)
+
+
+try:
+    admin.site.unregister(Group)
+except admin.sites.NotRegistered:
+    pass
+
+
+@admin.register(Group)
+class GroupAdmin(DjangoGroupAdmin):
+    inlines = (CustomObjectPermissionInline,)
 
 @admin.register(CustomField)
 class CustomFieldAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):

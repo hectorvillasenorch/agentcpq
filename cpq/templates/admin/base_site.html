@@ -12,7 +12,11 @@
 {% block branding %}
   <h1 id="site-name" style="margin-bottom: 0;">
     <a href="{% url 'dashboard' %}?view=agents&new_chat=true">
-      <img src="{% static 'img/logo-small.png' %}" style="height: 40px;" alt="AgentCPQ">
+      {% if tenant_logo_url %}
+        <img src="{{ tenant_logo_url }}" style="height: 40px;" alt="Company Logo">
+      {% else %}
+        <img src="{% static 'img/logo-small.png' %}" style="height: 40px;" alt="AgentCPQ">
+      {% endif %}
     </a>
   </h1><br>
   <p style="margin-top: 24px;">

@@ -3,6 +3,115 @@
 {% block content %}
 <script src="{% static 'js/agents/agent_main.js' %}" defer></script>
 <style>
+  :root {
+    --brand-accent: {{ company.primary_color|default:"#fc6a3d" }};
+    --brand-navy: #182740;
+    --panel-border: rgba(15, 23, 42, 0.08);
+    --panel-bg: #ffffff;
+    --page-bg: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  }
+
+  .company-page {
+    padding: 18px 6px 26px;
+    background: transparent;
+  }
+
+  .company-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 6px 0 18px;
+  }
+
+  .company-header__title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: var(--brand-navy);
+    letter-spacing: -0.02em;
+  }
+
+  .company-header__subtitle {
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 0.98rem;
+  }
+
+  .company-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn, .btn-flat, .btn-small, .btn-large {
+    box-shadow: none !important;
+  }
+
+  .btn-primary {
+    background: var(--brand-navy) !important;
+    border-radius: 14px !important;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 18px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  .btn-primary:hover {
+    filter: brightness(0.95);
+  }
+
+  .company-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+  }
+
+  .panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.06);
+  }
+
+  .panel__title {
+    margin: 0 0 4px;
+    font-size: 1.12rem;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.01em;
+  }
+
+  .panel__subtitle {
+    margin: 0 0 14px;
+    color: #64748b;
+    font-size: 0.92rem;
+  }
+
+  .section-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 14px 16px;
+  }
+
+  .col-12 { grid-column: span 12; }
+  .col-8 { grid-column: span 8; }
+  .col-6 { grid-column: span 6; }
+  .col-4 { grid-column: span 4; }
+
+  .input-field {
+    margin-top: 0;
+  }
+
   input:hover,
   textarea:hover,
   select:hover {
@@ -12,152 +121,461 @@
   input,
   textarea,
   select {
+    cursor: text;
+  }
+
+  input[type="color"] {
     cursor: pointer;
   }
+
   input:focus,
-textarea:focus,
-select:focus {
-  border-bottom: 1px solid #fc6a3d !important;
-  box-shadow: 0 1px 0 0 #fc6a3d !important;
-}
+  textarea:focus,
+  select:focus {
+    border-bottom: 1px solid var(--brand-accent) !important;
+    box-shadow: 0 1px 0 0 var(--brand-accent) !important;
+  }
 
-input:focus + label,
-textarea:focus + label,
-select:focus + label {
-  color: #fc6a3d !important;
-}
+  input:focus + label,
+  textarea:focus + label,
+  select:focus + label {
+    color: var(--brand-accent) !important;
+  }
 
- .agent-limits{
-  padding: 24px;
-  margin: .5rem 0 1rem 0;
-  border-radius: 10px;
-  border: 1px solid #e0e0e0;
-  box-shadow: none !important;
-}
-.btn, .btn-flat, .btn-small, .btn-large {
-        box-shadow: none !important;
-      }
-  .btn-standard {
-      border-radius: 20px;
-      font-weight: 500;
-      font-size: 14px;
-      padding: 10px 18px;
-      height: 42px;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      box-shadow: none;
-      line-height: 1;
-      width: 169px;
-      background-color:#182740 !important;
+  .help {
+    margin-top: 6px;
+    color: #64748b;
+    font-size: 0.82rem;
+    line-height: 1.25;
+  }
+
+  .color-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .color-tile {
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 12px;
+    background: #f8fafc;
+  }
+
+  .color-tile label {
+    position: static !important;
+    transform: none !important;
+    font-size: 0.85rem !important;
+    color: #334155 !important;
+    margin-bottom: 10px;
+    display: block;
+    font-weight: 700;
+  }
+
+  .color-tile input[type="color"] {
+    width: 100%;
+    height: 44px;
+    border: none;
+    padding: 0;
+    background: transparent;
+  }
+
+  .logo-preview {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+    border-radius: 16px;
+    border: 1px dashed rgba(15, 23, 42, 0.18);
+    background: #f8fafc;
+    margin-top: 10px;
+  }
+
+  .logo-preview img {
+    max-height: 56px;
+    width: auto;
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid var(--panel-border);
+    padding: 8px;
+  }
+
+  .logo-tile-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-tile-thumb {
+    width: 74px;
+    height: 54px;
+    object-fit: contain;
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid var(--panel-border);
+    padding: 8px;
+    flex: 0 0 auto;
+  }
+
+  .logo-tile-controls {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .logo-block {
+    margin-top: 14px;
+    padding: 14px;
+    border-radius: 16px;
+    border: 1px solid var(--panel-border);
+    background: #f8fafc;
+  }
+
+  .logo-block label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #334155;
+    margin-bottom: 10px;
+  }
+
+  .logo-block input[type="file"] {
+    width: 100%;
+  }
+
+  .logo-block__preview {
+    margin-top: 12px;
+    border-radius: 16px;
+    border: 1px dashed rgba(15, 23, 42, 0.18);
+    background: #ffffff;
+    padding: 14px;
+  }
+
+  .logo-block__preview img {
+    width: 100%;
+    height: 180px;
+    object-fit: contain;
+    display: block;
+  }
+
+  .logo-block__empty {
+    height: 180px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #64748b;
+    font-weight: 700;
+  }
+
+  .sidebar-preview {
+    border-radius: 18px;
+    border: 1px solid var(--panel-border);
+    overflow: hidden;
+  }
+
+  .sidebar-preview__header {
+    padding: 14px 16px;
+    color: #0f172a;
+    background: linear-gradient(180deg, #ffffff, #f8fafc);
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .sidebar-preview__body {
+    padding: 14px 16px;
+    background: linear-gradient(135deg, var(--preview-bg-1, #041530), var(--preview-bg-2, #233049));
+    color: var(--preview-text, #ffffff);
+  }
+
+  .sidebar-preview__link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    color: inherit;
+    opacity: 0.95;
+  }
+
+  .sidebar-preview__link + .sidebar-preview__link {
+    margin-top: 6px;
+  }
+
+  .sidebar-preview__link.is-active {
+    background: rgba(255, 255, 255, 0.10);
+  }
+
+  .sidebar-preview__pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    border-radius: 999px;
+    padding: 6px 10px;
+    background: rgba(15, 23, 42, 0.08);
+    color: #334155;
+  }
+
+  .kv {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .kv-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid var(--panel-border);
+    background: #f8fafc;
+  }
+
+  .kv-row__key {
+    color: #334155;
+    font-weight: 800;
+    font-size: 0.88rem;
+  }
+
+  .kv-row__val {
+    color: #0f172a;
+    font-weight: 700;
+    font-size: 0.88rem;
+    text-align: right;
+    word-break: break-word;
+  }
+
+  @media (max-width: 992px) {
+    .company-grid {
+      grid-template-columns: 1fr;
     }
-    .orange.darken-3 {
-      background-color: #182740 !important;
+  }
+
+  @media (max-width: 640px) {
+    .company-header {
+      flex-direction: column;
+      align-items: stretch;
     }
+    .company-header__actions {
+      justify-content: flex-start;
+    }
+    .color-row {
+      grid-template-columns: 1fr;
+    }
+    .col-6,
+    .col-4,
+    .col-8 {
+      grid-column: span 12;
+    }
+  }
 </style>
-<div class="container">
-  <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
-    <i class="material-icons left" style="vertical-align: middle;">business</i>
-    Company Information
-  </h4>
-
-  <div class="card-panel white z-depth-1">
-    <form method="post" action="{% url 'cpq:get_company_information' %}" enctype="multipart/form-data">
-      {% csrf_token %}
-
-      <div class="row">
-        <div class="input-field col s6">
-          <input id="company_name" name="name" type="text" value="{{ company.name }}">
-          <label for="company_name" class="active">Company Name</label>
-        </div>
-        <div class="input-field col s6">
-          <input id="company_email" name="contact_email" type="email" value="{{ company.contact_email|default_if_none:'' }}">
-          <label for="company_email" class="active">Company Email</label>
-        </div>
-      </div>
-
-      <div class="row">
-        <div class="input-field col s6">
-          <input id="phone_number" name="phone_number" type="text" value="{{ company.phone_number|default_if_none:'' }}">
-          <label for="phone_number" class="active">Phone Number</label>
-        </div>
-        <div class="input-field col s1">
-        </div>
-        <!-- Primary Color -->
-        <div class="input-field col s2">
-          <input id="primary_color" name="primary_color" type="color" value="{{ company.primary_color }}">
-          <label for="primary_color" class="active" style="top: -1.5rem;">Primary Color</label>
-        </div>
-
-        <!-- Secondary Color -->
-        <div class="input-field col s2">
-          <input id="secondary_color" name="secondary_color" type="color" value="{{ company.secondary_color }}">
-          <label for="secondary_color" class="active" style="top: -1.5rem;">Secondary Color</label>
-        </div>
-      </div>
-
-      <div class="row">
-        <div class="input-field col s4">
-          <textarea id="street_address" name="street_address" class="materialize-textarea">{{ company.street_address|default_if_none:'' }}</textarea>
-          <label for="street_address" class="active">Street Address</label>
-        </div>
-
-        <div class="input-field col s4">
-          <textarea id="city" name="city" class="materialize-textarea">{{ company.city|default_if_none:'' }}</textarea>
-          <label for="city" class="active">City</label>
-        </div>
-
-        <div class="input-field col s4">
-          <textarea id="state" name="state" class="materialize-textarea">{{ company.state|default_if_none:'' }}</textarea>
-          <label for="state" class="active">State</label>
-        </div>
-      </div>
-
-      <div class="row">
-        <div class="file-field input-field col s6">
-          <div class="btn orange darken-2">
-            <span>Upload Logo</span>
-            <input type="file" name="logo">
-          </div>
-          <div class="file-path-wrapper">
-            <input class="file-path validate" type="text" placeholder="Upload a company logo">
-          </div>
-
-        </div>
-        {% if company.logo %}
-          <div class="col s6">
-            <label>Current Logo:</label><br>
-            <img src="{{ logo_url|default:company.logo.url }}" alt="Company Logo" style="max-height: 80px; margin-top: 10px;">
-          </div>
-        {% endif %}
-      </div>
-
-      <div class="right-align">
-        <button type="submit" class="btn orange darken-3 white-text btn-standard">
-          <i class="material-icons left">save</i> Save
-        </button>
-      </div>
-    </form>
-
-
-  </div>
-  <div class="row agent-limits">
-    <div class="input-field col s6">
-      <label class="active">Plan</label>
-      <p style="margin-top: 0.5rem;">{{ company.plan }}</p>
+<div class="company-page">
+  <div class="company-header">
+    <div>
+      <h1 class="company-header__title">
+        <i class="material-icons" aria-hidden="true">business</i>
+        Company Information
+      </h1>
+      <p class="company-header__subtitle">
+        Manage your tenant profile, branding, and sidebar theme. Changes apply immediately after saving.
+      </p>
     </div>
-    <div class="input-field col s6">
-      <label class="active">Actions Limit</label>
-      <p style="margin-top: 0.5rem;">{{ company.actions_limit }}</p>
-    </div>
-    <div class="input-field col s6">
-      <label class="active">Tenanat Id</label>
-      <p style="margin-top: 0.5rem;">{{ company.tenant_id }}</p>
-    </div>
-    <div class="input-field col s6">
-      <label class="active">Version</label>
-      <p style="margin-top: 0.5rem;">{{ company.version }}</p>
+    <div class="company-header__actions">
+      <button type="submit" form="company-form" class="btn btn-primary">
+        <i class="material-icons left">save</i>
+        Save Changes
+      </button>
     </div>
   </div>
+
+  <form id="company-form" method="post" action="{% url 'cpq:get_company_information' %}" enctype="multipart/form-data">
+    {% csrf_token %}
+
+    <div class="company-grid">
+      <div class="panel">
+        <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:12px;">
+          <div>
+            <h2 class="panel__title">Company Information</h2>
+            <p class="panel__subtitle">Contact details and address for Quote PDF documents and exports.</p>
+          </div>
+          <span class="sidebar-preview__pill">
+            <span class="material-icons" style="font-size:18px;">domain</span>
+            Company
+          </span>
+        </div>
+
+        <div class="section-grid">
+          <div class="input-field col-6">
+            <input id="company_name" name="name" type="text" value="{{ company.name|default_if_none:'' }}" required>
+            <label for="company_name" class="active">Company Name</label>
+          </div>
+          <div class="input-field col-6">
+            <input id="company_email" name="contact_email" type="email" value="{{ company.contact_email|default_if_none:'' }}">
+            <label for="company_email" class="active">Company Email</label>
+          </div>
+          <div class="input-field col-6">
+            <input id="phone_number" name="phone_number" type="text" value="{{ company.phone_number|default_if_none:'' }}">
+            <label for="phone_number" class="active">Phone Number</label>
+          </div>
+          <div class="col-6"></div>
+        </div>
+
+        <div style="height: 1px; background: rgba(15, 23, 42, 0.08); margin: 18px 0;"></div>
+
+        <h2 class="panel__title">Address</h2>
+        <p class="panel__subtitle">Optional: printed on Quote PDFs.</p>
+        <div class="section-grid">
+          <div class="input-field col-12">
+            <textarea id="street_address" name="street_address" class="materialize-textarea">{{ company.street_address|default_if_none:'' }}</textarea>
+            <label for="street_address" class="active">Street Address</label>
+          </div>
+          <div class="input-field col-6">
+            <input id="city" name="city" type="text" value="{{ company.city|default_if_none:'' }}">
+            <label for="city" class="active">City</label>
+          </div>
+          <div class="input-field col-6">
+            <input id="state" name="state" type="text" value="{{ company.state|default_if_none:'' }}">
+            <label for="state" class="active">State</label>
+          </div>
+        </div>
+
+        <div style="height: 1px; background: rgba(15, 23, 42, 0.08); margin: 18px 0;"></div>
+
+        <h2 class="panel__title">Tenant Information</h2>
+        <p class="panel__subtitle">Read-only environment details.</p>
+        <div class="kv">
+          <div class="kv-row">
+            <span class="kv-row__key">Plan</span>
+            <span class="kv-row__val">{{ company.plan|default:"—" }}</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-row__key">Actions Limit</span>
+            <span class="kv-row__val">{{ company.actions_limit|default:"—" }}</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-row__key">Tenant ID</span>
+            <span class="kv-row__val">{{ company.tenant_id|default:"—" }}</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-row__key">Version</span>
+            <span class="kv-row__val">{{ company.version|default:"—" }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:18px;">
+        <div class="panel">
+          <h2 class="panel__title">Branding (Quote PDF)</h2>
+          <p class="panel__subtitle">These colors are used in Quote PDF document styling.</p>
+          <div class="color-row">
+            <div class="color-tile">
+              <label for="primary_color">Primary Color</label>
+              <input id="primary_color" name="primary_color" type="color" value="{{ company.primary_color|default:'#fc6a3d' }}">
+              <div class="help">Headings, accents, and highlights in Quote PDFs.</div>
+            </div>
+            <div class="color-tile">
+              <label for="secondary_color">Secondary Color</label>
+              <input id="secondary_color" name="secondary_color" type="color" value="{{ company.secondary_color|default:'#182740' }}">
+              <div class="help">Secondary elements in Quote PDFs.</div>
+            </div>
+          </div>
+
+          <div class="logo-block">
+            <label for="logo">Company Logo</label>
+            <input id="logo" name="logo" type="file" accept="image/*">
+            <div class="help">Shown on login and in the sidebar.</div>
+            <div class="logo-block__preview" aria-label="Logo preview">
+              {% if company.logo %}
+                <img src="{{ logo_url|default:company.logo.url }}" alt="Company Logo">
+              {% else %}
+                <div class="logo-block__empty">No logo uploaded</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2 class="panel__title">Sidebar Theme</h2>
+          <p class="panel__subtitle">Navigation theme for dashboard and admin.</p>
+          <div class="color-row">
+            <div class="color-tile">
+              <label for="sidebar_bg_color_1">Sidebar Background</label>
+              <input id="sidebar_bg_color_1" name="sidebar_bg_color_1" type="color" value="{{ company.sidebar_bg_color_1|default:'#041530' }}">
+              <div class="help">Gradient start color.</div>
+            </div>
+            <div class="color-tile">
+              <label for="sidebar_bg_color_2">Sidebar Background 2</label>
+              <input id="sidebar_bg_color_2" name="sidebar_bg_color_2" type="color" value="{{ company.sidebar_bg_color_2|default:'#233049' }}">
+              <div class="help">Gradient end color.</div>
+            </div>
+            <div class="color-tile">
+              <label for="sidebar_text_color">Sidebar Text/Links</label>
+              <input id="sidebar_text_color" name="sidebar_text_color" type="color" value="{{ company.sidebar_text_color|default:'#ffffff' }}">
+              <div class="help">Links, icons, and footer actions.</div>
+            </div>
+          </div>
+
+          <div style="height: 1px; background: rgba(15, 23, 42, 0.08); margin: 14px 0;"></div>
+
+          <h2 class="panel__title">Preview</h2>
+          <p class="panel__subtitle">Live preview of the sidebar theme.</p>
+
+          <div class="sidebar-preview" id="sidebar-preview">
+            <div class="sidebar-preview__header">
+              <span>Sidebar</span>
+              <span class="sidebar-preview__pill">
+                <span class="material-icons" style="font-size:18px;">palette</span>
+                Theme
+              </span>
+            </div>
+            <div class="sidebar-preview__body" id="sidebar-preview-body">
+              <div class="sidebar-preview__link is-active">
+                <span class="material-icons" style="font-size:20px;">dashboard</span>
+                Dashboard
+              </div>
+              <div class="sidebar-preview__link">
+                <span class="material-icons" style="font-size:20px;">settings</span>
+                Settings
+              </div>
+              <div class="sidebar-preview__link">
+                <span class="material-icons" style="font-size:20px;">logout</span>
+                Logout
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
 </div>
+
+<script>
+  (function () {
+    const bg1 = document.getElementById("sidebar_bg_color_1");
+    const bg2 = document.getElementById("sidebar_bg_color_2");
+    const text = document.getElementById("sidebar_text_color");
+    const previewBody = document.getElementById("sidebar-preview-body");
+
+    if (!bg1 || !bg2 || !text || !previewBody) return;
+
+    const apply = () => {
+      previewBody.style.setProperty("--preview-bg-1", bg1.value || "#041530");
+      previewBody.style.setProperty("--preview-bg-2", bg2.value || "#233049");
+      previewBody.style.setProperty("--preview-text", text.value || "#ffffff");
+      previewBody.style.color = text.value || "#ffffff";
+    };
+
+    ["input", "change"].forEach(evt => {
+      bg1.addEventListener(evt, apply);
+      bg2.addEventListener(evt, apply);
+      text.addEventListener(evt, apply);
+    });
+
+    apply();
+  })();
+</script>
 {% endblock %}

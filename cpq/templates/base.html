@@ -10,6 +10,18 @@
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+  <style>
+    :root {
+      --sidenav-bg-1: {{ tenant_theme.sidenav_bg_1 }};
+      --sidenav-bg-2: {{ tenant_theme.sidenav_bg_2 }};
+      --sidenav-text: {{ tenant_theme.sidenav_text }};
+      --sidenav-hover-bg: {{ tenant_theme.sidenav_hover_bg }};
+      --sidenav-divider: {{ tenant_theme.sidenav_divider }};
+      --sidenav-muted: {{ tenant_theme.sidenav_muted }};
+      --sidenav-icon-muted: {{ tenant_theme.sidenav_icon_muted }};
+      --sidenav-card-bg: {{ tenant_theme.sidenav_card_bg }};
+    }
+  </style>
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
@@ -28,7 +40,11 @@
             <i class="material-icons">arrow_back</i> <span class="nav-label">Back To AgentCPQ</span>
         </a>
         <div class="brand">
-          <img id="sidebar-logo" src="{% static 'img/logo-small.png' %}" alt="AgentCPQ Logo"style="width: 85%; margin: 0 auto;" />
+          {% if tenant_logo_url %}
+            <img id="sidebar-logo" src="{{ tenant_logo_url }}" alt="Company Logo" style="width: 85%; margin: 0 auto;" />
+          {% else %}
+            <img id="sidebar-logo" src="{% static 'img/logo-small.png' %}" alt="AgentCPQ Logo" style="width: 85%; margin: 0 auto;" />
+          {% endif %}
         </div>
 
         <p class="session-list-title">Organization</p>
@@ -80,22 +96,36 @@
     </div>
 
   <!-- Fixed Logout/Login Section -->
-    <div style="padding: 16px;">
-        {% if user.is_authenticated %}
-            <form method="post" action="{% url 'logout' %}" style="padding: 16px;">
-                {% csrf_token %}
-                <button type="submit" class="btn-flat white-text" style="display: flex; align-items: center; background: none; border: none; cursor: pointer;">
-                    <i class="material-icons" style="margin-right: 8px;">logout</i>
-                    <span class="nav-label">Logout</span>
-                </button>
-            </form>
+  {% if user.is_authenticated %}
+    <div class="nav-bottom-fixed" aria-label="Sidebar account actions">
+      <div class="nav-footer">
+        <button onclick="colapseSidebar()" class="nav-collapse-btn">
+          <i id="collapse-icon" class="material-icons">chevron_left</i>
+          <span class="nav-label">Collapse</span>
+        </button>
 
-            <button onclick="colapseSidebar()" class="btn-flat white-text mt-4" style="display: flex; align-items: center; background: none; border: none; cursor: pointer;">
-                <i id="collapse-icon" class="material-icons" style="margin-right: 8px; font-weight: 800; font-size: 30px;">chevron_left</i>
-                <span class="nav-label">Collapse</span>
-            </button>
-        {% endif %}
+        <form method="post" action="{% url 'logout' %}" class="nav-action-form">
+          {% csrf_token %}
+          <button type="submit" class="nav-action-btn">
+            <i class="material-icons">logout</i>
+            <span class="nav-label">Logout</span>
+          </button>
+        </form>
+      </div>
+
+      <div class="nav-user-card" aria-hidden="false">
+        <div class="nav-user-card__avatar" aria-hidden="true">
+          <span>{{ request.user.first_name|default:request.user.username|first|upper }}</span>
+        </div>
+        <div class="nav-user-card__details">
+          <span class="nav-user-card__name">{{ request.user.get_full_name|default:request.user.username }}</span>
+          {% if tenant_version %}
+            <span class="nav-user-card__version">v{{ tenant_version }}</span>
+          {% endif %}
+        </div>
+      </div>
     </div>
+  {% endif %}
 </div>
 
     <!-- Main Content -->

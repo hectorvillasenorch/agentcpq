@@ -9,6 +9,18 @@
     <link rel="stylesheet" href="{% static 'materialize/materialize.min.css' %}">
     <script src="{% static 'materialize/materialize.min.js' %}" defer></script>
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <style>
+      :root {
+        --sidenav-bg-1: {{ tenant_theme.sidenav_bg_1 }};
+        --sidenav-bg-2: {{ tenant_theme.sidenav_bg_2 }};
+        --sidenav-text: {{ tenant_theme.sidenav_text }};
+        --sidenav-hover-bg: {{ tenant_theme.sidenav_hover_bg }};
+        --sidenav-divider: {{ tenant_theme.sidenav_divider }};
+        --sidenav-muted: {{ tenant_theme.sidenav_muted }};
+        --sidenav-icon-muted: {{ tenant_theme.sidenav_icon_muted }};
+        --sidenav-card-bg: {{ tenant_theme.sidenav_card_bg }};
+      }
+    </style>
     <script>
       window.isAdmin = {{ request.user.is_staff|yesno:"true,false" }};
     </script>
@@ -25,7 +37,11 @@
 
     <div class="nav-body">
         <div class="brand">
-            <img class="brand-logo" src="{% static 'img/logo-small.png' %}" width="80%" alt="AgentCPQ Logo"/>
+            {% if tenant_logo_url %}
+              <img class="brand-logo" src="{{ tenant_logo_url }}" width="80%" alt="Company Logo"/>
+            {% else %}
+              <img class="brand-logo" src="{% static 'img/logo-small.png' %}" width="80%" alt="AgentCPQ Logo"/>
+            {% endif %}
             <img class="brand-logo-collapsed" src="{% static 'img/agent-white.png' %}" alt="Agent icon">
         </div>
         <a href="{% url 'dashboard' %}?view=agents&new_chat=true" class="new-chat-button">
@@ -81,7 +97,7 @@
     {% if user.is_authenticated %}
     <div class="nav-bottom-fixed" aria-label="Sidebar account actions">
         <div class="nav-footer">
-            <button onclick="colapseSidebar()" class="btn-flat white-text nav-collapse-btn">
+            <button onclick="colapseSidebar()" class="btn-flat nav-collapse-btn">
                 <i id="collapse-icon" class="material-icons">chevron_left</i>
                 <span class="nav-label">Collapse</span>
             </button>

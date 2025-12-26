@@ -41,6 +41,7 @@ from django.template.loader import render_to_string
 import re, string
 from .forms import SignupForm
 from django.contrib.auth.views import LogoutView
+from cpq.permissions import get_custom_object_perms, perms_to_template_dict, user_can_access_custom_object, visible_custom_objects_for_user
 
 
 def _decode_message_content(raw: str) -> str:
@@ -76,8 +77,13 @@ def dashboard(request):
         request.session.pop("session_data", None)
         session_id = None
 
+    custom_object_perms = {"can_view": True, "can_add": True, "can_change": True, "can_delete": True}
     if object_name:
         custom_object = get_object_or_404(CustomObject, name=object_name)
+        custom_object_perms = perms_to_template_dict(get_custom_object_perms(user, custom_object))
+        if not user_can_access_custom_object(user, custom_object, "view"):
+            return HttpResponseForbidden("You do not have permission to view this custom object.")
+
         DynamicForm = generate_dynamic_form(custom_object)
         form = DynamicForm()
 
@@ -123,7 +129,7 @@ def dashboard(request):
 
         bundles = [product for product in products if product.is_bundle]
 
-    custom_objects = CustomObject.objects.all()
+    custom_objects = visible_custom_objects_for_user(user)
 
     # Fetch only this user's account/opportunity/quote hierarchy
     account_groups = get_grouped_user_quotes(user)
@@ -182,6 +188,7 @@ def dashboard(request):
         "selected_session_id": session_id,
         "custom_object": custom_object,
         "custom_objects": custom_objects,
+        "custom_object_perms": custom_object_perms,
         "next_identifier": next_identifier,
         "form": form,
         "accounts": accounts,

@@ -262,9 +262,11 @@
       <h3>{{ custom_object.label }} Records</h3>
       <p class="muted">Manage and review the records stored for this custom object.</p>
     </div>
-    <button type="button" class="btn waves-effect waves-light" onclick="toggleModal()">
-      <i class="material-icons left">add</i>New {{ custom_object.label }}
-    </button>
+    {% if custom_object_perms.can_add %}
+      <button type="button" class="btn waves-effect waves-light" onclick="toggleModal()">
+        <i class="material-icons left">add</i>New {{ custom_object.label }}
+      </button>
+    {% endif %}
   </div>
 
   {% if records_custom_object %}
@@ -280,7 +282,9 @@
               {% endfor %}
               <th>Last Modified</th>
               <th>Created</th>
-              <th class="align-right">Actions</th>
+              {% if custom_object_perms.can_change or custom_object_perms.can_delete %}
+                <th class="align-right">Actions</th>
+              {% endif %}
             </tr>
           </thead>
 
@@ -312,11 +316,13 @@
                   <span class="datetime">{{ record.created_at|date:"c" }}</span>
                 </td>
 
-                <td class="align-right">
-                  <button class="btn-flat edit-btn" data-record-id="{{ record.id }}">
-                    <i class="material-icons">edit</i>
-                  </button>
-                </td>
+                {% if custom_object_perms.can_change or custom_object_perms.can_delete %}
+                  <td class="align-right">
+                    <button class="btn-flat edit-btn" data-record-id="{{ record.id }}">
+                      <i class="material-icons">edit</i>
+                    </button>
+                  </td>
+                {% endif %}
               </tr>
             {% endfor %}
           </tbody>
@@ -329,9 +335,11 @@
       <i class="material-icons">inbox</i>
       <h4>No records yet</h4>
       <p>Create your first {{ custom_object.label }} entry to populate this view.</p>
-      <button type="button" class="btn waves-effect waves-light" onclick="toggleModal()">
-        <i class="material-icons left">add</i>New {{ custom_object.label }}
-      </button>
+      {% if custom_object_perms.can_add %}
+        <button type="button" class="btn waves-effect waves-light" onclick="toggleModal()">
+          <i class="material-icons left">add</i>New {{ custom_object.label }}
+        </button>
+      {% endif %}
     </div>
   {% endif %}
 </div>
@@ -370,8 +378,14 @@
       <input type="hidden" name="updated_by_id" value="{{ user.id }}">
       <div class="form-grid" id="edit-form-fields"></div>
       <div style="margin-top: 18px; display: flex; justify-content: space-between;">
-        <button type="button" class="submit-button red" id="deleteRecordBtn">Delete Record</button>
-        <button type="submit" class="submit-button">Save Changes</button>
+        {% if custom_object_perms.can_delete %}
+          <button type="button" class="submit-button red" id="deleteRecordBtn">Delete Record</button>
+        {% else %}
+          <span></span>
+        {% endif %}
+        {% if custom_object_perms.can_change %}
+          <button type="submit" class="submit-button">Save Changes</button>
+        {% endif %}
       </div>
     </form>
   </div>
