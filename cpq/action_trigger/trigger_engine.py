@@ -310,10 +310,26 @@ class TriggerEngine:
         """
         ActionTrigger = apps.get_model("cpq", "ActionTrigger")
         object_types = set()
-        for t in ActionTrigger.objects.filter(active=True).only("event_type"):
-            obj = self._extract_object_type(t.event_type)
-            if obj:
-                object_types.add(obj)
+        try:
+            for t in ActionTrigger.objects.filter(active=True).only("event_type"):
+                obj = self._extract_object_type(t.event_type)
+                if obj:
+                    object_types.add(obj)
+        except Exception as exc:
+            # Production safety: during first deploy/migrations the table may not exist yet.
+            # Do not crash the whole app on startup; simply skip dynamic trigger wiring.
+            try:
+                from django.db import ProgrammingError, OperationalError
+                if isinstance(exc, (ProgrammingError, OperationalError)):
+                    logger.warning(
+                        "⚠️ TriggerEngine: could not query ActionTrigger table yet (%s). "
+                        "Skipping dynamic trigger wiring until migrations run.",
+                        exc,
+                    )
+                    return self._get_models_to_watch()
+            except Exception:
+                pass
+            raise
 
         models: List[Model] = []
         for obj in object_types:

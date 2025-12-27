@@ -14,6 +14,16 @@ class CpqConfig(AppConfig):
 
         from .tasks.renewals_scheduler import start_renewal_scheduler
         from cpq.action_trigger.trigger_engine import engine
-        engine.register_signals()
+        try:
+            engine.register_signals()
+        except Exception as exc:
+            # Allow the app to boot even when DB schema isn't migrated yet (e.g., first Heroku deploy).
+            try:
+                from django.db import ProgrammingError, OperationalError
+                if isinstance(exc, (ProgrammingError, OperationalError)):
+                    return
+            except Exception:
+                pass
+            raise
         # t = threading.Thread(target=start_renewal_scheduler, daemon=True)
         # t.start()
