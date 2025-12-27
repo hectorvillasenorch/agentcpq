@@ -442,6 +442,10 @@ Return only JSON.
             if canonical:
                 normalized_fields[canonical] = v
 
+        # Heuristic merge: capture common key/value pairs that the LLM may miss,
+        # especially when continuing an incomplete request.
+        normalized_fields = _merge_user_message_hints(obj, user_message, normalized_fields)
+
         required = REQUIRED_FIELDS.get(obj or "", [])
         completed = bool(obj and all(normalized_fields.get(f) not in (None, "", []) for f in required))
 
@@ -1076,17 +1080,44 @@ def _create_activity(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[s
 
 
 def _create_contract(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
-    opportunity_ref = _find_opportunity(fields.get("opportunity"))
+    opp_value = fields.get("opportunity")
+    opportunity_ref = _find_opportunity(opp_value)
     if not opportunity_ref:
-        return False, f"⚠️ Opportunity '{fields.get('opportunity')}' not found for Contract.", {}
+        # Safe fallback: if the user provided both Account + Opportunity names, create them.
+        account_value = (
+            fields.get("account")
+            or fields.get("account__c")
+            or fields.get("Account")
+            or fields.get("tenant__c")
+        )
+        if account_value and opp_value:
+            success, message, opportunity_ref = _create_opportunity(
+                user,
+                {
+                    "name": str(opp_value),
+                    "account": str(account_value),
+                },
+            )
+            if not success:
+                return False, message or f"⚠️ Opportunity '{opp_value}' not found for Contract.", {}
+        else:
+            return False, f"⚠️ Opportunity '{opp_value}' not found for Contract.", {}
 
     status = fields.get("contract_status") or fields.get("status")
+    if isinstance(status, str):
+        status = status.strip()
+        if status:
+            status = status[:1].upper() + status[1:].lower()
     if status and status not in {"Active", "Expired", "Renewed"}:
         return False, "⚠️ Invalid contract_status. Allowed: Active, Expired, Renewed.", {}
 
+    start_date = _coerce_date(fields.get("start_date"))
+    if not start_date:
+        return False, "⚠️ Please provide a valid start_date (YYYY-MM-DD).", {}
+
     contract = Contract.objects.create(
         opportunity=opportunity_ref,
-        start_date=_coerce_date(fields.get("start_date")),
+        start_date=start_date,
         end_date=_coerce_date(fields.get("end_date")),
         contract_status=status or "Active",
     )
@@ -1188,6 +1219,47 @@ def _create_knowledge(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[
     )
 
     return True, "", knowledge
+
+
+def _merge_user_message_hints(object_name: str, user_message: str, fields: Dict[str, object]) -> Dict[str, object]:
+    if not object_name or not user_message:
+        return fields
+
+    merged = dict(fields or {})
+    text = str(user_message)
+
+    def _extract_date(label: str) -> Optional[str]:
+        # Accept "Start Date = 2025-07-07" / "Start Date: 2025-07-07" / "start_date 2025-07-07"
+        match = re.search(rf"(?i)\\b{re.escape(label)}\\b\\s*[:=]?\\s*(\\d{{4}}-\\d{{2}}-\\d{{2}})", text)
+        return match.group(1) if match else None
+
+    def _extract_value(label: str) -> Optional[str]:
+        match = re.search(rf"(?i)\\b{re.escape(label)}\\b\\s*[:=]\\s*([^\\n\\r]+)", text)
+        return match.group(1).strip() if match else None
+
+    if object_name == "Contract":
+        if not merged.get("start_date"):
+            start = _extract_date("Start Date") or _extract_date("start_date")
+            if start:
+                merged["start_date"] = start
+        if not merged.get("end_date"):
+            end = _extract_date("End Date") or _extract_date("end_date")
+            if end:
+                merged["end_date"] = end
+        if not merged.get("contract_status"):
+            status = _extract_value("Status") or _extract_value("contract_status")
+            if status:
+                merged["contract_status"] = status
+        if not merged.get("opportunity"):
+            opp = _extract_value("Opportunity")
+            if opp:
+                merged["opportunity"] = opp
+        if not (merged.get("account") or merged.get("account__c")):
+            acct = _extract_value("Account")
+            if acct:
+                merged["account__c"] = acct
+
+    return merged
 
 def _normalize_key(key: str) -> str:
     if key is None:
