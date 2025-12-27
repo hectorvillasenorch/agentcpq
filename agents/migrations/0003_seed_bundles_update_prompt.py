@@ -3,6 +3,13 @@ from django.db import migrations
 
 def seed_bundles_update_prompt(apps, schema_editor):
     AgentPrompt = apps.get_model("agents", "AgentPrompt")
+    table_name = AgentPrompt._meta.db_table
+
+    # Safety: some environments may have migration history that marks 0001 applied
+    # even though the underlying table was never created. Ensure the table exists
+    # before querying/seeding.
+    if table_name not in schema_editor.connection.introspection.table_names():
+        schema_editor.create_model(AgentPrompt)
 
     payload = {
         "agent_name": "bundles_agent",
@@ -36,6 +43,9 @@ def seed_bundles_update_prompt(apps, schema_editor):
 
 def remove_bundles_update_prompt(apps, schema_editor):
     AgentPrompt = apps.get_model("agents", "AgentPrompt")
+    table_name = AgentPrompt._meta.db_table
+    if table_name not in schema_editor.connection.introspection.table_names():
+        return
     AgentPrompt.objects.filter(
         agent_name="bundles_agent",
         method="update",
