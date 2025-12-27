@@ -102,7 +102,15 @@ def add_actiontrigger_field_if_missing(apps, schema_editor, field_name, field):
     """
     Generic helper to add a column to cpq_actiontrigger only if it doesn't exist.
     """
-    table_name = "cpq_actiontrigger"
+    ActionTrigger = apps.get_model("cpq", "ActionTrigger")
+    table_name = ActionTrigger._meta.db_table
+
+    # Safety: some environments may have migration history marked as applied
+    # while the underlying table was never created. Ensure the table exists
+    # before checking/adding columns.
+    if table_name not in schema_editor.connection.introspection.table_names():
+        schema_editor.create_model(ActionTrigger)
+
     # Ensure the field has name/column metadata before we inspect the DB
     field.set_attributes_from_name(field_name)
     column_name = field.column
@@ -121,7 +129,6 @@ def add_actiontrigger_field_if_missing(apps, schema_editor, field_name, field):
         if cursor.fetchone()[0]:
             return
 
-    ActionTrigger = apps.get_model("cpq", "ActionTrigger")
     schema_editor.add_field(ActionTrigger, field)
 
 
@@ -244,6 +251,10 @@ def add_updated_at_column_if_missing(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # This migration includes defensive DDL in RunPython operations (creating
+    # tables when migration history is inconsistent). MySQL forbids DDL inside
+    # a transaction when it can't be rolled back, so disable atomicity.
+    atomic = False
 
     dependencies = [
         ("contenttypes", "0002_remove_content_type_name"),
