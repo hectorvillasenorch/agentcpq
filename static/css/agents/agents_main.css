@@ -1750,3 +1750,53 @@ textarea.chat-input {
   outline: none;
     background: #1f2c46;
 }
+
+/* ----------------------------
+   Structured toggles (chat)
+----------------------------- */
+.structured-toggle {
+  margin-top: 10px;
+}
+
+.structured-toggle__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  color: #1f2c46;
+  font-weight: 600;
+  font-size: 0.92rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.structured-toggle__btn:hover {
+  color: #162036;
+  text-decoration: underline;
+}
+
+.structured-toggle__btn:active {
+  transform: translateY(1px);
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.structured-toggle__btn:focus {
+  outline: none;
+  text-decoration: underline;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.structured-toggle__chev {
+  font-size: 18px;
+  opacity: 0.75;
+}
+
+.structured-toggle__body {
+  margin-top: 10px;
+}

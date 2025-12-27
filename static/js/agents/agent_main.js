@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", function () {
   setupUploadZone();
   loadPendingAttachments();
   enhanceStructuredAgentMessagesHistoryChat(); // 🔥
+  setupStructuredToggles();
   updateAttachmentPreview();
   initializeMaterializeSelects(document);
   initializeBundleStructureCards(document);
@@ -953,6 +954,139 @@ function unescapeUnicode(str) {
   });
 }
 
+/**
+ * Strips a structured payload suffix (like `quote_details: { ... }`) from an agent message
+ * only when there is a human-readable prefix before the key.
+ *
+ * This prevents the UI from dumping large JSON blobs after a normal confirmation message.
+ */
+function stripStructuredSuffixFromAgentMessage(message, keys) {
+  if (typeof message !== "string" || !message) return { message, stripped: false };
+  const keyList = Array.isArray(keys) ? keys : [keys];
+
+  for (const key of keyList) {
+    const idx = message.indexOf(key);
+    if (idx === -1) continue;
+
+    const before = message.slice(0, idx).trimEnd();
+    if (!before) return { message, stripped: false };
+
+    return { message: before, stripped: true };
+  }
+
+  return { message, stripped: false };
+}
+
+function stripStructuredSuffixInElement(el, keys) {
+  if (!el) return false;
+  const cleaned = stripStructuredSuffixFromAgentMessage(el.innerHTML, keys);
+  if (!cleaned.stripped) return false;
+  el.innerHTML = cleaned.message;
+  return true;
+}
+
+function extractEmbeddedJsonPayload(rawMessage, key) {
+  if (typeof rawMessage !== "string" || !rawMessage) return null;
+  const idx = rawMessage.indexOf(key);
+  if (idx === -1) return null;
+  const afterKey = rawMessage.slice(idx + key.length);
+  const jsonPart = extractJson(afterKey);
+  if (!jsonPart) return null;
+  try {
+    return JSON.parse(unescapeUnicode(jsonPart));
+  } catch {
+    return null;
+  }
+}
+
+function attachQuoteDetailsToggle(targetEl, quoteObj) {
+  if (!targetEl || !quoteObj) return null;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "structured-toggle";
+  wrapper.dataset.type = "quote_details";
+  wrapper.dataset.payload = JSON.stringify(quoteObj);
+  wrapper.dataset.rendered = "false";
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "structured-toggle__btn";
+  btn.innerHTML = `
+    <span class="structured-toggle__label">Quote details</span>
+    <i class="material-icons structured-toggle__chev" aria-hidden="true">chevron_right</i>
+  `;
+  btn.setAttribute("aria-expanded", "false");
+
+  const body = document.createElement("div");
+  body.className = "structured-toggle__body";
+  body.style.display = "none";
+
+  wrapper.appendChild(btn);
+  wrapper.appendChild(body);
+  targetEl.appendChild(wrapper);
+  return wrapper;
+}
+
+function setStructuredToggleButtonState(btn, open) {
+  if (!btn) return;
+  const chevEl = btn.querySelector(".structured-toggle__chev");
+  if (chevEl) chevEl.textContent = open ? "expand_more" : "chevron_right";
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function setupStructuredToggles() {
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".structured-toggle__btn");
+    if (!btn) return;
+
+    const wrapper = btn.closest(".structured-toggle");
+    if (!wrapper) return;
+
+    const body = wrapper.querySelector(".structured-toggle__body");
+    if (!body) return;
+
+    const isOpen = body.style.display !== "none";
+    if (isOpen) {
+      body.style.display = "none";
+      setStructuredToggleButtonState(btn, false);
+      return;
+    }
+
+    // Lazy render on first open
+    if (wrapper.dataset.type === "quote_details" && wrapper.dataset.rendered !== "true") {
+      try {
+        const payload = JSON.parse(wrapper.dataset.payload || "{}");
+        ensureQuoteStatusValue(payload);
+        body.innerHTML = renderQuoteDetails(payload);
+        wrapper.dataset.rendered = "true";
+
+        initializeQuoteDetailInteractions(body);
+        initializeMaterializeSelects(body);
+        initializeBundleStructureCards(body);
+      } catch (err) {
+        console.warn("Failed to render quote_details toggle payload:", err);
+        body.innerHTML = `<div class="error-message">⚠️ Could not render quote details.</div>`;
+      }
+    }
+
+    body.style.display = "block";
+    setStructuredToggleButtonState(btn, true);
+    requestAnimationFrame(() => {
+      const chatBox = document.getElementById("chat-box");
+      if (!chatBox) return;
+
+      const chatRect = chatBox.getBoundingClientRect();
+      const bodyRect = body.getBoundingClientRect();
+      const padding = 18;
+
+      const delta = bodyRect.bottom - (chatRect.bottom - padding);
+      if (delta > 0) {
+        chatBox.scrollTop += delta;
+      }
+    });
+  }, { capture: false });
+}
+
 function enhanceStructuredAgentMessagesHistoryChat() {
   document.querySelectorAll(".agent-json").forEach(div => {
     const raw = div.dataset.raw;
@@ -992,6 +1126,7 @@ function enhanceStructuredAgentMessagesHistoryChat() {
 
     try {
       const data = JSON.parse(unescapeUnicode(jsonPart));
+      const hasPrefix = Boolean(matchedKey && raw.slice(0, raw.indexOf(matchedKey)).trim());
 
       //console.log("This is data: ", data);
 
@@ -1080,6 +1215,26 @@ function enhanceStructuredAgentMessagesHistoryChat() {
 
       // === QUOTE DETAILS (editable) ===
       if (matchedKey === 'quote_details:') {
+        const chatMessage = div.closest(".chat-message");
+        const rawMessageEl = chatMessage ? chatMessage.querySelector(".chat-text.agent .message") : null;
+
+        // If there is a human message prefix, show only that message and hide the structured block.
+        if (hasPrefix) {
+          stripStructuredSuffixInElement(
+            rawMessageEl,
+            ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
+          );
+          if (rawMessageEl) {
+            attachQuoteDetailsToggle(rawMessageEl, data);
+          }
+          const jsonContainer = div.closest(".chat-text.agent");
+          if (jsonContainer) jsonContainer.style.display = "none";
+          return;
+        }
+
+        // Otherwise, this message is intended to be a quote-details view:
+        // hide the raw JSON text block and show the rendered card.
+        if (rawMessageEl) rawMessageEl.parentElement.style.display = "none";
         ensureQuoteStatusValue(data);
         div.innerHTML = renderQuoteDetails(data);
         return;
@@ -1195,6 +1350,7 @@ async function sendMessage() {
         }
 
         let responseMessage = ""; // Initialize message variable
+        let embeddedQuoteDetails = null;
 
         // ✅ Handle Missing Product Warnings
         if (data.response && data.response.warnings) {
@@ -1281,7 +1437,15 @@ async function sendMessage() {
         }
         // ✅ Default Response (Handle General Messages)
         else if (data.response && data.response.message) {
-            responseMessage += `<div class="general-message">${data.response.message}</div>`;
+            const cleaned = stripStructuredSuffixFromAgentMessage(
+              data.response.message,
+              ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
+            );
+            responseMessage += `<div class="general-message">${cleaned.message}</div>`;
+
+            if (cleaned.stripped) {
+              embeddedQuoteDetails = extractEmbeddedJsonPayload(data.response.message, "quote_details:");
+            }
         }
         // ✅ Handle Unexpected Empty Response
         else {
@@ -1289,7 +1453,11 @@ async function sendMessage() {
         }
 
         // ✅ Append the final response message to the chat
-        appendMessage("agent", `<div class="senderagent"><img width="110px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
+        const agentBubble = appendMessage("agent", `<div class="senderagent"><img width="110px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
+        if (embeddedQuoteDetails && agentBubble) {
+          const target = agentBubble.querySelector(".message .general-message") || agentBubble.querySelector(".message");
+          attachQuoteDetailsToggle(target, embeddedQuoteDetails);
+        }
         loadPendingAttachments();
         hideAgentFeedback();
         scrollToBottom("sendMessage:agentResponse", true);
@@ -1468,6 +1636,16 @@ function appendMessage(className, message) {
     }
 
     messageBubble.innerHTML = message;
+
+    // If an agent message contains a human prefix + structured payload (e.g. quote_details: {...}),
+    // keep only the human message by default.
+    if (className === "agent") {
+      const msgEl = messageBubble.querySelector(".message") || messageBubble;
+      stripStructuredSuffixInElement(
+        msgEl,
+        ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
+      );
+    }
     chatBox.appendChild(messageBubble);
 
     // ✅ Re-initializes select from Materialize
@@ -1510,6 +1688,7 @@ function appendMessage(className, message) {
     }
 
     scrollToBottom(`appendMessage:${className}`, true);
+    return messageBubble;
 }
 
 function renderQuoteDiscountControls(quote) {
