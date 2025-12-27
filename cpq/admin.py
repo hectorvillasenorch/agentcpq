@@ -137,6 +137,54 @@ class GroupAdmin(DjangoGroupAdmin):
 class CustomFieldAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(CustomField, crm="AgentCPQ", object_type="CustomField")
     list_display = ("label", "name", "data_type", "object_type", "custom_object", "created_by", "created_at_js")
+    search_fields = ("label", "name", "object_type", "crm", "custom_object__name", "custom_object__label")
+
+
+class CustomFieldValueInline(admin.TabularInline):
+    model = CustomFieldValue
+    fk_name = "record"
+    extra = 0
+    fields = ("field", "value", "updated_by_user", "created_at")
+    readonly_fields = ("created_at",)
+    raw_id_fields = ("field", "updated_by_user")
+
+
+@admin.register(CustomRecord)
+class CustomRecordAdmin(UTCDisplayAdmin, admin.ModelAdmin):
+    list_display = (
+        "custom_identifier",
+        "object_label",
+        "object_type",
+        "created_by",
+        "created_at_js",
+        "updated_at_js",
+    )
+    list_filter = ("object_type", "created_by")
+    search_fields = ("custom_identifier", "object_type__name", "object_type__label")
+    ordering = ("-created_at",)
+    readonly_fields = ("created_at", "updated_at")
+    inlines = (CustomFieldValueInline,)
+
+    def object_label(self, obj):
+        return (obj.object_type.label or obj.object_type.name) if obj.object_type_id else "-"
+
+    object_label.short_description = "Object"
+
+
+@admin.register(CustomFieldValue)
+class CustomFieldValueAdmin(UTCDisplayAdmin, admin.ModelAdmin):
+    list_display = ("record", "field", "value", "updated_by_user", "created_at")
+    list_filter = ("field__custom_object", "field__object_type", "updated_by_user")
+    search_fields = (
+        "value",
+        "record__custom_identifier",
+        "field__name",
+        "field__label",
+        "field__object_type",
+        "field__crm",
+    )
+    raw_id_fields = ("field", "updated_by_user", "record")
+    ordering = ("-created_at",)
 
 
 

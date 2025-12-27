@@ -262,6 +262,8 @@ def orchestrate_request(user, user_message, session_data):
         - "DeleteQuote"
         - "CreateProductRecord"
         - "CreateStandardRecord"
+        - "UpdateStandardRecord"
+        - "DeleteStandardRecord"
         - "UpdateProductRecord"
         - "SubmitForApproval"
         - "CheckApprovalStatus"
@@ -305,6 +307,14 @@ def orchestrate_request(user, user_message, session_data):
                     - "Create a lead John Doe with email john@acme.com"
                     - "Add an account named Acme in New York"
                     - "Open a new opportunity Renewal Q1 for Acme at $50k"
+        - "UpdateStandardRecord" → Use when the user wants to update a standard record (Lead, Account, Contact, or Opportunity) via chat.
+                Examples:
+                    - "Update account Acme phone to 555-0101"
+                    - "Change opportunity Renewal Q1 stage to negotiation"
+        - "DeleteStandardRecord" → Use when the user wants to delete a standard record (Lead, Account, Contact, or Opportunity) via chat.
+                Examples:
+                    - "Delete lead john@acme.com"
+                    - "Remove account Acme"
         - "ShowSingleRecord" → Use when the user asks to open a specific record (Account, Product, Opportunity, Lead, Contact, Quote, or any custom object) and expects a detailed card view. 
                 Examples:
                     - "Show account Acme Corp"
@@ -333,6 +343,8 @@ def orchestrate_request(user, user_message, session_data):
         Routing clarifications:
         - If the user asks to show/open/view/display a specific record (e.g., “show lead with phone 9498724333”, “show lead Victor Lopez”, “open account ACME”), choose ShowSingleRecord. This includes lookups by phone, email, name, company, SKU, quote id, or any identifier.
         - Only use CreateStandardRecord when the user is asking to create/add a new record. Do NOT choose CreateStandardRecord when the verbs are show/open/view/display.
+        - Use UpdateStandardRecord when the user says update/edit/change/modify a Lead/Account/Contact/Opportunity and provides at least one field to change.
+        - Use DeleteStandardRecord when the user says delete/remove a Lead/Account/Contact/Opportunity.
         - When in doubt between ShowSingleRecord and CreateStandardRecord, prefer ShowSingleRecord if the user is requesting to see an existing record.
         """
     })
@@ -710,6 +722,8 @@ def get_action_map():
         "UpdateProductRecord": product_agent,
         # Standard objects
         "CreateStandardRecord": standard_record_agent,
+        "UpdateStandardRecord": standard_record_agent,
+        "DeleteStandardRecord": standard_record_agent,
 
         # Bundles-related actions handled by bundles_agent
         "AddProductToBundle": bundles_agent,
