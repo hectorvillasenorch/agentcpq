@@ -12,9 +12,8 @@ db.sqlite3
 *.sqlite3
 *.log
 
-# 📌 Ignore Django migrations
-**/migrations/**
-!**/migrations/__init__.py
+# 📌 Ignore Django migration bytecode/cache (keep migration files tracked)
+**/migrations/__pycache__/
 
 # 📌 Ignore IDE/editor files
 .vscode/

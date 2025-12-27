@@ -1314,6 +1314,27 @@ class CustomObjectPermission(models.Model):
     def __str__(self):
         return f"{self.group.name}: {self.custom_object.label or self.custom_object.name}"
 
+
+class GroupUISettings(models.Model):
+    group = models.OneToOneField(
+        Group,
+        on_delete=models.CASCADE,
+        related_name="ui_settings",
+    )
+    hide_custom_object_nav = models.BooleanField(
+        default=False,
+        help_text="Hide the Custom Objects links in the dashboard sidebar for users in this group.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Group UI Settings"
+        verbose_name_plural = "Group UI Settings"
+
+    def __str__(self):
+        return f"{self.group.name} UI Settings"
+
 #dummy model for all custom objects
 class CustomRecord(models.Model):
     custom_identifier = models.CharField(max_length=30, unique=True, blank=True, null=True)

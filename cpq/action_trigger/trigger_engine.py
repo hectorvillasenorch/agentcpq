@@ -81,7 +81,9 @@ class TriggerEngine:
 
         self._register_trigger_change_listener()
 
-        models_to_watch = self._get_models_with_active_triggers()
+        # Avoid DB queries during app initialization (Heroku/Django warning).
+        # We'll watch the full CPQ model set; actual trigger execution still depends on ActionTrigger rows.
+        models_to_watch = self._get_models_to_watch()
 
         for model in models_to_watch:
             if model in self._connected_models:
@@ -736,11 +738,21 @@ class TriggerEngine:
     def _load_active_triggers_for_event(self, event_type: str, signal_timing: str):
         ActionTrigger = apps.get_model("cpq", "ActionTrigger")
 
-        all_active = (
-            ActionTrigger.objects
-            .filter(active=True, signal_timing=signal_timing)
-            .order_by("priority", "created_at")  # ← ORDEN CORRECTO
-        )
+        try:
+            all_active = (
+                ActionTrigger.objects
+                .filter(active=True, signal_timing=signal_timing)
+                .order_by("priority", "created_at")  # ← ORDEN CORRECTO
+            )
+        except Exception as exc:
+            # Production safety: during first deploy/migrations the table may not exist yet.
+            try:
+                from django.db import ProgrammingError, OperationalError
+                if isinstance(exc, (ProgrammingError, OperationalError)):
+                    return []
+            except Exception:
+                pass
+            raise
 
         matches = [
             t for t in all_active
