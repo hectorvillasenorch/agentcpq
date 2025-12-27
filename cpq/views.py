@@ -581,7 +581,23 @@ def custom_fields_view(request):
         form = CustomObjectForm()
 
     # Built-in models
-    object_types = ['Activity', 'Lead', 'Contact', 'Account', 'Opportunity', 'Product', 'Quote', 'QuoteLine']
+    # NOTE: Keep these as CPQ model class names so apps.get_model('cpq', obj_type) works.
+    object_types = [
+        "Activity",
+        "Lead",
+        "Contact",
+        "Account",
+        "Opportunity",
+        "Product",
+        "Quote",
+        "QuoteLine",
+        # Extended standard objects
+        "Contract",
+        "Subscription",
+        "Option",
+        "Tenant",
+        "Knowledge",
+    ]
 
     # Custom objects
     custom_objects = CustomObject.objects.all()
