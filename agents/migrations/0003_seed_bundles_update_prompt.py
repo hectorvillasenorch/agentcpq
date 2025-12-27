@@ -54,6 +54,10 @@ def remove_bundles_update_prompt(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # This migration may need to run DDL (create the AgentPrompt table) in
+    # environments where migration history is inconsistent. MySQL prohibits DDL
+    # inside a transaction when it can't be rolled back, so disable atomicity.
+    atomic = False
 
     dependencies = [
         ('agents', '0002_single_record_layout'),
