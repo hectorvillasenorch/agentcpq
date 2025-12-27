@@ -302,11 +302,13 @@ def orchestrate_request(user, user_message, session_data):
                     - "Display the current quote"
                     - "Open quote Q-2024-001"
                 Do NOT pick this label when the user mentions products, bundles, accounts, metrics, lists, or any non-quote record.
-        - "CreateStandardRecord" → Use when the user wants to create a standard record (Lead, Account, Contact, or Opportunity) via chat.
+        - "CreateStandardRecord" → Use when the user wants to create a standard record via chat (Lead, Account, Contact, Opportunity, Activity, Contract, Subscription, Tenant, Knowledge, Option).
                 Examples:
                     - "Create a lead John Doe with email john@acme.com"
                     - "Add an account named Acme in New York"
                     - "Open a new opportunity Renewal Q1 for Acme at $50k"
+                    - "Create a contract for opportunity Renewal Q1 starting 2026-01-01 with status Active"
+                    - "Create a knowledge article titled 'How approvals work' with content ..."
         - "UpdateStandardRecord" → Use when the user wants to update a standard record (Lead, Account, Contact, or Opportunity) via chat.
                 Examples:
                     - "Update account Acme phone to 555-0101"

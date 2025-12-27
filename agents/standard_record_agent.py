@@ -11,7 +11,23 @@ from django.contrib.auth import get_user_model
 from django.utils.dateparse import parse_date
 from dotenv import load_dotenv
 
-from cpq.models import Account, Contact, Lead, Opportunity, CustomField, CustomFieldValue
+from cpq.models import (
+    Account,
+    Activity,
+    Contact,
+    Contract,
+    CustomField,
+    CustomFieldValue,
+    Knowledge,
+    Lead,
+    Opportunity,
+    Option,
+    Product,
+    Quote,
+    QuoteLine,
+    Subscription,
+    Tenant,
+)
 from django.contrib.contenttypes.models import ContentType
 from .utils.agents_utils import clean_llm_json
 from .utils.message_formatters import SUCCESS_ICON
@@ -27,13 +43,33 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-SUPPORTED_OBJECTS = ["Lead", "Account", "Contact", "Opportunity"]
+CREATE_SUPPORTED_OBJECTS = [
+    "Lead",
+    "Account",
+    "Contact",
+    "Opportunity",
+    "Activity",
+    "Contract",
+    "Subscription",
+    "Option",
+    "Tenant",
+    "Knowledge",
+]
+
+# Keep update/delete limited to the original supported objects for now.
+UPDATE_DELETE_SUPPORTED_OBJECTS = ["Lead", "Account", "Contact", "Opportunity"]
 
 REQUIRED_FIELDS: Dict[str, List[str]] = {
     "Lead": ["first_name", "last_name"],
     "Account": ["name"],
     "Contact": ["first_name", "email", "account"],
     "Opportunity": ["name", "account"],
+    "Activity": ["subject", "activity_type"],
+    "Contract": ["opportunity", "start_date", "contract_status"],
+    "Subscription": ["quote", "quote_line", "product", "contract", "start_date", "end_date", "price_per_cycle", "term"],
+    "Option": ["parent_product", "product_option"],
+    "Tenant": ["name"],
+    "Knowledge": ["title", "content_text"],
 }
 
 MODEL_MAP = {
@@ -41,6 +77,12 @@ MODEL_MAP = {
     "Account": Account,
     "Contact": Contact,
     "Opportunity": Opportunity,
+    "Activity": Activity,
+    "Contract": Contract,
+    "Subscription": Subscription,
+    "Option": Option,
+    "Tenant": Tenant,
+    "Knowledge": Knowledge,
 }
 
 # Optional extras that aren't model fields but we still accept (e.g., mapped into notes)
@@ -99,6 +141,12 @@ def _refresh_allowed_fields():
                 underscored = re.sub(r"\s+", "_", var.strip()).lower()
                 obj_map[underscored] = canonical
 
+        # Common synonyms (keep additive)
+        if obj == "Contract":
+            obj_map.setdefault("status", "contract_status")
+        if obj == "Subscription":
+            obj_map.setdefault("billing_frequency", "billing_cycle")
+
         allowed_map[obj] = obj_map
 
     ALLOWED_FIELDS = allowed
@@ -106,6 +154,14 @@ def _refresh_allowed_fields():
 
 
 def standard_record_agent(user, action, user_message, session_data):
+    # Admin-only guard for standard-object CRUD via chat.
+    if action in {"CreateStandardRecord", "UpdateStandardRecord", "DeleteStandardRecord"}:
+        if not getattr(user, "is_staff", False) and not getattr(user, "is_superuser", False):
+            return {
+                "message": "⚠️ You don’t have permission to create/update/delete standard records via chat. Please contact an admin.",
+                "hiddenMessage": False,
+            }
+
     if action == "CreateStandardRecord":
         return _create_standard_records(user, user_message, session_data)
     if action == "UpdateStandardRecord":
@@ -296,7 +352,7 @@ def _extract_create_requests(user_message: str, current_state, previous_summary:
     _refresh_allowed_fields()
 
     allowed_fields_prompt = "\n".join(
-        [f"   - {obj}: {', '.join(sorted(ALLOWED_FIELDS.get(obj, [])))}" for obj in SUPPORTED_OBJECTS]
+        [f"   - {obj}: {', '.join(sorted(ALLOWED_FIELDS.get(obj, [])))}" for obj in CREATE_SUPPORTED_OBJECTS]
     )
 
     system_prompt = f"""
@@ -311,7 +367,7 @@ Return ONLY JSON matching this schema:
 }}
 
 Rules:
-1. Supported objects: {', '.join(SUPPORTED_OBJECTS)}. Use singular names.
+1. Supported objects: {', '.join(CREATE_SUPPORTED_OBJECTS)}. Use singular names.
 2. Allowed fields per object:
 {allowed_fields_prompt}
 3. Required fields:
@@ -319,7 +375,14 @@ Rules:
    - Account: name
    - Contact: first_name, email, account
    - Opportunity: name, account
+   - Activity: subject, activity_type
+   - Contract: opportunity, start_date, contract_status
+   - Subscription: quote, quote_line, product, contract, start_date, end_date, price_per_cycle, term (billing_cycle defaults to monthly if omitted)
+   - Option: parent_product, product_option
+   - Tenant: name
+   - Knowledge: title, content_text
 4. For Contact/Opportunity, the account value should be the account name or identifier mentioned by the user—do not invent one.
+5. For Contract/Subscription/Activity relations (account/opportunity/quote/product/etc.), use the identifier provided by the user (id, custom id, sku, or name). Do not invent.
 5. completed=true only when object plus all required fields are present and non-empty.
 6. agent_message should ask concisely for whatever is missing. Keep it HTML safe; use <br> for line breaks if needed.
 7. summary should extend the prior summary in plain text.
@@ -400,7 +463,7 @@ def _extract_update_requests(user_message: str, current_state, previous_summary:
     _refresh_allowed_fields()
 
     allowed_fields_prompt = "\n".join(
-        [f"   - {obj}: {', '.join(sorted(ALLOWED_FIELDS.get(obj, [])))}" for obj in SUPPORTED_OBJECTS]
+        [f"   - {obj}: {', '.join(sorted(ALLOWED_FIELDS.get(obj, [])))}" for obj in UPDATE_DELETE_SUPPORTED_OBJECTS]
     )
 
     system_prompt = f"""
@@ -415,7 +478,7 @@ Return ONLY JSON matching this schema:
 }}
 
 Rules:
-1. Supported objects: {', '.join(SUPPORTED_OBJECTS)}. Use singular names.
+1. Supported objects: {', '.join(UPDATE_DELETE_SUPPORTED_OBJECTS)}. Use singular names.
 2. Allowed fields per object:
 {allowed_fields_prompt}
 3. identifier is the value used to find the record (id, accid/leadId/contactId/oppid, email, or name). Do not invent.
@@ -509,7 +572,7 @@ Return ONLY JSON matching this schema:
 }}
 
 Rules:
-1. Supported objects: {', '.join(SUPPORTED_OBJECTS)}. Use singular names.
+1. Supported objects: {', '.join(UPDATE_DELETE_SUPPORTED_OBJECTS)}. Use singular names.
 2. identifier is the value used to find the record (id, accid/leadId/contactId/oppid, email, or name). Do not invent.
 3. completed=true only when object AND identifier are present.
 4. agent_message should ask concisely for whatever is missing. Keep it HTML safe; use <br> for line breaks if needed.
@@ -577,7 +640,7 @@ Return only JSON.
 
 
 def _persist_record(user, object_name: str, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
-    if object_name not in SUPPORTED_OBJECTS:
+    if object_name not in CREATE_SUPPORTED_OBJECTS:
         return False, f"⚠️ Unsupported object '{object_name}'.", {}
 
     required_missing = [f for f in REQUIRED_FIELDS[object_name] if not fields.get(f)]
@@ -593,6 +656,18 @@ def _persist_record(user, object_name: str, fields: Dict[str, object]) -> Tuple[
             success, message, record = _create_contact(user, fields)
         if object_name == "Opportunity":
             success, message, record = _create_opportunity(user, fields)
+        if object_name == "Activity":
+            success, message, record = _create_activity(user, fields)
+        if object_name == "Contract":
+            success, message, record = _create_contract(user, fields)
+        if object_name == "Subscription":
+            success, message, record = _create_subscription(user, fields)
+        if object_name == "Option":
+            success, message, record = _create_option(user, fields)
+        if object_name == "Tenant":
+            success, message, record = _create_tenant(user, fields)
+        if object_name == "Knowledge":
+            success, message, record = _create_knowledge(user, fields)
     except Exception as exc:
         logger.exception("Failed to create %s", object_name)
         return False, f"⚠️ Failed to create {object_name}: {exc}", {}
@@ -605,7 +680,7 @@ def _persist_record(user, object_name: str, fields: Dict[str, object]) -> Tuple[
 
 
 def _persist_update(user, object_name: str, identifier: str, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
-    if object_name not in SUPPORTED_OBJECTS:
+    if object_name not in UPDATE_DELETE_SUPPORTED_OBJECTS:
         return False, f"⚠️ Unsupported object '{object_name}'.", {}
     if not identifier:
         return False, f"⚠️ Missing identifier for {object_name}.", {}
@@ -635,7 +710,7 @@ def _persist_update(user, object_name: str, identifier: str, fields: Dict[str, o
 
 
 def _persist_delete(object_name: str, identifier: str) -> Tuple[bool, str, Dict[str, object]]:
-    if object_name not in SUPPORTED_OBJECTS:
+    if object_name not in UPDATE_DELETE_SUPPORTED_OBJECTS:
         return False, f"⚠️ Unsupported object '{object_name}'.", {}
     if not identifier:
         return False, f"⚠️ Missing identifier for {object_name}.", {}
@@ -952,8 +1027,167 @@ def _record_payload(object_name: str, record) -> Dict[str, object]:
         "label": getattr(record, "name", None)
         or combined_name
         or getattr(record, "email", None)
-        or getattr(record, "first_name", None),
+        or getattr(record, "first_name", None)
+        or str(record),
     }
+
+
+def _create_activity(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
+    activity_type = fields.get("activity_type")
+    if activity_type and activity_type not in dict(Activity.ACTIVITY_TYPE_CHOICES):
+        return (
+            False,
+            f"⚠️ Invalid activity_type '{activity_type}'. Allowed: {', '.join(dict(Activity.ACTIVITY_TYPE_CHOICES))}.",
+            {},
+        )
+
+    status = fields.get("status")
+    if status and status not in dict(Activity.STATUS_CHOICES):
+        return (
+            False,
+            f"⚠️ Invalid status '{status}'. Allowed: {', '.join(dict(Activity.STATUS_CHOICES))}.",
+            {},
+        )
+
+    lead_ref = _find_lead(fields.get("lead")) if fields.get("lead") else None
+    opp_ref = _find_opportunity(fields.get("opportunity")) if fields.get("opportunity") else None
+    contact_ref = _find_contact(fields.get("contact")) if fields.get("contact") else None
+
+    if fields.get("lead") and not lead_ref:
+        return False, f"⚠️ Lead '{fields.get('lead')}' not found for Activity.", {}
+    if fields.get("opportunity") and not opp_ref:
+        return False, f"⚠️ Opportunity '{fields.get('opportunity')}' not found for Activity.", {}
+    if fields.get("contact") and not contact_ref:
+        return False, f"⚠️ Contact '{fields.get('contact')}' not found for Activity.", {}
+
+    activity = Activity.objects.create(
+        subject=str(fields.get("subject")),
+        activity_type=activity_type or Activity.ACTIVITY_TYPE_CHOICES[0][0],
+        status=status or Activity.STATUS_CHOICES[0][0],
+        due_date=_coerce_date(fields.get("due_date")),
+        lead=lead_ref,
+        opportunity=opp_ref,
+        contact=contact_ref,
+        notes=fields.get("notes") or "",
+        created_by=user,
+    )
+
+    return True, "", activity
+
+
+def _create_contract(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
+    opportunity_ref = _find_opportunity(fields.get("opportunity"))
+    if not opportunity_ref:
+        return False, f"⚠️ Opportunity '{fields.get('opportunity')}' not found for Contract.", {}
+
+    status = fields.get("contract_status") or fields.get("status")
+    if status and status not in {"Active", "Expired", "Renewed"}:
+        return False, "⚠️ Invalid contract_status. Allowed: Active, Expired, Renewed.", {}
+
+    contract = Contract.objects.create(
+        opportunity=opportunity_ref,
+        start_date=_coerce_date(fields.get("start_date")),
+        end_date=_coerce_date(fields.get("end_date")),
+        contract_status=status or "Active",
+    )
+
+    return True, "", contract
+
+
+def _create_subscription(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
+    quote_ref = _find_quote(fields.get("quote"))
+    if not quote_ref:
+        return False, f"⚠️ Quote '{fields.get('quote')}' not found for Subscription.", {}
+
+    quote_line_ref = _find_quote_line(fields.get("quote_line"))
+    if not quote_line_ref:
+        return False, f"⚠️ QuoteLine '{fields.get('quote_line')}' not found for Subscription.", {}
+
+    product_ref = _find_product(fields.get("product"))
+    if not product_ref:
+        return False, f"⚠️ Product '{fields.get('product')}' not found for Subscription.", {}
+
+    contract_ref = _find_contract(fields.get("contract"))
+    if not contract_ref:
+        return False, f"⚠️ Contract '{fields.get('contract')}' not found for Subscription.", {}
+
+    billing_cycle = fields.get("billing_cycle") or fields.get("billing_frequency") or "monthly"
+    allowed_cycles = {"monthly", "quarterly", "annual", "one_time"}
+    if billing_cycle not in allowed_cycles:
+        return False, f"⚠️ Invalid billing_cycle '{billing_cycle}'. Allowed: {', '.join(sorted(allowed_cycles))}.", {}
+
+    subscription = Subscription.objects.create(
+        quote=quote_ref,
+        quote_line=quote_line_ref,
+        product=product_ref,
+        contract=contract_ref,
+        start_date=_coerce_date(fields.get("start_date")),
+        end_date=_coerce_date(fields.get("end_date")),
+        billing_cycle=billing_cycle,
+        price_per_cycle=_coerce_decimal(fields.get("price_per_cycle")),
+        term=int(fields.get("term")),
+    )
+
+    return True, "", subscription
+
+
+def _create_option(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
+    parent_product = _find_product(fields.get("parent_product"))
+    if not parent_product:
+        return False, f"⚠️ Parent product '{fields.get('parent_product')}' not found.", {}
+
+    product_option = _find_product(fields.get("product_option"))
+    if not product_option:
+        return False, f"⚠️ Product option '{fields.get('product_option')}' not found.", {}
+
+    option = Option.objects.create(
+        parent_product=parent_product,
+        product_option=product_option,
+        quantity=int(fields.get("quantity") or 1),
+        is_required=_coerce_bool(fields.get("is_required")),
+        min_quantity=int(fields.get("min_quantity") or 1),
+        max_quantity=int(fields.get("max_quantity") or 10),
+        default_selected=_coerce_bool(fields.get("default_selected") if fields.get("default_selected") is not None else True),
+        group_name=fields.get("group_name") or None,
+    )
+
+    return True, "", option
+
+
+def _create_tenant(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
+    # Extra safety: tenant creation is superuser-only.
+    if not getattr(user, "is_superuser", False):
+        return False, "⚠️ Only superusers can create Tenants via chat.", {}
+
+    tenant = Tenant.objects.create(
+        name=str(fields.get("name")),
+        domain=fields.get("domain") or None,
+        contact_email=fields.get("contact_email") or None,
+        phone_number=fields.get("phone_number") or None,
+        street_address=fields.get("street_address") or None,
+        city=fields.get("city") or None,
+        state=fields.get("state") or None,
+        version=fields.get("version") or Tenant._meta.get_field("version").default,
+        plan=fields.get("plan") or Tenant._meta.get_field("plan").default,
+    )
+
+    return True, "", tenant
+
+
+def _create_knowledge(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, object]]:
+    knowledge = Knowledge.objects.create(
+        title=str(fields.get("title")),
+        content_text=str(fields.get("content_text")),
+        video_url=fields.get("video_url") or None,
+        image_url=fields.get("image_url") or None,
+        tags=fields.get("tags") or "",
+        language=fields.get("language") or "en",
+        created_by=user,
+        updated_by=user,
+        is_active=_coerce_bool(fields.get("is_active") if fields.get("is_active") is not None else True),
+    )
+
+    return True, "", knowledge
 
 def _normalize_key(key: str) -> str:
     if key is None:
