@@ -2,124 +2,330 @@
 {% load static %}
 
 {% block content %}
-<script src="{% static 'js/agents/agent_main.js' %}" defer></script>
 <style>
-  .main-content {
-    height: auto !important;
-    min-height: 100vh;
-    overflow: auto !important;
+  :root {
+    --brand-accent: {{ tenant.primary_color|default:"#fc6a3d" }};
+    --brand-navy: #182740;
+    --panel-border: rgba(15, 23, 42, 0.08);
+    --panel-bg: #ffffff;
+    --page-bg: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   }
 
-  #content-area {
-    width: 78%;
+  .usage-page {
+    padding: 18px 6px 26px;
+    background: transparent;
   }
 
- #monthlyChart {
-  aspect-ratio: 2 / 1;
-  width: 100%;
-  max-height: 250px;
-}
-#userChart {
-  aspect-ratio: 2 / 1;
-  width: 100%;
-  max-height: 250px;
-}
-.tenants_usage{
-  padding: 2rem;
-  margin-top: 2rem;
-}
+  .usage-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 6px 0 18px;
+  }
 
-.usage-bar {
-  width: 100%;
-  height: 10px;
-  background-color: #e0e0e0;
-  border-radius: 9999px;
-  overflow: hidden;
-  margin-top: 0.5rem;
-}
+  .usage-header__title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: var(--brand-navy);
+    letter-spacing: -0.02em;
+  }
 
-.usage-bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #fc6a3d, #ff8f5a);
-  border-radius: 9999px;
-  transition: width 0.3s ease;
-}
+  .usage-header__subtitle {
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 0.98rem;
+  }
+
+  .usage-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    align-items: start;
+  }
+
+  .panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.06);
+  }
+
+  .panel__title {
+    margin: 0 0 4px;
+    font-size: 1.12rem;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.01em;
+  }
+
+  .panel__subtitle {
+    margin: 0 0 14px;
+    color: #64748b;
+    font-size: 0.92rem;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    border-radius: 999px;
+    padding: 6px 10px;
+    background: rgba(15, 23, 42, 0.06);
+    color: #334155;
+    white-space: nowrap;
+  }
+
+  .kv {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .kv-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid var(--panel-border);
+    background: #f8fafc;
+  }
+
+  .kv-row__key {
+    color: #334155;
+    font-weight: 800;
+    font-size: 0.88rem;
+  }
+
+  .kv-row__val {
+    color: #0f172a;
+    font-weight: 800;
+    font-size: 0.88rem;
+    text-align: right;
+  }
+
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid var(--panel-border);
+    background: #ffffff;
+  }
+
+  .table th,
+  .table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    font-size: 0.92rem;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  .table thead th {
+    background: #f8fafc;
+    font-weight: 900;
+    color: #0f172a;
+  }
+
+  .table tbody tr:hover {
+    background: rgba(24, 39, 64, 0.03);
+  }
+
+  .usage-bar {
+    width: 100%;
+    height: 10px;
+    background-color: rgba(148, 163, 184, 0.35);
+    border-radius: 9999px;
+    overflow: hidden;
+    margin-top: 0.5rem;
+  }
+
+  .usage-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--brand-accent), #ff8f5a);
+    border-radius: 9999px;
+    transition: width 220ms ease;
+  }
+
+  .muted {
+    color: #64748b;
+    font-size: 0.85rem;
+    line-height: 1.3;
+  }
+
+  .good {
+    color: #16a34a;
+    font-weight: 800;
+  }
+
+  .bad {
+    color: #dc2626;
+    font-weight: 900;
+  }
+
+  .chart-card {
+    margin-top: 18px;
+  }
+
+  #monthlyChart,
+  #userChart {
+    aspect-ratio: 2 / 1;
+    width: 100%;
+    max-height: 250px;
+  }
+
+  @media (max-width: 992px) {
+    .usage-grid {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>
 
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-    <!-- Limit Summary -->
-    <div class="bg-white p-4 rounded shadow">
-      <h3 class="text-xl font-semibold mb-2">Limit Summary</h3>
-      <p><strong>Monthly Limit:</strong> {{ limit }}</p>
-      <p><strong>Current Usage (This Month):</strong> {{ monthly_count }}</p>
-      <p><strong>Overflow:</strong>
-        {% if overflow > 0 %}
-          <span class="text-red-600 font-bold">{{ overflow }}</span>
-        {% else %}
-          <span class="text-green-600 font-semibold">None</span>
-        {% endif %}
-      </p>
+  <div class="usage-page">
+    <div class="usage-header">
+      <div>
+        <h1 class="usage-header__title">
+          <i class="material-icons" aria-hidden="true">receipt_long</i>
+          Usage
+        </h1>
+        <p class="usage-header__subtitle">
+          Monitor action usage and storage.
+        </p>
+      </div>
     </div>
 
-    <!-- Top 5 Actions Table -->
-    <div class="bg-white p-4 rounded shadow">
-      <h3 class="text-xl font-semibold mb-2">Top 5 Most Used Actions</h3>
-      <table class="table-auto w-full border">
-        <thead>
-          <tr class="bg-gray-100">
-            <th class="px-4 py-2 text-left">#</th>
-            <th class="px-4 py-2 text-left">Action</th>
-            <th class="px-4 py-2 text-left">Count</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for action in top_actions %}
-          <tr>
-            <td class="border px-4 py-2">{{ forloop.counter }}</td>
-            <td class="border px-4 py-2">{{ action.action }}</td>
-            <td class="border px-4 py-2">{{ action.count }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    <div class="bg-white p-4 rounded shadow">
-      <h3 class="text-xl font-semibold mb-2">Database Usage</h3>
-      <p><strong>Total Storage:</strong> {{ storage_mb }} MB</p>
-      <p class="text-sm text-gray-600">Combined size of records and stored documents for this tenant.</p>
-
-      <div class="mt-4">
-        <p class="text-sm font-semibold text-gray-700">Records (limit 10 MB)</p>
-        <div class="usage-bar">
-          <div class="usage-bar-fill" style="width: {{ records_percent }}%;"></div>
+    <div class="usage-grid">
+      <!-- Limit Summary -->
+      <div class="panel">
+        <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:10px;">
+          <div>
+            <h2 class="panel__title">Limit Summary</h2>
+            <p class="panel__subtitle">Monthly actions, current usage, and overflow.</p>
+          </div>
+          <span class="pill">
+            <span class="material-icons" style="font-size:18px;">speed</span>
+            Actions
+          </span>
         </div>
-        <p class="text-xs text-gray-600 mt-1">{{ records_mb }} MB of 10 MB</p>
+        <div class="kv">
+          <div class="kv-row">
+            <span class="kv-row__key">Monthly Limit</span>
+            <span class="kv-row__val">{{ limit }}</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-row__key">Usage (This Month)</span>
+            <span class="kv-row__val">{{ monthly_count }}</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-row__key">Overflow</span>
+            <span class="kv-row__val">
+              {% if overflow > 0 %}
+                <span class="bad">{{ overflow }}</span>
+              {% else %}
+                <span class="good">None</span>
+              {% endif %}
+            </span>
+          </div>
+        </div>
       </div>
 
-      <div class="mt-4">
-        <p class="text-sm font-semibold text-gray-700">Documents (limit 50 MB)</p>
-        <div class="usage-bar">
-          <div class="usage-bar-fill" style="width: {{ documents_percent }}%;"></div>
+      <!-- Top 5 Actions Table -->
+      <div class="panel">
+        <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:10px;">
+          <div>
+            <h2 class="panel__title">Top 5 Most Used Actions</h2>
+            <p class="panel__subtitle">Most common actions across the tenant.</p>
+          </div>
+          <span class="pill">
+            <span class="material-icons" style="font-size:18px;">insights</span>
+            Top
+          </span>
         </div>
-        <p class="text-xs text-gray-600 mt-1">{{ files_mb }} MB of 50 MB</p>
+        <table class="table">
+          <thead>
+            <tr>
+              <th style="width:60px;">#</th>
+              <th>Action</th>
+              <th style="width:110px;">Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for action in top_actions %}
+              <tr>
+                <td>{{ forloop.counter }}</td>
+                <td>{{ action.action }}</td>
+                <td>{{ action.count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
 
-      <a href="{% url 'cpq:usage_documents' %}" class="btn-flat" style="margin-top: 16px; padding-left: 0;">
-        <i class="material-icons left">cloud</i>Manage Documents
-      </a>
+      <!-- Storage -->
+      <div class="panel">
+        <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:10px;">
+          <div>
+            <h2 class="panel__title">Database Usage</h2>
+            <p class="panel__subtitle">Combined record + document storage for this tenant.</p>
+          </div>
+          <span class="pill">
+            <span class="material-icons" style="font-size:18px;">storage</span>
+            Storage
+          </span>
+        </div>
+
+        <div class="kv" style="margin-bottom: 12px;">
+          <div class="kv-row">
+            <span class="kv-row__key">Total Storage</span>
+            <span class="kv-row__val">{{ storage_mb }} MB</span>
+          </div>
+        </div>
+        <p class="muted">Combined size of records and stored documents for this tenant.</p>
+
+        <div style="margin-top: 14px;">
+          <p class="muted" style="font-weight:800; color:#334155;">Records (limit 10 MB)</p>
+          <div class="usage-bar">
+            <div class="usage-bar-fill" style="width: {{ records_percent }}%;"></div>
+          </div>
+          <p class="muted" style="margin-top:6px;">{{ records_mb }} MB of 10 MB</p>
+        </div>
+
+        <div style="margin-top: 14px;">
+          <p class="muted" style="font-weight:800; color:#334155;">Documents (limit 50 MB)</p>
+          <div class="usage-bar">
+            <div class="usage-bar-fill" style="width: {{ documents_percent }}%;"></div>
+          </div>
+          <p class="muted" style="margin-top:6px;">{{ files_mb }} MB of 50 MB</p>
+        </div>
+
+        <a href="{% url 'cpq:usage_documents' %}" class="btn-flat" style="margin-top: 14px; padding-left: 0;">
+          <i class="material-icons left">cloud</i>Manage Documents
+        </a>
+      </div>
     </div>
-  </div>
 
-  <!-- Charts -->
-  <div class="bg-white p-4 rounded shadow my-6">
-    <h3 class="text-xl font-semibold mb-4">Total Actions by Month</h3>
-    <canvas id="monthlyChart"></canvas>
-  </div>
+    <!-- Charts (unchanged) -->
+    <div class="panel chart-card">
+      <h2 class="panel__title">Total Actions by Month</h2>
+      <p class="panel__subtitle">Monthly action volume.</p>
+      <canvas id="monthlyChart"></canvas>
+    </div>
 
-  <div class="bg-white p-4 rounded shadow">
-    <h3 class="text-xl font-semibold mb-4">Actions by User</h3>
-    <canvas id="userChart"></canvas>
+    <div class="panel chart-card">
+      <h2 class="panel__title">Actions by User</h2>
+      <p class="panel__subtitle">Action volume per user.</p>
+      <canvas id="userChart"></canvas>
+    </div>
   </div>
   
 <script>

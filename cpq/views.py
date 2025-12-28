@@ -67,7 +67,10 @@ from cpq.permissions import get_custom_object_perms, perms_to_template_dict, use
 from hubspot.views import sync_opportunity_to_hubspot
 
 # Agents General Helpers
-from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
+from agents.utils.quote_agent.general_helpers import (
+    restrict_quote_document_settings_to_line_item_object_types,
+    set_custom_fields_into_quote_document_settings,
+)
 
 
 def _estimate_queryset_size(qs, field_names=None, chunk_size=250):
@@ -1052,8 +1055,10 @@ def get_document_template(request):
             omitted_fields=default_omitted_fields_for_quote_document_settings()
         )
 
-    # Hardcore for now
-    set_custom_fields_into_quote_document_settings(["Product", "Quote"])
+    # Line items: only QuoteLine standard + QuoteLine custom fields.
+    # (Prevents Product.* / Quote.* custom fields from showing in Line Item columns UI.)
+    restrict_quote_document_settings_to_line_item_object_types(["QuoteLine"])
+    set_custom_fields_into_quote_document_settings(["QuoteLine"])
     document_settings.refresh_from_db()
 
     return render(request, 'document_template.html', {
@@ -1143,8 +1148,13 @@ def manage_notifications_view(request):
             "slug": slugify(native_key) or native_key.lower(),
         })
 
+    has_any_alerts = any(group["alerts"] for group in alert_groups)
+    total_alerts = sum(len(group["alerts"]) for group in alert_groups)
+
     return render(request, 'manage_notifications.html', {
-        'alert_groups': alert_groups
+        "alert_groups": alert_groups,
+        "has_any_alerts": has_any_alerts,
+        "total_alerts": total_alerts,
     })
 
 def edit_notification(request, alert_name):

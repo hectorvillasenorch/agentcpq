@@ -1,53 +1,77 @@
 {% extends "base.html" %}
 {% load static %}
 {% block content %}
-<script src="{% static 'js/agents/agent_main.js' %}" defer></script>
 <style>
-  .main-content {
-    height: auto !important;
-    min-height: 100vh;
-    overflow: auto !important;
+  /* Match CPQ admin page spacing; rely on global #content-area padding. */
+
+  .doc-panel {
+    padding: 22px;
   }
 
-  #content-area {
-    width: 78%;
+  .doc-section-title {
+    margin: 18px 0 12px;
+    font-family: "Euclid Circular A", sans-serif;
+    font-weight: 900;
+    color: #0f172a;
+    letter-spacing: -0.01em;
   }
 
-  input:hover,
-  textarea:hover,
-  select:hover {
-    background-color: transparent !important;
+  .doc-section-title:first-of-type {
+    margin-top: 0;
   }
 
-  input,
-  textarea,
-  select {
+  .doc-group {
+    margin: 10px 0 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .doc-group .cpq-pill {
+    background: rgba(15, 23, 42, 0.06);
+  }
+
+  /* Use correct cursors */
+  .doc-panel input[type="text"],
+  .doc-panel input[type="number"],
+  .doc-panel textarea {
+    cursor: text;
+  }
+
+  .doc-panel input[type="checkbox"],
+  .doc-panel button,
+  .doc-panel a {
     cursor: pointer;
   }
-  input:focus,
-textarea:focus,
-select:focus {
-  border-bottom: 1px solid #fc6a3d !important;
-  box-shadow: 0 1px 0 0 #fc6a3d !important;
-}
 
-input:focus + label,
-textarea:focus + label,
-select:focus + label {
-  color: #fc6a3d !important;
-}
+  .field-list.collection {
+    border: none;
+    border-radius: 16px;
+    overflow: visible;
+    margin: 10px 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: transparent;
+  }
 
-.field-list .collection-item {
-  background-color: #f2f2f2;
-  border: 1px solid #ddd;
-  font-family: 'Roboto', sans-serif;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  cursor: move;
-  line-height: 1.5;
-}
+  .field-list .collection-item {
+    background: #f8fafc;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 14px;
+    font-family: 'Roboto', sans-serif;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    cursor: move;
+    line-height: 1.5;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+  }
+
+  .field-list .collection-item:hover {
+    background: #ffffff;
+  }
 
 .drag-icon {
   color: #9e9e9e;
@@ -65,11 +89,11 @@ select:focus + label {
   transition: background-color 0.3s ease;
 }
 
-/* Change checkboxes color when it is activated */
-input[type="checkbox"]:checked + span:before {
-  border-bottom: 2px solid {{ company.secondary_color }} !important;
-  border-right: 2px solid {{ company.secondary_color }} !important;
-}
+  /* Change checkboxes color when it is activated */
+  input[type="checkbox"]:checked + span:before {
+    border-bottom: 2px solid {{ company.secondary_color }} !important;
+    border-right: 2px solid {{ company.secondary_color }} !important;
+  }
 
 /* Switch color when it is activated */
 #template_style_switch:checked + .lever {
@@ -95,61 +119,36 @@ input[type="checkbox"]:checked + span:before {
   background-color: {{ company.secondary_color }};
 }
 
-/* Change the span color for checkbox */
-input[type="checkbox"] + span {
-  color: #212121 !important;  /* o el color que prefieras */
-}
-.container{
-  padding: 24px;
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.08);
-  max-width: none !important;
-  width: 100%;
-  border: 1px solid #e0e0e0;
-}
-.card-panel {
-  padding: 24px;
-  margin: .5rem 0 1rem 0;
-  border-radius: 10px;
-  background-color: #fff;
-  border: 1px solid #e0e0e0;
-  box-shadow: none !important;
-  overflow: hidden !important;
-  max-height: none !important;
-  height: auto !important;
-}
- .agent-limits{
-  padding: 24px;
-  margin: .5rem 0 1rem 0;
-  border-radius: 10px;
-  border: 1px solid #e0e0e0;
-  box-shadow: none !important;
-}
+  /* Change the span color for checkbox */
+  input[type="checkbox"] + span {
+    color: #212121 !important;
+  }
+
+  .agent-limits {
+    margin-top: 18px;
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: #ffffff;
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.06);
+  }
 .btn, .btn-flat, .btn-small, .btn-large {
         box-shadow: none !important;
       }
-#save-button {
-  border-radius: 20px;
-  font-weight: 500;
-  font-size: 14px;
-  padding: 10px 18px;
-  height: 42px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  box-shadow: none;
-  line-height: 1;
-  width: 169px;
-  background-color:#182740 !important;
-}
-.orange.darken-3 {
+  #save-button {
+    border-radius: 14px;
+    font-weight: 800;
+    font-size: 14px;
+    padding: 0 18px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: none;
+    line-height: 1;
     background-color: #182740 !important;
-}
-input[type="checkbox"]:checked + span:before{
-    border-bottom: 2px solid #fc6a3d !important;
-    border-right: 2px solid #fc6a3d !important;
-}
+    letter-spacing: 0.01em;
+  }
 
 
 /* Heading size + spacing */
@@ -176,18 +175,29 @@ input[type="checkbox"]:checked + span:before{
 
 </style>
 
-<div class="container">
-  <h4 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
-    <i class="material-icons left" style="vertical-align: middle;">note_alt</i>
-    Document Management
-  </h4>
+  <div class="cpq-page">
+    <div class="cpq-page-header">
+      <div>
+        <h1 class="cpq-page-title">
+          <i class="material-icons" aria-hidden="true">note_alt</i>
+          Document Management
+        </h1>
+        <p class="cpq-page-subtitle">
+          Configure the Quote document template. Field options and behaviors are unchanged.
+        </p>
+      </div>
+      <span class="cpq-pill">
+        <span class="material-icons" style="font-size:18px;">description</span>
+        Template
+      </span>
+    </div>
 
-  <div class="card-panel white z-depth-1">
+  <div class="cpq-panel doc-panel">
     {% if company %}
     <form method="post" action="{% url 'cpq:get_document_template' %}" enctype="multipart/form-data">
       {% csrf_token %}
 
-      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Template Design Style</h6>
+      <h2 class="doc-section-title">Template Design Style</h2>
 
       <div class="row" style="margin-bottom: 2rem;">
         <div class="col s12">
@@ -202,10 +212,16 @@ input[type="checkbox"]:checked + span:before{
         </div>
       </div>
 
-      <h6 class="tenant-title left-align">Tenant Information</h6>
+      <h2 class="doc-section-title">Information to Display</h2>
+      <p class="muted" style="margin-top:-6px; margin-bottom: 10px;">
+        Choose what appears in the PDF header, totals, and line items.
+      </p>
 
-      <!-- 2️⃣  Grid of check-boxes -->
-      <div class="row tenant-info">
+      <div class="doc-group">
+        <span class="cpq-pill"><span class="material-icons" style="font-size:18px;">domain</span>Tenant</span>
+      </div>
+
+      <div class="row tenant-info" style="margin-bottom: 10px;">
         <!-- stacks 1-per-row on phones, 2-per-row on small tablets, 3-per-row on ≥992 px -->
         <div class="col s12 m6 l4">
           <label class="checkbox-label">
@@ -256,11 +272,11 @@ input[type="checkbox"]:checked + span:before{
         </div>
       </div>
 
-      <!-- 1️⃣  Heading -->
-        <h6 class="section-title left-align">Account Information</h6>
+      <div class="doc-group">
+        <span class="cpq-pill"><span class="material-icons" style="font-size:18px;">account_circle</span>Account</span>
+      </div>
 
-        <!-- 2️⃣  Responsive grid of check-boxes -->
-        <div class="row account-info">
+      <div class="row account-info" style="margin-bottom: 10px;">
           <div class="col s12 m6 l4">
             <label class="checkbox-label">
               <input type="checkbox" name="show_account_name"
@@ -284,13 +300,14 @@ input[type="checkbox"]:checked + span:before{
               <span>Phone</span>
             </label>
           </div>
-        </div>
 
-      <!-- 1️⃣  Heading -->
-      <h6 class="section-title left-align">Quote Information</h6>
+      </div>
 
-      <!-- 2️⃣  Responsive grid of check-boxes -->
-      <div class="row quote-info">
+      <div class="doc-group">
+        <span class="cpq-pill"><span class="material-icons" style="font-size:18px;">request_quote</span>Quote</span>
+      </div>
+
+      <div class="row quote-info" style="margin-bottom: 10px;">
         <div class="col s12 m6 l4">
           <label class="checkbox-label">
             <input type="checkbox" name="show_quote_opportunity"
@@ -332,83 +349,42 @@ input[type="checkbox"]:checked + span:before{
         </div>
       </div>
 
-      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Line Item Information</h6>
+      <div class="doc-group">
+        <span class="cpq-pill"><span class="material-icons" style="font-size:18px;">format_list_bulleted</span>Line Items</span>
+      </div>
 
-      <div class="row">
-
-        <div class="col s12">
-          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Rendered Fields (max 6)</h6>
-          <ul id="visible-fields" class="collection field-list">
-            {% for field in rendered_fields %}
-              <li class="collection-item"><i class="material-icons drag-icon">drag_indicator</i> {{ field }}</li>
-            {% endfor %}
-          </ul>
+      <div class="row" style="margin-bottom: 10px;">
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_line_discount"
+                  {% if settings.show_line_discount %}checked{% endif %} />
+            <span>Quote&nbsp;Line&nbsp;Discount</span>
+          </label>
         </div>
 
-        <div class="col s12">
-          <h6 style="font-family: 'Roboto', sans-serif; font-weight: bold;">Omitted Fields</h6>
-          <ul id="available-fields" class="collection field-list">
-            {% for field in omitted_fields %}
-              <li class="collection-item"><i class="material-icons drag-icon">drag_indicator</i> {{ field }}</li>
-            {% endfor %}
-          </ul>
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_subscription_term"
+                  {% if settings.show_subscription_term %}checked{% endif %} />
+            <span>Term&nbsp;(Subscriptions)</span>
+          </label>
         </div>
 
-        <!-- Description Detail Level -->
-
-          <div class="col s12">
-            <h6 class="option-title">Description Detail Level</h6>
-
-            <div class="switch detail-switch">
-              <label>
-                Short
-                <input type="checkbox"
-                      name="description_detail_level"
-                      id="description_detail_level_switch"
-                      {% if settings.line_description_detail_level == 'long' %}checked{% endif %} />
-                <span class="lever"></span>
-                Long
-              </label>
-            </div>
-          </div>
-
-
-        <!--  Responsive grid: Show Discount / Term / Sign  -->
-        <div class="row line-display-options">
-          <div class="col s12 m6 l4">
-            <h6 class="option-title">Show Discount</h6>
-            <label class="checkbox-label">
-              <input type="checkbox" name="show_line_discount"
-                    {% if settings.show_line_discount %}checked{% endif %} />
-              <span>Quote&nbsp;Line&nbsp;Discount</span>
-            </label>
-          </div>
-
-          <div class="col s12 m6 l4">
-            <h6 class="option-title">Show Term&nbsp;(Subscriptions)</h6>
-            <label class="checkbox-label">
-              <input type="checkbox" name="show_subscription_term"
-                    {% if settings.show_subscription_term %}checked{% endif %} />
-              <span>Term</span>
-            </label>
-          </div>
-
-          <div class="col s12 m6 l4">
-            <h6 class="option-title">Show Sign</h6>
-            <label class="checkbox-label">
-              <input type="checkbox" name="show_sign"
-                    {% if settings.show_sign %}checked{% endif %} />
-              <span>Sign</span>
-            </label>
-          </div>
+        <div class="col s12 m6 l4">
+          <label class="checkbox-label">
+            <input type="checkbox" name="show_sign"
+                  {% if settings.show_sign %}checked{% endif %} />
+            <span>Sign</span>
+          </label>
         </div>
       </div>
 
-      <!-- 1️⃣  Grid of check-boxes -->
-      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Tax Information</h6>
+      <div class="doc-group" style="margin-top: 4px;">
+        <span class="cpq-pill"><span class="material-icons" style="font-size:18px;">percent</span>Tax</span>
+      </div>
 
-      <!-- 2️⃣  Grid of check-boxes -->
       <div class="row">
+
         <div class="col s12">
           <div class="switch detail-switch">
             <label>
@@ -455,16 +431,58 @@ input[type="checkbox"]:checked + span:before{
         </div>
       </div>
 
-      <h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">Terms and Conditions</h6>
+      <h2 class="doc-section-title">Fields to Display</h2>
+      <p class="muted" style="margin-top:-6px; margin-bottom: 10px;">
+        Drag and drop to choose which columns appear for each line item (max 6).
+      </p>
 
-      <div class="input-field">
-        <textarea id="terms_conditions" name="terms_conditions" class="materialize-textarea">{{ settings.terms_and_conditions }}</textarea>
-        <label for="terms_conditions">Terms and Conditions</label>
+      <div class="row">
+        <div class="col s12 l6">
+          <h6 style="font-family: 'Roboto', sans-serif; font-weight: 800;">Rendered Fields (max 6)</h6>
+          <ul id="visible-fields" class="collection field-list">
+            {% for field in rendered_fields %}
+              <li class="collection-item"><i class="material-icons drag-icon">drag_indicator</i> {{ field }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <div class="col s12 l6">
+          <h6 style="font-family: 'Roboto', sans-serif; font-weight: 800;">Omitted Fields</h6>
+          <ul id="available-fields" class="collection field-list">
+            {% for field in omitted_fields %}
+              <li class="collection-item"><i class="material-icons drag-icon">drag_indicator</i> {{ field }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <div class="col s12">
+          <h6 class="option-title" style="margin-top: 12px;">Description Detail Level</h6>
+          <div class="switch detail-switch">
+            <label>
+              Short
+              <input type="checkbox"
+                    name="description_detail_level"
+                    id="description_detail_level_switch"
+                    {% if settings.line_description_detail_level == 'long' %}checked{% endif %} />
+              <span class="lever"></span>
+              Long
+            </label>
+          </div>
+        </div>
       </div>
 
-      <script>
-        document.addEventListener("DOMContentLoaded", function () {
-          const MAX_VISIBLE = 6;
+	      <h2 class="doc-section-title">Terms and Conditions</h2>
+	      <label for="terms_conditions" class="cpq-field-label">Terms and Conditions</label>
+	      <textarea
+	        id="terms_conditions"
+	        name="terms_conditions"
+	        class="cpq-textarea"
+	        rows="12"
+	      >{{ settings.terms_and_conditions }}</textarea>
+	
+	      <script>
+	        document.addEventListener("DOMContentLoaded", function () {
+	          const MAX_VISIBLE = 6;
 
           const visible = document.getElementById("visible-fields");
           const available = document.getElementById("available-fields");
@@ -536,7 +554,7 @@ input[type="checkbox"]:checked + span:before{
       <input type="hidden" name="omitted_fields" id="omitted_fields_input" />
 
       <div class="right-align">
-        <button type="submit" id="save-button" class="btn orange darken-2">
+        <button type="submit" id="save-button" class="btn">
           <i class="material-icons left">save</i> Save
         </button>
       </div>

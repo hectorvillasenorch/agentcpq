@@ -2,16 +2,138 @@
 {% block title %}Create {{ rule_type|title }} Rule - AgentCPQ{% endblock %}
 
 {% block content %}
-<h2 class="text-2xl font-semibold mb-4">Rules Management</h2>
+<style>
+  .rule-form-title {
+    color: #182740;
+    font-family: "Euclid Circular A", sans-serif;
+    font-weight: 900;
+    letter-spacing: -0.01em;
+  }
 
-<div class="card-panel white" style="border:1px solid #e0e0e0;border-radius:10px;">
-  <div class="max-w-4xl mx-auto py-10">
+  /* Page-scoped form styling (avoid Materialize underline/label behaviors). */
+  .rule-form label {
+    position: static !important;
+    transform: none !important;
+    display: block;
+    margin: 0 0 8px;
+    font-family: "Euclid Circular A", sans-serif;
+    font-weight: 800;
+    font-size: 0.9rem;
+    color: #0f172a;
+  }
 
-    <h4 class="text-center text-xl font-semibold text-orange-600 mb-6">
+  .rule-form input[type="text"],
+  .rule-form input[type="number"],
+  .rule-form input[type="email"],
+  .rule-form input[type="date"],
+  .rule-form select,
+  .rule-form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 14px;
+    font-size: 0.95rem;
+    border: 1px solid rgba(148, 163, 184, 0.7) !important;
+    border-radius: 12px;
+    background: #f8fafc !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.7) !important; /* override Materialize underline */
+    transition: border-color 60ms linear, box-shadow 60ms linear, background-color 60ms linear !important;
+  }
+
+  .rule-form textarea {
+    min-height: 110px;
+    resize: vertical;
+  }
+
+  .rule-form select {
+    display: block !important; /* Materialize CSS hides plain <select> by default */
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, #182740 50%),
+      linear-gradient(135deg, #182740 50%, transparent 50%);
+    background-position: calc(100% - 28px) 50%, calc(100% - 18px) 50%;
+    background-size: 10px 10px, 10px 10px;
+    background-repeat: no-repeat;
+    padding-right: 48px;
+  }
+
+  .rule-form input:focus,
+  .rule-form select:focus,
+  .rule-form textarea:focus {
+    outline: none;
+    border-color: #182740 !important;
+    box-shadow: 0 0 0 3px rgba(24, 39, 64, 0.18) !important;
+    background: #ffffff !important;
+  }
+
+  .rule-form .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 8px;
+  }
+
+  .rule-form .checkbox-row input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0 !important;
+    accent-color: #182740;
+  }
+
+  .rule-card {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 16px;
+    padding: 16px;
+    background: #f8fafc;
+  }
+
+  .rule-actions a {
+    color: #475569;
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  .rule-actions a:hover {
+    color: #182740;
+  }
+
+  .rule-actions .rule-save {
+    background: #182740;
+    color: #ffffff;
+    border-radius: 12px;
+    padding: 0 18px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+  }
+</style>
+
+<div class="cpq-page">
+  <div class="cpq-page-header">
+    <div>
+      <h1 class="cpq-page-title">
+        <i class="material-icons" aria-hidden="true">rule</i>
+        Rules Management
+      </h1>
+      <p class="cpq-page-subtitle">
+        Create a new {{ rule_type|title }} rule. Fields and behavior are unchanged.
+      </p>
+    </div>
+    <span class="cpq-pill">
+      <span class="material-icons" style="font-size:18px;">add</span>
+      Create
+    </span>
+  </div>
+
+  <div class="cpq-panel">
+    <h2 class="cpq-panel-title rule-form-title">
       Create New {{ rule_type|title }} Rule
-    </h4>
+    </h2>
+    <p class="cpq-panel-subtitle">Define the rule metadata and (for validation rules) the conditions.</p>
 
-    <form method="post" action="" class="bg-white shadow rounded-2xl p-8 space-y-6">
+    <form method="post" action="" class="rule-form space-y-6">
       {% csrf_token %}
       <!-- Para el form -->
       {% if form.errors %}
@@ -65,7 +187,7 @@
         </div>
 
         <!-- Active -->
-        <div class="flex items-center space-x-2">
+        <div class="checkbox-row">
           {{ form.active }}
           <span class="text-sm">Active</span>
         </div>
@@ -86,7 +208,7 @@
         <div class="space-y-4">
           {{ formset.management_form }}
           {% for form in formset.forms %}
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border rounded-md">
+            <div class="rule-card grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 {{ form.field_name.label_tag }}
                 {{ form.field_name }}
@@ -104,22 +226,19 @@
         </div>
       {% endif %}
 
-      <div class="flex justify-end space-x-4 pt-6">
-        <a href="{% url 'cpq:business_rules' %}" class="px-4 py-2 text-gray-600">Cancel</a>
-        <button type="submit" class="px-6 py-2 bg-orange-600 text-white rounded-lg">
+      <div class="rule-actions flex justify-end space-x-4 pt-6">
+        <a href="{% url 'cpq:business_rules' %}" class="px-2 py-2">Cancel</a>
+        <button type="submit" class="rule-save">
           Save
         </button>
       </div>
     </form>
-  </div>
+</div>
 </div>
 
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    const selects = document.querySelectorAll('select');
-    M.FormSelect.init(selects);
-    const labels = document.querySelectorAll('label');
-    labels.forEach(label => label.classList.add('active'));
+    // No Materialize initialization here; native selects render with page-scoped styles.
   });
 </script>
 
@@ -142,11 +261,11 @@ document.addEventListener('DOMContentLoaded', function() {
   const targetSelect = document.querySelector('select[name="target_type"]');
   const fieldNameSelects = document.querySelectorAll('select[name$="field_name"]');
 
-  function updateFieldNameOptions(targetType) {
-    const fields = fieldsByTarget[targetType] || [];
-    fieldNameSelects.forEach(select => {
-      // Guarda el valor actual para intentar restaurarlo luego
-      const currentValue = select.value;
+	  function updateFieldNameOptions(targetType) {
+	    const fields = fieldsByTarget[targetType] || [];
+	    fieldNameSelects.forEach(select => {
+	      // Guarda el valor actual para intentar restaurarlo luego
+	      const currentValue = select.value;
 
       // Limpia opciones actuales
       select.innerHTML = '';
@@ -160,16 +279,11 @@ document.addEventListener('DOMContentLoaded', function() {
       });
 
       // Intenta restaurar el valor anterior si existe
-      if (fields.some(([value]) => value === currentValue)) {
-        select.value = currentValue;
-      }
-    });
-
-    // Si usas Materialize, re-inicializa los selects para que se refresquen visualmente
-    if (window.M) {
-      M.FormSelect.init(fieldNameSelects);
-    }
-  }
+	      if (fields.some(([value]) => value === currentValue)) {
+	        select.value = currentValue;
+	      }
+	    });
+	  }
 
   // Inicializa cuando carga la página
   updateFieldNameOptions(targetSelect.value);

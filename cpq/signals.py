@@ -4,7 +4,10 @@ from django.contrib.auth import get_user_model
 from cpq.models import Lead,Quote,Tenant,Quote,QuoteDocumentSettings, Account, Opportunity, CustomObject, CustomField, CustomRecord, CustomFieldValue
 from hubspot.views import sync_quote_to_hubspot
 from .custom_objects.custom_objects import set_custom_indentifier
-from agents.utils.quote_agent.general_helpers import set_custom_fields_into_quote_document_settings
+from agents.utils.quote_agent.general_helpers import (
+    restrict_quote_document_settings_to_line_item_object_types,
+    set_custom_fields_into_quote_document_settings,
+)
 import logging, threading
 
 from cpq.action_trigger.virtual_events import get_collector, schedule_flush_on_commit
@@ -41,11 +44,13 @@ def handle_primary_quote_sync(sender, instance, **kwargs):
 
 @receiver(post_save, sender=CustomField)
 def set_custom_fields_to_quote_template(sender, instance, **kwargs):
-    set_custom_fields_into_quote_document_settings(["Product", "Quote"])
+    restrict_quote_document_settings_to_line_item_object_types(["QuoteLine"])
+    set_custom_fields_into_quote_document_settings(["QuoteLine"])
 
 @receiver(post_delete, sender=CustomField)
 def update_quote_template_after_delete(sender, instance, **kwargs):
-    set_custom_fields_into_quote_document_settings(["Product", "Quote"])
+    restrict_quote_document_settings_to_line_item_object_types(["QuoteLine"])
+    set_custom_fields_into_quote_document_settings(["QuoteLine"])
 
 # ---------------- VIRTUAL EVENTS ------------------------------
 

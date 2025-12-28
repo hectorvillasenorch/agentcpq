@@ -425,6 +425,34 @@ def set_custom_fields_into_quote_document_settings(object_types: list):
     quote_document_settings.omitted_fields = omitted_fields
     quote_document_settings.save()
 
+def restrict_quote_document_settings_to_line_item_object_types(object_types: list[str]) -> None:
+    """
+    Mantiene en QuoteDocumentSettings.rendered_fields/omitted_fields solamente:
+      - Campos estándar (sin prefijo "Model.")
+      - Campos custom con prefijo permitido (e.g. "QuoteLine.<Label>")
+
+    Esto evita que el UI de Manage Document muestre campos custom de otros modelos
+    (por ejemplo Product.* o Quote.*) en la sección de Line Item columns.
+    """
+    quote_document_settings = QuoteDocumentSettings.objects.first()
+    if not quote_document_settings:
+        return
+
+    allowed_prefixes = tuple(f"{ot}." for ot in object_types)
+
+    def keep_field(field: str) -> bool:
+        if "." not in field:
+            return True
+        return field.startswith(allowed_prefixes)
+
+    rendered_fields = [f for f in (quote_document_settings.rendered_fields or []) if keep_field(f)]
+    omitted_fields = [f for f in (quote_document_settings.omitted_fields or []) if keep_field(f)]
+
+    if rendered_fields != quote_document_settings.rendered_fields or omitted_fields != quote_document_settings.omitted_fields:
+        quote_document_settings.rendered_fields = rendered_fields
+        quote_document_settings.omitted_fields = omitted_fields
+        quote_document_settings.save(update_fields=["rendered_fields", "omitted_fields"])
+
 
 
 def get_document_pdf(quote, session_data=None):

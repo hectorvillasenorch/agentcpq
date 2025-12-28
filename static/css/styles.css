@@ -18,7 +18,7 @@ h2{
   font-weight: 700;
   font-style: normal;
   color: #182740 !important;
-  font-size: 2.3rem !important;
+  font-size: 1.5rem !important;
 }
 h4{
   font-family: "Euclid Circular A", sans-serif !important;
@@ -502,11 +502,107 @@ body.email-alert-page .main-content {
   display: flex;
   flex-direction: column;
   /* background-color: white; */
-  padding: 0 20px;
-  width: 95%;
-  margin: 2px auto;
+  padding: 16px 24px;
+  width: 100%;
+  margin: 0 auto;
   /* overflow-y: auto; */
   border-radius: 5px;
+  box-sizing: border-box;
+}
+
+/* Reusable CPQ admin page UI (opt-in via classes in templates) */
+.cpq-page {
+  padding: 18px 6px 26px;
+}
+
+.cpq-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 6px 0 18px;
+}
+
+.cpq-page-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #182740;
+  letter-spacing: -0.02em;
+  font-family: "Euclid Circular A", sans-serif;
+}
+
+.cpq-page-subtitle {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 0.98rem;
+}
+
+.cpq-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(15, 23, 42, 0.06);
+  color: #334155;
+  white-space: nowrap;
+}
+
+.cpq-panel {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.06);
+}
+
+.cpq-panel-title {
+  margin: 0 0 4px;
+  font-size: 1.12rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+.cpq-panel-subtitle {
+  margin: 0 0 14px;
+  color: #64748b;
+  font-size: 0.92rem;
+}
+
+.cpq-field-label {
+  display: block;
+  margin: 10px 0 6px;
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(15, 23, 42, 0.85);
+  letter-spacing: 0.01em;
+}
+
+.cpq-textarea {
+  width: 100%;
+  min-height: 260px;
+  padding: 12px 14px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  transition: border-color 60ms ease, box-shadow 60ms ease;
+}
+
+.cpq-textarea:focus {
+  border-color: rgba(24, 39, 64, 0.35);
+  box-shadow: 0 0 0 3px rgba(24, 39, 64, 0.12);
 }
 
  #sidenav.collapsed {
@@ -683,9 +779,9 @@ tr:hover {
     display: flex;
     flex-direction: column;
     /* background-color: white; */
-    padding: 10px;
-    width: 95%;
-    margin: 0px;
+    padding: 12px 12px;
+    width: 100%;
+    margin: 0 auto;
     overflow-y: auto;
     border-radius: -4px;
   }

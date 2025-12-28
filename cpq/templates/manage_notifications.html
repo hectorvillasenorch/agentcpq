@@ -1,147 +1,107 @@
 {% extends "base.html" %}
 {% load static %}
 {% block content %}
-<script src="{% static 'js/agents/agent_main.js' %}" defer></script>
 <style>
-  input:hover,
-  textarea:hover,
-  select:hover {
-    background-color: transparent !important;
+  .notifications-page .cpq-page-title {
+    font-size: 1.8rem;
   }
 
-  input,
-  textarea,
-  select {
-    cursor: pointer;
+  .custom-table {
+    width: 100%;
+    border-collapse: collapse;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: #ffffff;
   }
-  input:focus,
-textarea:focus,
-select:focus {
-  border-bottom: 1px solid #fc6a3d !important;
-  box-shadow: 0 1px 0 0 #fc6a3d !important;
-}
 
-input:focus + label,
-textarea:focus + label,
-select:focus + label {
-  color: #fc6a3d !important;
-}
+  .custom-table th,
+  .custom-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    font-size: 0.92rem;
+    text-align: left;
+    vertical-align: middle;
+  }
 
-.drag-icon {
-  color: #9e9e9e;
-  font-size: 22px;
-  flex-shrink: 0;
-}
+  .custom-table thead th {
+    background: #f8fafc;
+    font-weight: 900;
+    color: #0f172a;
+  }
 
-.green-highlight {
-  background-color: #d4edda !important;
-  transition: background-color 0.3s ease;
-}
+  .custom-table tbody tr:hover {
+    background: rgba(24, 39, 64, 0.03);
+  }
 
-.red-highlight {
-  background-color: #f8d7da !important;
-  transition: background-color 0.3s ease;
-}
+  /* Materialize badges are fine; just tighten spacing */
+  .badge {
+    border-radius: 999px !important;
+  }
 
-/* Change checkboxes color when it is activated */
-input[type="checkbox"]:checked + span:before {
-  border-bottom: 2px solid {{ company.secondary_color }} !important;
-  border-right: 2px solid {{ company.secondary_color }} !important;
-}
+  .group-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
 
-/* Switch color when it is activated */
-#template_style_switch:checked + .lever {
-  background-color: {{ company.secondary_color }};
-}
-#template_style_switch:checked + .lever:after {
-  background-color: {{ company.secondary_color }};
-}
-
-/* Switch color when it is activated */
-#description_detail_level_switch:checked + .lever {
-  background-color: {{ company.secondary_color }};
-}
-#description_detail_level_switch:checked + .lever:after {
-  background-color: {{ company.secondary_color }};
-}
-
-
-/* Change the span color for checkbox */
-input[type="checkbox"] + span {
-  color: #212121 !important;  /* o el color que prefieras */
-}
-
-.card-panel {
-  padding: 24px;
-  margin: .5rem 0 1rem 0;
-  border-radius: 10px;
-  background-color: #fff;
-  border: 1px solid #e0e0e0;
-  box-shadow: none !important;
-  overflow: hidden !important;
-  max-height: none !important;
-  height: auto !important;
-}
-
-.custom-table {
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-}
-
-.custom-table th {
-  background-color: #f5f5f5; /* (Opcional) darle color al header */
-}
-
-.object-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.object-nav__link {
-  padding: 6px 14px;
-  border-radius: 16px;
-  border: 1px solid #e0e0e0;
-  color: #333;
-  font-size: 0.9rem;
-  text-decoration: none;
-  transition: all 0.2s ease;
-}
-
-.object-nav__link:hover,
-.object-nav__link:focus {
-  border-color: #fc6a3d;
-  color: #fc6a3d;
-  outline: none;
-}
-
-
-
+  .group-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-weight: 900;
+    color: #0f172a;
+    font-size: 1.1rem;
+  }
 </style>
 
-<div class="container">
-  <div style="display: flex;">
-    <i class="material-icons left" style="vertical-align: middle;">notifications</i>
-    <b><h3 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">
-      Notifications Management
-    </h3></b>
+<div class="cpq-page notifications-page">
+  <div class="cpq-page-header">
+    <div>
+      <h1 class="cpq-page-title">
+        <i class="material-icons" aria-hidden="true">notifications</i>
+        Notifications Management
+      </h1>
+      <p class="cpq-page-subtitle">
+        Manage email alerts, recipients, and activation status. Data and behavior are unchanged.
+      </p>
+    </div>
+    <span class="cpq-pill">
+      <span class="material-icons" style="font-size:18px;">mark_email_read</span>
+      Alerts
+    </span>
   </div>
 
-  <br>
-
   <!-- Notifications -->
-  {% for group in alert_groups  %}
-    <div class="card-panel white z-depth-1" id="{{ group.slug }}">
-      <i class="material-icons left" style="vertical-align: middle;">{{ group.icon }}</i>
-      <b><h6 class="left-align" style="font-family: 'Euclid Circular A', sans-serif;">{{ group.title }}</h6></b>
+  {% if not has_any_alerts %}
+    <div class="cpq-panel">
+      <h2 class="cpq-panel-title" style="display:flex; align-items:center; gap:10px;">
+        <i class="material-icons" aria-hidden="true">notifications_off</i>
+        No alerts created yet.
+      </h2>
+      <p class="cpq-panel-subtitle" style="margin:0;">
+        Create an email alert to start notifying users.
+      </p>
+    </div>
+  {% else %}
+    {% for group in alert_groups %}
+      {% if group.alerts %}
+        <div class="cpq-panel" id="{{ group.slug }}" style="margin-bottom: 18px;">
+          <div class="group-header">
+            <h2 class="group-title">
+              <i class="material-icons" aria-hidden="true">{{ group.icon }}</i>
+              {{ group.title }}
+            </h2>
+            <span class="cpq-pill">
+              <span class="material-icons" style="font-size:18px;">bolt</span>
+              {{ group.alerts|length }}
+            </span>
+          </div>
 
-      <!-- Contenedor principal -->
-      <div class="p-6">
-
-        {% if group.alerts %}
-          <table class="striped highlight responsive-table custom-table">
+          <table class="highlight responsive-table custom-table">
             <thead>
               <tr>
                 <th>Name</th>
@@ -197,15 +157,10 @@ input[type="checkbox"] + span {
               {% endfor %}
             </tbody>
           </table>
-        {% else %}
-          <p class="grey-text">No alerts configured.</p>
-        {% endif %}
-
-      </div>
-
-
-    </div>
-  {% endfor %}
+        </div>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
 
 
 </div>
