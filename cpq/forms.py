@@ -505,12 +505,51 @@ def generate_dynamic_form(custom_object):
 
 
 def get_dynamic_form(model_class, crm, object_type):
+    business_rule_target_type = (object_type or "").strip()
+    business_rule_target_type = business_rule_target_type.lower()
+    if business_rule_target_type == "quoteline":
+        business_rule_target_type = "quote_line"
+    elif business_rule_target_type == "quote":
+        business_rule_target_type = "quote"
+    elif business_rule_target_type:
+        business_rule_target_type = business_rule_target_type
 
     class DynamicCustomForm(forms.ModelForm):
         class Meta:
             model = model_class
             fields = '__all__'
             exclude = ('updated_by', 'created_by', 'created_at', 'updated_at')
+
+        def _post_clean(self):
+            super()._post_clean()
+
+            # Extend functionality: enforce validation BusinessRules for admin saves.
+            if self.errors:
+                return
+
+            if not business_rule_target_type:
+                return
+
+            try:
+                from agents.utils.admin_agent.rules_helpers import check_for_validation_rules
+
+                context = {business_rule_target_type: self.instance, "_default_root": business_rule_target_type}
+                for rel in ("quote", "quote_line", "product", "account", "opportunity", "contract", "tenant"):
+                    try:
+                        value = getattr(self.instance, rel, None)
+                    except Exception:
+                        value = None
+                    if value is not None:
+                        context[rel] = value
+                if getattr(self, "user", None) is not None:
+                    context["user"] = self.user
+
+                violations = check_for_validation_rules(business_rule_target_type, context, rule_type="validation")
+                if violations:
+                    self.add_error(None, forms.ValidationError("Validation failed: " + "; ".join(violations)))
+            except Exception:
+                # Never block admin save if validator errors out.
+                pass
 
         def __init__(self, *args, user=None, **kwargs):
             self.user = user

@@ -3,7 +3,7 @@ import json
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
-from cpq.models import Account
+from cpq.models import Account, BusinessRule, Opportunity
 
 from agents.record_agent import update_single_record_from_ui
 from agents.utils.record_agent.handle_helpers import get_single_record_payload
@@ -98,3 +98,53 @@ class RecordAgentUpdateTests(TestCase):
         updated_fields = {field["name"]: field for field in response["single_record"]["fields"]}
         self.assertEqual(updated_fields["industry"]["raw_value"], "Financial Services")
         self.assertEqual(updated_fields["website"]["raw_value"], "https://acme.example.org")
+
+    def test_update_single_record_from_ui_blocks_validation_rule(self):
+        account = Account.objects.create(
+            name="Validation Account",
+            industry="Tech",
+            phone="555-0000",
+            website="https://validation.example.com",
+        )
+        opportunity = Opportunity.objects.create(
+            name="Validation Opp",
+            account=account,
+            stage="Prospecting",
+        )
+
+        BusinessRule.objects.create(
+            name="VR-TEST-OPP-STAGE",
+            description="Block Closed Won",
+            rule_type="validation",
+            target_type="opportunity",
+            priority=100,
+            error_message="Cannot set stage to Closed Won.",
+            active=True,
+            conditions={
+                "items": [{"fieldName": "stage", "operator": "==", "value": "Closed Won"}],
+                "logic": "AND",
+            },
+        )
+
+        payload = {
+            "object": "Opportunity",
+            "record_id": opportunity.id,
+            "updates": [
+                {"field": "stage", "value": "Closed Won", "data_type": "text", "is_custom": False}
+            ],
+            "hiddenMessage": True,
+        }
+
+        response = update_single_record_from_ui(
+            self.user.username,
+            f"Update Record: {json.dumps(payload)}",
+            session_data={},
+        )
+
+        opportunity.refresh_from_db()
+
+        self.assertIn("Validation failed", response.get("message", ""))
+        self.assertEqual(opportunity.stage, "Prospecting")
+
+        updated_fields = {field["name"]: field for field in response["single_record"]["fields"]}
+        self.assertEqual(updated_fields["stage"]["raw_value"], "Prospecting")

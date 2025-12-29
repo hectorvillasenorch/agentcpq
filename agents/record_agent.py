@@ -2,7 +2,10 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
+from django.db import transaction
+
 from .utils.analytics_agent.handle_helpers import get_object_metadata
+from .utils.admin_agent.rules_helpers import check_for_validation_rules
 from .utils.record_agent.llm_helpers import extract_single_record_request
 from .utils.record_agent.handle_helpers import (
     get_single_record_payload,
@@ -160,30 +163,75 @@ def update_single_record_from_ui(user, user_message, session_data):
     successful_fields: List[str] = []
     failed_fields: List[str] = []
 
-    for update in normalized_updates:
-        field_name = update.get("field")
-        if not field_name:
-            messages_error.append("Missing field name in update payload.")
-            failed_fields.append("Unknown field")
-            continue
+    def _normalize_target_type(name: str) -> str:
+        normalized = (name or "").strip().lower().replace(" ", "_")
+        if normalized == "quoteline":
+            return "quote_line"
+        return normalized
 
-        success, message = update_record_field(
-            record,
-            object_name,
-            field_name,
-            update.get("value"),
-            data_type=update.get("data_type"),
-            is_custom=update.get("is_custom", False),
-            field_id=update.get("field_id"),
-            custom_fields=custom_fields,
-        )
+    target_type = _normalize_target_type(object_name)
 
-        if success:
-            messages_success.append(message)
-            successful_fields.append(field_name)
-        else:
-            messages_error.append(message)
-            failed_fields.append(field_name)
+    try:
+        with transaction.atomic():
+            for update in normalized_updates:
+                field_name = update.get("field")
+                if not field_name:
+                    messages_error.append("Missing field name in update payload.")
+                    failed_fields.append("Unknown field")
+                    continue
+
+                success, message = update_record_field(
+                    record,
+                    object_name,
+                    field_name,
+                    update.get("value"),
+                    data_type=update.get("data_type"),
+                    is_custom=update.get("is_custom", False),
+                    field_id=update.get("field_id"),
+                    custom_fields=custom_fields,
+                    user=user,
+                )
+
+                if success:
+                    messages_success.append(message)
+                    successful_fields.append(field_name)
+                else:
+                    messages_error.append(message)
+                    failed_fields.append(field_name)
+
+            # Enforce BusinessRule validations for UI updates (extends functionality; does not affect flows without rules).
+            if successful_fields and target_type:
+                if target_type.endswith("__c"):
+                    context = {"custom_record": record, "_default_root": "custom_record"}
+                else:
+                    context = {target_type: record, "_default_root": target_type}
+                    for rel in ("quote", "quote_line", "product", "account", "opportunity", "contract", "tenant"):
+                        try:
+                            value = getattr(record, rel, None)
+                        except Exception:
+                            value = None
+                        if value is not None:
+                            context[rel] = value
+
+                # Allow conditions like user.is_superuser == false.
+                if user is not None:
+                    context["user"] = user
+
+                violations = check_for_validation_rules(target_type, context, rule_type="validation")
+                if violations:
+                    raise ValueError("🚫 Validation failed:<br>" + "<br>".join(violations))
+    except ValueError as exc:
+        # Transaction rolled back; return the current (unchanged) record payload.
+        record.refresh_from_db()
+        updated_payload = serialize_record(record, object_name, custom_object, custom_fields, user=user)
+        return {
+            "message": str(exc),
+            "single_record": updated_payload,
+            "hiddenMessage": True,
+            "suppress_chat": True,
+            "updated_fields": [],
+            "failed_fields": list({*failed_fields, *successful_fields}) if (failed_fields or successful_fields) else [],
+        }
 
     record.refresh_from_db()
 

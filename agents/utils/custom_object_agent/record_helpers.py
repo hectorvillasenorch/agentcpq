@@ -11,6 +11,7 @@ from ..message_formatters import SUCCESS_ICON, ERROR_ICON, WARNING_ICON, INFO_IC
 
 # General Helpers
 from .general_helpers import validate_and_cast_value
+from ..admin_agent.rules_helpers import check_for_validation_rules
 
 def save_custom_object(request, user=None):
     try:
@@ -284,78 +285,103 @@ def create_custom_record_and_values(user, response_message, custom_object, value
         response_message += message
         return None, None, response_message, message
 
-    # Create CustomRecord
-    custom_record = CustomRecord.objects.create(
-        object_type=custom_object,
-        created_by=user,
-        updated_by=user
-    )
-
-    # Create the associated CustomFieldValues.
-    content_type = ContentType.objects.get_for_model(CustomRecord)
-
-    for field_name, value in value_lookup.items():
-        if field_name is None and value:
-            agent_response = f"The field is null, LLM didn't extract the field or user didn't specify. Request omitted."
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += (
-                f"{WARNING_ICON} It looks like the value <strong>{value}</strong> doesn’t have a matching field name. "
-                "Could you clarify which field this value should be assigned to?<br>"
+    try:
+        with transaction.atomic():
+            custom_record = CustomRecord.objects.create(
+                object_type=custom_object,
+                created_by=user,
+                updated_by=user,
             )
-            continue
 
-        if value is None and field_name:
-            agent_response = f"The value is null, LLM didn't extract the value or user didn't specify. Request omitted."
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += (
-                f"{WARNING_ICON} I noticed the field <strong>{field_name}</strong> was mentioned, but no value was provided for it. "
-                "Could you let me know what value you'd like to assign to this field?<br>"
+            content_type = ContentType.objects.get_for_model(CustomRecord)
+
+            for field_name, value in value_lookup.items():
+                if field_name is None and value:
+                    agent_response = (
+                        "The field is null, LLM didn't extract the field or user didn't specify. Request omitted."
+                    )
+                    save_or_update_conversation_context(session_context, agent_response)
+                    response_message += (
+                        f"{WARNING_ICON} It looks like the value <strong>{value}</strong> doesn’t have a matching field name. "
+                        "Could you clarify which field this value should be assigned to?<br>"
+                    )
+                    continue
+
+                if value is None and field_name:
+                    agent_response = (
+                        "The value is null, LLM didn't extract the value or user didn't specify. Request omitted."
+                    )
+                    save_or_update_conversation_context(session_context, agent_response)
+                    response_message += (
+                        f"{WARNING_ICON} I noticed the field <strong>{field_name}</strong> was mentioned, but no value was provided for it. "
+                        "Could you let me know what value you'd like to assign to this field?<br>"
+                    )
+                    continue
+
+                if value is None and field_name is None:
+                    agent_response = (
+                        "The value and field are null, LLM didn't extract both or user didn't specify. Request omitted."
+                    )
+                    save_or_update_conversation_context(session_context, agent_response)
+                    response_message += (
+                        f"{WARNING_ICON} It seems you want to update a field, but I couldn’t identify which field or what value to use. "
+                        "Could you clarify what field you’d like to update and the value you want to set?<br>"
+                    )
+                    continue
+
+                field = fields_by_name.get(field_name)
+
+                if not field:
+                    agent_response = (
+                        f"{WARNING_ICON} I couldn't find a matching field for <strong>{field_name}</strong>. Request omitted."
+                    )
+                    save_or_update_conversation_context(session_context, agent_response)
+                    response_message += (
+                        f"{WARNING_ICON} I couldn’t find a field named <strong>{field_name}</strong> in the object.<br>"
+                    )
+                    continue
+
+                is_valid, casted_value = validate_and_cast_value(field, value)
+
+                if not is_valid:
+                    expected = f"(expected type: {field.data_type})"
+                    if field.data_type.lower() == "dropdown" and field.options:
+                        expected += f" and one of: {', '.join(field.options)}"
+                    agent_response = (
+                        f"{WARNING_ICON} Invalid value for field <strong>{field.name}</strong> {expected}. Request omitted."
+                    )
+                    save_or_update_conversation_context(session_context, agent_response)
+                    response_message += (
+                        f"{WARNING_ICON} The value <b>{value}</b> is not valid for the field <b>{field.label}</b>. "
+                        f"{expected}.<br>"
+                    )
+                    continue
+
+                cfv = CustomFieldValue.objects.create(
+                    field=field,
+                    value=str(casted_value),
+                    record=custom_record,
+                    content_type=content_type,
+                    object_id=custom_record.id,
+                )
+                created_field_values.append(cfv)
+
+            context = {"custom_record": custom_record}
+            if user is not None:
+                context["user"] = user
+            violations = check_for_validation_rules(
+                str(custom_object.name).strip().lower(),
+                context,
+                rule_type="validation",
             )
-            continue
+            if violations:
+                raise ValueError("🚫 Validation failed:<br>" + "<br>".join(violations))
 
-        if value is None and field_name is None:
-            agent_response = f"The value and field is null, LLM didn't extract the value and field or user didn't specify. Request omitted."
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += (
-                f"{WARNING_ICON} It seems you want to update a field, but I couldn’t identify which field or what value to use. "
-                "Could you clarify what field you’d like to update and the value you want to set?<br>"
-            )
-            continue
-
-        field = fields_by_name.get(field_name)
-
-        if not field:
-            agent_response = f"{WARNING_ICON} I couldn't find a matching field for <strong>{field_name}</strong>. Request omitted."
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"{WARNING_ICON} I couldn’t find a field named <strong>{field_name}</strong> in the object.<br>"
-            continue
-
-        # ✅ Validate data type
-        is_valid, casted_value = validate_and_cast_value(field, value)
-
-        if not is_valid:
-            expected = f"(expected type: {field.data_type})"
-            if field.data_type.lower() == "dropdown" and field.options:
-                expected += f" and one of: {', '.join(field.options)}"
-                print(f"\n\nExpected: {expected}")
-            agent_response = f"{WARNING_ICON} Invalid value for field <strong>{field.name}</strong> {expected}. Request omitted."
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += (
-                f"{WARNING_ICON} The value <b>{value}</b> is not valid for the field <b>{field.label}</b>. "
-                f"The value must be one of: {', '.join(field.options)}.<br>"
-            )
-            continue
-
-        cfv = CustomFieldValue.objects.create(
-            field=field,
-            value=str(casted_value),
-            record=custom_record,
-            content_type=content_type,
-            object_id=custom_record.id,
-        )
-        created_field_values.append(cfv)
-
-    return custom_record, created_field_values, response_message, None
+        return custom_record, created_field_values, response_message, None
+    except ValueError as exc:
+        message = str(exc)
+        response_message += message + "<br><br>"
+        return None, None, response_message, message
 
 def update_custom_record_and_values(user, response_message, custom_record, values, session_context):
     """
@@ -364,131 +390,128 @@ def update_custom_record_and_values(user, response_message, custom_record, value
     """
     updated_field_values = []
 
-    # Normalizar values para que sea lista si viene dict
     if isinstance(values, dict):
         values = [values]
 
-    # Mapeo de fields por nombre (lowercase)
-    fields_by_name = {
-        field.name.lower(): field for field in custom_record.object_type.custom_fields.all()
-    }
-
-    # Mapeo de valores extraídos por LLM
-    value_lookup = {
-        item.get("field", "").lower(): item.get("value") for item in values
-    }
-
-    # Iterar sobre cada valor para actualizar
+    fields_by_name = {field.name.lower(): field for field in custom_record.object_type.custom_fields.all()}
+    value_lookup = {item.get("field", "").lower(): item.get("value") for item in values}
     content_type = ContentType.objects.get_for_model(CustomRecord)
 
-    for field_name, value in value_lookup.items():
-        if field_name is None and value:
-            agent_response = (
-                "The field is null — LLM didn't extract the field or user didn't specify. Request omitted."
+    try:
+        with transaction.atomic():
+            for field_name, value in value_lookup.items():
+                if field_name is None and value:
+                    agent_response = (
+                        "The field is null — LLM didn't extract the field or user didn't specify. Request omitted."
+                    )
+                    save_or_update_conversation_context(session_context, agent_response)
+                    response_message += (
+                        f"{WARNING_ICON} It looks like the value <strong>{value}</strong> doesn’t have a matching field name. "
+                        "Could you clarify which field this value should be assigned to?<br>"
+                    )
+                    continue
+
+                if value is None and field_name:
+                    agent_response = (
+                        "The value is null — LLM didn't extract the value or user didn't specify. Request omitted."
+                    )
+                    save_or_update_conversation_context(session_context, agent_response)
+                    response_message += (
+                        f"{WARNING_ICON} I noticed the field <strong>{field_name}</strong> was mentioned, "
+                        "but no value was provided for it.<br>"
+                        "Could you let me know what value you'd like to assign?<br>"
+                    )
+                    continue
+
+                if value is None and field_name is None:
+                    agent_response = (
+                        "The value and field are null — LLM didn't extract either. Request omitted."
+                    )
+                    save_or_update_conversation_context(session_context, agent_response)
+                    response_message += (
+                        f"{WARNING_ICON} It seems you want to update a field, but I couldn’t identify which field or what value to use.<br>"
+                    )
+                    continue
+
+                field = fields_by_name.get(field_name)
+                if not field:
+                    agent_response = (
+                        f"{WARNING_ICON} I couldn't find a matching field for <strong>{field_name}</strong>. Request omitted."
+                    )
+                    save_or_update_conversation_context(session_context, agent_response)
+                    response_message += (
+                        f"{WARNING_ICON} I couldn’t find a field named <strong>{field_name}</strong> in this object.<br>"
+                    )
+                    continue
+
+                is_valid, casted_value = validate_and_cast_value(field, value)
+                if not is_valid:
+                    expected = f"(expected type: {field.data_type})"
+                    if field.data_type.lower() == "dropdown" and field.options:
+                        expected += f" and one of: {', '.join(field.options)}"
+                    agent_response = (
+                        f"{WARNING_ICON} Invalid value for field <strong>{field.name}</strong> {expected}. Request omitted."
+                    )
+                    save_or_update_conversation_context(session_context, agent_response)
+                    response_message += (
+                        f"{WARNING_ICON} The value <b>{value}</b> is not valid for the field <b>{field.label}</b>. "
+                        f"{expected}.<br>"
+                    )
+                    continue
+
+                try:
+                    current_cfv = CustomFieldValue.objects.get(
+                        field=field,
+                        record=custom_record,
+                        content_type=content_type,
+                        object_id=custom_record.id,
+                    )
+                    current_value = current_cfv.value
+                except CustomFieldValue.DoesNotExist:
+                    current_value = None
+
+                if current_value == str(casted_value):
+                    continue
+
+                if field_name == "label" or (field.label and field.label.lower() == "label"):
+                    new_label = str(casted_value).strip()
+                    if new_label:
+                        field.label = new_label
+                        field.name = new_label.lower().replace(" ", "_") + "__c"
+                        field.save()
+
+                cfv, created = CustomFieldValue.objects.update_or_create(
+                    field=field,
+                    record=custom_record,
+                    content_type=content_type,
+                    object_id=custom_record.id,
+                    defaults={"value": str(casted_value)},
+                )
+                updated_field_values.append(cfv)
+
+            if updated_field_values:
+                context = {"custom_record": custom_record}
+                if user is not None:
+                    context["user"] = user
+                violations = check_for_validation_rules(
+                    str(custom_record.object_type.name).strip().lower(),
+                    context,
+                    rule_type="validation",
+                )
+                if violations:
+                    raise ValueError("🚫 Validation failed:<br>" + "<br>".join(violations))
+
+                custom_record.updated_by = user
+                custom_record.save()
+                return custom_record, updated_field_values, response_message, None
+
+            return custom_record, updated_field_values, response_message, (
+                f"{WARNING_ICON} No valid fields were updated for record <b>{custom_record.custom_identifier}</b>.<br><br>"
             )
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += (
-                f"{WARNING_ICON} It looks like the value <strong>{value}</strong> doesn’t have a matching field name. "
-                "Could you clarify which field this value should be assigned to?<br>"
-            )
-            continue
-
-        if value is None and field_name:
-            agent_response = (
-                "The value is null — LLM didn't extract the value or user didn't specify. Request omitted."
-            )
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += (
-                f"{WARNING_ICON} I noticed the field <strong>{field_name}</strong> was mentioned, "
-                "but no value was provided for it.<br>"
-                "Could you let me know what value you'd like to assign?<br>"
-            )
-            continue
-
-        if value is None and field_name is None:
-            agent_response = (
-                "The value and field are null — LLM didn't extract either. Request omitted."
-            )
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += (
-                f"{WARNING_ICON} It seems you want to update a field, but I couldn’t identify which field or what value to use.<br>"
-            )
-            continue
-
-        field = fields_by_name.get(field_name)
-
-        if not field:
-            agent_response = f"{WARNING_ICON} I couldn't find a matching field for <strong>{field_name}</strong>. Request omitted."
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += f"{WARNING_ICON} I couldn’t find a field named <strong>{field_name}</strong> in this object.<br>"
-            continue
-
-        # Validar tipo de dato
-        is_valid, casted_value = validate_and_cast_value(field, value)
-
-        if not is_valid:
-            expected = f"(expected type: {field.data_type})"
-            if field.data_type.lower() == "dropdown" and field.options:
-                expected += f" and one of: {', '.join(field.options)}"
-            agent_response = (
-                f"{WARNING_ICON} Invalid value for field <strong>{field.name}</strong> {expected}. Request omitted."
-            )
-            save_or_update_conversation_context(session_context, agent_response)
-            response_message += (
-                f"{WARNING_ICON} The value <b>{value}</b> is not valid for the field <b>{field.label}</b>. "
-                f"The value must be one of: {', '.join(field.options)}.<br>"
-            )
-            continue
-
-        # Verificar si el valor actual es distinto para evitar update innecesario
-        try:
-            current_cfv = CustomFieldValue.objects.get(
-                field=field,
-                record=custom_record,
-                content_type=content_type,
-                object_id=custom_record.id,
-            )
-            current_value = current_cfv.value
-        except CustomFieldValue.DoesNotExist:
-            current_cfv = None
-            current_value = None
-
-        if current_value == str(casted_value):
-            # No hay cambio real, omitir
-            continue
-
-        if field_name == "label" or field.label.lower() == "label":
-            # Actualizar label y name del CustomField asociado
-            new_label = str(casted_value).strip()
-            if new_label:
-                # Actualiza el label
-                field.label = new_label
-                # Construye el nuevo name: label en minúsculas, espacios reemplazados por _, y con __c
-                new_name = new_label.lower().replace(" ", "_") + "__c"
-                field.name = new_name
-                field.save()
-
-
-        cfv, created = CustomFieldValue.objects.update_or_create(
-            field=field,
-            record=custom_record,
-            content_type=content_type,
-            object_id=custom_record.id,
-            defaults={"value": str(casted_value)},
-        )
-
-        updated_field_values.append(cfv)
-
-    # Solo actualizar si hubo cambios reales
-    if updated_field_values:
-        custom_record.updated_by = user
-        custom_record.save()
-        return custom_record, updated_field_values, response_message, None
-    else:
-        # No hubo actualizaciones, retorna error_message para evitar éxito falso
-        return custom_record, updated_field_values, response_message, (
-            f"{WARNING_ICON} No valid fields were updated for record <b>{custom_record.custom_identifier}</b>.<br><br>"
-        )
+    except ValueError as exc:
+        message = str(exc)
+        response_message += message + "<br><br>"
+        return custom_record, [], response_message, message
 
 
 def delete_custom_record(request):

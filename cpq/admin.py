@@ -38,6 +38,8 @@ from .forms import  get_dynamic_form
 from agents.models import ChatMessage, ChatSession, AgentPrompt
 from django.contrib.contenttypes.models import ContentType
 from django.utils.html import format_html, format_html_join
+from django.forms.models import construct_instance
+from django.core.exceptions import ValidationError
 from django.urls import reverse
 from django.http import HttpResponseRedirect
 from django.utils.timezone import localtime
@@ -687,6 +689,60 @@ class BusinessRuleAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
         def __init__(self, *args, **kwargs):
             kwargs.pop("user", None)
             super().__init__(*args, **kwargs)
+
+            # Extend target_type choices to support any standard/custom object for validation rules.
+            base_choices = [
+                ("quote", "Quote"),
+                ("quote_line", "Quote Line"),
+                ("product", "Product"),
+                ("multiple", "Multiple"),
+            ]
+            standard_choices = [
+                ("lead", "Lead"),
+                ("account", "Account"),
+                ("contact", "Contact"),
+                ("opportunity", "Opportunity"),
+                ("activity", "Activity"),
+                ("contract", "Contract"),
+                ("subscription", "Subscription"),
+                ("option", "Option"),
+                ("tenant", "Tenant"),
+                ("knowledge", "Knowledge"),
+            ]
+
+            custom_choices = []
+            try:
+                for co in CustomObject.objects.all().order_by("label", "name"):
+                    value = (co.name or "").strip().lower()
+                    if not value:
+                        continue
+                    label = (co.label or co.name).strip()
+                    custom_choices.append((value, f"{label} ({co.name})"))
+            except Exception:
+                # If DB isn't ready (migrations/connection), still allow standard targets.
+                custom_choices = []
+
+            # Preserve any existing value even if it isn't in the choice list (backwards compatibility).
+            current_value = (
+                (getattr(self.instance, "target_type", None) or self.initial.get("target_type") or "")
+                .strip()
+                .lower()
+            )
+            known_values = {v for v, _ in (base_choices + standard_choices + custom_choices)}
+            if current_value and current_value not in known_values:
+                custom_choices.insert(0, (current_value, f"{current_value} (custom)"))
+
+            merged = []
+            seen = set()
+            for value, label in base_choices + standard_choices + custom_choices:
+                if value in seen:
+                    continue
+                seen.add(value)
+                merged.append((value, label))
+
+            if "target_type" in self.fields and hasattr(self.fields["target_type"], "choices"):
+                self.fields["target_type"].choices = merged
+
             value = self.initial.get("conditions") or getattr(self.instance, "conditions", None)
             if isinstance(value, (dict, list)):
                 self.initial["conditions"] = json.dumps(value, indent=2)
@@ -704,6 +760,28 @@ class BusinessRuleAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
                 return json.loads(raw)
             except json.JSONDecodeError as exc:
                 raise forms.ValidationError(f"Invalid JSON for conditions: {exc}")
+
+        def _post_clean(self):
+            """
+            Extend functionality: allow BusinessRule.target_type to be any standard/custom object key,
+            even though the model field has legacy `choices` that would otherwise reject it.
+            """
+            opts = self._meta
+            exclude = set(self._get_validation_exclusions())
+            exclude.add("target_type")
+
+            try:
+                self.instance = construct_instance(self, self.instance, opts.fields, opts.exclude)
+            except ValidationError as e:
+                self._update_errors(e)
+
+            try:
+                self.instance.full_clean(exclude=exclude, validate_unique=False)
+            except ValidationError as e:
+                self._update_errors(e)
+
+            if self._validate_unique:
+                self.validate_unique()
 
     form = BusinessRuleAdminForm
     list_display = ('name', 'rule_type', 'active', 'get_created_by', 'created_at_js')
@@ -761,9 +839,48 @@ admin.site.register(Contact, ContactAdmin)
 class TenantAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(Tenant, crm="AgentCPQ", object_type="Tenant")
 
+    readonly_fields = ("api_key_display", "api_secret_display")
+
+    def _masked_value_widget(self, value: str, field_key: str, obj_id):
+        if not value:
+            return "-"
+        input_id = f"tenant-secret-{field_key}-{obj_id or 'new'}"
+        btn_id = f"tenant-secret-btn-{field_key}-{obj_id or 'new'}"
+        return format_html(
+            """
+            <div style="display:flex;gap:8px;align-items:center;max-width:680px;">
+              <input id="{input_id}" type="password" value="{value}" readonly
+                     style="flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;
+                            padding:6px 10px;border:1px solid #d1d5db;border-radius:10px;background:#fafafa;color:#111827;" />
+              <button id="{btn_id}" type="button" class="button"
+                      onclick="(function(){{var i=document.getElementById('{input_id}');var b=document.getElementById('{btn_id}');if(!i||!b) return;var show=(i.type==='password');i.type=show?'text':'password';b.textContent=show?'Hide':'Show';}})();">
+                Show
+              </button>
+            </div>
+            """,
+            input_id=input_id,
+            btn_id=btn_id,
+            value=value,
+        )
+
+    def api_key_display(self, obj):
+        return self._masked_value_widget(getattr(obj, "api_key", "") or "", "api_key", getattr(obj, "pk", None))
+
+    api_key_display.short_description = "API Key (read-only)"
+
+    def api_secret_display(self, obj):
+        return self._masked_value_widget(getattr(obj, "api_secret", "") or "", "api_secret", getattr(obj, "pk", None))
+
+    api_secret_display.short_description = "API Secret (read-only)"
+
     def get_fieldsets(self, request, obj=None):
         fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
-        return [(None, {'fields': fields})]
+        fieldsets = [(None, {'fields': fields})]
+        if request.user.is_superuser:
+            fieldsets.append(
+                ("API Credentials", {"fields": ("api_key_display", "api_secret_display")})
+            )
+        return fieldsets
 
     list_display = ('tenant_id','name', 'plan', 'actions_limit', 'created_at_js', 'version')
 

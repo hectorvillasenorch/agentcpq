@@ -496,6 +496,7 @@ input[type="number"] {
   min-height: 18px;
   font-size: 0.78rem;
   margin-top: 6px;
+  white-space: pre-line;
 }
 
 .single-record-feedback--success {

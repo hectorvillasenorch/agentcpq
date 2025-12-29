@@ -540,7 +540,7 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
     action_map = get_action_map()
 
     if decision in action_map:
-        result = action_map[decision](user,decision, user_message, session_data)
+        result = action_map[decision](user, decision, user_message, session_data)
 
         suppress_chat = result.get("suppress_chat", False)
         hiddenMessage = result.get("hiddenMessage", False)
@@ -549,15 +549,21 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
         sanitized_result["session_id"] = session_data["session_id"]
 
         if suppress_chat:
-            agent_message = result.get("message", "")
+            # IMPORTANT: keep the response message user-facing (do not append JSON payloads).
+            # Structured payloads (single_record / quote_details) are still returned in JSON, and can be persisted
+            # separately for UI rehydration without polluting the visible message.
+            display_message = _strip_session_summary_text(_decode_chat_text(result.get("message", "")))
+            sanitized_result["message"] = display_message
 
-            for key, value in result.items():
-                if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat", "temporaryMessage", "session_summary"):
-                    agent_message += f"\n\n📦 {key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
-
-            agent_message = _strip_session_summary_text(_decode_chat_text(agent_message))
-
-            sanitized_result["message"] = agent_message
+            # Persist only the structured payloads needed to re-render the UI on refresh.
+            structured_keys = ("quote_details", "single_record", "retrieved_records", "validation_rules_details")
+            agent_message_for_storage = display_message
+            for key in structured_keys:
+                if key in result:
+                    agent_message_for_storage += (
+                        f"\n\n{key}:\n"
+                        f"{json.dumps(_safe_serialize(result.get(key)), indent=2, ensure_ascii=False)}"
+                    )
 
             last_agent_message = ChatMessage.objects.filter(
                 session=chat_session,
@@ -566,14 +572,14 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
             ).order_by("-timestamp").first()
 
             if last_agent_message:
-                last_agent_message.content = agent_message
+                last_agent_message.content = agent_message_for_storage
                 last_agent_message.hiddenMessage = True
                 last_agent_message.save(update_fields=["content", "hiddenMessage"])
             else:
                 ChatMessage.objects.create(
                     session=chat_session,
                     sender="agent",
-                    content=agent_message,
+                    content=agent_message_for_storage,
                     hiddenMessage=True
                 )
 
@@ -591,7 +597,7 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
             session=chat_session,
             sender="agent",
             content=agent_message,
-            hiddenMessage = hiddenMessage
+            hiddenMessage=hiddenMessage
         )
 
         sanitized_result["message"] = agent_message

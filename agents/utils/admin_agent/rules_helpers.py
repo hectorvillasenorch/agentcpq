@@ -4,6 +4,7 @@ from django.db.models import Q
 from cpq.models import Product
 from django.forms.models import model_to_dict
 from cpq.models import BusinessRule, QuoteLine, Quote
+from cpq.models import CustomRecord, CustomFieldValue
 from decimal import Decimal
 
 # Validation Helpers
@@ -77,18 +78,20 @@ def check_validation_conditions(data, quote, product, quote_line, depth=1):
             operator = data["operator"]
             value = data["value"]
 
-            model_name, attr = field.split(".", 1)
+            model_name, attr_path = field.split(".", 1)
             obj = {"quote": quote, "quote_line": quote_line, "product": product}.get(model_name)
 
             if not obj:
                 logging.warning(f"{indent}❌ Object not found for: {model_name}")
                 return False
 
-            actual_value = getattr(obj, attr, None)
-
-            if actual_value is None:
-                logging.warning(f"{indent}❌ Attribute '{attr}' not found in {model_name}")
-                return False
+            # traverse nested attributes safely (e.g., quote.opportunity.stage)
+            actual_value = obj
+            for part in attr_path.split("."):
+                actual_value = getattr(actual_value, part, None)
+                if actual_value is None:
+                    logging.warning(f"{indent}❌ Attribute '{part}' not found when traversing '{attr_path}'")
+                    return False
 
             logging.info(f"{indent}🔍 Comparing: {actual_value} {operator} {value}")
 
@@ -570,6 +573,186 @@ def check_validation_conditions_for_quote_level(data, quote, depth=1):
         return False
 
 
+def _resolve_custom_record_value(custom_record, field_api_name: str):
+    if not field_api_name:
+        return None
+
+    # Allow access to real model attributes (id, custom_identifier, etc.)
+    if hasattr(custom_record, field_api_name):
+        return getattr(custom_record, field_api_name, None)
+
+    cfv = (
+        CustomFieldValue.objects.filter(record=custom_record, field__name__iexact=field_api_name)
+        .select_related("field")
+        .order_by("-updated_at", "-id")
+        .first()
+    )
+    if not cfv:
+        return None
+
+    raw_value = cfv.value
+    data_type = (cfv.field.data_type or "").lower()
+
+    if data_type in {"number", "currency", "percent"}:
+        try:
+            return Decimal(str(raw_value))
+        except Exception:
+            return raw_value
+
+    if data_type == "boolean":
+        if isinstance(raw_value, bool):
+            return raw_value
+        return str(raw_value).strip().lower() in {"true", "1", "yes", "y"}
+
+    if data_type == "lookup":
+        # Stored as ID string; return numeric if possible
+        try:
+            return int(str(raw_value).strip())
+        except Exception:
+            return raw_value
+
+    return raw_value
+
+
+def _resolve_context_path(context: dict, dotted_path: str):
+    """
+    Resolve values from a context map using dotted notation.
+    Examples:
+      - quote.opportunity.stage
+      - opportunity.stage
+      - custom_record.rendimiento__c
+    """
+    if not dotted_path:
+        return None
+
+    # Backwards compatible: allow "fieldName": "stage" when there's a default root.
+    if "." not in dotted_path:
+        default_root = (context or {}).get("_default_root")
+        if default_root:
+            return _resolve_context_path(context, f"{default_root}.{dotted_path}")
+        return None
+
+    root, attr_path = dotted_path.split(".", 1)
+    current = (context or {}).get(root)
+    if current is None:
+        return None
+
+    for part in attr_path.split("."):
+        if current is None:
+            return None
+        if isinstance(current, dict):
+            current = current.get(part)
+            continue
+        if isinstance(current, CustomRecord):
+            current = _resolve_custom_record_value(current, part)
+            continue
+        current = getattr(current, part, None)
+    return current
+
+
+def check_validation_conditions_with_context(data, context: dict, depth=1):
+    """
+    Generic validator that can evaluate conditions against any object placed in `context`.
+    Keeps the existing JSON structure: {"logic": "AND|OR", "items": [...]} with leaf nodes:
+      {"fieldName": "opportunity.stage", "operator": "==", "value": "Closed Won"}
+    """
+    indent = "  " * depth
+
+    if isinstance(data, dict):
+        if "logic" in data and "items" in data:
+            logic = data["logic"]
+            results = [check_validation_conditions_with_context(item, context, depth + 1) for item in data["items"]]
+            if logic == "AND":
+                return all(results)
+            if logic == "OR":
+                return any(results)
+            logging.warning(f"{indent}❌ Unknown logical operator: {logic}")
+            return False
+
+        if all(key in data for key in ["fieldName", "operator", "value"]):
+            field = data["fieldName"]
+            operator = data["operator"]
+            expected = data["value"]
+
+            actual = _resolve_context_path(context, field)
+            if actual is None:
+                logging.warning(f"{indent}❌ Could not resolve fieldName: {field}")
+                return False
+
+            actual_norm, expected_norm, _ = _normalize_for_compare(actual, expected)
+
+            try:
+                if operator == "==":
+                    return actual_norm == expected_norm
+                if operator == "!=":
+                    return actual_norm != expected_norm
+                if operator == ">":
+                    return actual_norm > expected_norm
+                if operator == ">=":
+                    return actual_norm >= expected_norm
+                if operator == "<":
+                    return actual_norm < expected_norm
+                if operator == "<=":
+                    return actual_norm <= expected_norm
+                logging.warning(f"{indent}❌ Unsupported operator: {operator}")
+                return False
+            except Exception as exc:
+                logging.warning(f"{indent}❌ Error during comparison for {field}: {exc}")
+                return False
+
+        logging.warning(f"{indent}⚠️ Unknown dictionary structure: {data}")
+        return False
+
+    if isinstance(data, list):
+        return all(check_validation_conditions_with_context(item, context, depth) for item in data)
+
+    logging.warning(f"{indent}❌ Unexpected data type: {type(data).__name__}")
+    return False
+
+
+def check_for_validation_rules(target_type: str, context: dict, rule_type="validation"):
+    """
+    Evaluate validation rules for ANY object key (standard or custom) using BusinessRule.target_type.
+    - target_type: e.g. 'opportunity', 'contract', 'proyecto__c'
+    - context: dict of objects for fieldName resolution. Keys should match fieldName roots.
+    """
+    if not target_type:
+        return []
+
+    # Provide a default root for shorthand fieldName values like "stage".
+    if isinstance(context, dict) and "_default_root" not in context:
+        if str(target_type).strip().lower().endswith("__c") and "custom_record" in context:
+            context["_default_root"] = "custom_record"
+        else:
+            context["_default_root"] = str(target_type).strip().lower()
+
+    rule_types = [rule_type] if isinstance(rule_type, str) else list(rule_type or [])
+    if not rule_types:
+        rule_types = ["validation"]
+
+    normalized_target_type = str(target_type).strip().lower()
+
+    # Use case-insensitive matching to tolerate legacy/hand-edited target_type values.
+    qs = (
+        BusinessRule.objects.filter(active=True, rule_type__in=rule_types)
+        .filter(Q(target_type__iexact=normalized_target_type) | Q(target_type__iexact="multiple"))
+        .order_by("-priority")
+    )
+
+    triggered = []
+    for rule in qs:
+        try:
+            conditions = rule.conditions
+        except Exception as exc:
+            logging.warning("Error reading rule.conditions for %s: %s", getattr(rule, "name", None), exc)
+            continue
+
+        if check_validation_conditions_with_context(conditions, context):
+            triggered.append(f"(Rule: {rule.name}) {rule.error_message}")
+
+    return triggered
+
+
 def build_temp_quote_line(quote, product, quantity, discount_type, discount_amount, term):
     """
     Builds a temporary instance of QuoteLine without saving it to the database.
@@ -657,7 +840,8 @@ def handle_extracted_rules_details(extracted_rules_details):
 
                 # If no target type is specified, search in all target types
                 if not target_type:
-                    query = query.filter(target_type__in=["quote", "quote_line", "multiple"])
+                    # Do not constrain target_type here; support rules for any standard/custom object.
+                    query = query
                 elif isinstance(target_type, list):
                     query = query.filter(target_type__in=target_type)
                 else:

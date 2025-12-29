@@ -47,11 +47,23 @@ def validate_rule_update_request(name, field, value):
             return False, response_message, None
 
     if field == "target_type":
-        allowed_target_types = ["quote", "quote_line", "multiple"]
-        if value not in allowed_target_types:
-            response_message += f"⚠️ Error: The field 'target type' must be one of: {', '.join(allowed_target_types)}.<br><br>"
+        # Backwards compatible allowlist + allow any standard/custom object key.
+        allowed_target_types = {"quote", "quote_line", "product", "multiple"}
+        normalized = str(value).strip().lower()
+        if normalized in allowed_target_types:
+            return True, "", rule
 
-            return False, response_message, None
+        # Accept other standard objects (snake_case) and custom objects (ending with __c)
+        import re
+
+        if re.match(r"^[a-z][a-z0-9_]*$", normalized) or re.match(r"^[a-z][a-z0-9_]*__c$", normalized):
+            return True, "", rule
+
+        response_message += (
+            "⚠️ Error: The field 'target type' must be a valid object key "
+            "(e.g., quote, quote_line, product, opportunity, contract) or a custom object API name (e.g., proyecto__c).<br><br>"
+        )
+        return False, response_message, None
 
     if field == "priority" and not isinstance(value, int):
         response_message += "⚠️ Error: The field 'priority' must be an integer (e.g., 1, 5, 10).<br><br>"

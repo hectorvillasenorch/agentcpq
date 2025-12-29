@@ -82,11 +82,12 @@ def extract_validation_rules(user_message):
     - rule_type (string): Type of rule. Must be one of:
         - "validation"
         If the user does not explicitly mention it, infer it based on the intent.
-    - target_type (string): The level where the rule applies. Must be one of:
-        - "quote"
-        - "quote_line"
-        - "multiple"
-        If the user specifies a target but the rule clearly involves fields from more than one level, set this to "multiple", even if the user suggested otherwise.
+	    - target_type (string): The primary object this rule applies to.
+	        - For CPQ rules, prefer: "quote", "quote_line", "product", or "multiple".
+	        - To extend beyond CPQ, you may also use any standard object key (snake_case), e.g.:
+	          "account", "contact", "lead", "opportunity", "activity", "contract", "subscription", "option", "tenant", "knowledge".
+	        - For custom objects, use the custom object API name ending with "__c", e.g. "proyecto__c".
+	        If the rule uses fields from more than one object root, set this to "multiple".
     - priority (integer): The rule's priority. If specified, use it. If not, default to 10.
     - error_message (string): The message to display when the rule is triggered. Use the user-provided message if available; otherwise, create a clear, professional message based on the intent of the rule.
     - active (boolean): If user doesn't explicitly specify active (true or false), set active as true. If the user uses indirect language like "do not activate", "leave inactive", "but not active", "shouldn't be active", etc., set active as false. Use only lowercase true or false.
@@ -179,11 +180,18 @@ def extract_validation_rules(user_message):
     }}
     ]
 
-    Requirements:
-    - Always include fieldName in full format: quote. or quote_line.
-    - Always enclose string values in double quotes, and leave numeric values as raw numbers.
-    - Do not return explanations or extra text — only the JSON array of rules.
-    - If multiple rules are described in the message, return multiple objects in the array.
+	    Requirements:
+	    - Always include fieldName in full dotted format: <root>.<field_path>.
+	      Examples:
+	        - quote.account.name
+	        - quote.opportunity.stage
+	        - opportunity.stage
+	        - contract.contract_status
+	        - custom_record.rendimiento__c
+	      For custom object rules (target_type ending in __c), use root "custom_record" and custom field API names (e.g. rendimiento__c).
+	    - Always enclose string values in double quotes, and leave numeric values as raw numbers.
+	    - Do not return explanations or extra text — only the JSON array of rules.
+	    - If multiple rules are described in the message, return multiple objects in the array.
     + If ambiguous fields are used (e.g., discount_percentage without level), check for context clues:
     +   - If the user mentions "line item" or "quote line", infer `quote_line`.
     +   - If the user mentions "quote", infer `quote`.

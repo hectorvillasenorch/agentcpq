@@ -606,6 +606,23 @@ def get_document_pdf(quote, session_data=None):
             y_position -= 15
             account_count += 1
 
+        # ✅ Account Address
+        if template.show_account_name and account and (account.street or account.city or account.state or account.zip_code):
+            pdf.setFillColor(HexColor("#888888"))
+
+            if account.street:
+                pdf.drawString(x_position, y_position, account.street)
+                y_position -= 15
+
+            city_state = ", ".join([p for p in [account.city, account.state] if p])
+            city_state_zip = " ".join([p for p in [city_state, account.zip_code] if p])
+            if city_state_zip:
+                pdf.drawString(x_position, y_position, city_state_zip)
+                y_position -= 15
+
+            pdf.setFillColor(HexColor(CBLACK))
+            account_count += 1
+
         # ✅ Account Website
         if template.show_account_website and account.website:
             pdf.setFillColor(HexColor("#888888"))
@@ -851,49 +868,49 @@ def get_document_pdf(quote, session_data=None):
                         product = line.product_name or ""
 
                         max_width = column_spacing - 6
-                        sku_font_size = 9
                         product_font_size = 10
+                        sku_font_size = 8
 
-                        sku_text_width = pdf.stringWidth(sku, "Helvetica-Bold", sku_font_size)
-                        if sku_text_width > max_width:
-                            sku_font_size = max(6, int(sku_font_size * max_width / sku_text_width))
-                            sku_text_width = pdf.stringWidth(sku, "Helvetica-Bold", sku_font_size)
-
-                        product_text_width = pdf.stringWidth(product, "Helvetica", product_font_size)
+                        product_text_width = pdf.stringWidth(product, "Helvetica-Bold", product_font_size)
                         if product_text_width > max_width:
                             product_font_size = max(6, int(product_font_size * max_width / product_text_width))
-                            product_text_width = pdf.stringWidth(product, "Helvetica", product_font_size)
+                            product_text_width = pdf.stringWidth(product, "Helvetica-Bold", product_font_size)
+
+                        sku_text_width = pdf.stringWidth(sku, "Helvetica", sku_font_size)
+                        if sku_text_width > max_width:
+                            sku_font_size = max(6, int(sku_font_size * max_width / sku_text_width))
+                            sku_text_width = pdf.stringWidth(sku, "Helvetica", sku_font_size)
 
                         if index == 0:
                             aligned_x = column_x
-                            pdf.setFont("Helvetica-Bold", sku_font_size)
+                            pdf.setFont("Helvetica-Bold", product_font_size)
                             pdf.setFillColor(HexColor("#000000"))
-                            pdf.drawString(aligned_x, y_position, sku)
-                            pdf.setFont("Helvetica", product_font_size)
+                            pdf.drawString(aligned_x, y_position, product)
+                            pdf.setFont("Helvetica", sku_font_size)
                             pdf.setFillColor(HexColor("#666666"))
-                            pdf.drawString(aligned_x, y_position - 12, product)
+                            pdf.drawString(aligned_x, y_position - 12, sku)
 
                         elif index == last_index:
-                            sku_aligned_x = column_x + column_spacing - sku_text_width
-                            pdf.setFont("Helvetica-Bold", sku_font_size)
-                            pdf.setFillColor(HexColor("#000000"))
-                            pdf.drawString(sku_aligned_x, y_position, sku)
-
                             name_aligned_x = column_x + column_spacing - product_text_width
-                            pdf.setFont("Helvetica", product_font_size)
+                            pdf.setFont("Helvetica-Bold", product_font_size)
+                            pdf.setFillColor(HexColor("#000000"))
+                            pdf.drawString(name_aligned_x, y_position, product)
+
+                            sku_aligned_x = column_x + column_spacing - sku_text_width
+                            pdf.setFont("Helvetica", sku_font_size)
                             pdf.setFillColor(HexColor("#666666"))
-                            pdf.drawString(name_aligned_x, y_position - 12, product)
+                            pdf.drawString(sku_aligned_x, y_position - 12, sku)
 
                         else:
-                            sku_aligned_x = column_x + (column_spacing - sku_text_width) / 2
-                            pdf.setFont("Helvetica-Bold", sku_font_size)
-                            pdf.setFillColor(HexColor("#000000"))
-                            pdf.drawString(sku_aligned_x, y_position, sku)
-
                             name_aligned_x = column_x + (column_spacing - product_text_width) / 2
-                            pdf.setFont("Helvetica", product_font_size)
+                            pdf.setFont("Helvetica-Bold", product_font_size)
+                            pdf.setFillColor(HexColor("#000000"))
+                            pdf.drawString(name_aligned_x, y_position, product)
+
+                            sku_aligned_x = column_x + (column_spacing - sku_text_width) / 2
+                            pdf.setFont("Helvetica", sku_font_size)
                             pdf.setFillColor(HexColor("#666666"))
-                            pdf.drawString(name_aligned_x, y_position - 12, product)
+                            pdf.drawString(sku_aligned_x, y_position - 12, sku)
 
                         max_text_height = max(max_text_height, 18)
                         continue

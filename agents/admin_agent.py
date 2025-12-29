@@ -2,6 +2,7 @@ import os
 import openai
 import logging
 import json
+import re
 from dotenv import load_dotenv
 from cpq.models import Quote, BusinessRule, CustomObject, EmailAlert, Product
 from decimal import Decimal
@@ -33,6 +34,33 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-4"
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+
+def _is_valid_business_rule_target_type(target_type: str) -> bool:
+    """
+    Backwards compatible: keep original targets, but also allow any standard model key
+    (e.g., 'contract', 'opportunity') and any custom object API name (e.g., 'proyecto__c').
+    """
+    if not target_type:
+        return False
+
+    normalized = str(target_type).strip().lower()
+    if not normalized:
+        return False
+
+    base_targets = {"quote", "quote_line", "product", "multiple"}
+    if normalized in base_targets:
+        return True
+
+    # Standard-model keys (future-proof: accept snake_case identifiers)
+    if re.match(r"^[a-z][a-z0-9_]*$", normalized):
+        return True
+
+    # Custom objects are typically snake_case and end with __c
+    if re.match(r"^[a-z][a-z0-9_]*__c$", normalized):
+        return True
+
+    return False
 
 def admin_agent(user, action, user_message, session_data):
 
@@ -140,10 +168,12 @@ def create_validation_rule(user, user_message, session_data):
         rule_type = rule_type_lower
         content_message["rule_type"] = rule_type
 
-        # TARGET_TYPE: must be a string and one of the allowed values
-        valid_target_types = {"quote", "quote_line", "product", "multiple"}
+        # TARGET_TYPE: must be a string and a recognized object key.
         if not target_type:
-            content_message["error"] = "⚠️ Missing target type: Please define the level where this rule applies (quote, quote_line, product, or multiple)."
+            content_message["error"] = (
+                "⚠️ Missing target type: Please define which object this rule applies to "
+                "(e.g., quote, quote_line, product, opportunity, contract, or a custom object like proyecto__c)."
+            )
             logging.warning(content_message["error"])
 
             response_message.append(content_message)
@@ -158,8 +188,11 @@ def create_validation_rule(user, user_message, session_data):
                 response_message.append(content_message)
                 continue
         target_type_lower = target_type.lower()
-        if target_type_lower not in valid_target_types:
-            content_message["error"] = f"⚠️ Invalid value for target_type: expected one of {valid_target_types}, but got '{target_type}'."
+        if not _is_valid_business_rule_target_type(target_type_lower):
+            content_message["error"] = (
+                "⚠️ Invalid value for target_type: please use a valid object key "
+                "(e.g., quote, quote_line, product, opportunity, contract) or a custom object API name (e.g., proyecto__c)."
+            )
             logging.warning(content_message["error"])
 
             response_message.append(content_message)

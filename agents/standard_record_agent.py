@@ -33,6 +33,7 @@ from .utils.agents_utils import clean_llm_json
 from .utils.message_formatters import SUCCESS_ICON
 from .utils.orchestrator.context_handle_helpers import estimate_cost
 from .utils.session_context_helpers.session_context_helpers import get_session_context
+from .utils.admin_agent.rules_helpers import check_for_validation_rules
 
 load_dotenv()
 
@@ -92,6 +93,37 @@ EXTRA_FIELDS = {
 
 ALLOWED_FIELDS: Dict[str, List[str]] = {}
 ALLOWED_FIELD_MAP: Dict[str, Dict[str, str]] = {}
+
+
+def _business_rule_target_key(object_name: str) -> str:
+    return str(object_name or "").strip().lower()
+
+
+def _build_business_rule_context(record, object_name: str, user=None) -> Dict[str, object]:
+    """
+    Provide a context map for `fieldName` resolution.
+    Root key defaults to the lowercased object_name used as BusinessRule.target_type.
+    Also inject common related objects to support conditions like `quote.opportunity.stage`.
+    """
+    context: Dict[str, object] = {}
+    root_key = _business_rule_target_key(object_name)
+    if root_key:
+        context[root_key] = record
+        context["_default_root"] = root_key
+
+    for rel in ("quote", "quote_line", "product", "account", "opportunity", "contract", "tenant"):
+        try:
+            value = getattr(record, rel, None)
+        except Exception:
+            value = None
+        if value is not None:
+            context[rel] = value
+
+    # Allow rules to reference the acting user (e.g., user.is_superuser).
+    if user is not None:
+        context["user"] = user
+
+    return context
 
 
 def _refresh_allowed_fields():
@@ -680,6 +712,28 @@ def _persist_record(user, object_name: str, fields: Dict[str, object]) -> Tuple[
         return False, message, {}
 
     _save_custom_fields(record, fields, object_name, user)
+
+    # Optional validation enforcement (only blocks if matching rules exist).
+    try:
+        target_key = _business_rule_target_key(object_name)
+        context = _build_business_rule_context(record, object_name, user=user)
+        violations = check_for_validation_rules(target_key, context, rule_type="validation")
+        if violations:
+            # Clean up custom field values stored via GFK (not a FK cascade).
+            try:
+                ct = ContentType.objects.get_for_model(record.__class__)
+                CustomFieldValue.objects.filter(content_type=ct, object_id=record.id).delete()
+            except Exception:
+                pass
+            try:
+                record.delete()
+            except Exception:
+                pass
+            return False, "🚫 Validation failed:<br>" + "<br>".join(violations), {}
+    except Exception:
+        # Never block creation due to validator errors; keep legacy behavior.
+        logger.exception("BusinessRule validation check failed for %s create", object_name)
+
     return True, message, _record_payload(object_name, record)
 
 
@@ -704,6 +758,17 @@ def _persist_update(user, object_name: str, identifier: str, fields: Dict[str, o
 
     try:
         _apply_updates(user, object_name, record, fields)
+
+        # Validate BEFORE saving changes (no rollback needed).
+        try:
+            target_key = _business_rule_target_key(object_name)
+            context = _build_business_rule_context(record, object_name, user=user)
+            violations = check_for_validation_rules(target_key, context, rule_type="validation")
+            if violations:
+                return False, "🚫 Validation failed:<br>" + "<br>".join(violations), {}
+        except Exception:
+            logger.exception("BusinessRule validation check failed for %s update", object_name)
+
         record.save()
     except Exception as exc:
         logger.exception("Failed to update %s", object_name)

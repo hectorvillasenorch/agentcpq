@@ -1094,6 +1094,7 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     // Claves a buscar en el mensaje
     const keys = [
       'quote_details:',
+      'update_details:',
       'single_record:',
       'validation_rules_details:',
       'rules:',
@@ -1214,29 +1215,15 @@ function enhanceStructuredAgentMessagesHistoryChat() {
       }
 
       // === QUOTE DETAILS (editable) ===
-      if (matchedKey === 'quote_details:') {
-        const chatMessage = div.closest(".chat-message");
-        const rawMessageEl = chatMessage ? chatMessage.querySelector(".chat-text.agent .message") : null;
+      if (matchedKey === 'quote_details:' || matchedKey === 'update_details:') {
+        let messageBeforeJson = raw.slice(0, raw.indexOf(matchedKey)).trim();
+        messageBeforeJson = unescapeUnicode(messageBeforeJson);
+        messageBeforeJson = messageBeforeJson.replace(/\\u003C/g, "<").replace(/\\u003E/g, ">");
 
-        // If there is a human message prefix, show only that message and hide the structured block.
-        if (hasPrefix) {
-          stripStructuredSuffixInElement(
-            rawMessageEl,
-            ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
-          );
-          if (rawMessageEl) {
-            attachQuoteDetailsToggle(rawMessageEl, data);
-          }
-          const jsonContainer = div.closest(".chat-text.agent");
-          if (jsonContainer) jsonContainer.style.display = "none";
-          return;
-        }
-
-        // Otherwise, this message is intended to be a quote-details view:
-        // hide the raw JSON text block and show the rendered card.
-        if (rawMessageEl) rawMessageEl.parentElement.style.display = "none";
         ensureQuoteStatusValue(data);
-        div.innerHTML = renderQuoteDetails(data);
+        const quoteHtml = renderQuoteDetails(data);
+        const prefix = messageBeforeJson ? `<div class="general-message">${messageBeforeJson}</div>` : '';
+        div.innerHTML = `${prefix}${quoteHtml}`;
         return;
       }
 
@@ -1454,19 +1441,22 @@ async function sendMessage() {
 
         // ✅ Append the final response message to the chat
         const agentBubble = appendMessage("agent", `<div class="senderagent"><img width="110px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
-        if (embeddedQuoteDetails && agentBubble) {
+        if (agentBubble) {
           const target = agentBubble.querySelector(".message .general-message") || agentBubble.querySelector(".message");
-          attachQuoteDetailsToggle(target, embeddedQuoteDetails);
+          if (embeddedQuoteDetails) {
+            attachQuoteDetailsToggle(target, embeddedQuoteDetails);
+          }
+          // Persistently show quote details when backend provides `update_details`
+          // (avoid temporary message that disappears).
+          if (data.response && data.response.update_details) {
+            attachQuoteDetailsToggle(target, data.response.update_details);
+          }
         }
         loadPendingAttachments();
         hideAgentFeedback();
         scrollToBottom("sendMessage:agentResponse", true);
 
-        // ✅ Handle Temporary Quote Details After Update Quote Line, Add Product And Delete Quote Line Item
-        if (data.response && data.response.update_details && data.response.temporaryMessage){
-          const tempHtml = showTemporaryQuoteDetails(data.response.update_details);
-          renderTemporaryMessage("agent", tempHtml, data.response.iterations);
-        }
+        // NOTE: `update_details` are now attached as a persistent toggle above; do not render as temporary.
 
         // Auto-scroll chat
         chatBox.scrollTop = chatBox.scrollHeight;
@@ -1535,31 +1525,20 @@ function appendMessage(className, message) {
     let messageBubble = document.createElement("div");
     messageBubble.classList.add("chat-message", className);
 
-    // ✅ Detect stored quote_details as string
-    if (className === "agent" && message.includes("quote_details: {")) {
+    // ✅ Detect stored quote details (supports multiline JSON + optional human prefix).
+    if (className === "agent" && message.includes("quote_details:")) {
       try {
-        // Extract JSON from string
-        const match = message.match(/quote_details:\s({.+})/);
-        if (match && match[1]) {
-          const quote = JSON.parse(match[1]);
-          // Ensure status_value exists for downstream selection logic
+        const key = "quote_details:";
+        const idx = message.indexOf(key);
+        const prefixRaw = idx > 0 ? message.slice(0, idx).trim() : "";
+        const afterKey = message.slice(idx + key.length);
+        const jsonStr = extractJson(afterKey);
+        if (jsonStr) {
+          const quote = JSON.parse(jsonStr);
           ensureQuoteStatusValue(quote);
-          message = renderQuoteDetails(quote);  // Use your nice formatter
-        }
-      } catch (e) {
-        console.warn("Failed to parse quote_details JSON:", e);
-      }
-    }
-
-    // ✅ Detect stored notes as string
-    if (className === "agent" && message.includes("quote_details: {") && message.includes("notes: {")) {
-      try {
-        // Extract JSON from string
-        const match = message.match(/quote_details:\s({.+})/);
-        if (match && match[1]) {
-          const quote = JSON.parse(match[1]);
-          ensureQuoteStatusValue(quote);
-          message = renderQuoteNotes(quote);  // Use your nice formatter
+          const rendered = message.includes("notes: {") ? renderQuoteNotes(quote) : renderQuoteDetails(quote);
+          const prefix = prefixRaw ? `<div class="general-message">${prefixRaw}</div>` : "";
+          message = `${prefix}${rendered}`;
         }
       } catch (e) {
         console.warn("Failed to parse quote_details JSON:", e);
@@ -3916,13 +3895,30 @@ async function executeSingleRecordAutoSave(card) {
     const data = await response.json();
     const result = data.response || {};
 
+    const messageText = String(result.message || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .trim();
+    const updatedFields = Array.isArray(result.updated_fields) ? result.updated_fields : [];
+    const failedFields = Array.isArray(result.failed_fields) ? result.failed_fields : [];
+
     if (result.single_record) {
       updateSingleRecordCard(card, result.single_record);
-      setSingleRecordCardFeedback(feedback, '✅ Saved', 'success');
-    } else {
-      const errorMessage = result.message || '⚠️ Unable to update the record.';
-      setSingleRecordCardFeedback(feedback, errorMessage, 'error');
     }
+
+    if (failedFields.length > 0 || (updatedFields.length === 0 && messageText)) {
+      const intent = updatedFields.length > 0 ? 'info' : 'error';
+      setSingleRecordCardFeedback(feedback, messageText || '⚠️ Not saved.', intent);
+      if (messageText) showSingleRecordToast(messageText, intent);
+      return;
+    }
+
+    if (updatedFields.length > 0) {
+      setSingleRecordCardFeedback(feedback, '✅ Saved', 'success');
+      return;
+    }
+
+    setSingleRecordCardFeedback(feedback, messageText || '⚠️ Unable to update the record.', 'error');
   } catch (error) {
     console.error('Error updating record:', error);
     setSingleRecordCardFeedback(feedback, '❌ Something went wrong while saving. Please try again.', 'error');
