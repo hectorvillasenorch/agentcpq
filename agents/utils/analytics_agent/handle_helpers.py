@@ -1123,7 +1123,7 @@ ALLOWED_FIELDS = {
     "Product": ["name", "sku", "price", "fixed_price", "price_mode", "is_subscription", "term", "is_bundle", "family", "is_active", "created_at", "description"],
     "Account": ["name", "industry", "website", "phone", "street", "city", "state", "zip_code"],
     "Contact": ["first_name", "last_name", "email", "phone", "company", "job_title", "notes", "account", "is_primary"],
-    "Opportunity": ["name", "account", "amount", "stage", "expected_close_date", "primary_quote"],
+    "Opportunity": ["name", "account", "amount", "stage", "expected_close_date", "primary_quote", "owner", "created_by"],
     "Quote": ["name", "account", "opportunity", "subtotal", "net_amount", "tax_percentage", "tax_amount", "status",
               "discount_percentage", "discount_amount", "expiration_date", "notes", "created_at"],
     "Activity": ["subject", "activity_type", "status", "due_date"]
