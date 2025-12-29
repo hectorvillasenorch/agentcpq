@@ -483,7 +483,28 @@ def _format_display_value(value, field_obj: Optional[Field], *, model_name: Opti
     if isinstance(field_obj, ForeignKey):
         if value is None:
             return ""
-        return getattr(value, "name", str(value))
+        # Prefer human-friendly labels for User-like objects (Owner/Created By)
+        try:
+            get_full_name = getattr(value, "get_full_name", None)
+            if callable(get_full_name):
+                full_name = (get_full_name() or "").strip()
+                if full_name:
+                    return full_name
+        except Exception:
+            pass
+
+        first = str(getattr(value, "first_name", "") or "").strip()
+        last = str(getattr(value, "last_name", "") or "").strip()
+        full_name = " ".join([p for p in [first, last] if p]).strip()
+        if full_name:
+            return full_name
+
+        return (
+            getattr(value, "name", None)
+            or getattr(value, "custom_identifier", None)
+            or getattr(value, "email", None)
+            or str(value)
+        )
     if hasattr(value, "__str__"):
         return str(value)
     return str(value)
@@ -609,13 +630,27 @@ def _get_lookup_options(field_obj: ForeignKey, record: Optional[Model] = None, l
             current_val = None
 
     if current_val is not None:
-        label = (
-            getattr(current_val, "name", None)
-            or getattr(current_val, "custom_identifier", None)
-            or getattr(current_val, "email", None)
-            or " ".join([str(getattr(current_val, "first_name", "")).strip(), str(getattr(current_val, "last_name", "")).strip()]).strip()
-            or str(current_val)
-        )
+        label = None
+        try:
+            get_full_name = getattr(current_val, "get_full_name", None)
+            if callable(get_full_name):
+                label = (get_full_name() or "").strip() or None
+        except Exception:
+            label = None
+
+        if not label:
+            label = (
+                getattr(current_val, "name", None)
+                or getattr(current_val, "custom_identifier", None)
+                or " ".join(
+                    [
+                        str(getattr(current_val, "first_name", "")).strip(),
+                        str(getattr(current_val, "last_name", "")).strip(),
+                    ]
+                ).strip()
+                or getattr(current_val, "email", None)
+                or str(current_val)
+            )
         if label:
             options.append({"value": getattr(current_val, "pk", None), "label": label})
             seen.add(getattr(current_val, "pk", None))
@@ -624,13 +659,24 @@ def _get_lookup_options(field_obj: ForeignKey, record: Optional[Model] = None, l
         if obj.pk in seen:
             continue
         seen.add(obj.pk)
-        label = (
-            getattr(obj, "name", None)
-            or getattr(obj, "custom_identifier", None)
-            or getattr(obj, "email", None)
-            or " ".join([str(getattr(obj, "first_name", "")).strip(), str(getattr(obj, "last_name", "")).strip()]).strip()
-            or str(obj)
-        )
+        label = None
+        try:
+            get_full_name = getattr(obj, "get_full_name", None)
+            if callable(get_full_name):
+                label = (get_full_name() or "").strip() or None
+        except Exception:
+            label = None
+
+        if not label:
+            label = (
+                getattr(obj, "name", None)
+                or getattr(obj, "custom_identifier", None)
+                or " ".join(
+                    [str(getattr(obj, "first_name", "")).strip(), str(getattr(obj, "last_name", "")).strip()]
+                ).strip()
+                or getattr(obj, "email", None)
+                or str(obj)
+            )
         if label is None:
             continue
         options.append({"value": getattr(obj, "pk", None), "label": label})
