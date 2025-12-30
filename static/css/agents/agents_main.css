@@ -113,6 +113,114 @@ input[type="number"] {
     color: #041530;
   }
 
+  .quote-notes-block {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #eef1f6;
+  }
+
+  .quote-notes-label {
+    font-weight: 700;
+    color: #041530;
+    margin-bottom: 8px;
+  }
+
+  .quote-notes-textarea {
+    width: 100%;
+    min-height: 140px;
+    padding: 12px;
+    border: 1px solid #d7dde7;
+    border-radius: 12px;
+    resize: vertical;
+    box-sizing: border-box;
+    font-size: 14px;
+    line-height: 1.4;
+    color: #0f172a;
+    background: #f8fafc;
+    outline: none;
+  }
+
+  .quote-notes-textarea:focus {
+    border-color: rgba(4, 21, 48, 0.45);
+    box-shadow: 0 0 0 3px rgba(4, 21, 48, 0.12);
+  }
+
+  .quote-notes-textarea--hidden {
+    display: none;
+  }
+
+  .quote-notes-toolbar {
+    display: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 6px;
+    border-radius: 999px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background: rgba(248, 250, 252, 0.72);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .quote-notes-tool {
+    border: 1px solid rgba(15, 23, 42, 0.10);
+    background: rgba(255, 255, 255, 0.85);
+    color: #182740;
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 80ms ease, background 80ms ease, border-color 80ms ease;
+  }
+
+  .quote-notes-tool:hover {
+    background: rgba(255, 255, 255, 0.95);
+    border-color: rgba(15, 23, 42, 0.18);
+    transform: translateY(-1px);
+  }
+
+  .quote-notes-tool .material-icons {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .quote-notes-divider {
+    width: 1px;
+    height: 18px;
+    background: rgba(15, 23, 42, 0.14);
+    margin: 0 2px;
+  }
+
+  .quote-notes-editor {
+    width: 100%;
+    min-height: 160px;
+    padding: 12px;
+    border: 1px solid rgba(15, 23, 42, 0.16);
+    border-radius: 12px;
+    background: #f8fafc;
+    color: #0f172a;
+    font-size: 14px;
+    line-height: 1.5;
+    box-sizing: border-box;
+    outline: none;
+    margin-top: 10px;
+    overflow: auto;
+  }
+
+  .quote-notes-editor:focus {
+    border-color: rgba(4, 21, 48, 0.45);
+    box-shadow: 0 0 0 3px rgba(4, 21, 48, 0.12);
+    background: #ffffff;
+  }
+
+  .quote-notes-editor:empty:before {
+    content: attr(data-placeholder);
+    color: rgba(100, 116, 139, 0.9);
+  }
+
   .centered-td {
     text-align: center;
   }
@@ -728,6 +836,44 @@ textarea.bundle-edit-input {
 .toast-info {
   background: #1d4ed8 !important;
 }
+
+.quote-toast-container {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 10050;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.quote-toast {
+  pointer-events: auto;
+  min-width: 220px;
+  max-width: 360px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: #ffffff;
+  font-size: 0.92rem;
+  font-weight: 600;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.quote-toast.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.quote-toast--success { background: rgba(15, 118, 110, 0.92); }
+.quote-toast--error { background: rgba(185, 28, 28, 0.92); }
+.quote-toast--info { background: rgba(29, 78, 216, 0.92); }
 
 .single-record-empty {
   padding: 12px 0;

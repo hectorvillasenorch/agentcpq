@@ -15,7 +15,7 @@ from django.forms.models import model_to_dict
 from .db_helpers import find_product_and_normalize_variables, update_opportunity_net_amount
 
 # General Helpers
-from .general_helpers import normalize_term_for_product, get_quote_details, set_active_quote_to_session_data, copy_custom_fields_values_from_product_to_quote_line
+from .general_helpers import clean_inline_html, normalize_term_for_product, get_quote_details, set_active_quote_to_session_data, copy_custom_fields_values_from_product_to_quote_line
 from ..message_formatters import SUCCESS_ICON
 
 #Rules Helpers
@@ -316,6 +316,11 @@ def save_quote_update(request):
             if field in fields:
                 if field == "expiration_date" and isinstance(new_value, str):
                     new_value = parse_user_date(new_value)
+                if field == "notes" and isinstance(new_value, str):
+                    # Normalize common rich-text wrappers (execCommand tends to produce <div>)
+                    normalized = re.sub(r"</div\s*>", "</p>", new_value, flags=re.IGNORECASE)
+                    normalized = re.sub(r"<div[^>]*>", "<p>", normalized, flags=re.IGNORECASE)
+                    new_value = clean_inline_html(normalized)
                 setattr(quote, field, new_value)
             elif field == "tax_percentage":
                 quote.tax_percentage = Decimal(str(new_value))

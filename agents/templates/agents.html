@@ -13,7 +13,9 @@
     <link rel="stylesheet" href="{% static 'css/graphic_builder_for_action_trigger.css' %}">
 
     <script src="{% static 'js/agents/graphic_builder_for_action_trigger.js' %}" defer></script>
-    <script src="{% static 'js/agents/agent_main.js' %}" defer></script>
+    {% if not embedded_in_dashboard %}
+      <script src="{% static 'js/agents/agent_main.js' %}" defer></script>
+    {% endif %}
 
     <!-- Flatpickr JS & CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">

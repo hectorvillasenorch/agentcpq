@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", function () {
   setupUploadZone();
   loadPendingAttachments();
   enhanceStructuredAgentMessagesHistoryChat(); // 🔥
+  stripStructuredSuffixesInHistory();
   setupStructuredToggles();
   updateAttachmentPreview();
   initializeMaterializeSelects(document);
@@ -985,6 +986,32 @@ function stripStructuredSuffixInElement(el, keys) {
   return true;
 }
 
+function stripStructuredSuffixesInHistory() {
+  const keys = ["quote_details:", "update_details:"];
+  const messages = document.querySelectorAll(".chat-message.agent .message");
+  messages.forEach((el) => {
+    if (!el || !el.innerHTML) return;
+    const html = el.innerHTML;
+    const containsKey = keys.some((key) => html.includes(key));
+    if (!containsKey) return;
+
+    const cleaned = stripStructuredSuffixFromAgentMessage(html, keys);
+    if (cleaned.stripped) {
+      el.innerHTML = cleaned.message;
+      return;
+    }
+
+    // If the message is only structured JSON, hide the blob.
+    const firstKeyIdx = keys
+      .map((key) => html.indexOf(key))
+      .filter((idx) => idx >= 0)
+      .sort((a, b) => a - b)[0];
+    if (firstKeyIdx === 0) {
+      el.innerHTML = "";
+    }
+  });
+}
+
 function extractEmbeddedJsonPayload(rawMessage, key) {
   if (typeof rawMessage !== "string" || !rawMessage) return null;
   const idx = rawMessage.indexOf(key);
@@ -997,6 +1024,25 @@ function extractEmbeddedJsonPayload(rawMessage, key) {
   } catch {
     return null;
   }
+}
+
+function shouldSkipDuplicateAgentMessage(messageHtml) {
+  const chatBox = document.getElementById("chat-box");
+  if (!chatBox) return false;
+  const lastMessage = chatBox.querySelector(".chat-message.agent:last-of-type .message");
+  if (!lastMessage) return false;
+
+  const nextHtml = (messageHtml || "").trim();
+  if (!nextHtml) return false;
+
+  const lastHtml = (lastMessage.innerHTML || "").trim();
+  const now = Date.now();
+  const lastAt = window.lastAgentMessageAt || 0;
+
+  if (lastHtml === nextHtml && (now - lastAt) < 2000) {
+    return true;
+  }
+  return false;
 }
 
 function attachQuoteDetailsToggle(targetEl, quoteObj) {
@@ -1216,14 +1262,14 @@ function enhanceStructuredAgentMessagesHistoryChat() {
 
       // === QUOTE DETAILS (editable) ===
       if (matchedKey === 'quote_details:' || matchedKey === 'update_details:') {
-        let messageBeforeJson = raw.slice(0, raw.indexOf(matchedKey)).trim();
-        messageBeforeJson = unescapeUnicode(messageBeforeJson);
-        messageBeforeJson = messageBeforeJson.replace(/\\u003C/g, "<").replace(/\\u003E/g, ">");
-
         ensureQuoteStatusValue(data);
         const quoteHtml = renderQuoteDetails(data);
-        const prefix = messageBeforeJson ? `<div class="general-message">${messageBeforeJson}</div>` : '';
-        div.innerHTML = `${prefix}${quoteHtml}`;
+        div.innerHTML = `${quoteHtml}`;
+
+        // History-rendered quote cards still need JS bindings (flatpickr, selects, notes autosave).
+        initializeQuoteDetailInteractions(div);
+        initializeMaterializeSelects(div);
+        initializeBundleStructureCards(div);
         return;
       }
 
@@ -1440,17 +1486,20 @@ async function sendMessage() {
         }
 
         // ✅ Append the final response message to the chat
-        const agentBubble = appendMessage("agent", `<div class="senderagent"><img width="110px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
-        if (agentBubble) {
-          const target = agentBubble.querySelector(".message .general-message") || agentBubble.querySelector(".message");
-          if (embeddedQuoteDetails) {
-            attachQuoteDetailsToggle(target, embeddedQuoteDetails);
+        if (!shouldSkipDuplicateAgentMessage(responseMessage)) {
+          const agentBubble = appendMessage("agent", `<div class="senderagent"><img width="110px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
+          if (agentBubble) {
+            const target = agentBubble.querySelector(".message .general-message") || agentBubble.querySelector(".message");
+            if (embeddedQuoteDetails) {
+              attachQuoteDetailsToggle(target, embeddedQuoteDetails);
+            }
+            // Persistently show quote details when backend provides `update_details`
+            // (avoid temporary message that disappears).
+            if (data.response && data.response.update_details) {
+              attachQuoteDetailsToggle(target, data.response.update_details);
+            }
           }
-          // Persistently show quote details when backend provides `update_details`
-          // (avoid temporary message that disappears).
-          if (data.response && data.response.update_details) {
-            attachQuoteDetailsToggle(target, data.response.update_details);
-          }
+          window.lastAgentMessageAt = Date.now();
         }
         loadPendingAttachments();
         hideAgentFeedback();
@@ -1648,6 +1697,7 @@ function appendMessage(className, message) {
     });
 
     initializeBundleStructureCards(messageBubble);
+    initializeQuoteNotesEditors(messageBubble);
 
     if (message.includes("agent-json")) {
         enhanceStructuredAgentMessages();
@@ -1771,6 +1821,109 @@ function initializeQuoteDetailInteractions(container) {
       }
     });
   }
+
+  initializeQuoteNotesEditors(container);
+}
+
+function sanitizeQuoteNotesHtml(html) {
+  if (!html) return "";
+
+  const allowedTags = new Set(["B", "STRONG", "I", "EM", "U", "BR", "P", "UL", "OL", "LI"]);
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(String(html), "text/html");
+
+  const walk = (node) => {
+    const children = Array.from(node.childNodes || []);
+    for (const child of children) {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        const tag = child.tagName;
+        if (tag === "DIV") {
+          // Preserve line breaks from contenteditable by converting divs to paragraphs.
+          const para = doc.createElement("p");
+          while (child.firstChild) {
+            para.appendChild(child.firstChild);
+          }
+          child.replaceWith(para);
+          walk(para);
+          continue;
+        }
+        if (!allowedTags.has(tag)) {
+          const replacement = doc.createTextNode(child.textContent || "");
+          child.replaceWith(replacement);
+          continue;
+        }
+
+        // Strip all attributes (defensive)
+        for (const attr of Array.from(child.attributes || [])) {
+          child.removeAttribute(attr.name);
+        }
+        walk(child);
+      }
+    }
+  };
+
+  walk(doc.body);
+
+  // Keep output tight; preserve <br> breaks
+  return (doc.body.innerHTML || "").trim();
+}
+
+function initializeQuoteNotesEditors(container) {
+  const editors = container.querySelectorAll(".quote-notes-editor[data-field='notes']");
+  if (!editors.length) return;
+
+  // Toolbar: apply formatting commands to the nearest editor.
+  container.querySelectorAll(".quote-notes-tool").forEach((btn) => {
+    if (btn.dataset.bound === "true") return;
+    btn.dataset.bound = "true";
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const cmd = btn.dataset.cmd;
+      const editor = btn.closest(".quote-notes-block")?.querySelector(".quote-notes-editor");
+      if (!editor || !cmd) return;
+      editor.focus();
+      try {
+        document.execCommand(cmd, false, null);
+      } catch (err) {
+        console.warn("Quote notes command failed:", cmd, err);
+      }
+    });
+  });
+
+  editors.forEach((editor) => {
+    if (editor.dataset.initialized === "true") return;
+    editor.dataset.initialized = "true";
+
+    let raw = "";
+    try {
+      raw = JSON.parse(editor.dataset.initialJson || "\"\"") || "";
+    } catch {
+      raw = editor.dataset.initialJson || "";
+    }
+
+    const isLikelyHtml = /<\s*\w+[^>]*>/.test(raw);
+    const initialHtml = isLikelyHtml ? raw : escapeHtml(String(raw)).replace(/\n/g, "<br/>");
+    const existingHtml = (editor.innerHTML || "").trim();
+    editor.innerHTML = sanitizeQuoteNotesHtml(existingHtml || initialHtml);
+    editor.dataset.initialValue = editor.innerHTML;
+
+    editor.addEventListener("focus", () => {
+      editor.dataset.initialValue = editor.innerHTML;
+    });
+
+    editor.addEventListener("paste", (event) => {
+      // Prevent rich paste; keep it clean.
+      event.preventDefault();
+      const text = (event.clipboardData || window.clipboardData).getData("text/plain");
+      document.execCommand("insertText", false, text);
+    });
+
+    editor.addEventListener("blur", () => {
+      const sanitized = sanitizeQuoteNotesHtml(editor.innerHTML);
+      editor.innerHTML = sanitized;
+      updateQuote(editor);
+    });
+  });
 }
 
 function flashQuoteTotals(container) {
@@ -1855,6 +2008,11 @@ function renderQuoteDetails(quote) {
 
   const { raw: statusValue, normalized: normalizedStatus } = prepareQuoteStatusFields(quote);
   console.log('STATUS OPTIONS: '+buildStatusOptions(quote));
+  const rawNotes = quote && Object.prototype.hasOwnProperty.call(quote, "notes") ? (quote.notes || "") : "";
+  const notesLooksHtml = /<\s*\w+[^>]*>/.test(String(rawNotes));
+  const notesInitialHtml = sanitizeQuoteNotesHtml(
+    notesLooksHtml ? String(rawNotes) : escapeHtml(String(rawNotes)).replace(/\n/g, "<br/>")
+  );
   var html = `<div class="quote-container" data-quote-name="${quote.quote_name}">
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
@@ -2298,6 +2456,28 @@ function renderQuoteDetails(quote) {
             currency: 'USD'
         })}
       </p>
+      <div class="quote-notes-block">
+        <div class="quote-notes-label">Notes</div>
+        <div class="quote-notes-toolbar" role="toolbar" aria-label="Notes formatting">
+          <button type="button" class="quote-notes-tool" data-cmd="bold" title="Bold"><span class="material-icons">format_bold</span></button>
+          <button type="button" class="quote-notes-tool" data-cmd="italic" title="Italic"><span class="material-icons">format_italic</span></button>
+          <button type="button" class="quote-notes-tool" data-cmd="underline" title="Underline"><span class="material-icons">format_underlined</span></button>
+          <span class="quote-notes-divider" aria-hidden="true"></span>
+          <button type="button" class="quote-notes-tool" data-cmd="insertUnorderedList" title="Bullets"><span class="material-icons">format_list_bulleted</span></button>
+          <button type="button" class="quote-notes-tool" data-cmd="insertOrderedList" title="Numbered list"><span class="material-icons">format_list_numbered</span></button>
+        </div>
+        <div
+          class="quote-notes-editor"
+          contenteditable="true"
+          role="textbox"
+          aria-multiline="true"
+          data-field="notes"
+          data-quote="${quote.quote_name}"
+          data-initial-json="${escapeHtml(JSON.stringify(rawNotes))}"
+          data-placeholder="Add notes for this quote…"
+        >${notesInitialHtml}</div>
+        <textarea class="quote-notes-textarea quote-notes-textarea--hidden" tabindex="-1" aria-hidden="true"></textarea>
+      </div>
     </div>
   </div>`;
 
@@ -2321,6 +2501,11 @@ function renderQuoteDetailsMobile(quote) {
   const safeDiscountAmount = Number.isFinite(discountAmountValue) ? discountAmountValue : 0;
   const formattedDiscountAmount = safeDiscountAmount.toLocaleString("en-US", { minimumFractionDigits: 2 });
   const { raw: statusValue, normalized: normalizedStatus } = prepareQuoteStatusFields(quote);
+  const rawNotes = quote && Object.prototype.hasOwnProperty.call(quote, "notes") ? (quote.notes || "") : "";
+  const notesLooksHtml = /<\s*\w+[^>]*>/.test(String(rawNotes));
+  const notesInitialHtml = sanitizeQuoteNotesHtml(
+    notesLooksHtml ? String(rawNotes) : escapeHtml(String(rawNotes)).replace(/\n/g, "<br/>")
+  );
 
   let html = `
     <div class="quote-mobile" data-quote-name="${quote.quote_name}" style="font-family: Arial, sans-serif; line-height: 1.4">
@@ -2386,6 +2571,29 @@ function renderQuoteDetailsMobile(quote) {
       <p><span class="material-icons" style="font-size:20px;vertical-align:middle;color:#2e7d32;margin-right:4px;">attach_money</span><b>Net Amount:</b> ${parseFloat(
         quote.net_amount.replace("$", "")
       ).toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
+
+      <div style="margin-top:10px;">
+        <div style="font-weight:700;margin-bottom:6px;color:#041530;">Notes</div>
+        <div class="quote-notes-toolbar" role="toolbar" aria-label="Notes formatting">
+          <button type="button" class="quote-notes-tool" data-cmd="bold" title="Bold"><span class="material-icons">format_bold</span></button>
+          <button type="button" class="quote-notes-tool" data-cmd="italic" title="Italic"><span class="material-icons">format_italic</span></button>
+          <button type="button" class="quote-notes-tool" data-cmd="underline" title="Underline"><span class="material-icons">format_underlined</span></button>
+          <span class="quote-notes-divider" aria-hidden="true"></span>
+          <button type="button" class="quote-notes-tool" data-cmd="insertUnorderedList" title="Bullets"><span class="material-icons">format_list_bulleted</span></button>
+        </div>
+        <div
+          class="quote-notes-editor"
+          contenteditable="true"
+          role="textbox"
+          aria-multiline="true"
+          data-field="notes"
+          data-quote="${quote.quote_name}"
+          data-initial-json="${escapeHtml(JSON.stringify(rawNotes))}"
+          data-placeholder="Add notes for this quote…"
+          style="margin-top:8px;"
+        >${notesInitialHtml}</div>
+        <textarea class="quote-notes-textarea quote-notes-textarea--hidden" tabindex="-1" aria-hidden="true"></textarea>
+      </div>
     </div>`;
 
   return html;
@@ -4007,6 +4215,30 @@ function showSingleRecordToast(message, intent) {
   }
 }
 
+function showQuoteToast(message, intent = "success") {
+  const tone = intent === "error" ? "error" : intent === "info" ? "info" : "success";
+  let container = document.querySelector(".quote-toast-container");
+  if (!container) {
+    container = document.createElement("div");
+    container.className = "quote-toast-container";
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement("div");
+  toast.className = `quote-toast quote-toast--${tone}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  requestAnimationFrame(() => toast.classList.add("is-visible"));
+
+  const remove = () => {
+    toast.classList.remove("is-visible");
+    setTimeout(() => toast.remove(), 180);
+  };
+
+  setTimeout(remove, tone === "error" ? 4500 : 2400);
+}
+
 function renderSingleRecordRelated(entry) {
   if (!entry || !Array.isArray(entry.records) || entry.records.length === 0) {
     return '';
@@ -4306,12 +4538,17 @@ async function updateQuoteLine(input) {
 * ✅ Update expiration date
 */
 async function updateQuote(input) {
-    let newValue = input.value;
+    let newValue = (typeof input.value === "string") ? input.value : (input.innerHTML ?? "");
     const field = input.dataset.field;
     const quote = input.dataset.quote;
 
-    if (!newValue || !quote) {
-        console.warn("⚠️ Missing value or quote ID.");
+    if (!quote) {
+        console.warn("⚠️ Missing quote ID.");
+        return;
+    }
+    // Allow clearing Notes; keep existing behavior for other fields.
+    if (!newValue && field !== "notes") {
+        console.warn("⚠️ Missing value.");
         return;
     }
 
@@ -4355,11 +4592,25 @@ async function updateQuote(input) {
                 flashQuoteTotals(newEl || existingDetails);
             }
 
+            if (field === "notes") {
+              showQuoteToast("✅ Notes saved", "success");
+              return;
+            }
             alert("✅ Quote updated successfully.");
         } else {
             // ⬅️ Restart original value of the input field
             if (data.response && Object.prototype.hasOwnProperty.call(data.response, 'original_value')) {
-                input.value = data.response.original_value;
+                if (typeof input.value === "string") {
+                  input.value = data.response.original_value;
+                } else {
+                  input.innerHTML = data.response.original_value;
+                }
+            }
+            if (field === "notes") {
+              const raw = (data.response && data.response.message ? data.response.message : '⚠️ Unable to update notes.');
+              const msg = String(raw).replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').trim();
+              showQuoteToast(msg || "⚠️ Unable to update notes.", "error");
+              return;
             }
             alert((data.response && data.response.message ? data.response.message : '⚠️ Unable to update quote.').replace(/<br\s*\/?>/gi, '\n'));
         }
@@ -4367,7 +4618,15 @@ async function updateQuote(input) {
         console.error("❌ Error updating quote:", error);
         // ⬅️ Restart original value of the input field
         if (Object.prototype.hasOwnProperty.call(input.dataset, 'initialValue')) {
-            input.value = input.dataset.initialValue;
+            if (typeof input.value === "string") {
+              input.value = input.dataset.initialValue;
+            } else {
+              input.innerHTML = input.dataset.initialValue;
+            }
+        }
+        if (field === "notes") {
+          showQuoteToast("❌ Error saving notes.", "error");
+          return;
         }
         alert("❌ Error occurred while updating quote.");
     }

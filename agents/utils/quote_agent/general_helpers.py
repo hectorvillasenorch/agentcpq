@@ -117,6 +117,17 @@ DESC_PARAGRAPH_STYLE = ParagraphStyle(
     spaceAfter=0,
 )
 
+NOTES_PARAGRAPH_STYLE = ParagraphStyle(
+    name="NotesBlock",
+    fontName="Helvetica",
+    fontSize=10,
+    leading=12,
+    textColor=HexColor("#0f172a"),
+    alignment=TA_LEFT,
+    spaceBefore=0,
+    spaceAfter=0,
+)
+
 def normalize_term_for_product(product, term):
     if product.is_subscription:
         term = 12 if term is None else int(term)
@@ -236,6 +247,7 @@ def get_quote_details(quote):
         "show_quote_tax_amount": True if quote_document_settings.show_quote_tax_amount else False,
         "tax_percentage": str(quote.tax_percentage) if quote_document_settings.show_quote_tax_information and quote_document_settings.show_quote_tax_percentage else None,
         "tax_amount": str(quote.tax_amount) if quote_document_settings.show_quote_tax_information and quote_document_settings.show_quote_tax_amount else None,
+        "notes": quote.notes or "",
         "line_items": line_items
     }
 
@@ -670,54 +682,62 @@ def get_document_pdf(quote, session_data=None):
         # ✅ Quote Notes
         if template.show_quote_notes and quote.notes:
             x_position = 50
-            lines_count = 15
             y_position -= 15
-            line_spacing = 12
             left_margin = x_position + 5
-            pdf.drawString(left_margin, y_position, f"Quote Notes:")
-            # Pre settings and draw notes
-            max_width = 500
-            font_name = "Helvetica"
-            font_size = 10
-            pdf.setFont(font_name, font_size)
-
-            lines = wrap_text(quote.notes, font_name, font_size, max_width, pdf)
-
+            pdf.setFont("Helvetica-Bold", 12)
+            pdf.setFillColor(HexColor(SCOLOR if "SCOLOR" in locals() else CBLACK))
+            pdf.drawString(left_margin, y_position, "Notes")
+            pdf.setFillColor(HexColor(CBLACK))
             y_position -= 15
-            new_page_bool = False
 
-            for index, line in enumerate(lines, start=1):
-                if y_position < 50:  # Si nos acercamos al final de la hoja
-                    lines_count += 12 * index
+            max_width = 500
+            box_width = 510
+            bottom_margin = 50
+            bg_fill = HexColor("#f8fafc")
+            border_color = HexColor("#d7dde7")
+            padding_y = 8
+            radius = 10
 
-                    pdf.setFillColor(HexColor(PCOLOR))
-                    pdf.setLineWidth(1)
-                    pdf.setStrokeColor(HexColor(PCOLOR))
-                    pdf.rect(x_position, y_position, 510, lines_count, fill=False, stroke=True)
+            cleaned = clean_inline_html(str(quote.notes or ""))
+            html = normalize_linebreaks(cleaned)
+            remaining = Paragraph(html, NOTES_PARAGRAPH_STYLE)
 
+            while remaining:
+                available_height = y_position - bottom_margin
+                if available_height < 40:
                     pdf.showPage()
-                    y_position = letter[1] - 50  # Reinicia desde arriba con margen
-                    pdf.setFont(font_name, font_size)
+                    y_position = letter[1] - 50
                     pdf.setFillColor(HexColor(CBLACK))
+                    available_height = y_position - bottom_margin
 
-                    new_page_bool = True
-                    lines_before_new_page = index
+                wrapped_w, wrapped_h = remaining.wrap(max_width, available_height)
 
-                    lines_count = 15
+                if wrapped_h <= available_height:
+                    part = remaining
+                    remaining = None
                 else:
-                    pdf.drawString(left_margin, y_position, line)
-                    y_position -= line_spacing
+                    parts = remaining.split(max_width, available_height)
+                    if not parts:
+                        pdf.showPage()
+                        y_position = letter[1] - 50
+                        pdf.setFillColor(HexColor(CBLACK))
+                        continue
+                    part = parts[0]
+                    remaining = parts[1] if len(parts) > 1 else None
+                    wrapped_w, wrapped_h = part.wrap(max_width, available_height)
 
-            #-----------------
-            if new_page_bool:
-                lines_count += line_spacing * (len(lines) - lines_before_new_page)
-            else:
-                lines_count += line_spacing * (len(lines) + 1)
+                box_top = y_position
+                box_height = wrapped_h + (padding_y * 2)
+                box_bottom = box_top - box_height - 2
 
-            pdf.setFillColor(HexColor(PCOLOR))
-            pdf.setLineWidth(1)
-            pdf.setStrokeColor(HexColor(PCOLOR))
-            pdf.rect(x_position, y_position, 510, lines_count, fill=False, stroke=True)
+                pdf.setFillColor(bg_fill)
+                pdf.setStrokeColor(border_color)
+                pdf.setLineWidth(1)
+                pdf.roundRect(x_position, box_bottom, box_width, box_height + 4, radius, fill=1, stroke=1)
+
+                pdf.setFillColor(HexColor(CBLACK))
+                part.drawOn(pdf, left_margin, box_top - padding_y - wrapped_h)
+                y_position = box_bottom - 14
 
             # Set all up back again
             pdf.setFont("Helvetica-Bold", 12)

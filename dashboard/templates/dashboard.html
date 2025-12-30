@@ -128,11 +128,11 @@
         <main class="main-content">
             <div id="content-area">
                 {% if request.GET.view == "agents" %}
-                    {% include "agents.html" %}
+                    {% include "agents.html" with embedded_in_dashboard=True %}
                 {% elif request.GET.view == "products" %}
-                    {% include "products.html" %}
+                    {% include "products.html" with embedded_in_dashboard=True %}
                 {% elif request.GET.view == "accounts" %}
-                    {% include "accounts.html" %}
+                    {% include "accounts.html" with embedded_in_dashboard=True %}
                 {% elif request.GET.view == "setup" %}
                     {% include "setup.html" %}
                 {% elif request.GET.view == "payment__c" %}
