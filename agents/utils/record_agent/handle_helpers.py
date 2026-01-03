@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_LOOKUPS = {
-    "Account": ["name", "custom_identifier", "id"],
-    "Contact": ["email", "custom_identifier", "id"],
+    "Account": ["name", "accid", "external_id", "custom_identifier", "id"],
+    "Contact": ["email", "contactId", "external_id", "first_name", "last_name", "custom_identifier", "id"],
     "Lead": [
         "email",
         "phone",
@@ -45,11 +45,18 @@ DEFAULT_LOOKUPS = {
         "company_name",
         "company",
         "notes",
+        "leadId",
         "id",
     ],
-    "Opportunity": ["name", "id"],
-    "Product": ["sku", "name", "id"],
-    "Quote": ["name", "id"],
+    "Opportunity": ["name", "oppid", "id"],
+    "Product": ["sku", "name", "prdid", "external_id", "id"],
+    "Quote": ["name", "qteid", "id"],
+    "Activity": ["subject", "activityid", "opportunity", "contact", "lead", "id"],
+    "Contract": ["opportunity", "contract_status", "start_date", "end_date", "id"],
+    "Subscription": ["product", "contract", "quote", "quote_line", "id"],
+    "Option": ["parent_product", "product_option", "group_name", "id"],
+    "Tenant": ["name", "tenant_id", "domain", "contact_email", "id"],
+    "Knowledge": ["title", "tags", "id"],
     "CustomRecord": ["custom_identifier", "record_id", "id"],
 }
 
@@ -60,6 +67,12 @@ PRIMARY_FIELD_MAP = {
     "Opportunity": "name",
     "Product": "name",
     "Quote": "name",
+    "Activity": "subject",
+    "Contract": "opportunity",
+    "Subscription": "product",
+    "Option": "product_option",
+    "Tenant": "name",
+    "Knowledge": "title",
 }
 
 _NUMERIC_FIELD_TYPES = (
@@ -205,7 +218,12 @@ def _find_record(
         # Prefer an exact match first, then fall back to case-insensitive/contains.
         # For phone lookups, normalize digits to improve matching.
         filter_attempts = [{field: identifier}]
-        if field_obj is None or isinstance(field_obj, (CharField, TextField)):
+        if isinstance(field_obj, ForeignKey):
+            related_instance = _resolve_related_instance(field_obj.related_model, identifier)
+            if related_instance:
+                filter_attempts.insert(0, {field: related_instance})
+                filter_attempts.insert(1, {f"{field}__id": related_instance.pk})
+        elif field_obj is None or isinstance(field_obj, (CharField, TextField)):
             filter_attempts.insert(0, {f"{field}__iexact": identifier})
             filter_attempts.append({f"{field}__icontains": identifier})
 

@@ -141,8 +141,10 @@
     document.addEventListener('DOMContentLoaded', function () {
       const labelInput = document.getElementById("id_label");
       const nameInput = document.getElementById("id_name");
+      const disableAutoName = (typeof window !== "undefined" && window.disableAutoName === true)
+        || (nameInput && nameInput.dataset.autoName === "false");
 
-      if (labelInput && nameInput) {
+      if (!disableAutoName && labelInput && nameInput) {
         labelInput.addEventListener("input", function () {
           const raw = labelInput.value;
           const formatted = raw.trim()

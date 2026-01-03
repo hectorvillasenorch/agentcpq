@@ -4,7 +4,9 @@ from django.utils.html import escape
 import json
 from django.utils.html import json_script as django_json_script
 import re
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from datetime import date, datetime
+from django.utils.dateparse import parse_date, parse_datetime
 
 register = template.Library()
 
@@ -95,15 +97,37 @@ def format_custom_value(raw_value, data_type):
     if raw_value is None:
         return ""
 
-    text = str(raw_value).strip()
+    if isinstance(raw_value, (datetime, date)):
+        text = raw_value.isoformat()
+    else:
+        text = str(raw_value).strip()
     if text == "":
         return ""
+
+    if t in {"date", "datetime"}:
+        parsed = None
+        if isinstance(raw_value, (datetime, date)):
+            parsed = raw_value
+        else:
+            parsed = parse_datetime(text) or parse_date(text)
+        if parsed:
+            if isinstance(parsed, datetime):
+                return f"{parsed.month}/{parsed.day}/{parsed.year}"
+            return f"{parsed.month}/{parsed.day}/{parsed.year}"
+        return raw_value
 
     if t == "currency":
         amount = _parse_loose_decimal(text)
         if amount is None:
             return raw_value
         return f"${amount.quantize(Decimal('0.01')):,.2f}"
+
+    if t == "number":
+        amount = _parse_loose_decimal(text)
+        if amount is None:
+            return raw_value
+        rounded = amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        return f"{rounded:,.0f}"
 
     if t in {"percent", "percentage"}:
         amount = _parse_loose_decimal(text)

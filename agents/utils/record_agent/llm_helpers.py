@@ -27,15 +27,27 @@ STANDARD_OBJECTS = [
     "Opportunity",
     "Product",
     "Quote",
+    "Activity",
+    "Contract",
+    "Subscription",
+    "Option",
+    "Tenant",
+    "Knowledge",
 ]
 
 ALLOWED_LOOKUPS = {
-    "Account": ["name", "custom_identifier"],
-    "Contact": ["email", "custom_identifier"],
-    "Lead": ["email", "phone", "first_name", "last_name", "company", "company_name"],
-    "Opportunity": ["name"],
-    "Product": ["sku", "name"],
-    "Quote": ["name"],
+    "Account": ["name", "accid", "external_id", "id"],
+    "Contact": ["email", "contactId", "external_id", "first_name", "last_name", "id"],
+    "Lead": ["email", "phone", "first_name", "last_name", "company", "company_name", "leadId", "id"],
+    "Opportunity": ["name", "oppid", "id"],
+    "Product": ["sku", "name", "prdid", "external_id", "id"],
+    "Quote": ["name", "qteid", "id"],
+    "Activity": ["subject", "activityid", "opportunity", "contact", "lead", "id"],
+    "Contract": ["opportunity", "contract_status", "start_date", "end_date", "id"],
+    "Subscription": ["product", "contract", "quote", "quote_line", "id"],
+    "Option": ["parent_product", "product_option", "group_name", "id"],
+    "Tenant": ["name", "tenant_id", "domain", "contact_email", "id"],
+    "Knowledge": ["title", "tags", "id"],
     "CustomRecord": ["custom_identifier", "record_id"],
 }
 

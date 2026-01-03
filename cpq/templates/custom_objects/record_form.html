@@ -2,6 +2,14 @@
 {% load dict_extras %}
 
 <style>
+  .fields-panel.records-panel {
+    background: rgba(255, 255, 255, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+
   .records-panel .fields-panel__header {
     align-items: center;
   }
@@ -10,24 +18,49 @@
     margin-bottom: 4px;
   }
 
-  .records-panel .fields-panel__header .btn {
+  .records-panel .fields-panel__header {
+    align-items: center;
+  }
+
+  .records-panel .fields-panel__header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .records-panel .fields-panel__icon-btn {
+    width: 40px;
+    height: 40px;
     border-radius: 12px;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    font-weight: 600;
-    background: #182740;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.35);
+    color: #0f172a;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
   }
 
-  .records-panel .fields-panel__header .btn:hover {
-    background: #111a2d;
+  .records-panel .fields-panel__icon-btn:hover {
+    background: rgba(255, 255, 255, 0.5);
+    box-shadow: 0 6px 12px rgba(15, 23, 42, 0.12);
+  }
+
+  .records-panel .fields-panel__icon-btn .material-icons {
+    margin: 0;
+    font-size: 20px;
   }
 
   .records-table-wrapper {
-    border: 1px solid rgba(15, 23, 42, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.35);
     border-radius: 18px;
-    background: #ffffff;
-    box-shadow: 0 16px 38px rgba(15, 23, 42, 0.08);
+    background: rgba(255, 255, 255, 0.7);
+    box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
   }
 
   .records-table-container {
@@ -42,11 +75,21 @@
   }
 
   .records-table thead {
-    background: linear-gradient(135deg, #eff4ff, #e0e7ff);
+    background: transparent;
     text-transform: uppercase;
     font-size: 0.75rem;
-    letter-spacing: 0.08em;
-    color: #0f172a;
+    letter-spacing: 0.12em;
+    color: #0b1020;
+  }
+
+  .records-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: linear-gradient(135deg, rgba(240, 244, 255, 0.88), rgba(220, 229, 255, 0.72));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.7), 0 10px 18px rgba(15, 23, 42, 0.1);
   }
 
   .records-table th,
@@ -54,7 +97,7 @@
     padding: 14px 18px;
     font-size: 0.95rem;
     color: #1f2937;
-    border-top: 1px solid rgba(15, 23, 42, 0.08);
+    border-top: 1px solid rgba(255, 255, 255, 0.4);
     vertical-align: top;
   }
 
@@ -63,7 +106,7 @@
   }
 
   .records-table tbody tr:hover {
-    background: #f8fafc;
+    background: rgba(248, 250, 252, 0.75);
   }
 
   .records-table td .datetime {
@@ -139,6 +182,45 @@
     box-shadow: 0 20px 45px rgba(15, 23, 42, 0.25);
     max-height: 80vh;
     overflow-y: auto;
+  }
+
+  .modal-content .form-group input,
+  .modal-content .form-group textarea,
+  .modal-content .form-group select {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    border: 1px solid rgba(148, 163, 184, 0.7) !important;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.7) !important;
+    border-radius: 10px !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    padding: 10px 12px !important;
+    height: auto !important;
+  }
+
+  .modal-content .form-group input:focus,
+  .modal-content .form-group textarea:focus,
+  .modal-content .form-group select:focus {
+    border-color: #182740 !important;
+    box-shadow: 0 0 0 2px rgba(24, 39, 64, 0.12) !important;
+  }
+
+  .modal-content .form-group select,
+  .modal-content .form-group input[type="date"],
+  .modal-content .form-group input[type="datetime-local"],
+  .modal-content .form-group input[type="checkbox"] {
+    cursor: pointer;
+  }
+
+  .modal-content .form-group input[type="text"],
+  .modal-content .form-group input[type="number"],
+  .modal-content .form-group input[type="email"],
+  .modal-content .form-group input[type="url"],
+  .modal-content .form-group input[type="search"],
+  .modal-content .form-group textarea {
+    cursor: text;
   }
 
   .modal-content h2 {
@@ -253,6 +335,46 @@
       padding: 28px 18px;
     }
   }
+
+  .column-layout-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .column-layout-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 6px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  }
+
+  .column-layout-item:last-child {
+    border-bottom: none;
+  }
+
+  .column-layout-actions {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .column-layout-actions button {
+    border: 1px solid rgba(148, 163, 184, 0.6);
+    background: rgba(255, 255, 255, 0.7);
+    color: #0f172a;
+    border-radius: 8px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .column-layout-toggle.is-hidden {
+    background: rgba(239, 68, 68, 0.1);
+    color: #991b1b;
+    border-color: rgba(239, 68, 68, 0.3);
+  }
 </style>
 
 
@@ -262,11 +384,16 @@
       <h3>{{ custom_object.label }} Records</h3>
       <p class="muted">Manage and review the records stored for this custom object.</p>
     </div>
-    {% if custom_object_perms.can_add %}
-      <button type="button" class="btn waves-effect waves-light" onclick="toggleModal()">
-        <i class="material-icons left">add</i>New {{ custom_object.label }}
+    <div class="fields-panel__header-actions">
+      {% if custom_object_perms.can_add %}
+        <button type="button" class="btn waves-effect waves-light fields-panel__icon-btn" onclick="toggleModal()" aria-label="New {{ custom_object.label }}" title="New {{ custom_object.label }}">
+          <i class="material-icons">add</i>
+        </button>
+      {% endif %}
+      <button type="button" class="btn waves-effect waves-light fields-panel__icon-btn" onclick="toggleColumnLayoutModal()" aria-label="Customize columns" title="Customize columns">
+        <i class="material-icons">view_column</i>
       </button>
-    {% endif %}
+    </div>
   </div>
 
   {% if records_custom_object %}
@@ -276,53 +403,52 @@
         <table class="records-table">
           <thead>
             <tr>
-              <th>ID</th>
-              {% for field in custom_fields %}
-                <th>{{ field.label }}</th>
-              {% endfor %}
-              <th>Last Modified</th>
-              <th>Created</th>
               {% if custom_object_perms.can_change or custom_object_perms.can_delete %}
-                <th class="align-right">Actions</th>
+                <th class="align-right" data-col-key="actions">Actions</th>
               {% endif %}
+              <th data-col-key="custom_id">ID</th>
+              {% for field in custom_fields %}
+                <th data-col-key="field-{{ field.id }}">{{ field.label }}</th>
+              {% endfor %}
+              <th data-col-key="last_modified">Last Modified</th>
+              <th data-col-key="created">Created</th>
             </tr>
           </thead>
 
           <tbody>
 	            {% for record in records_custom_object %}
 	              <tr>
-	                <td>{{ record.custom_identifier }}</td>
+                  {% if custom_object_perms.can_change or custom_object_perms.can_delete %}
+                    <td class="align-right" data-col-key="actions">
+                      <button class="btn-flat edit-btn" data-record-id="{{ record.id }}">
+                        <i class="material-icons">edit</i>
+                      </button>
+                    </td>
+                  {% endif %}
+	                <td data-col-key="custom_id">{{ record.custom_identifier }}</td>
 	                {% with field_values_by_record|get_item:record.id as record_values %}
 	                  {% for field in custom_fields %}
 	                    {% with v=record_values|get_item:field.id %}
 	                      {% if field.data_type|lower == 'lookup' %}
 	                        {% with options=lookup_options|get_item:field.name %}
-	                          <td>{{ options|label_from_options:v|default:"—" }}</td>
+	                          <td data-col-key="field-{{ field.id }}">{{ options|label_from_options:v|default:"—" }}</td>
 	                        {% endwith %}
 	                      {% else %}
-	                        <td>{{ v|format_custom_value:field.data_type|default:"—" }}</td>
+	                        <td data-col-key="field-{{ field.id }}">{{ v|format_custom_value:field.data_type|default:"—" }}</td>
 	                      {% endif %}
 	                    {% endwith %}
 	                  {% endfor %}
 	                {% endwith %}
 
-	                <td>
+	                <td data-col-key="last_modified">
 	                  <span class="muted">{{ record.updated_by|default:"—" }}</span>
 	                  <span class="datetime">{{ record.updated_at|date:"c" }}</span>
 	                </td>
 
-                <td>
+                <td data-col-key="created">
                   <span class="muted">{{ record.created_by|default:"—" }}</span>
                   <span class="datetime">{{ record.created_at|date:"c" }}</span>
                 </td>
-
-                {% if custom_object_perms.can_change or custom_object_perms.can_delete %}
-                  <td class="align-right">
-                    <button class="btn-flat edit-btn" data-record-id="{{ record.id }}">
-                      <i class="material-icons">edit</i>
-                    </button>
-                  </td>
-                {% endif %}
               </tr>
             {% endfor %}
           </tbody>
@@ -403,19 +529,29 @@
   </div>
 </div>
 
+<div id="columnLayoutModal" class="modal-overlay" aria-hidden="true">
+  <div class="modal-content" style="max-width: 520px;">
+    <span class="close-button" onclick="toggleColumnLayoutModal()">&times;</span>
+    <h2><i class="material-icons" style="vertical-align: middle; margin-right: 8px;">view_column</i>Customize columns</h2>
+    <p class="muted">Hide columns or change their order for this view.</p>
+    <ul class="column-layout-list" id="column-layout-list"></ul>
+    <div style="margin-top: 18px; display: flex; justify-content: flex-end; gap: 12px;">
+      <button type="button" class="submit-button" style="background: #9ca3af;" onclick="toggleColumnLayoutModal()">Cancel</button>
+      <button type="button" class="submit-button" onclick="saveColumnLayout()">Save</button>
+    </div>
+  </div>
+</div>
+
 <script>
   function convertDateTimeElements(scope) {
     const container = scope || document;
     container.querySelectorAll('.datetime').forEach(el => {
       const date = new Date(el.textContent);
       if (!Number.isNaN(date.getTime())) {
-        el.textContent = date.toLocaleString([], {
+        el.textContent = date.toLocaleDateString([], {
           year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
+          month: 'numeric',
+          day: 'numeric'
         });
       }
     });
@@ -462,6 +598,176 @@
     const isHidden = modal.getAttribute('aria-hidden') === 'true';
     modal.style.display = isHidden ? 'flex' : 'none';
     modal.setAttribute('aria-hidden', isHidden ? 'false' : 'true');
+  }
+
+  function getColumnStorageKey() {
+    return `custom_columns_${encodeURIComponent("{{ custom_object.name|default:'' }}")}`;
+  }
+
+  function getColumnLayout() {
+    const raw = localStorage.getItem(getColumnStorageKey());
+    if (!raw) return { order: [], hidden: [] };
+    try {
+      const parsed = JSON.parse(raw);
+      return {
+        order: Array.isArray(parsed.order) ? parsed.order : [],
+        hidden: Array.isArray(parsed.hidden) ? parsed.hidden : []
+      };
+    } catch (_err) {
+      return { order: [], hidden: [] };
+    }
+  }
+
+  function setColumnLayout(layout) {
+    localStorage.setItem(getColumnStorageKey(), JSON.stringify(layout));
+  }
+
+  function applyColumnLayout(table, layout) {
+    if (!table) return;
+    const headRow = table.tHead ? table.tHead.rows[0] : null;
+    if (!headRow) return;
+    const bodyRows = table.tBodies && table.tBodies[0] ? Array.from(table.tBodies[0].rows) : [];
+
+    const headCells = Array.from(headRow.cells);
+    const headMap = new Map(headCells.map(cell => [cell.dataset.colKey, cell]));
+    const allKeys = headCells.map(cell => cell.dataset.colKey).filter(Boolean);
+    const order = (layout.order && layout.order.length) ? layout.order : allKeys;
+    const hidden = new Set(layout.hidden || []);
+
+    const orderedHead = [];
+    order.forEach(key => {
+      const cell = headMap.get(key);
+      if (cell) {
+        orderedHead.push(cell);
+        headMap.delete(key);
+      }
+    });
+    headMap.forEach(cell => orderedHead.push(cell));
+    orderedHead.forEach(cell => headRow.appendChild(cell));
+
+    bodyRows.forEach(row => {
+      const cells = Array.from(row.cells);
+      const rowMap = new Map(cells.map(cell => [cell.dataset.colKey, cell]));
+      const orderedRow = [];
+      order.forEach(key => {
+        const cell = rowMap.get(key);
+        if (cell) {
+          orderedRow.push(cell);
+          rowMap.delete(key);
+        }
+      });
+      rowMap.forEach(cell => orderedRow.push(cell));
+      orderedRow.forEach(cell => row.appendChild(cell));
+    });
+
+    const toggleVisibility = (cell, isHidden) => {
+      cell.style.display = isHidden ? 'none' : '';
+      cell.hidden = isHidden;
+    };
+
+    Array.from(headRow.cells).forEach(cell => {
+      if (!cell.dataset.colKey) return;
+      toggleVisibility(cell, hidden.has(cell.dataset.colKey));
+    });
+    bodyRows.forEach(row => {
+      Array.from(row.cells).forEach(cell => {
+        if (!cell.dataset.colKey) return;
+        toggleVisibility(cell, hidden.has(cell.dataset.colKey));
+      });
+    });
+  }
+
+  function buildColumnLayoutList() {
+    const list = document.getElementById('column-layout-list');
+    const table = document.querySelector('.records-table');
+    if (!list || !table) return;
+    const headRow = table.tHead ? table.tHead.rows[0] : null;
+    if (!headRow) return;
+
+    list.innerHTML = '';
+    const layout = getColumnLayout();
+    const hidden = new Set(layout.hidden || []);
+    const columns = Array.from(headRow.cells).map(cell => ({
+      key: cell.dataset.colKey,
+      label: cell.textContent.trim() || cell.dataset.colKey
+    })).filter(col => col.key);
+
+    columns.forEach(col => {
+      const li = document.createElement('li');
+      li.className = 'column-layout-item';
+      li.dataset.colKey = col.key;
+      li.innerHTML = `
+        <span>${col.label}</span>
+        <div class="column-layout-actions">
+          <button type="button" class="column-move-up" aria-label="Move up">↑</button>
+          <button type="button" class="column-move-down" aria-label="Move down">↓</button>
+          <button type="button" class="column-layout-toggle ${hidden.has(col.key) ? 'is-hidden' : ''}">
+            ${hidden.has(col.key) ? 'Hidden' : 'Visible'}
+          </button>
+        </div>
+      `;
+      list.appendChild(li);
+    });
+
+    list.onclick = (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const item = target.closest('.column-layout-item');
+      if (!item) return;
+
+      if (target.classList.contains('column-layout-toggle')) {
+        const isHidden = target.classList.contains('is-hidden');
+        target.classList.toggle('is-hidden', !isHidden);
+        target.textContent = isHidden ? 'Visible' : 'Hidden';
+        return;
+      }
+      if (target.classList.contains('column-move-up')) {
+        const prev = item.previousElementSibling;
+        if (prev) {
+          item.parentNode.insertBefore(item, prev);
+        }
+        return;
+      }
+      if (target.classList.contains('column-move-down')) {
+        const next = item.nextElementSibling;
+        if (next) {
+          item.parentNode.insertBefore(item, next.nextElementSibling);
+        }
+      }
+    };
+  }
+
+  function toggleColumnLayoutModal() {
+    const modal = document.getElementById('columnLayoutModal');
+    if (!modal) return;
+    const isHidden = modal.getAttribute('aria-hidden') === 'true';
+    modal.style.display = isHidden ? 'flex' : 'none';
+    modal.setAttribute('aria-hidden', isHidden ? 'false' : 'true');
+    if (isHidden) {
+      buildColumnLayoutList();
+    }
+  }
+
+  function saveColumnLayout() {
+    const list = document.getElementById('column-layout-list');
+    if (!list) return;
+    const items = Array.from(list.querySelectorAll('.column-layout-item'));
+    const order = [];
+    const hidden = [];
+    items.forEach(item => {
+      const key = item.dataset.colKey;
+      if (!key) return;
+      order.push(key);
+      const toggle = item.querySelector('.column-layout-toggle');
+      if (toggle && toggle.classList.contains('is-hidden')) {
+        hidden.push(key);
+      }
+    });
+    const layout = { order, hidden };
+    setColumnLayout(layout);
+    const table = document.querySelector('.records-table');
+    applyColumnLayout(table, layout);
+    toggleColumnLayoutModal();
   }
 
   let currentRecordId = null;
@@ -568,5 +874,9 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     initializeLookupSearch(document);
+    const table = document.querySelector('.records-table');
+    if (table) {
+      applyColumnLayout(table, getColumnLayout());
+    }
   });
 </script>

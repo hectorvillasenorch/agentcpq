@@ -3781,8 +3781,12 @@ function renderSingleRecordField(record, field, isHidden) {
   const isEditable = field.is_editable !== false;
   const originalValue = encodeSingleRecordOriginal(field.raw_value ?? null);
 
+  const fieldClasses = [
+    "single-record-field",
+    field.is_multiline ? "single-record-field--wide" : "",
+  ].filter(Boolean).join(" ");
   const containerAttrs = [
-    `class="single-record-field"`,
+    `class="${fieldClasses}"`,
     `data-field="${escapeHtml(field.name)}"`,
     `data-type="${escapeHtml(field.data_type || 'text')}"`,
     `data-is-custom="${field.is_custom ? 'true' : 'false'}"`,

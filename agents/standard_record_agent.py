@@ -1378,6 +1378,27 @@ def _save_custom_fields(record, fields: Dict[str, object], object_name: str, use
             logger.exception("Failed to save custom field %s for %s", key, object_name)
 
 
+def _find_lead(value) -> Optional[Lead]:
+    if not value:
+        return None
+    candidates = _find_record_candidates("Lead", value)
+    return candidates[0] if candidates else None
+
+
+def _find_contact(value) -> Optional[Contact]:
+    if not value:
+        return None
+    candidates = _find_record_candidates("Contact", value)
+    return candidates[0] if candidates else None
+
+
+def _find_opportunity(value) -> Optional[Opportunity]:
+    if not value:
+        return None
+    candidates = _find_record_candidates("Opportunity", value)
+    return candidates[0] if candidates else None
+
+
 def _find_account(value) -> Optional[Account]:
     if not value:
         return None

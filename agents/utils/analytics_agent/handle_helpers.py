@@ -23,6 +23,12 @@ from cpq.models import (
     Contact,
     Opportunity,
     Quote,
+    Activity,
+    Contract,
+    Subscription,
+    Option,
+    Tenant,
+    Knowledge,
     CustomObject,
     CustomRecord,
     CustomField,
@@ -37,6 +43,12 @@ BASE_MODEL_MAP = {
     "Contact": Contact,
     "Opportunity": Opportunity,
     "Quote": Quote,
+    "Activity": Activity,
+    "Contract": Contract,
+    "Subscription": Subscription,
+    "Option": Option,
+    "Tenant": Tenant,
+    "Knowledge": Knowledge,
 }
 
 TEXT_LIKE_TYPES = {"text", "textarea", "dropdown", "lookup"}
@@ -1126,7 +1138,12 @@ ALLOWED_FIELDS = {
     "Opportunity": ["name", "account", "amount", "stage", "expected_close_date", "primary_quote", "owner", "created_by"],
     "Quote": ["name", "account", "opportunity", "subtotal", "net_amount", "tax_percentage", "tax_amount", "status",
               "discount_percentage", "discount_amount", "expiration_date", "notes", "created_at"],
-    "Activity": ["subject", "activity_type", "status", "due_date"]
+    "Activity": ["subject", "activity_type", "status", "due_date", "lead", "opportunity", "contact", "notes", "activityid", "created_at"],
+    "Contract": ["opportunity", "start_date", "end_date", "contract_status"],
+    "Subscription": ["quote", "quote_line", "product", "contract", "start_date", "end_date", "billing_cycle", "price_per_cycle", "term"],
+    "Option": ["parent_product", "product_option", "quantity", "is_required", "min_quantity", "max_quantity", "default_selected", "group_name"],
+    "Tenant": ["tenant_id", "name", "domain", "contact_email", "phone_number", "plan", "version", "created_at"],
+    "Knowledge": ["title", "content_text", "video_url", "image_url", "tags", "language", "is_active", "created_at", "updated_at"],
 }
 
 def safe_serialize_queryset(qs, model_name, custom_object=None, custom_fields=None):

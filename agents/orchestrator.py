@@ -317,11 +317,13 @@ def orchestrate_request(user, user_message, session_data):
                 Examples:
                     - "Delete lead john@acme.com"
                     - "Remove account Acme"
-        - "ShowSingleRecord" → Use when the user asks to open a specific record (Account, Product, Opportunity, Lead, Contact, Quote, or any custom object) and expects a detailed card view. 
+        - "ShowSingleRecord" → Use when the user asks to open a specific record (Account, Product, Opportunity, Lead, Contact, Quote, Activity, Contract, Subscription, Option, Tenant, Knowledge, or any custom object) and expects a detailed card view. 
                 Examples:
                     - "Show account Acme Corp"
                     - "Open product SKU-1001"
                     - "Display the opportunity Renewal Q1"
+                    - "Show activity Meeting with Juan"
+                    - "Open contract for Renewal Q1"
                 Do NOT use this for bundle component breakdowns; prefer "ShowBundleStructure" when the user asks to see bundle options/components.
         - "ShowMetrics" → Use when the user requests listings, summaries, or filtered searches 
                 involving one or more records (products, quotes, accounts, bundles, etc.).  
@@ -375,13 +377,13 @@ def orchestrate_request(user, user_message, session_data):
         # 🔒 Prevent accidental ShowSingleRecord unless the user explicitly asks to view a record
         if decision == "ShowSingleRecord":
             wants_record = re.search(
-                r"\b(show|display|open|get|view)\b.*\b(record|opportunity|account|product|quote|contact|lead)\b",
+                r"\b(show|display|open|get|view)\b.*\b(record|opportunity|account|product|quote|contact|lead|activity|contract|subscription|option|tenant|knowledge)\b",
                 user_message,
                 re.IGNORECASE,
             )
             if not wants_record:
                 wants_record = re.search(
-                    r"\b(opportunity|account|product|quote|contact|lead|bundle|custom\s+object|custom\s+record)\b",
+                    r"\b(opportunity|account|product|quote|contact|lead|activity|contract|subscription|option|tenant|knowledge|bundle|custom\s+object|custom\s+record)\b",
                     user_message,
                     re.IGNORECASE,
                 )

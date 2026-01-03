@@ -2,6 +2,10 @@
 {% block title %}Custom Fields - AgentCPQ{% endblock %}
 
 {% block content %}
+  <script>
+    window.disableAutoName = true;
+  </script>
+
   <div class="cpq-form-page">
     <div class="cpq-form-wrapper">
       <div class="cpq-form-card">
@@ -129,17 +133,6 @@
       const dropdownField = document.getElementById('dropdown-options-field');
       const optionsContainer = document.getElementById('options-container');
       const addOptionBtn = document.getElementById('add-option');
-
-      if (labelInput && nameInput) {
-        labelInput.addEventListener('input', function () {
-          const raw = labelInput.value;
-          const formatted = raw.trim()
-            .toLowerCase()
-            .replace(/\s+/g, '_')
-            .replace(/[^\w]/g, '') + '__c';
-          nameInput.value = formatted;
-        });
-      }
 
       function toggleLookupField() {
         if (!lookupField) return;
