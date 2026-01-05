@@ -36,7 +36,7 @@ def quickbooks_connect(request):
     redirect_uri = settings.QUICKBOOKS_REDIRECT_URI
     if not client_id or not redirect_uri:
         messages.error(request, "QuickBooks client credentials are not configured.")
-        return redirect(f"{reverse('dashboard')}?view=setup")
+        return redirect(reverse("cpq:admin_integrations"))
 
     state = secrets.token_urlsafe(16)
     request.session["quickbooks_oauth_state"] = state
@@ -58,7 +58,7 @@ def quickbooks_callback(request):
     error = request.GET.get("error")
     if error:
         messages.error(request, f"QuickBooks authorization failed: {error}")
-        return redirect(f"{reverse('dashboard')}?view=setup")
+        return redirect(reverse("cpq:admin_integrations"))
 
     expected_state = request.session.pop("quickbooks_oauth_state", None)
     state = request.GET.get("state")
@@ -85,7 +85,7 @@ def quickbooks_callback(request):
     if token_response.status_code >= 400:
         logger.error("QuickBooks token exchange failed: %s", token_response.text)
         messages.error(request, "Unable to complete QuickBooks authorization. Check server logs for details.")
-        return redirect(f"{reverse('dashboard')}?view=setup")
+        return redirect(reverse("cpq:admin_integrations"))
 
     data = token_response.json()
 
@@ -112,7 +112,7 @@ def quickbooks_callback(request):
     )
 
     messages.success(request, "QuickBooks sandbox company connected successfully.")
-    return redirect(f"{reverse('dashboard')}?view=setup")
+    return redirect(reverse("cpq:admin_integrations"))
 
 
 def _auth_from_headers(request) -> Optional[Tenant]:

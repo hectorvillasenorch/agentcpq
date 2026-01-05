@@ -11,6 +11,10 @@ document.addEventListener("DOMContentLoaded", function () {
   updateAttachmentPreview();
   initializeMaterializeSelects(document);
   initializeBundleStructureCards(document);
+  initializeSingleRecordRelatedButtons(document);
+  initializeQuoteListViewButtons();
+  initializeRecordListViewButtons();
+  initializeAgentsEmptyState();
 
   scrollToBottom("DOMContentLoaded", true);
 });
@@ -100,6 +104,60 @@ function getCurrentSessionId() {
   const urlParams = new URLSearchParams(window.location.search);
   //console.log(urlParams.get("session_id"));
   return urlParams.get("session_id");
+}
+
+function initializeAgentsEmptyState() {
+  const chatContainer = document.querySelector(".chat-container");
+  const chatBox = document.getElementById("chat-box");
+  const inputField = document.getElementById("user-input");
+  const emptyState = document.getElementById("chat-empty-state");
+  if (!chatContainer || !chatBox || !inputField || !emptyState) return;
+
+  const nameTarget = emptyState.querySelector("[data-user-name]");
+  if (nameTarget) {
+    nameTarget.textContent = window.USER_NAME || "there";
+  }
+
+  if (document.documentElement.dataset.agentsEmptyStateBound === "true") {
+    updateAgentsEmptyState();
+    return;
+  }
+  document.documentElement.dataset.agentsEmptyStateBound = "true";
+
+  emptyState.querySelectorAll("[data-example]").forEach(button => {
+    button.addEventListener("click", () => {
+      const example = button.dataset.example || "";
+      inputField.value = example;
+      inputField.dispatchEvent(new Event("input", { bubbles: true }));
+      inputField.focus();
+      updateAgentsEmptyState();
+    });
+  });
+
+  const observer = new MutationObserver(() => updateAgentsEmptyState());
+  observer.observe(chatBox, { childList: true });
+
+  inputField.addEventListener("input", updateAgentsEmptyState);
+  inputField.addEventListener("focus", updateAgentsEmptyState);
+  inputField.addEventListener("blur", updateAgentsEmptyState);
+  updateAgentsEmptyState();
+}
+
+function updateAgentsEmptyState() {
+  const chatContainer = document.querySelector(".chat-container");
+  const chatBox = document.getElementById("chat-box");
+  const inputField = document.getElementById("user-input");
+  const emptyState = document.getElementById("chat-empty-state");
+  if (!chatContainer || !chatBox || !inputField || !emptyState) return;
+
+  const hasMessages = Boolean(chatBox.querySelector(".chat-message, .chat-text"));
+  const hasInput = inputField.value.trim().length > 0;
+  const dismissed = document.documentElement.dataset.agentsEmptyDismissed === "true";
+  const shouldShow = !hasMessages && !dismissed;
+
+  chatContainer.classList.toggle("is-empty", shouldShow);
+  document.body.classList.toggle("is-chat-empty", shouldShow);
+  emptyState.setAttribute("aria-hidden", shouldShow ? "false" : "true");
 }
 
 function setupSessionSwitching() {
@@ -471,6 +529,12 @@ function deleteChatSession(sessionId) {
 
 function showAgentFeedback() {
   const feedback = document.getElementById("agent-feedback");
+  if (document.documentElement.dataset.agentsEmptyDismissed !== "true") {
+    document.documentElement.dataset.agentsEmptyDismissed = "true";
+    if (typeof updateAgentsEmptyState === "function") {
+      updateAgentsEmptyState();
+    }
+  }
   if (feedback) {
     feedback.style.display = "block";
     startThinkingAnimation();
@@ -797,6 +861,10 @@ async function uploadAttachment(file) {
 }
 
 function renderGreeting() {
+  if (document.getElementById("chat-empty-state")) {
+    initializeAgentsEmptyState();
+    return;
+  }
   const chatBox = document.getElementById("chat-box");
   const userName = window.USER_NAME || "User";
   const greetingKey = `agentcpqGreetingShown:${encodeURIComponent(userName)}`;
@@ -1337,9 +1405,17 @@ async function sendMessage() {
     let userMessage = inputField.value.trim();
     if (!userMessage) return;
 
+    if (document.documentElement.dataset.agentsEmptyDismissed !== "true") {
+      document.documentElement.dataset.agentsEmptyDismissed = "true";
+      updateAgentsEmptyState();
+    }
+
     // Append user message to chat
     const safeUserMessage = escapeHtml(userMessage).replace(/\n/g, "<br>");
-    appendMessage("user", `<div class="sender">You: </div> <div class="message">${safeUserMessage}</div>`)
+    appendMessage(
+      "user",
+      `<div class="chat-text user"><div class="sender">You: </div><div class="message">${safeUserMessage}</div></div>`
+    )
 
     inputField.value = ""; // Clear input field
     if (inputField && inputField.tagName === "TEXTAREA") {
@@ -1452,9 +1528,16 @@ async function sendMessage() {
         }
         // ✅ Analytics Records - retrieved_records
         else if (data.response && data.response.retrieved_records) {
-          //console.log(data.response);
-          //console.log(data.response.retrieved_records)
-          responseMessage += renderRetrievedRecords("", data.response.retrieved_records);
+          const rendered = renderRetrievedRecords("", data.response.retrieved_records);
+          if (rendered && rendered.trim()) {
+            responseMessage += rendered;
+          } else if (data.response.message) {
+            const cleaned = stripStructuredSuffixFromAgentMessage(
+              data.response.message,
+              ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
+            );
+            responseMessage += `<div class="general-message">${cleaned.message}</div>`;
+          }
         }
         // ✅ openGraphicBuilder - for Action Triggers graphic mode
         else if (data.response && data.response.openGraphicBuilder) {
@@ -1569,7 +1652,7 @@ function scrollToBottom(arg, optionalForceWindow) {
 /**
 * ✅ Append message to the chat box
 */
-function appendMessage(className, message) {
+function appendMessage(className, message, options = {}) {
     const chatBox = document.getElementById("chat-box");
     let messageBubble = document.createElement("div");
     messageBubble.classList.add("chat-message", className);
@@ -1652,11 +1735,17 @@ function appendMessage(className, message) {
     // ✅ Detect stored retrieved records (Analytics Agent)
     if (className === "agent" && message.includes("retrieved_records:")) {
       try {
-        // Extract JSON from string
-        const match = message.match(/retrieved_records:\s({.+})/);
-        if (match && match[1]) {
-          const records = JSON.parse(match[1]);
-          message = renderRetrievedRecords("", records);  // Use your nice formatter
+        const key = "retrieved_records:";
+        const idx = message.indexOf(key);
+        const prefixRaw = idx > 0 ? message.slice(0, idx).trim() : "";
+        const cleanedPrefix = prefixRaw.replace(/📦\s*$/u, "").trim();
+        const afterKey = message.slice(idx + key.length);
+        const jsonStr = extractJson(afterKey);
+        if (jsonStr) {
+          const records = JSON.parse(jsonStr);
+          const rendered = renderRetrievedRecords("", records);
+          const prefix = cleanedPrefix ? `<div class="general-message">${cleanedPrefix}</div>` : "";
+          message = `${prefix}${rendered || ""}`;
         }
       } catch (e) {
         console.warn("Failed to parse retrieved_records JSON:", e);
@@ -1674,7 +1763,11 @@ function appendMessage(className, message) {
         ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
       );
     }
-    chatBox.appendChild(messageBubble);
+    if (options && options.anchor && options.anchor.parentNode) {
+      options.anchor.parentNode.insertBefore(messageBubble, options.anchor.nextSibling);
+    } else {
+      chatBox.appendChild(messageBubble);
+    }
 
     // ✅ Re-initializes select from Materialize
   const selects = messageBubble.querySelectorAll('select');
@@ -1695,6 +1788,9 @@ function appendMessage(className, message) {
     messageBubble.querySelectorAll('.single-record-card').forEach(card => {
       initializeSingleRecordCardLayout(card);
     });
+    initializeSingleRecordRelatedButtons(messageBubble);
+    initializeQuoteListViewButtons();
+    initializeRecordListViewButtons();
 
     initializeBundleStructureCards(messageBubble);
     initializeQuoteNotesEditors(messageBubble);
@@ -1716,7 +1812,12 @@ function appendMessage(className, message) {
         });
     }
 
-    scrollToBottom(`appendMessage:${className}`, true);
+    if (!options || !options.skipScroll) {
+      scrollToBottom(`appendMessage:${className}`, true);
+    }
+    if (typeof updateAgentsEmptyState === "function") {
+      updateAgentsEmptyState();
+    }
     return messageBubble;
 }
 
@@ -2078,7 +2179,7 @@ function renderQuoteDetails(quote) {
           }
           else {
             const label = cleaned
-              .replace("Product And SKU", "SKU/Product")
+              .replace("Product And SKU", "Product")
               .replace("Unit Price", "Unit Price")
               .replace("Quantity", "Quantity")
               .replace(/_/g, " ")
@@ -2115,8 +2216,8 @@ function renderQuoteDetails(quote) {
                   <div style="margin-right: 16px;">📌</div>
                 ` : ''}
                 <div>
-                  <div class="centered-td">${item.sku}</div>
-                  <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+                  <div class="centered-td">${item.product}</div>
+                  <div class="centered-td" style="color: #888; font-size: 0.65em">SKU: ${item.sku}</div>
                   ${item.is_bundle_child ? ` <div class="centered-td" style="color: #888; font-size: 0.65em"> (Bundle - ${item.bundle_name})</div>` : ''}
                 </div>
               </div>
@@ -2164,7 +2265,7 @@ function renderQuoteDetails(quote) {
         } else if (field === "Description") {
           //console.log("Field es description.");
           html += `
-            <td class="centered-td">
+            <td class="quote-description-cell">
               <p>${item.description}</p>
             </td>`;
         }
@@ -2249,7 +2350,7 @@ function renderQuoteDetails(quote) {
             headers.push(`<th>Discount (USD)</th>`);
           } else {
             const label = cleaned
-              .replace("Product And SKU", "SKU/Product")
+              .replace("Product And SKU", "Product")
               .replace("Unit Price", "Unit Price")
               .replace("discount_percentage", "Discount (%)")
               .replace("discount_amount", "Discount (USD)")
@@ -2327,8 +2428,8 @@ function renderQuoteDetails(quote) {
                   <div style="margin-right: 6px;">📌</div>
                 ` : ''}
                 <div>
-                  <div class="centered-td">${item.sku}</div>
-                  <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+                  <div class="centered-td">${item.product}</div>
+                  <div class="centered-td" style="color: #888; font-size: 0.65em">SKU: ${item.sku}</div>
                   ${item.is_bundle_child ? ` <div class="centered-td" style="color: #888; font-size: 0.65em"> (Bundle - ${item.bundle_name})</div>` : ''}
                 </div>
               </div>
@@ -2368,7 +2469,7 @@ function renderQuoteDetails(quote) {
             </td>`;
         } else if (field === "Description") {
           html += `
-            <td class="centered-td">
+            <td class="quote-description-cell">
               <p>${item.description}</p>
             </td>`;
         } else if (field === "Unit Price") {
@@ -2670,7 +2771,7 @@ function renderReadOnlyQuoteDetails(quote) {
           }
           else {
             const label = cleaned
-              .replace("Product And SKU", "SKU/Product")
+              .replace("Product And SKU", "Product")
               .replace("Unit Price", "Unit Price")
               .replace("Quantity", "Quantity")
               .replace(/_/g, " ")
@@ -2706,8 +2807,8 @@ function renderReadOnlyQuoteDetails(quote) {
                   <div style="margin-right: 6px;">📌</div>
                 ` : ''}
                 <div>
-                  <div class="centered-td">${item.sku}</div>
-                  <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+                  <div class="centered-td">${item.product}</div>
+                  <div class="centered-td" style="color: #888; font-size: 0.65em">SKU: ${item.sku}</div>
                   ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
                 </div>
               </div>
@@ -2763,7 +2864,7 @@ function renderReadOnlyQuoteDetails(quote) {
             </td>`;
         } else if (field === "Description") {
           html += `
-            <td class="centered-td">
+            <td class="quote-description-cell">
               <p>${item.description}</p>
             </td>`;
         } else if (field === "Discount") {
@@ -2842,7 +2943,7 @@ function renderReadOnlyQuoteDetails(quote) {
             headers.push(`<th>Discount (USD)</th>`);
           } else {
             const label = cleaned
-              .replace("Product And SKU", "SKU/Product")
+              .replace("Product And SKU", "Product")
               .replace("Unit Price", "Unit Price")
               .replace("discount_percentage", "Discount (%)")
               .replace("discount_amount", "Discount (USD)")
@@ -2882,8 +2983,8 @@ function renderReadOnlyQuoteDetails(quote) {
                   <div style="margin-right: 6px;">📌</div>
                 ` : ''}
                 <div>
-                  <div class="centered-td">${item.sku}</div>
-                  <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+                  <div class="centered-td">${item.product}</div>
+                  <div class="centered-td" style="color: #888; font-size: 0.65em">SKU: ${item.sku}</div>
                   ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
                 </div>
               </div>
@@ -2924,7 +3025,7 @@ function renderReadOnlyQuoteDetails(quote) {
             </td>`;
         } else if (field === "Description") {
           html += `
-            <td class="centered-td">
+            <td class="quote-description-cell">
               <p>${item.description}</p>
             </td>`;
         } else if (field === "Unit Price") {
@@ -3018,6 +3119,67 @@ function renderReadOnlyQuoteDetails(quote) {
   return html;
 }
 
+const RELATED_BUTTON_CONFIG = {
+  "related-opportunities": {
+    label: "Related opportunities",
+    icon: "work",
+    endpoint: "/cpq/related-opportunities/",
+    relationKey: "account_id",
+    relatedAttr: "data-related-account-id",
+    pluralLabel: "opportunities",
+    parentLabel: "Account",
+    objectName: "opportunity",
+    listOnClick: true,
+    listObjectLabel: "Opportunities",
+    listFields: ["name", "amount", "stage", "expected_close_date", "view_record"],
+    viewObjectName: "Opportunity",
+  },
+  "related-contract-lines": {
+    label: "Contract lines",
+    icon: "receipt_long",
+    endpoint: "/cpq/related-contract-lines/",
+    relationKey: "account_id",
+    relatedAttr: "data-related-account-id",
+    pluralLabel: "contract lines",
+    parentLabel: "Account",
+    objectName: "contractline__c",
+  },
+  "related-quotes": {
+    label: "Related quotes",
+    icon: "request_quote",
+    endpoint: "/cpq/related-quotes/",
+    relationKey: "opportunity_id",
+    relatedAttr: "data-related-opportunity-id",
+    pluralLabel: "quotes",
+    parentLabel: "Opportunity",
+    objectName: "quote",
+    listOnClick: true,
+    listObjectLabel: "Quotes",
+    listFields: ["name", "status", "net_amount", "expiration_date", "primary_quote", "view_quote"],
+  },
+};
+
+const RELATED_BUTTONS_BY_OBJECT = {
+  account: ["related-opportunities", "related-contract-lines"],
+  opportunity: ["related-quotes"],
+};
+
+function getRelatedButtonConfig(role) {
+  return RELATED_BUTTON_CONFIG[role];
+}
+
+function renderRelatedButton(role) {
+  const config = getRelatedButtonConfig(role);
+  if (!config) return "";
+  const label = escapeHtml(config.label);
+  return `<div class="single-record-related-wrap">
+    <button type="button" class="single-record-related-btn" data-role="${role}" aria-label="${label}" title="${label}">
+      <span class="material-icons" aria-hidden="true">${config.icon}</span>
+      <span class="single-record-related-count" data-role="related-count">...</span>
+    </button>
+  </div>`;
+}
+
 function renderSingleRecord(record) {
   if (!record || !Array.isArray(record.fields)) {
     return `<div class="error-message">⚠️ Unable to display this record right now.</div>`;
@@ -3088,10 +3250,20 @@ function renderSingleRecord(record) {
       </div>
     `;
   })();
+  const relatedAccountId = record.related_account_id || (record.meta && record.meta.related_account_id) || '';
+  const relatedAccountAttr = relatedAccountId ? ` data-related-account-id="${escapeHtml(String(relatedAccountId))}"` : '';
+  const relatedOpportunityId = record.related_opportunity_id || (record.meta && record.meta.related_opportunity_id) || '';
+  const relatedOpportunityAttr = relatedOpportunityId ? ` data-related-opportunity-id="${escapeHtml(String(relatedOpportunityId))}"` : '';
   const layoutButton = showLayoutButton
     ? `<button type="button" class="single-record-layout-btn single-record-layout-btn--icon" onclick="openSingleRecordCustomizer(this)" aria-label="Edit layout" title="Edit layout">
          <span class="material-icons" aria-hidden="true">tune</span>
        </button>`
+    : '';
+  const relatedRoles = RELATED_BUTTONS_BY_OBJECT[objectName] || [];
+  const relatedButtons = relatedRoles.map(renderRelatedButton).filter(Boolean).join('');
+  const relatedButtonsRow = relatedButtons ? `<div class="single-record-related-actions">${relatedButtons}</div>` : '';
+  const headerActions = (relatedButtonsRow || layoutButton)
+    ? `<div class="single-record-header-actions">${layoutButton}${relatedButtonsRow}</div>`
     : '';
 
   const sectionsHtml = renderSingleRecordSection(
@@ -3106,7 +3278,7 @@ function renderSingleRecord(record) {
   const gridContent = sectionsHtml || '<div class="single-record-empty">No additional details were provided for this record.</div>';
 
   return `
-    <div class="single-record-card" data-record-object="${escapeHtml(record.object || '')}" data-record-id="${record.record_id ?? ''}"${layoutAttr}>
+    <div class="single-record-card" data-record-object="${escapeHtml(record.object || '')}" data-record-id="${record.record_id ?? ''}" data-record-name="${escapeHtml(String(record.record_value ?? ''))}"${relatedAccountAttr}${relatedOpportunityAttr}${layoutAttr}>
       <div class="single-record-header">
         <div class="single-record-header-text">
           <div class="single-record-subtitle" style="display:flex;align-items:center;gap:6px;">
@@ -3119,7 +3291,7 @@ function renderSingleRecord(record) {
         <div class="single-record-header-meta">
           ${headerLabel}
           ${customBadge}
-          ${layoutButton}
+          ${headerActions}
         </div>
       </div>
       <div class="single-record-body">
@@ -3131,6 +3303,618 @@ function renderSingleRecord(record) {
       </div>
     </div>
   `;
+}
+
+function initializeSingleRecordRelatedButtons(root = document) {
+  if (!root) return;
+  const buttons = root.querySelectorAll('.single-record-related-btn[data-role]');
+  buttons.forEach(button => {
+    const role = button.dataset.role;
+    const config = getRelatedButtonConfig(role);
+    if (!config) return;
+    if (button.dataset.bound === "true") return;
+    button.dataset.bound = "true";
+
+    const card = button.closest('.single-record-card');
+    if (!card) return;
+    const relationId = card.dataset.recordId;
+
+    if (relationId) {
+      loadRelatedRecordsCount(button, config, relationId);
+    } else {
+      const badge = button.querySelector('[data-role="related-count"]');
+      if (badge) badge.textContent = "0";
+    }
+
+    button.addEventListener('click', () => {
+      handleRelatedRecordsClick(card, button, config);
+    });
+    setupRelatedPopoverHandlers(button, card, config);
+  });
+}
+
+function buildRelatedRecordsUrl(config, relationId, options = {}) {
+  const params = new URLSearchParams();
+  params.set(config.relationKey, relationId);
+  if (options.summaryOnly) {
+    params.set("summary", "1");
+  }
+  if (options.preview) {
+    params.set("preview", "1");
+  }
+  if (options.persistList) {
+    params.set("persist_list", "1");
+  }
+  if (options.sessionId) {
+    params.set("session_id", options.sessionId);
+  }
+  if (options.persist) {
+    params.set("persist", "1");
+  }
+  if (options.limit) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.recordId) {
+    params.set("record_id", String(options.recordId));
+  }
+  return `${config.endpoint}?${params.toString()}`;
+}
+
+async function loadRelatedRecordsCount(button, config, relationId) {
+  const badge = button.querySelector('[data-role="related-count"]');
+  if (!badge) return;
+
+  button.classList.add("is-loading");
+  badge.textContent = "...";
+
+  try {
+    const response = await fetch(buildRelatedRecordsUrl(config, relationId, { summaryOnly: true }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    const count = Number(data.count || 0);
+    button.dataset.relatedCount = String(count);
+    badge.textContent = String(count);
+    button.classList.toggle("is-empty", count === 0);
+  } catch (error) {
+    console.warn("Failed to fetch related count", error);
+    badge.textContent = "0";
+    button.dataset.relatedCount = "0";
+  } finally {
+    button.classList.remove("is-loading");
+  }
+}
+
+function setupRelatedPopoverHandlers(button, card, config) {
+  if (button.dataset.popoverBound === "true") return;
+  button.dataset.popoverBound = "true";
+
+  const popover = ensureRelatedPopover(button, config);
+  if (!popover) return;
+
+  let hideTimer = null;
+  const showPopover = () => {
+    const count = Number(button.dataset.relatedCount || 0);
+    if (count <= 1) return;
+    clearTimeout(hideTimer);
+    loadRelatedPreview(button, card, config, popover);
+  };
+  const hidePopover = () => {
+    clearTimeout(hideTimer);
+    hideTimer = window.setTimeout(() => {
+      popover.classList.remove("is-visible");
+    }, 120);
+  };
+
+  button.addEventListener("mouseenter", showPopover);
+  button.addEventListener("mouseleave", hidePopover);
+  popover.addEventListener("mouseenter", () => clearTimeout(hideTimer));
+  popover.addEventListener("mouseleave", hidePopover);
+}
+
+function ensureRelatedPopover(button, config) {
+  const container = button.closest(".single-record-related-wrap") || button.parentElement;
+  if (!container) return null;
+  const role = button.dataset.role || "";
+  let popover = container.querySelector(`.single-record-related-popover[data-role="${role}"]`);
+  if (!popover) {
+    popover = document.createElement("div");
+    popover.className = "single-record-related-popover";
+    popover.dataset.role = role;
+    popover.setAttribute("role", "menu");
+    container.appendChild(popover);
+  }
+  if (popover.dataset.bound !== "true") {
+    popover.dataset.bound = "true";
+    popover.addEventListener("click", (event) => {
+      const item = event.target.closest("[data-record-id], [data-action]");
+      if (!item) return;
+      event.preventDefault();
+      if (item.dataset.action === "dismiss") {
+        popover.classList.remove("is-visible");
+        return;
+      }
+      if (item.dataset.recordId) {
+        handleRelatedRecordSelection(popover, item.dataset.recordId);
+      }
+    });
+  }
+  popover._config = config;
+  popover._sourceButton = button;
+  return popover;
+}
+
+async function loadRelatedPreview(button, card, config, popover) {
+  const relationId = card.dataset.recordId;
+  if (!relationId) return;
+
+  popover._card = card;
+  popover.dataset.relationId = String(relationId);
+
+  if (popover.dataset.loadedFor === String(relationId)) {
+    popover.classList.add("is-visible");
+    return;
+  }
+
+  popover.dataset.loadedFor = String(relationId);
+  popover.innerHTML = `<div class="single-record-related-loading">Loading...</div>`;
+  popover.classList.add("is-visible");
+
+  try {
+    const response = await fetch(buildRelatedRecordsUrl(config, relationId, { preview: true, limit: 8 }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    const records = Array.isArray(data.records) ? data.records : [];
+    if (!records.length) {
+      popover.innerHTML = `<div class="single-record-related-empty">No ${config.pluralLabel} found.</div>`;
+      return;
+    }
+
+    const listItems = records.map((record) => {
+      const label = record.record_value ? escapeHtml(String(record.record_value)) : "Record";
+      return `<button type="button" class="single-record-related-item" data-record-id="${record.record_id}">${label}</button>`;
+    }).join("");
+    const note = data.truncated && data.count
+      ? `<div class="single-record-related-note">Showing ${records.length} of ${data.count}</div>`
+      : "";
+    popover.innerHTML = `${listItems}${note}`;
+  } catch (error) {
+    console.warn("Failed to load related preview", error);
+    popover.innerHTML = `<div class="single-record-related-empty">Unable to load ${config.pluralLabel}.</div>`;
+  }
+}
+
+function handleRelatedRecordSelection(popover, recordId) {
+  const config = popover._config;
+  const card = popover._card;
+  const button = popover._sourceButton;
+  if (!config || !card || !button) return;
+
+  const existing = findSingleRecordCardById(recordId, config.objectName);
+  if (existing) {
+    existing.scrollIntoView({ behavior: "smooth", block: "start" });
+    popover.classList.remove("is-visible");
+    return;
+  }
+
+  const chatMessage = card.closest(".chat-message");
+  if (!chatMessage || !chatMessage.parentNode) return;
+
+  const sessionId = getCurrentSessionId();
+  const parentName = card.dataset.recordName || config.parentLabel || "Record";
+  fetchRelatedRecordCards({
+    relationId: card.dataset.recordId,
+    sessionId,
+    anchorMessage: chatMessage,
+    parentName,
+    config,
+    recordId,
+    countHint: Number(button.dataset.relatedCount || 0),
+  });
+  popover.classList.remove("is-visible");
+}
+
+function handleRelatedRecordsClick(card, button, config) {
+  const relationId = card.dataset.recordId;
+  if (!relationId) return;
+
+  if (config.listOnClick) {
+    const chatMessage = card.closest(".chat-message");
+    if (!chatMessage || !chatMessage.parentNode) return;
+    const parentName = card.dataset.recordName || config.parentLabel || "Record";
+    const role = button.dataset.role || "";
+    showRelatedRecordsList({
+      relationId,
+      anchorMessage: chatMessage,
+      parentName,
+      config,
+      role,
+    });
+    return;
+  }
+
+  const existingCards = findRelatedCards(config, relationId);
+  const relatedCount = Number(button.dataset.relatedCount || 0);
+  if (existingCards.length && relatedCount > 0 && existingCards.length >= relatedCount) {
+    existingCards[0].scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
+  const chatMessage = card.closest(".chat-message");
+  if (!chatMessage || !chatMessage.parentNode) return;
+
+  const sessionId = getCurrentSessionId();
+  const parentName = card.dataset.recordName || config.parentLabel || "Record";
+  fetchRelatedRecordCards({
+    relationId,
+    sessionId,
+    anchorMessage: chatMessage,
+    parentName,
+    config,
+    countHint: Number(button.dataset.relatedCount || 0),
+  });
+}
+
+function findRelatedCards(config, relationId) {
+  if (!config.relatedAttr) return [];
+  const cards = Array.from(
+    document.querySelectorAll(`.single-record-card[${config.relatedAttr}="${relationId}"]`)
+  );
+  if (!config.objectName) return cards;
+  return cards.filter(card => (card.dataset.recordObject || "").toLowerCase() === config.objectName);
+}
+
+function findSingleRecordCardById(recordId, objectName) {
+  if (!recordId) return null;
+  const selector = `.single-record-card[data-record-id="${recordId}"]`;
+  const cards = Array.from(document.querySelectorAll(selector));
+  if (!objectName) return cards[0] || null;
+  return cards.find(card => (card.dataset.recordObject || "").toLowerCase() === objectName) || null;
+}
+
+function findRelatedListMessage(config, relationId, role) {
+  if (!relationId || !config || !role) return null;
+  const attr = config.relatedAttr || "";
+  const selector = `.chat-message[data-related-list-role="${role}"]${attr ? `[${attr}="${relationId}"]` : ""}`;
+  return document.querySelector(selector);
+}
+
+function findQuoteDetailsMessage(quoteId) {
+  if (!quoteId) return null;
+  return document.querySelector(`.chat-message[data-quote-id="${quoteId}"]`);
+}
+
+function buildQuoteListViewButton(recordId) {
+  if (!recordId) return "";
+  return `<button type="button" class="quote-list-view-btn" data-quote-id="${recordId}" aria-label="View quote details" title="View quote details">
+    <span class="material-icons" aria-hidden="true">visibility</span>
+  </button>`;
+}
+
+function buildRecordListViewButton(recordId, objectName) {
+  if (!recordId) return "";
+  const objectLabel = objectName ? `View ${objectName}` : "View record";
+  const objectValue = objectName || "";
+  return `<button type="button" class="record-list-view-btn" data-record-id="${recordId}" data-object="${objectValue}" aria-label="${objectLabel}" title="${objectLabel}">
+    <span class="material-icons" aria-hidden="true">visibility</span>
+  </button>`;
+}
+
+function initializeQuoteListViewButtons() {
+  if (document.documentElement.dataset.quoteListViewBound === "true") return;
+  document.documentElement.dataset.quoteListViewBound = "true";
+
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest(".quote-list-view-btn");
+    if (!button) return;
+    event.preventDefault();
+
+    const quoteId = button.dataset.quoteId;
+    if (!quoteId) return;
+    const anchorMessage = button.closest(".chat-message");
+    if (!anchorMessage) return;
+    fetchQuoteDetailsFromList(quoteId, anchorMessage, button);
+  });
+}
+
+function initializeRecordListViewButtons() {
+  if (document.documentElement.dataset.recordListViewBound === "true") return;
+  document.documentElement.dataset.recordListViewBound = "true";
+
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest(".record-list-view-btn");
+    if (!button) return;
+    event.preventDefault();
+
+    const recordId = button.dataset.recordId;
+    const objectName = button.dataset.object;
+    if (!recordId || !objectName) return;
+    const anchorMessage = button.closest(".chat-message");
+    if (!anchorMessage) return;
+    fetchRecordDetailsFromList(recordId, objectName, anchorMessage, button);
+  });
+}
+
+async function fetchQuoteDetailsFromList(quoteId, anchorMessage, button) {
+  const existing = findQuoteDetailsMessage(quoteId);
+  if (existing) {
+    existing.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
+  if (button) {
+    button.disabled = true;
+    button.classList.add("is-loading");
+  }
+
+  try {
+    const sessionId = getCurrentSessionId();
+    const urlParams = new URLSearchParams({ quote_id: quoteId });
+    if (sessionId) {
+      urlParams.set("session_id", sessionId);
+      urlParams.set("persist", "1");
+    }
+    const url = `/cpq/quote-details/?${urlParams.toString()}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    const quoteDetails = data.quote_details;
+    if (!quoteDetails || quoteDetails.error) {
+      const msg = quoteDetails && quoteDetails.message ? quoteDetails.message : "Unable to load quote details.";
+      if (typeof showQuoteToast === "function") {
+        showQuoteToast(msg, "error");
+      } else {
+        console.warn(msg);
+      }
+      return;
+    }
+
+    ensureQuoteStatusValue(quoteDetails);
+    const html = `
+      <div class="senderagent">
+        <img width="115px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
+      </div>
+      <div class="message">${renderQuoteDetails(quoteDetails)}</div>
+    `;
+    const bubble = appendMessage("agent", html, { anchor: anchorMessage, skipScroll: true });
+    if (bubble) {
+      bubble.dataset.quoteId = String(quoteId);
+      const container = bubble.querySelector(".quote-container, .quote-mobile");
+      if (container) {
+        container.dataset.quoteId = String(quoteId);
+      }
+      bubble.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  } catch (error) {
+    console.warn("Failed to load quote details", error);
+    if (typeof showQuoteToast === "function") {
+      showQuoteToast("Unable to load quote details.", "error");
+    }
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.classList.remove("is-loading");
+    }
+  }
+}
+
+async function fetchRecordDetailsFromList(recordId, objectName, anchorMessage, button) {
+  const objectKey = String(objectName || "").toLowerCase();
+  const existing = findSingleRecordCardById(recordId, objectKey);
+  if (existing) {
+    existing.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
+  if (button) {
+    button.disabled = true;
+    button.classList.add("is-loading");
+  }
+
+  try {
+    const sessionId = getCurrentSessionId();
+    const urlParams = new URLSearchParams({ object: objectName, record_id: recordId });
+    if (sessionId) {
+      urlParams.set("session_id", sessionId);
+      urlParams.set("persist", "1");
+    }
+    const response = await fetch(`/cpq/single-record/?${urlParams.toString()}`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    const payload = data.single_record;
+    if (!payload || payload.error) {
+      const msg = payload && payload.message ? payload.message : "Unable to load record.";
+      if (typeof showSingleRecordToast === "function") {
+        showSingleRecordToast(msg, "error");
+      } else {
+        console.warn(msg);
+      }
+      return;
+    }
+
+    const html = `
+      <div class="senderagent">
+        <img width="115px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
+      </div>
+      <div class="message">${renderSingleRecord(payload)}</div>
+    `;
+    const bubble = appendMessage("agent", html, { anchor: anchorMessage, skipScroll: true });
+    if (bubble) {
+      bubble.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  } catch (error) {
+    console.warn("Failed to load record details", error);
+    if (typeof showSingleRecordToast === "function") {
+      showSingleRecordToast("Unable to load record.", "error");
+    }
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.classList.remove("is-loading");
+    }
+  }
+}
+
+function buildRelatedListLabel(labelPrefix, parentName, parentLabel) {
+  const trimmedPrefix = (labelPrefix || "records").trim();
+  const prefix = trimmedPrefix ? trimmedPrefix.charAt(0).toUpperCase() + trimmedPrefix.slice(1) : "Records";
+  const nameText = (parentName || "").toString().trim();
+  const labelText = (parentLabel || "").toString().trim();
+  if (!labelText) {
+    return `${prefix} for ${nameText || "Record"}`;
+  }
+  const lowerName = nameText.toLowerCase();
+  const lowerLabel = labelText.toLowerCase();
+  const fullName = nameText
+    ? (lowerName.endsWith(lowerLabel) ? nameText : `${nameText} ${labelText}`)
+    : labelText;
+  return `${prefix} for ${fullName}`;
+}
+
+async function showRelatedRecordsList({ relationId, anchorMessage, parentName, config, role }) {
+  const existing = findRelatedListMessage(config, relationId, role);
+  if (existing) {
+    existing.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
+  const sessionId = getCurrentSessionId();
+  const url = buildRelatedRecordsUrl(config, relationId, {
+    preview: true,
+    sessionId,
+    persistList: Boolean(sessionId),
+  });
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    const records = Array.isArray(data.records) ? data.records : [];
+    if (!records.length) {
+      showSingleRecordToast(`No ${config.pluralLabel} found for ${parentName}.`, "info");
+      return;
+    }
+
+    const labelPrefix = config.listObjectLabel || config.pluralLabel || "records";
+    const listLabel = buildRelatedListLabel(labelPrefix, parentName, config.parentLabel);
+    const mapped = records.map(record => {
+      if (Array.isArray(config.listFields) && config.listFields.length) {
+        const row = {};
+        config.listFields.forEach(field => {
+          if (field === "name") {
+            row[field] = record[field] || record.record_value || "Record";
+          } else if (field === "view_quote") {
+            row[field] = buildQuoteListViewButton(record.record_id);
+          } else if (field === "view_record") {
+            row[field] = buildRecordListViewButton(
+              record.record_id,
+              config.viewObjectName || config.objectName
+            );
+          } else {
+            const rawValue = record[field];
+            row[field] = typeof rawValue === "boolean" ? (rawValue ? "Yes" : "No") : rawValue;
+          }
+        });
+        return row;
+      }
+      return {
+        Name: record.record_value || "Record",
+        Id: record.record_id,
+      };
+    });
+    const payload = { [listLabel]: mapped };
+    const html = `
+      <div class="senderagent">
+        <img width="115px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
+      </div>
+      <div class="message">${renderRetrievedRecords("", payload)}</div>
+    `;
+    const bubble = appendMessage("agent", html, { anchor: anchorMessage, skipScroll: true });
+    if (bubble) {
+      bubble.dataset.relatedListRole = role;
+      if (config.relatedAttr) {
+        bubble.setAttribute(config.relatedAttr, String(relationId));
+      }
+      bubble.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  } catch (error) {
+    console.warn("Failed to load related records list", error);
+    showSingleRecordToast(`Could not load ${config.pluralLabel}.`, "error");
+  }
+}
+
+async function fetchRelatedRecordCards({ relationId, sessionId, anchorMessage, parentName, config, countHint, recordId }) {
+  const limit = 6;
+  const url = buildRelatedRecordsUrl(config, relationId, {
+    sessionId,
+    persist: Boolean(sessionId),
+    limit,
+    recordId,
+  });
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    const records = Array.isArray(data.records) ? data.records : [];
+    if (!records.length) {
+      showSingleRecordToast(`No ${config.pluralLabel} found for ${parentName}.`, "info");
+      return;
+    }
+    insertRelatedRecordCards(records, anchorMessage, relationId, config);
+    if (data.truncated && data.count) {
+      showSingleRecordToast(`Showing ${records.length} of ${data.count} ${config.pluralLabel}.`, "info");
+    }
+  } catch (error) {
+    console.warn("Failed to load related records", error);
+    const fallbackCount = typeof countHint === "number" ? countHint : 0;
+    const parentLabel = (config.parentLabel || "record").toLowerCase();
+    const message = fallbackCount
+      ? `Could not load ${config.pluralLabel}.`
+      : `No ${config.pluralLabel} found for this ${parentLabel}.`;
+    showSingleRecordToast(message, fallbackCount ? "error" : "info");
+  }
+}
+
+function insertRelatedRecordCards(records, anchorMessage, relationId, config) {
+  let insertAfter = anchorMessage;
+  let lastInserted = null;
+
+  records.forEach(record => {
+    const existingCard = findSingleRecordCardById(record.record_id, config.objectName);
+    if (existingCard) {
+      if (!lastInserted) {
+        lastInserted = existingCard.closest(".chat-message") || existingCard;
+      }
+      return;
+    }
+    const html = `
+      <div class="senderagent">
+        <img width="115px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
+      </div>
+      <div class="message">${renderSingleRecord(record)}</div>
+    `;
+    const bubble = appendMessage("agent", html, { anchor: insertAfter, skipScroll: true });
+    if (config.relatedAttr) {
+      bubble.setAttribute(config.relatedAttr, String(relationId));
+    }
+    insertAfter = bubble;
+    lastInserted = bubble;
+  });
+
+  if (lastInserted) {
+    lastInserted.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
 function normalizeBundleFieldValue(field, value) {
@@ -3634,7 +4418,7 @@ function ensureSingleRecordCustomizerStyles() {
     .single-record-layout-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(255,122,26,0.45); }
     .single-record-layout-btn--icon { width: 34px; height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }
     .single-record-layout-btn--icon:hover { background: linear-gradient(135deg, #ffad3f, #ff8b2f); }
-    .single-record-customizer-panel { border: 1px solid #f1f1f1; box-shadow: 0 10px 28px rgba(0,0,0,0.14); border-radius: 12px; background: #fff; padding: 12px; max-width: 440px; position: fixed; z-index: 9999; resize: both; overflow: auto; min-width: 320px; min-height: 240px; max-height: 85vh; max-width: 90vw; box-sizing: border-box; }
+    .single-record-customizer-panel { border: 1px solid #f1f1f1; box-shadow: 0 10px 28px rgba(0,0,0,0.14); border-radius: 12px; background: #fff; padding: 12px; max-width: 440px; position: fixed; z-index: 2147483000; resize: both; overflow: auto; min-width: 320px; min-height: 240px; max-height: 85vh; max-width: 90vw; box-sizing: border-box; }
     .single-record-customizer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; cursor: move; }
     .single-record-customizer-body { max-height: none; overflow: visible; padding: 4px 0; }
     .single-record-customizer-list { list-style: none; padding: 0; margin: 0; }
@@ -4142,6 +4926,15 @@ function updateSingleRecordCard(card, recordData) {
 
   card.dataset.recordObject = recordData.object || '';
   card.dataset.recordId = recordData.record_id ?? '';
+  card.dataset.recordName = recordData.record_value != null ? String(recordData.record_value) : '';
+  const relatedAccountId = recordData.related_account_id || (recordData.meta && recordData.meta.related_account_id);
+  if (relatedAccountId) {
+    card.dataset.relatedAccountId = String(relatedAccountId);
+  }
+  const relatedOpportunityId = recordData.related_opportunity_id || (recordData.meta && recordData.meta.related_opportunity_id);
+  if (relatedOpportunityId) {
+    card.dataset.relatedOpportunityId = String(relatedOpportunityId);
+  }
 
   const fieldsByKey = {};
   recordData.fields.forEach(field => {
@@ -4772,7 +5565,7 @@ function showTemporaryQuoteDetails(quote) {
           }
           else {
             const label = cleaned
-              .replace("Product And SKU", "SKU/Product")
+              .replace("Product And SKU", "Product")
               .replace("Unit Price", "Unit Price")
               .replace("Quantity", "Quantity")
               .replace(/_/g, " ")
@@ -4808,8 +5601,8 @@ function showTemporaryQuoteDetails(quote) {
                   <div style="margin-right: 6px;">📌</div>
                 ` : ''}
                 <div>
-                  <div class="centered-td">${item.sku}</div>
-                  <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+                  <div class="centered-td">${item.product}</div>
+                  <div class="centered-td" style="color: #888; font-size: 0.65em">SKU: ${item.sku}</div>
                   ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
                 </div>
               </div>
@@ -4855,7 +5648,7 @@ function showTemporaryQuoteDetails(quote) {
             </td>`;
         } else if (field === "Description") {
           html += `
-            <td class="centered-td">
+            <td class="quote-description-cell">
               <p>${item.description}</p>
             </td>`;
         } else if (field === "Discount") {
@@ -4912,7 +5705,7 @@ function showTemporaryQuoteDetails(quote) {
             headers.push(`<th>Discount (USD)</th>`);
           } else {
             const label = cleaned
-              .replace("Product And SKU", "SKU/Product")
+              .replace("Product And SKU", "Product")
               .replace("Unit Price", "Unit Price")
               .replace("discount_percentage", "Discount (%)")
               .replace("discount_amount", "Discount (USD)")
@@ -4952,8 +5745,8 @@ function showTemporaryQuoteDetails(quote) {
                   <div style="margin-right: 6px;">📌</div>
                 ` : ''}
                 <div>
-                  <div class="centered-td">${item.sku}</div>
-                  <div class="centered-td" style="color: gray; font-size: 0.65em">${item.product}</div>
+                  <div class="centered-td">${item.product}</div>
+                  <div class="centered-td" style="color: #888; font-size: 0.65em">SKU: ${item.sku}</div>
                   ${item.is_bundle_child ? `<div class="centered-td" style="color: #888; font-size: 0.65em">(Bundle - ${item.bundle_name})</div>` : ''}
                 </div>
               </div>
@@ -4991,7 +5784,7 @@ function showTemporaryQuoteDetails(quote) {
             </td>`;
         } else if (field === "Description") {
           html += `
-            <td class="centered-td">
+            <td class="quote-description-cell">
               <p>${item.description}</p>
             </td>`;
         } else if (field === "Unit Price") {
@@ -6459,7 +7252,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         position: fixed;
         inset: 0;
         background: rgba(15,23,42,0.45);
-        z-index: 9998;
+        z-index: 2147482999;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -6473,7 +7266,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         max-width: 94vw;
         max-height: 84vh;
         overflow: hidden;
-        z-index: 9999;
+        z-index: 2147483000;
         display: flex;
         flex-direction: column;
       }
@@ -6723,7 +7516,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
           container.style.border = '1px solid #ccc';
           container.style.borderRadius = '5px';
           container.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
-          container.style.zIndex = '10000';
+          container.style.zIndex = '2147483000';
           container.style.overflow = 'auto';
           container.style.resize = 'both';
           container.classList.add('popup');
@@ -6907,7 +7700,7 @@ function openRecordsPopout(button) {
   popup.style.background = '#fff';
   popup.style.borderRadius = '1rem';
   popup.style.boxShadow = '0 12px 30px rgba(0,0,0,0.25)';
-  popup.style.zIndex = '10000';
+  popup.style.zIndex = '2147483000';
   popup.style.display = 'flex';
   popup.style.flexDirection = 'column';
   popup.style.overflow = 'hidden';

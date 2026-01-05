@@ -79,7 +79,7 @@ def salesforce_callback(request):
             }
         )
 
-        return HttpResponseRedirect("/dashboard?view=setup")
+        return redirect("cpq:admin_integrations")
 
     return JsonResponse({
         "error": "Salesforce authentication failed",
@@ -99,7 +99,7 @@ def token_receiver(request):
         defaults={"access_token": access_token, "instance_url": instance_url}
     )
     # Redirect to the dashboard (or setup view)
-    return redirect("/dashboard?view=setup")
+    return redirect("cpq:admin_integrations")
 
 
 def test_salesforce_api(request):

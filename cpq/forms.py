@@ -422,12 +422,14 @@ class RuleConditionForm(forms.ModelForm):
         model = RuleCondition
         fields = ['field_name', 'operator', 'value']
 
-def get_rule_condition_formset(target_type, data=None):
+def get_rule_condition_formset(target_type, data=None, queryset=None):
+    if queryset is None:
+        queryset = RuleCondition.objects.none()
     return modelformset_factory(
         RuleCondition,
         form=RuleConditionForm,
         extra=1,
-    )(queryset=RuleCondition.objects.none(), form_kwargs={'target_type': target_type}, data=data)
+    )(queryset=queryset, form_kwargs={'target_type': target_type}, data=data)
 
 
 def generate_dynamic_form(custom_object):

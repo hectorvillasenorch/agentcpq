@@ -1,6 +1,6 @@
 from django.http import HttpResponse
 from django.urls import path
-from .views import accounts_view, settings_view, product_list, product_detail,field_mapping_view,save_field_mappings,set_primary_quote, custom_fields_view,create_custom_field, get_company_information, create_custom_object, get_document_template, business_rules_view,create_business_rule
+from .views import accounts_view, settings_view, product_list, product_detail,field_mapping_view,save_field_mappings,set_primary_quote, custom_fields_view,create_custom_field, get_company_information, create_custom_object, get_document_template, business_rules_view,create_business_rule, manage_users, admin_integrations
 from .views import (
     create_notification,
     create_custom_record,
@@ -38,6 +38,11 @@ urlpatterns = [
     path('records/create/<str:object_name>/<str:user_id>', create_custom_record, name='create_custom_record'),
     path('records/success/', lambda r: HttpResponse("Record created."), name='custom_record_success'),
     path("search/accounts/", search_accounts, name="search_accounts"),
+    path("related-opportunities/", views.related_opportunities_api, name="related_opportunities_api"),
+    path("related-quotes/", views.related_quotes_api, name="related_quotes_api"),
+    path("related-contract-lines/", views.related_contract_lines_api, name="related_contract_lines_api"),
+    path("quote-details/", views.quote_details_api, name="quote_details_api"),
+    path("single-record/", views.single_record_api, name="single_record_api"),
 
     #EDIT CUSTOM RECORD
     path('records/<int:record_id>/form/', views.get_custom_record_form, name='get_custom_record_form'),
@@ -50,6 +55,8 @@ urlpatterns = [
     path('admin/custom-fields/edit/<str:field_id>/', edit_custom_field, name='edit_custom_field'),
     path('admin/custom-fields/delete/<str:field_id>/', delete_custom_field, name='delete_custom_field'),
     path('admin/company-information', get_company_information, name='get_company_information'),
+    path('admin/integrations/', admin_integrations, name='admin_integrations'),
+    path('admin/users/', manage_users, name='manage_users'),
     path('admin/custom-object/create/<str:object_name>/', create_custom_object, name='create_custom_object'),
     path('admin/custom-fields/edit-custom-object/<str:object_name>/', edit_custom_object, name='edit_custom_object'),
     path('admin/custom-fields/delete-custom-object/<str:object_name>', delete_custom_object, name='delete_custom_object'),

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Create {{ rule_type|title }} Rule - AgentCPQ{% endblock %}
+{% block title %}{% if is_edit %}Edit{% else %}Create{% endif %} {{ rule_type|title }} Rule - AgentCPQ{% endblock %}
 
 {% block content %}
 <style>
@@ -78,6 +78,16 @@
     height: 18px;
     margin: 0 !important;
     accent-color: #182740;
+    position: static !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    cursor: pointer;
+  }
+
+  .rule-form .checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
   }
 
   .rule-card {
@@ -118,23 +128,26 @@
         Rules Management
       </h1>
       <p class="cpq-page-subtitle">
-        Create a new {{ rule_type|title }} rule. Fields and behavior are unchanged.
+        {% if is_edit %}Update{% else %}Create a new{% endif %} {{ rule_type|title }} rule. Fields and behavior are unchanged.
       </p>
     </div>
     <span class="cpq-pill">
-      <span class="material-icons" style="font-size:18px;">add</span>
-      Create
+      <span class="material-icons" style="font-size:18px;">{% if is_edit %}edit{% else %}add{% endif %}</span>
+      {% if is_edit %}Edit{% else %}Create{% endif %}
     </span>
   </div>
 
   <div class="cpq-panel">
     <h2 class="cpq-panel-title rule-form-title">
-      Create New {{ rule_type|title }} Rule
+      {% if is_edit %}Edit{% else %}Create New{% endif %} {{ rule_type|title }} Rule
     </h2>
     <p class="cpq-panel-subtitle">Define the rule metadata and (for validation rules) the conditions.</p>
 
     <form method="post" action="" class="rule-form space-y-6">
       {% csrf_token %}
+      {% if is_edit %}
+        <input type="hidden" name="rule_id" value="{{ rule.id }}">
+      {% endif %}
       <!-- Para el form -->
       {% if form.errors %}
         <div class="text-red-600">
@@ -189,7 +202,7 @@
         <!-- Active -->
         <div class="checkbox-row">
           {{ form.active }}
-          <span class="text-sm">Active</span>
+          <label class="checkbox-label" for="{{ form.active.id_for_label }}">Active</label>
         </div>
 
         <!-- Error Message -->

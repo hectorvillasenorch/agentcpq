@@ -176,7 +176,7 @@ def hubspot_callback(request):
     )
 
     # return JsonResponse({"message": "HubSpot authorization successful"})
-    return HttpResponseRedirect("/dashboard/?view=setup")
+    return redirect("cpq:admin_integrations")
 
 def setup_dashboard(request):
     hubspot_connected = False

@@ -52,6 +52,22 @@
   .rules-table tbody tr:hover {
     background: rgba(24, 39, 64, 0.03);
   }
+
+  .rule-action-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(24, 39, 64, 0.08);
+    border: 1px solid rgba(24, 39, 64, 0.12);
+    color: #182740;
+  }
+
+  .rule-action-btn:hover {
+    background: rgba(24, 39, 64, 0.14);
+  }
 </style>
 <div class="cpq-page">
   <div class="cpq-page-header">
@@ -118,6 +134,7 @@
                 <th>Priority</th>
                 <th>Active</th>
                 <th>Error Message</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -128,9 +145,14 @@
                   <td>{{ rule.priority }}</td>
                   <td>{{ rule.active }}</td>
                   <td>{{ rule.error_message }}</td>
+                  <td>
+                    <a class="rule-action-btn" href="{% url 'cpq:create_business_rule' %}?rule_id={{ rule.id }}" title="Edit rule">
+                      <i class="material-icons">edit</i>
+                    </a>
+                  </td>
                 </tr>
               {% empty %}
-                <tr><td colspan="5">No rules for this type.</td></tr>
+                <tr><td colspan="6">No rules for this type.</td></tr>
               {% endfor %}
             </tbody>
           </table>

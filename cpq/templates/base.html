@@ -63,7 +63,7 @@
                 <i class="material-icons">view_list</i> <span class="nav-label">Manage Metadata</span>
             </a>
             {% if request.user.is_superuser or perms.auth.view_user %}
-                <a href="{% url 'admin:auth_user_changelist' %}">
+                <a href="{% url 'cpq:manage_users' %}">
                     <i class="material-icons">group</i> <span class="nav-label">Users</span>
                 </a>
             {% endif %}
@@ -73,7 +73,7 @@
                 </a>
             {% endif %}
             {% if request.user.is_superuser or perms.auth.view_user %}
-                <a href="{% url 'dashboard' %}?view=setup">
+                <a href="{% url 'cpq:admin_integrations' %}">
                     <i class="material-icons">integration_instructions</i> <span class="nav-label">Integrations</span>
                 </a>
             {% endif %}

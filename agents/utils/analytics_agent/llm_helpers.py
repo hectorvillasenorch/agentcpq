@@ -128,6 +128,7 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
     """
 
     whitelist_fields = build_whitelist_fields()
+    current_date = date.today().isoformat()
 
     system_prompt = """
     You are an AI assistant that helps extract user requests into a standardized JSON format called 'show_metrics'.
@@ -221,6 +222,11 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
     Defaulting guidance:
     - If the user asks for revenue/amount totals without specifying a date range, set aggregate.range to "this_year".
     """
+    system_prompt += f"""
+    - The current date is {current_date}. Use this as the reference point when interpreting relative dates like "today", "yesterday", "tomorrow", or "this week".
+    - For "today", set a within_range condition with ["{current_date}", "{current_date}"] on the appropriate date field.
+    - Do not hardcode past dates when the user says "today".
+    """
 
     system_prompt += f"""
 
@@ -252,6 +258,7 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
     user_prompt = f"""
     User message: "{user_message}"
 
+    Current date: {current_date}
     Current State: {current_state}
 
     Return JSON as described above.

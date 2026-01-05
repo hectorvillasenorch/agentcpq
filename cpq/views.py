@@ -11,6 +11,7 @@ from .models import (
     QuoteDocumentSettings,
     CustomObject,
     BusinessRule,
+    RuleCondition,
     CustomRecord,
     CustomFieldValue,
     ActionUsage,
@@ -29,11 +30,14 @@ from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
 from django.apps import apps
 from salesforce.models import SalesforceToken
+from hubspot.models import HubspotToken
+from quickbooks.models import QuickbooksToken
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.exceptions import ObjectDoesNotExist
 import json
 from .forms import CustomFieldForm, CustomObjectForm, EmailAlertForm, generate_dynamic_form, resolve_lookup_model
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth import update_session_auth_hash
 from django.contrib.contenttypes.models import ContentType
 from django.contrib import messages
 import logging
@@ -50,7 +54,7 @@ import uuid, os
 from django.views.decorators.http import require_POST
 from decimal import Decimal, InvalidOperation
 from collections import defaultdict, OrderedDict
-from django.contrib.auth.models import User, Group
+from django.contrib.auth.models import User, Group, Permission
 from django.conf import settings
 from django.utils import timezone
 from .models import EmailAlert
@@ -60,6 +64,7 @@ from django.utils.http import urlencode
 import boto3
 from botocore.config import Config
 import stripe
+import requests
 from django.db import transaction
 from cpq.permissions import get_custom_object_perms, perms_to_template_dict, user_can_access_custom_object
 
@@ -71,7 +76,183 @@ from agents.utils.quote_agent.general_helpers import (
     restrict_quote_document_settings_to_line_item_object_types,
     set_custom_fields_into_quote_document_settings,
 )
+from agents.models import ChatSession, ChatMessage
+from agents.utils.analytics_agent.handle_helpers import get_object_metadata
+from agents.utils.quote_agent.general_helpers import get_quote_details
+from agents.utils.record_agent.handle_helpers import serialize_record
 
+
+@login_required
+def manage_users(request):
+    if not (request.user.is_superuser or request.user.has_perm("auth.view_user")):
+        return HttpResponseForbidden("You do not have permission to view users.")
+
+    can_add = request.user.is_superuser or request.user.has_perm("auth.add_user")
+    can_change = request.user.is_superuser or request.user.has_perm("auth.change_user")
+    can_assign_access = request.user.is_superuser or request.user.has_perm("auth.change_user")
+    can_add_group = request.user.is_superuser or request.user.has_perm("auth.add_group")
+    can_change_group = request.user.is_superuser or request.user.has_perm("auth.change_group")
+    can_delete_group = request.user.is_superuser or request.user.has_perm("auth.delete_group")
+
+    if request.method == "POST":
+        action = request.POST.get("action")
+        if action == "create":
+            if not can_add:
+                return HttpResponseForbidden("You do not have permission to add users.")
+
+            username = (request.POST.get("username") or "").strip()
+            email = (request.POST.get("email") or "").strip()
+            password = request.POST.get("password") or ""
+            password_confirm = request.POST.get("password_confirm") or ""
+            first_name = (request.POST.get("first_name") or "").strip()
+            last_name = (request.POST.get("last_name") or "").strip()
+            is_staff = bool(request.POST.get("is_staff"))
+            is_active = bool(request.POST.get("is_active"))
+            is_superuser = bool(request.POST.get("is_superuser")) if request.user.is_superuser else False
+
+            if not username:
+                messages.error(request, "Username is required.")
+            elif not password:
+                messages.error(request, "Password is required.")
+            elif password != password_confirm:
+                messages.error(request, "Passwords do not match.")
+            elif User.objects.filter(username=username).exists():
+                messages.error(request, "Username already exists.")
+            else:
+                user = User.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=password,
+                    first_name=first_name,
+                    last_name=last_name,
+                    is_staff=is_staff,
+                    is_active=is_active,
+                )
+                if is_superuser and request.user.is_superuser:
+                    user.is_superuser = True
+                    user.save(update_fields=["is_superuser"])
+                if can_assign_access:
+                    group_ids = request.POST.getlist("group_ids")
+                    perm_ids = request.POST.getlist("permission_ids")
+                    user.groups.set(Group.objects.filter(id__in=group_ids))
+                    user.user_permissions.set(Permission.objects.filter(id__in=perm_ids))
+                messages.success(request, f"User '{username}' created.")
+
+        elif action == "update":
+            if not can_change:
+                return HttpResponseForbidden("You do not have permission to change users.")
+
+            user_id = request.POST.get("user_id")
+            target_user = get_object_or_404(User, pk=user_id)
+
+            if target_user.is_superuser and not request.user.is_superuser:
+                return HttpResponseForbidden("You cannot modify a superuser.")
+
+            new_password = request.POST.get("password") or ""
+            password_confirm = request.POST.get("password_confirm") or ""
+            if new_password.strip() and new_password != password_confirm:
+                messages.error(request, "Passwords do not match.")
+                return redirect("cpq:manage_users")
+
+            target_user.first_name = (request.POST.get("first_name") or "").strip()
+            target_user.last_name = (request.POST.get("last_name") or "").strip()
+            target_user.email = (request.POST.get("email") or "").strip()
+            target_user.is_staff = bool(request.POST.get("is_staff"))
+            requested_active = bool(request.POST.get("is_active")) if "is_active" in request.POST else False
+
+            if target_user == request.user and not requested_active:
+                messages.error(request, "You cannot deactivate your own account.")
+            else:
+                target_user.is_active = requested_active
+
+            if request.user.is_superuser:
+                target_user.is_superuser = bool(request.POST.get("is_superuser"))
+
+            password_changed = False
+            if new_password.strip():
+                target_user.set_password(new_password.strip())
+                password_changed = True
+
+            target_user.save()
+            if password_changed and target_user == request.user:
+                update_session_auth_hash(request, target_user)
+            if can_assign_access:
+                group_ids = request.POST.getlist("group_ids")
+                perm_ids = request.POST.getlist("permission_ids")
+                target_user.groups.set(Group.objects.filter(id__in=group_ids))
+                target_user.user_permissions.set(Permission.objects.filter(id__in=perm_ids))
+            messages.success(request, f"User '{target_user.username}' updated.")
+
+        elif action == "create_group":
+            if not can_add_group:
+                return HttpResponseForbidden("You do not have permission to add groups.")
+
+            group_name = (request.POST.get("group_name") or "").strip()
+            if not group_name:
+                messages.error(request, "Group name is required.")
+                return redirect("cpq:manage_users")
+
+            if Group.objects.filter(name__iexact=group_name).exists():
+                messages.error(request, "Group name already exists.")
+                return redirect("cpq:manage_users")
+
+            group = Group.objects.create(name=group_name)
+            if can_change_group:
+                perm_ids = request.POST.getlist("group_permission_ids")
+                group.permissions.set(Permission.objects.filter(id__in=perm_ids))
+            messages.success(request, f"Group '{group_name}' created.")
+
+        elif action == "update_group":
+            if not can_change_group:
+                return HttpResponseForbidden("You do not have permission to change groups.")
+
+            group_id = request.POST.get("group_id")
+            group = get_object_or_404(Group, pk=group_id)
+            group_name = (request.POST.get("group_name") or "").strip()
+            if not group_name:
+                messages.error(request, "Group name is required.")
+                return redirect("cpq:manage_users")
+
+            if Group.objects.filter(name__iexact=group_name).exclude(pk=group.pk).exists():
+                messages.error(request, "Group name already exists.")
+                return redirect("cpq:manage_users")
+
+            group.name = group_name
+            group.save(update_fields=["name"])
+            perm_ids = request.POST.getlist("group_permission_ids")
+            group.permissions.set(Permission.objects.filter(id__in=perm_ids))
+            messages.success(request, f"Group '{group_name}' updated.")
+
+        elif action == "delete_group":
+            if not can_delete_group:
+                return HttpResponseForbidden("You do not have permission to delete groups.")
+
+            group_id = request.POST.get("group_id")
+            group = get_object_or_404(Group, pk=group_id)
+            group_name = group.name
+            group.delete()
+            messages.success(request, f"Group '{group_name}' deleted.")
+
+        return redirect("cpq:manage_users")
+
+    users = User.objects.prefetch_related("groups", "user_permissions").order_by("username")
+    groups = Group.objects.prefetch_related("permissions", "user_set").order_by("name")
+    permissions_by_app = OrderedDict()
+    permissions = Permission.objects.select_related("content_type").order_by("content_type__app_label", "name")
+    for perm in permissions:
+        app_label = perm.content_type.app_label
+        permissions_by_app.setdefault(app_label, []).append(perm)
+    return render(request, "user_management.html", {
+        "users": users,
+        "can_add": can_add,
+        "can_change": can_change,
+        "can_assign_access": can_assign_access,
+        "can_add_group": can_add_group,
+        "can_change_group": can_change_group,
+        "can_delete_group": can_delete_group,
+        "groups": groups,
+        "permissions_by_app": permissions_by_app,
+    })
 
 def _estimate_queryset_size(qs, field_names=None, chunk_size=250):
     """Approximate the size in bytes of all rows returned by a queryset."""
@@ -400,6 +581,543 @@ def accounts_view(request):
             "is_authenticated": is_authenticated,  # ✅ Used to show Sync button conditionally
         },
     )
+
+
+@login_required
+def related_opportunities_api(request):
+    account_id = request.GET.get("account_id")
+    if not account_id:
+        return JsonResponse({"error": "account_id is required"}, status=400)
+
+    try:
+        account_id_int = int(account_id)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "account_id must be an integer"}, status=400)
+
+    account = get_object_or_404(Account, pk=account_id_int)
+    opportunities = Opportunity.objects.filter(account=account).order_by("-created_at")
+    record_id = request.GET.get("record_id")
+    if record_id:
+        try:
+            record_id_int = int(record_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "record_id must be an integer"}, status=400)
+        opportunities = opportunities.filter(pk=record_id_int)
+    total = opportunities.count()
+
+    summary_only = str(request.GET.get("summary") or "").lower() in ("1", "true", "yes")
+    preview_only = str(request.GET.get("preview") or "").lower() in ("1", "true", "yes")
+    persist_list = str(request.GET.get("persist_list") or "").lower() in ("1", "true", "yes")
+    limit_param = request.GET.get("limit")
+    limit = None
+    if limit_param:
+        try:
+            limit = max(1, min(int(limit_param), 100))
+        except (TypeError, ValueError):
+            limit = None
+
+    if limit:
+        opportunities = opportunities[:limit]
+
+    stored = False
+    if preview_only:
+        preview = []
+        for opp in opportunities:
+            preview.append({
+                "record_id": opp.id,
+                "record_value": str(opp),
+                "object": "Opportunity",
+                "name": opp.name,
+                "amount": float(opp.amount) if opp.amount is not None else None,
+                "stage": opp.stage,
+                "expected_close_date": opp.expected_close_date.isoformat() if opp.expected_close_date else None,
+            })
+        session_id = request.GET.get("session_id")
+        if persist_list and session_id:
+            session = ChatSession.objects.filter(session_id=session_id, user=request.user).first()
+            if session:
+                list_label = f"Opportunities for {account.name} Account"
+                rows = [
+                    {
+                        "name": entry.get("name") or entry.get("record_value") or "Record",
+                        "amount": entry.get("amount"),
+                        "stage": entry.get("stage"),
+                        "expected_close_date": entry.get("expected_close_date"),
+                    }
+                    for entry in preview
+                ]
+                payload = {
+                    "_meta": {
+                        "related_list_role": "related-opportunities",
+                        "related_account_id": account.id,
+                    },
+                    list_label: rows,
+                }
+                list_marker = "\"related_list_role\":\"related-opportunities\""
+                account_marker = f"\"related_account_id\":{account.id}"
+                exists = (
+                    ChatMessage.objects.filter(session=session, sender="agent")
+                    .filter(content__contains=list_marker)
+                    .filter(content__contains=account_marker)
+                    .exists()
+                )
+                if not exists:
+                    content = f"retrieved_records: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
+                    ChatMessage.objects.create(
+                        session=session,
+                        sender="agent",
+                        content=content,
+                        hiddenMessage=True,
+                    )
+                    stored = True
+        return JsonResponse({
+            "account_id": account.id,
+            "count": total,
+            "records": preview,
+            "stored": stored,
+            "truncated": bool(limit and total > limit),
+        })
+
+    records = []
+    if not summary_only:
+        metadata = get_object_metadata("Opportunity")
+        if not metadata:
+            return JsonResponse({"error": "Opportunity metadata not found"}, status=400)
+
+        for opp in opportunities:
+            payload = serialize_record(
+                opp,
+                "Opportunity",
+                metadata["custom_object"],
+                metadata["custom_fields"],
+                user=request.user,
+            )
+            payload["related_account_id"] = account.id
+            records.append(payload)
+
+        persist = str(request.GET.get("persist") or "").lower() in ("1", "true", "yes")
+        session_id = request.GET.get("session_id")
+        if persist and session_id:
+            session = ChatSession.objects.filter(session_id=session_id, user=request.user).first()
+            if session:
+                account_marker = f"\"related_account_id\":{account.id}"
+                for payload in records:
+                    record_id = payload.get("record_id")
+                    if record_id is None:
+                        continue
+                    record_marker = f"\"record_id\":{record_id}"
+                    exists = (
+                        ChatMessage.objects.filter(session=session, sender="agent")
+                        .filter(content__contains=account_marker)
+                        .filter(content__contains=record_marker)
+                        .exists()
+                    )
+                    if exists:
+                        continue
+                    content = f"single_record: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
+                    ChatMessage.objects.create(
+                        session=session,
+                        sender="agent",
+                        content=content,
+                        hiddenMessage=True,
+                    )
+                    stored = True
+
+    return JsonResponse({
+        "account_id": account.id,
+        "count": total,
+        "records": records,
+        "stored": stored,
+        "truncated": bool(limit and total > limit),
+    })
+
+
+@login_required
+def related_quotes_api(request):
+    opportunity_id = request.GET.get("opportunity_id")
+    if not opportunity_id:
+        return JsonResponse({"error": "Missing opportunity_id"}, status=400)
+
+    opportunity = get_object_or_404(Opportunity, pk=opportunity_id)
+    quotes = Quote.objects.filter(opportunity=opportunity).order_by("-id")
+    record_id = request.GET.get("record_id")
+    if record_id:
+        try:
+            record_id_int = int(record_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "record_id must be an integer"}, status=400)
+        quotes = quotes.filter(pk=record_id_int)
+    total = quotes.count()
+
+    summary_only = str(request.GET.get("summary") or "").lower() in ("1", "true", "yes")
+    preview_only = str(request.GET.get("preview") or "").lower() in ("1", "true", "yes")
+    persist_list = str(request.GET.get("persist_list") or "").lower() in ("1", "true", "yes")
+    limit_param = request.GET.get("limit")
+    limit = None
+    if limit_param:
+        try:
+            limit = max(1, min(int(limit_param), 100))
+        except (TypeError, ValueError):
+            limit = None
+
+    if limit:
+        quotes = quotes[:limit]
+
+    stored = False
+    if preview_only:
+        preview = []
+        for quote in quotes:
+            is_primary = opportunity.primary_quote_id == quote.id
+            preview.append({
+                "record_id": quote.id,
+                "record_value": str(quote),
+                "object": "Quote",
+                "name": quote.name,
+                "status": quote.status,
+                "net_amount": float(quote.net_amount) if quote.net_amount is not None else None,
+                "expiration_date": quote.expiration_date.isoformat() if quote.expiration_date else None,
+                "primary_quote": is_primary,
+            })
+        session_id = request.GET.get("session_id")
+        if persist_list and session_id:
+            session = ChatSession.objects.filter(session_id=session_id, user=request.user).first()
+            if session:
+                list_label = f"Quotes for {opportunity.name} Opportunity"
+                rows = [
+                    {
+                        "name": entry.get("name") or entry.get("record_value") or "Record",
+                        "status": entry.get("status"),
+                        "net_amount": entry.get("net_amount"),
+                        "expiration_date": entry.get("expiration_date"),
+                        "primary_quote": entry.get("primary_quote"),
+                        "view_quote": (
+                            f"<button type=\"button\" class=\"quote-list-view-btn\" "
+                            f"data-quote-id=\"{entry.get('record_id')}\" "
+                            f"aria-label=\"View quote details\" "
+                            f"title=\"View quote details\">"
+                            f"<span class=\"material-icons\" aria-hidden=\"true\">visibility</span>"
+                            f"</button>"
+                        ),
+                    }
+                    for entry in preview
+                ]
+                payload = {
+                    "_meta": {
+                        "related_list_role": "related-quotes",
+                        "related_opportunity_id": opportunity.id,
+                    },
+                    list_label: rows,
+                }
+                list_marker = "\"related_list_role\":\"related-quotes\""
+                opp_marker = f"\"related_opportunity_id\":{opportunity.id}"
+                exists = (
+                    ChatMessage.objects.filter(session=session, sender="agent")
+                    .filter(content__contains=list_marker)
+                    .filter(content__contains=opp_marker)
+                    .exists()
+                )
+                if not exists:
+                    content = f"retrieved_records: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
+                    ChatMessage.objects.create(
+                        session=session,
+                        sender="agent",
+                        content=content,
+                        hiddenMessage=True,
+                    )
+                    stored = True
+        return JsonResponse({
+            "opportunity_id": opportunity.id,
+            "count": total,
+            "records": preview,
+            "stored": stored,
+            "truncated": bool(limit and total > limit),
+        })
+
+    records = []
+    if not summary_only:
+        metadata = get_object_metadata("Quote")
+        if not metadata:
+            return JsonResponse({"error": "Quote metadata not found"}, status=400)
+
+        for quote in quotes:
+            payload = serialize_record(
+                quote,
+                "Quote",
+                metadata["custom_object"],
+                metadata["custom_fields"],
+                user=request.user,
+            )
+            payload["related_opportunity_id"] = opportunity.id
+            records.append(payload)
+
+        persist = str(request.GET.get("persist") or "").lower() in ("1", "true", "yes")
+        session_id = request.GET.get("session_id")
+        if persist and session_id:
+            session = ChatSession.objects.filter(session_id=session_id, user=request.user).first()
+            if session:
+                opportunity_marker = f"\"related_opportunity_id\":{opportunity.id}"
+                for payload in records:
+                    record_id = payload.get("record_id")
+                    if record_id is None:
+                        continue
+                    record_marker = f"\"record_id\":{record_id}"
+                    exists = (
+                        ChatMessage.objects.filter(session=session, sender="agent")
+                        .filter(content__contains=opportunity_marker)
+                        .filter(content__contains=record_marker)
+                        .exists()
+                    )
+                    if exists:
+                        continue
+                    content = f"single_record: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
+                    ChatMessage.objects.create(
+                        session=session,
+                        sender="agent",
+                        content=content,
+                        hiddenMessage=True,
+                    )
+                    stored = True
+
+    return JsonResponse({
+        "opportunity_id": opportunity.id,
+        "count": total,
+        "records": records,
+        "stored": stored,
+        "truncated": bool(limit and total > limit),
+    })
+
+
+@login_required
+def related_contract_lines_api(request):
+    account_id = request.GET.get("account_id")
+    if not account_id:
+        return JsonResponse({"error": "Missing account_id"}, status=400)
+
+    account = get_object_or_404(Account, pk=account_id)
+    custom_object = CustomObject.objects.filter(name__iexact="contractline__c").first()
+    if not custom_object:
+        return JsonResponse({
+            "account_id": account.id,
+            "count": 0,
+            "records": [],
+            "stored": False,
+            "truncated": False,
+        })
+
+    if not user_can_access_custom_object(request.user, custom_object, "view"):
+        return HttpResponseForbidden("You do not have permission to view this custom object.")
+
+    lookup_fields = [field for field in custom_object.custom_fields.all() if field.data_type == "lookup"]
+    account_lookup_fields = []
+    for field in lookup_fields:
+        lookup_model = (field.lookup_model or "").strip().lower()
+        if lookup_model.endswith(".account") or lookup_model == "account" or lookup_model.endswith("account"):
+            account_lookup_fields.append(field)
+            continue
+        field_name = (field.name or "").lower()
+        field_label = (field.label or "").lower()
+        if "account" in field_name or "account" in field_label:
+            account_lookup_fields.append(field)
+
+    if not account_lookup_fields:
+        return JsonResponse({
+            "account_id": account.id,
+            "count": 0,
+            "records": [],
+            "stored": False,
+            "truncated": False,
+        })
+
+    record_ids = (
+        CustomFieldValue.objects.filter(field__in=account_lookup_fields, value=str(account.id))
+        .values_list("record_id", flat=True)
+        .distinct()
+    )
+    records_qs = CustomRecord.objects.filter(object_type=custom_object, id__in=record_ids).order_by("-id")
+    record_id = request.GET.get("record_id")
+    if record_id:
+        try:
+            record_id_int = int(record_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "record_id must be an integer"}, status=400)
+        records_qs = records_qs.filter(pk=record_id_int)
+    total = records_qs.count()
+
+    summary_only = str(request.GET.get("summary") or "").lower() in ("1", "true", "yes")
+    preview_only = str(request.GET.get("preview") or "").lower() in ("1", "true", "yes")
+    limit_param = request.GET.get("limit")
+    limit = None
+    if limit_param:
+        try:
+            limit = max(1, min(int(limit_param), 100))
+        except (TypeError, ValueError):
+            limit = None
+
+    if limit:
+        records_qs = records_qs[:limit]
+
+    if preview_only:
+        preview = [
+            {
+                "record_id": record.id,
+                "record_value": str(record),
+                "object": custom_object.name,
+            }
+            for record in records_qs
+        ]
+        return JsonResponse({
+            "account_id": account.id,
+            "count": total,
+            "records": preview,
+            "truncated": bool(limit and total > limit),
+        })
+
+    records = []
+    stored = False
+    if not summary_only:
+        metadata = get_object_metadata(custom_object.name)
+        if not metadata:
+            return JsonResponse({"error": "Custom object metadata not found"}, status=400)
+
+        for record in records_qs:
+            payload = serialize_record(
+                record,
+                custom_object.name,
+                metadata["custom_object"],
+                metadata["custom_fields"],
+                user=request.user,
+            )
+            payload["related_account_id"] = account.id
+            records.append(payload)
+
+        persist = str(request.GET.get("persist") or "").lower() in ("1", "true", "yes")
+        session_id = request.GET.get("session_id")
+        if persist and session_id:
+            session = ChatSession.objects.filter(session_id=session_id, user=request.user).first()
+            if session:
+                account_marker = f"\"related_account_id\":{account.id}"
+                for payload in records:
+                    record_id = payload.get("record_id")
+                    if record_id is None:
+                        continue
+                    record_marker = f"\"record_id\":{record_id}"
+                    exists = (
+                        ChatMessage.objects.filter(session=session, sender="agent")
+                        .filter(content__contains=account_marker)
+                        .filter(content__contains=record_marker)
+                        .exists()
+                    )
+                    if exists:
+                        continue
+                    content = f"single_record: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
+                    ChatMessage.objects.create(
+                        session=session,
+                        sender="agent",
+                        content=content,
+                        hiddenMessage=True,
+                    )
+                    stored = True
+
+    return JsonResponse({
+        "account_id": account.id,
+        "count": total,
+        "records": records,
+        "stored": stored,
+        "truncated": bool(limit and total > limit),
+    })
+
+
+@login_required
+def quote_details_api(request):
+    quote_id = request.GET.get("quote_id")
+    if not quote_id:
+        return JsonResponse({"error": "quote_id is required"}, status=400)
+
+    try:
+        quote_id_int = int(quote_id)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "quote_id must be an integer"}, status=400)
+
+    quote = get_object_or_404(Quote, pk=quote_id_int)
+    details = get_quote_details(quote)
+    if isinstance(details, dict) and details.get("error"):
+        return JsonResponse({"quote_details": details}, status=400, encoder=DjangoJSONEncoder)
+
+    persist = str(request.GET.get("persist") or "").lower() in ("1", "true", "yes")
+    session_id = request.GET.get("session_id")
+    if persist and session_id:
+        session = ChatSession.objects.filter(session_id=session_id, user=request.user).first()
+        if session:
+            marker = f"\"quote_id\":{quote.id}"
+            exists = (
+                ChatMessage.objects.filter(session=session, sender="agent")
+                .filter(content__contains=marker)
+                .filter(content__contains="quote_details")
+                .exists()
+            )
+            if not exists:
+                content = f"quote_details: {json.dumps(details, ensure_ascii=False, separators=(',', ':'))}"
+                ChatMessage.objects.create(
+                    session=session,
+                    sender="agent",
+                    content=content,
+                    hiddenMessage=True,
+                )
+    return JsonResponse({"quote_details": details}, encoder=DjangoJSONEncoder)
+
+
+@login_required
+def single_record_api(request):
+    object_name = request.GET.get("object")
+    record_id = request.GET.get("record_id")
+    if not object_name or not record_id:
+        return JsonResponse({"error": "object and record_id are required"}, status=400)
+
+    try:
+        record_id_int = int(record_id)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "record_id must be an integer"}, status=400)
+
+    metadata = get_object_metadata(object_name)
+    if not metadata:
+        return JsonResponse({"error": f"Unknown object '{object_name}'."}, status=404)
+
+    model = metadata["model"]
+    custom_object = metadata["custom_object"]
+    custom_fields = metadata["custom_fields"]
+
+    try:
+        if custom_object:
+            record = model.objects.filter(object_type=custom_object).get(pk=record_id_int)
+        else:
+            record = model.objects.get(pk=record_id_int)
+    except model.DoesNotExist:
+        return JsonResponse({"error": "Record not found."}, status=404)
+
+    payload = serialize_record(record, object_name, custom_object, custom_fields, user=request.user)
+
+    persist = str(request.GET.get("persist") or "").lower() in ("1", "true", "yes")
+    session_id = request.GET.get("session_id")
+    if persist and session_id:
+        session = ChatSession.objects.filter(session_id=session_id, user=request.user).first()
+        if session:
+            marker = f"\"record_id\":{record_id_int}"
+            exists = (
+                ChatMessage.objects.filter(session=session, sender="agent")
+                .filter(content__contains=marker)
+                .filter(content__contains="single_record")
+                .exists()
+            )
+            if not exists:
+                content = f"single_record: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
+                ChatMessage.objects.create(
+                    session=session,
+                    sender="agent",
+                    content=content,
+                    hiddenMessage=True,
+                )
+
+    return JsonResponse({"single_record": payload}, encoder=DjangoJSONEncoder)
 
 MODEL_CHOICES = {
     "Opportunity": "Opportunity",  # ✅ Use class name, not table name
@@ -858,6 +1576,45 @@ def get_company_information(request):
     })
 
 
+@login_required
+def admin_integrations(request):
+    if not request.user.is_staff:
+        return HttpResponseForbidden("You do not have access to integrations.")
+
+    hubspot_connected = False
+    try:
+        token = HubspotToken.objects.get(user_id="default")
+        if token.expires_at and token.expires_at > now():
+            headers = {
+                "Authorization": f"Bearer {token.access_token}"
+            }
+            response = requests.get(
+                "https://api.hubapi.com/integrations/v1/me",
+                headers=headers,
+                timeout=6,
+            )
+            if response.status_code == 200:
+                hubspot_connected = True
+    except HubspotToken.DoesNotExist:
+        pass
+    except requests.RequestException:
+        hubspot_connected = False
+
+    salesforce_connected = SalesforceToken.objects.exists()
+    quickbooks_connected = QuickbooksToken.objects.exists()
+    docusign_connected = False
+
+    company = Tenant.objects.first()
+
+    return render(request, "admin_integrations.html", {
+        "company": company or Tenant(),
+        "hubspot_connected": hubspot_connected,
+        "salesforce_connected": salesforce_connected,
+        "quickbooks_connected": quickbooks_connected,
+        "docusign_connected": docusign_connected,
+    })
+
+
 # No dont require this function (apparently)
 def create_custom_object(request):
     if request.method == 'POST':
@@ -1254,14 +2011,20 @@ def create_notification(request):
     return JsonResponse({'status': 'ok'})
 
 def create_business_rule(request):
-    rule_type = request.GET.get("type", "validation")
-    target_type = request.GET.get("target_type", "quote_line")
+    rule_id = request.GET.get("rule_id") or request.POST.get("rule_id")
+    rule = None
+    if rule_id:
+        rule = get_object_or_404(BusinessRule, pk=rule_id)
+
+    rule_type = rule.rule_type if rule else request.GET.get("type", "validation")
+    target_type = rule.target_type if rule else request.GET.get("target_type", "quote_line")
 
     if request.method == "POST":
         print(f"\n\nSi llega al POST\n\n")
-        form = BusinessRuleForm(request.POST)
-        target_type = request.POST.get("target_type", "quote_line")
-        formset = get_rule_condition_formset(target_type, request.POST)
+        form = BusinessRuleForm(request.POST, instance=rule)
+        target_type = request.POST.get("target_type", target_type)
+        rule_conditions = RuleCondition.objects.filter(rule=rule) if rule else None
+        formset = get_rule_condition_formset(target_type, request.POST, queryset=rule_conditions)
 
         if form.is_valid() and formset.is_valid():
             rule = form.save(commit=False)
@@ -1280,15 +2043,18 @@ def create_business_rule(request):
                 print(f.errors)
 
     else:
-        form = BusinessRuleForm(initial={"rule_type": rule_type})
-        target_type = request.GET.get("target_type", "quote_line")
-        formset = get_rule_condition_formset(target_type)
+        form = BusinessRuleForm(instance=rule, initial={"rule_type": rule_type})
+        target_type = target_type or request.GET.get("target_type", "quote_line")
+        rule_conditions = RuleCondition.objects.filter(rule=rule) if rule else None
+        formset = get_rule_condition_formset(target_type, queryset=rule_conditions)
 
 
     return render(request, "create_business_rule.html", {
         "form": form,
         "formset": formset,
         "rule_type": rule_type,
+        "rule": rule,
+        "is_edit": bool(rule),
         "QUOTE_FIELDS": mark_safe(json.dumps(QUOTE_FIELDS)), # nosec B703 B308
         "QUOTE_LINE_FIELDS": mark_safe(json.dumps(QUOTE_LINE_FIELDS)), # nosec B703 B308
         "PRODUCT_FIELDS": mark_safe(json.dumps(PRODUCT_FIELDS)), # nosec B703 B308

@@ -26,7 +26,22 @@
     <div class="chat-container">
         <!-- <div id="chat-box" class="chat-box"></div> -->
         <div id="chat-box" class="chat-box">
+            <div id="chat-empty-state" class="chat-empty-state" aria-hidden="true">
+              <div class="chat-empty-shell">
+                <div class="chat-empty-badge">AgentCPQ</div>
+                <h1>What can I do for you, <span data-user-name>there</span>?</h1>
+                <p class="chat-empty-subtitle">Ask me to create quotes, leads, opportunities, or search records.</p>
+                <div class="chat-empty-actions">
+                  <button type="button" class="chat-empty-chip" data-example="Create a quote for Investors App.">Create a quote</button>
+                  <button type="button" class="chat-empty-chip" data-example="Create a new lead for Juan Perez at Investors App.">New lead</button>
+                  <button type="button" class="chat-empty-chip" data-example="Search for account Investors App.">Search records</button>
+                  <button type="button" class="chat-empty-chip" data-example="Show my last 5 opportunities.">Insights</button>
+                </div>
+                <div class="chat-empty-hint">Try: "Create a quote for Investors App with 5 seats."</div>
+              </div>
+            </div>
             {% for msg in chat_messages %}
+              {% if msg.hiddenMessage == False or msg.sender == 'agent' and 'download_url' in msg.content or msg.sender == 'agent' and 'quote_details' in msg.content or msg.sender == 'agent' and 'update_details' in msg.content or msg.sender == 'agent' and 'validation_rules_details' in msg.content or msg.sender == 'agent' and 'inclusion_rules_details' in msg.content or msg.sender == 'agent' and 'exclusion_rules_details' in msg.content or msg.sender == 'agent' and 'action_triggers_details' in msg.content or msg.sender == 'agent' and 'email_alerts_details' in msg.content or msg.sender == 'agent' and 'single_record' in msg.content or msg.sender == 'agent' and 'retrieved_records' in msg.content %}
               <div class="chat-message {{ msg.sender }}">
                 {% if msg.sender == 'user' and msg.hiddenMessage == False %}
                   <div class="chat-text user">
@@ -121,6 +136,7 @@
                   </div>
                 {% endif %}
               </div>
+              {% endif %}
             {% endfor %}
           </div>
           <div id="agent-feedback" style="display: none; text-align: left;">
@@ -138,7 +154,7 @@
         <div class="input-wrapper upload-dropzone" id="upload-dropzone">
             <div class="input-row">
                 
-                <textarea id="user-input" placeholder="Create a Quote..." class="chat-input" rows="1"></textarea>
+                <textarea id="user-input" placeholder="Ask me to create a quote, lead, or record..." class="chat-input" rows="1"></textarea>
                 <button id="send-btn" class="send-button" aria-label="Send message">
                     <i class="material-icons">send</i>
                 </button>

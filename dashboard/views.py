@@ -63,7 +63,16 @@ def _decode_message_content(raw: str) -> str:
 
 @login_required
 def dashboard(request):
+    if (
+        "view" not in request.GET
+        and "session_id" not in request.GET
+        and "new_chat" not in request.GET
+    ):
+        return redirect(f"{reverse('dashboard')}?view=agents&new_chat=true")
+
     view = request.GET.get("view", "agents")
+    if view == "setup":
+        return redirect("cpq:admin_integrations")
     object_name = request.GET.get("object_name")
     session_id = request.GET.get("session_id")
     user = request.user
@@ -99,9 +108,6 @@ def dashboard(request):
             next_identifier = f"{prefix}-00001"
 
 
-    if view == "setup" and not user.is_staff:
-        return HttpResponseForbidden("You do not have access to the setup view.")
-    
     products = None
     options = None
     bundles = None
@@ -136,7 +142,6 @@ def dashboard(request):
     print("📦 Account groups:", account_groups)
 
     is_authenticated = SalesforceToken.objects.exists()
-    is_setup = view == "setup"
     #user = User.objects.get(username="admin") or request.user
     chat_sessions = ChatSession.objects.filter(user=user).order_by("-created_at")
 
@@ -179,7 +184,6 @@ def dashboard(request):
         "options": options,
         "bundles": bundles,
         "account_groups": account_groups,
-        "is_setup": is_setup,
         "is_authenticated": is_authenticated,
         "hubspot_connected": hubspot_connected,
         "quickbooks_connected": quickbooks_connected,

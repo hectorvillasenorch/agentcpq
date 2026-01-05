@@ -9,7 +9,7 @@ from django.apps import apps
 from django.core.exceptions import FieldError
 from django.db.models import ForeignKey, OuterRef, Subquery, Q, Sum, Avg, Count, Min, Max, CharField, TextField
 from django.db.models.functions import Cast
-from django.db.models import DecimalField, DateField
+from django.db.models import DecimalField, DateField, DateTimeField
 from django.db.models.functions import TruncMonth, TruncWeek, TruncDay
 from django.utils.dateparse import parse_date
 from django.utils.timezone import now
@@ -527,8 +527,45 @@ def apply_operator(field, operator, value, filters, exclude_filters, model=None)
         Returns (start, end) or None
         """
         now_dt = now()
+        tzinfo = now_dt.tzinfo
+
+        def _expand_day_bounds(day):
+            start_dt = datetime.combine(day, datetime.min.time())
+            end_dt = datetime.combine(day, datetime.max.time())
+            if tzinfo and start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=tzinfo)
+                end_dt = end_dt.replace(tzinfo=tzinfo)
+            return start_dt, end_dt
+
+        def _coerce_dates(start_raw, end_raw):
+            try:
+                start_dt = parse_date(str(start_raw))
+                end_dt = parse_date(str(end_raw))
+            except Exception:
+                start_dt = end_dt = None
+
+            if start_dt and end_dt:
+                if isinstance(field_obj, DateTimeField):
+                    start_dt, _ = _expand_day_bounds(start_dt)
+                    _, end_dt = _expand_day_bounds(end_dt)
+                    return start_dt, end_dt
+                return start_dt, end_dt
+            return start_raw, end_raw
+
         if isinstance(val, str):
             key = val.strip().lower()
+            if key == "today":
+                start = now_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+                end = now_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+                return start, end
+            if key == "yesterday":
+                day = (now_dt - timedelta(days=1)).date()
+                start, end = _expand_day_bounds(day)
+                return start, end
+            if key == "tomorrow":
+                day = (now_dt + timedelta(days=1)).date()
+                start, end = _expand_day_bounds(day)
+                return start, end
             if key == "this_year":
                 return now_dt.replace(month=1, day=1), now_dt.replace(month=12, day=31)
             if key == "next_year":
@@ -549,11 +586,8 @@ def apply_operator(field, operator, value, filters, exclude_filters, model=None)
 
         if isinstance(val, (list, tuple)) and len(val) == 2:
             start_raw, end_raw = val[0], val[1]
-            try:
-                start_dt = parse_date(str(start_raw))
-                end_dt = parse_date(str(end_raw))
-            except Exception:
-                start_dt = end_dt = None
+            start_dt = parse_date(str(start_raw))
+            end_dt = parse_date(str(end_raw))
 
             # If it's a full-year range but not the current year, reinterpret as current year
             if start_dt and end_dt:
@@ -561,14 +595,14 @@ def apply_operator(field, operator, value, filters, exclude_filters, model=None)
                     current_start = now_dt.replace(month=1, day=1)
                     current_end = now_dt.replace(month=12, day=31)
                     return current_start, current_end
-                return start_raw, end_raw
+                return _coerce_dates(start_raw, end_raw)
             return start_raw, end_raw
 
         if isinstance(val, dict):
             start = val.get("start_date") or val.get("start")
             end = val.get("end_date") or val.get("end")
             if start and end:
-                return start, end
+                return _coerce_dates(start, end)
         return None
 
     # Operators dictionary

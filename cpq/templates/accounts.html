@@ -27,10 +27,12 @@
         gap: 10px;
         padding: 0 16px;
         height: 38px;
-        border: 1px solid #d1d5db;
+        border: 1px solid rgba(255, 255, 255, 0.6);
         border-radius: 10px;
-        background: #ffffff;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+        background: rgba(255, 255, 255, 0.7);
+        box-shadow: 0 4px 10px rgba(15, 23, 42, 0.06);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
     .search-wrapper:focus-within {
@@ -81,10 +83,14 @@
         margin-bottom: 20px;
         border-radius: 20px;
         overflow: hidden;
-        background: #fff;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
     }
     .account-header {
-        background: #f5f7fb;
+        background: rgba(245, 247, 251, 0.7);
         color: #0f172a;
         padding: 26px 32px 20px;
         display: flex;
@@ -174,10 +180,10 @@
         font-weight: 500;
     }
     .opportunity-collapsible {
-        background: #fff;
+        background: transparent;
     }
     .opportunity-collapsible > li {
-        border-top: 1px solid #e2e8f0;
+        border-top: 1px solid rgba(255, 255, 255, 0.5);
     }
     .opportunity-header {
         padding: 22px 32px 18px;
@@ -185,7 +191,7 @@
         justify-content: space-between;
         align-items: flex-start;
         gap: 16px;
-        background: #f8fafc;
+        background: rgba(248, 250, 252, 0.7);
         color: #1f2937;
         flex-wrap: wrap;
     }
@@ -229,7 +235,7 @@
         gap: 10px;
     }
     .quote-collapsible > li {
-        border-top: 1px solid #e2e8f0;
+        border-top: 1px solid rgba(255, 255, 255, 0.5);
     }
     .quote-header {
         padding: 6px 32px;
@@ -237,7 +243,7 @@
         align-items: center;
         gap: 16px;
         flex-wrap: wrap;
-        background: #fff;
+        background: rgba(255, 255, 255, 0.7);
     }
     .quote-title {
         display: flex;

@@ -125,6 +125,10 @@ def chat_with_gpt(request):
     # --- 4.1 Load custom session data if exist---
     if custom_session_id:
         session_data["session_id"] = custom_session_id
+    elif session_data.get("session_id"):
+        # If the client didn't send a session_id (new chat screen), start fresh.
+        session_data = {}
+        request.session["session_data"] = session_data
 
     #Debbug the session id if is custom or not
     logger.info(f"🔹 REQUEST: Session Data: {request.session.get('session_data', {})}")
