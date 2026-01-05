@@ -1,0 +1,911 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<style>
+  :root {
+    --brand-accent: #fc6a3d;
+    --brand-navy: #182740;
+    --panel-border: rgba(15, 23, 42, 0.08);
+    --panel-bg: #ffffff;
+  }
+
+  .users-page {
+    padding: 18px 6px 26px;
+    background: transparent;
+  }
+
+  .users-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 6px 0 18px;
+  }
+
+  .users-header__title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: var(--brand-navy);
+    letter-spacing: -0.02em;
+  }
+
+  .users-header__subtitle {
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 0.98rem;
+  }
+
+  .users-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn-primary {
+    background: var(--brand-navy) !important;
+    border: none;
+    border-radius: 14px !important;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 18px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: #ffffff !important;
+    cursor: pointer;
+    transition: transform 160ms ease, filter 160ms ease;
+  }
+
+  .btn-primary:hover {
+    filter: brightness(1.02);
+    transform: translateY(-1px);
+  }
+
+  .panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.06);
+  }
+
+  .users-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    align-items: start;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .panel-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel__title {
+    margin: 0 0 4px;
+    font-size: 1.12rem;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.01em;
+  }
+
+  .panel__subtitle {
+    margin: 0 0 14px;
+    color: #64748b;
+    font-size: 0.92rem;
+  }
+
+  .muted {
+    color: #94a3b8;
+    font-size: 0.85rem;
+  }
+
+  .users-table {
+    width: 100%;
+    border-collapse: collapse;
+    overflow: hidden;
+    border-radius: 14px;
+  }
+
+  .groups-table {
+    width: 100%;
+    border-collapse: collapse;
+    overflow: hidden;
+    border-radius: 14px;
+  }
+
+  .groups-table th,
+  .groups-table td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    font-size: 0.95rem;
+    color: #1f2937;
+  }
+
+  .groups-table th {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #475569;
+    font-weight: 700;
+    background: #f5f7fb;
+  }
+
+  .groups-table tbody tr:hover {
+    background: #f8fafc;
+  }
+
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.35);
+    color: #0f172a;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .icon-btn:hover {
+    background: rgba(255, 255, 255, 0.5);
+    box-shadow: 0 10px 18px rgba(15, 23, 42, 0.12);
+  }
+
+  .users-table thead {
+    background: #f5f7fb;
+  }
+
+  .users-table th,
+  .users-table td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    font-size: 0.95rem;
+    color: #1f2937;
+  }
+
+  .users-table th {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #475569;
+    font-weight: 700;
+  }
+
+  .users-table tbody tr:hover {
+    background: #f8fafc;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.74rem;
+    font-weight: 800;
+    border-radius: 999px;
+    padding: 6px 10px;
+    background: rgba(15, 23, 42, 0.06);
+    color: #334155;
+    white-space: nowrap;
+  }
+
+  .pill--active {
+    background: rgba(16, 185, 129, 0.16);
+    color: #047857;
+  }
+
+  .pill--inactive {
+    background: rgba(239, 68, 68, 0.16);
+    color: #b91c1c;
+  }
+
+  .table-actions {
+    display: inline-flex;
+    gap: 8px;
+  }
+
+  .table-action-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.35);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    color: #0f172a;
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .table-action-btn:hover {
+    background: rgba(255, 255, 255, 0.5);
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+  }
+
+  .table-action-btn--icon {
+    padding: 0;
+  }
+
+  .table-action-btn--danger {
+    color: #b91c1c;
+    border-color: rgba(248, 113, 113, 0.6);
+  }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(15, 23, 42, 0.55);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 48px;
+    z-index: 1200;
+  }
+
+  .modal-overlay[aria-hidden="true"] {
+    display: none;
+  }
+
+  .modal-content {
+    background: #ffffff;
+    padding: 24px;
+    border-radius: 18px;
+    width: 100%;
+    max-width: 640px;
+    position: relative;
+    box-shadow: 0 20px 45px rgba(15, 23, 42, 0.2);
+  }
+
+  .modal-content .form-group input {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    border: 1px solid rgba(148, 163, 184, 0.7) !important;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.7) !important;
+    border-radius: 10px !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    padding: 10px 12px !important;
+    height: auto !important;
+  }
+
+  .modal-content .form-group input:focus {
+    border-color: #182740 !important;
+    outline: none !important;
+    box-shadow: 0 0 0 2px rgba(24, 39, 64, 0.12) !important;
+  }
+
+  .modal-content h2 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+
+  .close-button {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    font-size: 1.75rem;
+    color: #64748b;
+    cursor: pointer;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    color: #0f172a;
+  }
+
+  .form-group input {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    border: 1px solid rgba(148, 163, 184, 0.7);
+    border-radius: 10px;
+    background: #ffffff;
+  }
+
+  .form-group input:focus {
+    border-color: #182740;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(24, 39, 64, 0.12);
+  }
+
+  .form-group--full {
+    grid-column: span 2;
+  }
+
+  .form-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .form-check input {
+    width: auto !important;
+    box-shadow: none !important;
+    cursor: pointer;
+  }
+
+  .form-check input[type="checkbox"] {
+    position: static !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    width: 16px !important;
+    height: 16px !important;
+    margin: 0 !important;
+    accent-color: #182740;
+    cursor: pointer;
+  }
+
+  .form-check label {
+    cursor: pointer;
+  }
+
+  .access-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .form-section {
+    grid-column: span 2;
+    border-top: 1px solid rgba(15, 23, 42, 0.08);
+    padding-top: 12px;
+    margin-top: 6px;
+  }
+
+  .form-section h4 {
+    margin: 0 0 8px;
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  .filter-input {
+    width: 100%;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.7);
+    border-radius: 10px;
+    font-size: 0.9rem;
+  }
+
+  .checkbox-list {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 12px;
+    padding: 8px;
+    background: #f8fafc;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 6px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .checkbox-row input {
+    cursor: pointer;
+  }
+
+  .checkbox-row:hover {
+    background: rgba(15, 23, 42, 0.06);
+  }
+
+  @media (max-width: 1024px) {
+    .users-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .messages {
+    margin-bottom: 16px;
+  }
+
+  .message {
+    padding: 10px 12px;
+    border-radius: 12px;
+    margin-bottom: 8px;
+    font-size: 0.92rem;
+    background: rgba(15, 23, 42, 0.06);
+    color: #0f172a;
+  }
+
+  .message--success {
+    background: rgba(16, 185, 129, 0.14);
+    color: #047857;
+  }
+
+  .message--error {
+    background: rgba(239, 68, 68, 0.14);
+    color: #b91c1c;
+  }
+
+  .modal-actions {
+    margin-top: 18px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+  }
+</style>
+
+<div class="users-page">
+  <div class="users-header">
+    <div>
+      <h2 class="users-header__title"><i class="material-icons">group</i>Users</h2>
+      <p class="users-header__subtitle">Manage access and roles for your team.</p>
+    </div>
+  </div>
+
+  {% if messages %}
+    <div class="messages">
+      {% for message in messages %}
+        <div class="message message--{{ message.tags }}">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="users-grid">
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <h3 class="panel__title">Users</h3>
+          <p class="panel__subtitle">View and update user access.</p>
+        </div>
+        <div class="panel-header__actions">
+          {% if can_add %}
+            <button type="button" class="icon-btn" title="New user" aria-label="New user" onclick="openUserModal('create')">
+              <i class="material-icons">add</i>
+            </button>
+          {% endif %}
+        </div>
+      </div>
+      <table class="users-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Last Login</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+            <tr
+              data-user-id="{{ user.id }}"
+              data-username="{{ user.username }}"
+              data-first-name="{{ user.first_name }}"
+              data-last-name="{{ user.last_name }}"
+              data-email="{{ user.email }}"
+              data-is-staff="{{ user.is_staff|yesno:'true,false' }}"
+              data-is-superuser="{{ user.is_superuser|yesno:'true,false' }}"
+              data-is-active="{{ user.is_active|yesno:'true,false' }}"
+              data-group-ids="{% for group in user.groups.all %}{{ group.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
+              data-permission-ids="{% for perm in user.user_permissions.all %}{{ perm.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
+              data-groups="{% for group in user.groups.all %}{{ group.name }}{% if not forloop.last %}, {% endif %}{% endfor %}"
+              data-permissions-count="{{ user.user_permissions.all|length }}"
+            >
+              <td>{{ user.get_full_name|default:user.username }}</td>
+              <td>{{ user.email|default:"—" }}</td>
+              <td>{{ user.username }}</td>
+              <td>
+                {% if user.is_superuser %}
+                  <span class="pill">Superuser</span>
+                {% elif user.is_staff %}
+                  <span class="pill">Admin</span>
+                {% else %}
+                  <span class="pill">User</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if user.is_active %}
+                  <span class="pill pill--active">Active</span>
+                {% else %}
+                  <span class="pill pill--inactive">Inactive</span>
+                {% endif %}
+              </td>
+              <td>{{ user.last_login|date:"M d, Y"|default:"—" }}</td>
+              <td>
+                {% if can_change %}
+                  <div class="table-actions">
+                  <button type="button" class="table-action-btn table-action-btn--icon" title="Edit user" onclick="openUserModal('edit', this)">
+                    <i class="material-icons">edit</i>
+                  </button>
+                </div>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+            <tr>
+              <td colspan="7">No users found.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <h3 class="panel__title">Groups</h3>
+          <p class="panel__subtitle">Organize permissions into reusable sets.</p>
+        </div>
+        <div class="panel-header__actions">
+          {% if can_add_group %}
+            <button type="button" class="icon-btn" title="New group" aria-label="New group" onclick="openGroupModal('create')">
+              <i class="material-icons">add</i>
+            </button>
+          {% endif %}
+        </div>
+      </div>
+      <table class="groups-table">
+        <thead>
+          <tr>
+            <th>Group</th>
+            <th>Users</th>
+            <th>Permissions</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for group in groups %}
+            <tr
+              data-group-id="{{ group.id }}"
+              data-group-name="{{ group.name }}"
+              data-permission-ids="{% for perm in group.permissions.all %}{{ perm.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
+            >
+              <td>{{ group.name }}</td>
+              <td>{{ group.user_set.count }}</td>
+              <td>{{ group.permissions.count }}</td>
+              <td>
+                <div class="table-actions">
+                  {% if can_change_group %}
+                    <button type="button" class="table-action-btn table-action-btn--icon" title="Edit group" onclick="openGroupModal('edit', this)">
+                      <i class="material-icons">edit</i>
+                    </button>
+                  {% endif %}
+                  {% if can_delete_group %}
+                    <button type="button" class="table-action-btn table-action-btn--icon table-action-btn--danger" title="Delete group" onclick="submitGroupDelete(this)">
+                      <i class="material-icons">delete</i>
+                    </button>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="4">No groups found.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="userModal" class="modal-overlay" aria-hidden="true">
+  <div class="modal-content">
+    <span class="close-button" onclick="toggleUserModal()">&times;</span>
+    <h2 id="userModalTitle">Add User</h2>
+    <form method="post" action="{% url 'cpq:manage_users' %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" id="userFormAction" value="create">
+      <input type="hidden" name="user_id" id="userFormId">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="user-first-name">First Name</label>
+          <input id="user-first-name" name="first_name" type="text">
+        </div>
+        <div class="form-group">
+          <label for="user-last-name">Last Name</label>
+          <input id="user-last-name" name="last_name" type="text">
+        </div>
+        <div class="form-group">
+          <label for="user-email">Email</label>
+          <input id="user-email" name="email" type="email">
+        </div>
+        <div class="form-group">
+          <label for="user-username">Username</label>
+          <input id="user-username" name="username" type="text">
+        </div>
+        <div class="form-group form-group--full">
+          <label for="user-password">Password <span class="muted" id="passwordHelp">(required)</span></label>
+          <input id="user-password" name="password" type="password" autocomplete="new-password">
+        </div>
+        <div class="form-group form-group--full">
+          <label for="user-password-confirm">Confirm password <span class="muted" id="passwordConfirmHelp">(required)</span></label>
+          <input id="user-password-confirm" name="password_confirm" type="password" autocomplete="new-password">
+        </div>
+        <div class="form-group form-check">
+          <input id="user-active" name="is_active" type="checkbox" checked>
+          <label for="user-active">Active</label>
+        </div>
+        <div class="form-group form-check">
+          <input id="user-staff" name="is_staff" type="checkbox">
+          <label for="user-staff">Admin access</label>
+        </div>
+        {% if request.user.is_superuser %}
+          <div class="form-group form-check">
+            <input id="user-superuser" name="is_superuser" type="checkbox">
+            <label for="user-superuser">Superuser</label>
+          </div>
+        {% endif %}
+        {% if can_assign_access %}
+          <div class="form-section">
+            <h4>Groups</h4>
+            <input id="group-filter" class="filter-input" type="text" placeholder="Search groups">
+            <div class="checkbox-list" id="group-list">
+              {% for group in groups %}
+                <label class="checkbox-row">
+                  <input type="checkbox" name="group_ids" value="{{ group.id }}">
+                  <span>{{ group.name }}</span>
+                </label>
+              {% empty %}
+                <span class="muted">No groups available.</span>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="form-section">
+            <h4>Direct permissions</h4>
+            <input id="permission-filter" class="filter-input" type="text" placeholder="Search permissions">
+            <div class="checkbox-list" id="permission-list">
+              {% for app_label, perms in permissions_by_app.items %}
+                <div class="muted" style="margin: 6px 4px;">{{ app_label|title }}</div>
+                {% for perm in perms %}
+                  <label class="checkbox-row">
+                    <input type="checkbox" name="permission_ids" value="{{ perm.id }}">
+                    <span>{{ perm.name }}</span>
+                  </label>
+                {% endfor %}
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-primary" style="background: #9ca3af !important;" onclick="toggleUserModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="groupModal" class="modal-overlay" aria-hidden="true">
+  <div class="modal-content">
+    <span class="close-button" onclick="toggleGroupModal()">&times;</span>
+    <h2 id="groupModalTitle">Add Group</h2>
+    <form method="post" action="{% url 'cpq:manage_users' %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" id="groupFormAction" value="create_group">
+      <input type="hidden" name="group_id" id="groupFormId">
+      <div class="form-grid">
+        <div class="form-group form-group--full">
+          <label for="group-name">Group name</label>
+          <input id="group-name" name="group_name" type="text" required>
+        </div>
+        {% if can_change_group %}
+          <div class="form-section">
+            <h4>Permissions</h4>
+            <input id="group-permission-filter" class="filter-input" type="text" placeholder="Search permissions">
+            <div class="checkbox-list" id="group-permission-list">
+              {% for app_label, perms in permissions_by_app.items %}
+                <div class="muted" style="margin: 6px 4px;">{{ app_label|title }}</div>
+                {% for perm in perms %}
+                  <label class="checkbox-row">
+                    <input type="checkbox" name="group_permission_ids" value="{{ perm.id }}">
+                    <span>{{ perm.name }}</span>
+                  </label>
+                {% endfor %}
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-primary" style="background: #9ca3af !important;" onclick="toggleGroupModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<form id="groupDeleteForm" method="post" action="{% url 'cpq:manage_users' %}" style="display: none;">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="delete_group">
+  <input type="hidden" name="group_id" id="deleteGroupId">
+</form>
+
+<script>
+  function toggleUserModal() {
+    const modal = document.getElementById('userModal');
+    if (!modal) return;
+    const isHidden = modal.getAttribute('aria-hidden') === 'true';
+    modal.style.display = isHidden ? 'flex' : 'none';
+    modal.setAttribute('aria-hidden', isHidden ? 'false' : 'true');
+  }
+
+  function toggleGroupModal() {
+    const modal = document.getElementById('groupModal');
+    if (!modal) return;
+    const isHidden = modal.getAttribute('aria-hidden') === 'true';
+    modal.style.display = isHidden ? 'flex' : 'none';
+    modal.setAttribute('aria-hidden', isHidden ? 'false' : 'true');
+  }
+
+  function resetCheckboxes(inputs) {
+    inputs.forEach(input => {
+      input.checked = false;
+    });
+  }
+
+  function applyCheckboxes(inputs, ids) {
+    const selected = new Set(ids);
+    inputs.forEach(input => {
+      input.checked = selected.has(input.value);
+    });
+  }
+
+  function openUserModal(mode, trigger) {
+    const modal = document.getElementById('userModal');
+    const title = document.getElementById('userModalTitle');
+    const action = document.getElementById('userFormAction');
+    const userId = document.getElementById('userFormId');
+    const firstName = document.getElementById('user-first-name');
+    const lastName = document.getElementById('user-last-name');
+    const email = document.getElementById('user-email');
+    const username = document.getElementById('user-username');
+    const password = document.getElementById('user-password');
+    const passwordConfirm = document.getElementById('user-password-confirm');
+    const passwordHelp = document.getElementById('passwordHelp');
+    const passwordConfirmHelp = document.getElementById('passwordConfirmHelp');
+    const isActive = document.getElementById('user-active');
+    const isStaff = document.getElementById('user-staff');
+    const isSuper = document.getElementById('user-superuser');
+    const groupInputs = Array.from(document.querySelectorAll('input[name="group_ids"]'));
+    const permInputs = Array.from(document.querySelectorAll('input[name="permission_ids"]'));
+
+    if (mode === 'create') {
+      title.textContent = 'Add User';
+      action.value = 'create';
+      userId.value = '';
+      firstName.value = '';
+      lastName.value = '';
+      email.value = '';
+      username.value = '';
+      username.removeAttribute('readonly');
+      password.value = '';
+      if (passwordConfirm) passwordConfirm.value = '';
+      passwordHelp.textContent = '(required)';
+      if (passwordConfirmHelp) passwordConfirmHelp.textContent = '(required)';
+      isActive.checked = true;
+      isStaff.checked = false;
+      if (isSuper) isSuper.checked = false;
+      resetCheckboxes(groupInputs);
+      resetCheckboxes(permInputs);
+    } else {
+      title.textContent = 'Edit User';
+      action.value = 'update';
+      const row = trigger.closest('tr');
+      userId.value = row.dataset.userId;
+      firstName.value = row.dataset.firstName || '';
+      lastName.value = row.dataset.lastName || '';
+      email.value = row.dataset.email || '';
+      username.value = row.dataset.username || '';
+      username.setAttribute('readonly', 'readonly');
+      password.value = '';
+      if (passwordConfirm) passwordConfirm.value = '';
+      passwordHelp.textContent = '(leave blank to keep)';
+      if (passwordConfirmHelp) passwordConfirmHelp.textContent = '(leave blank to keep)';
+      isActive.checked = row.dataset.isActive === 'true';
+      isStaff.checked = row.dataset.isStaff === 'true';
+      if (isSuper) isSuper.checked = row.dataset.isSuperuser === 'true';
+      const groupIds = (row.dataset.groupIds || '').split(',').map(val => val.trim()).filter(Boolean);
+      const permIds = (row.dataset.permissionIds || '').split(',').map(val => val.trim()).filter(Boolean);
+      applyCheckboxes(groupInputs, groupIds);
+      applyCheckboxes(permInputs, permIds);
+    }
+
+    toggleUserModal();
+  }
+
+  function openGroupModal(mode, trigger) {
+    const title = document.getElementById('groupModalTitle');
+    const action = document.getElementById('groupFormAction');
+    const groupId = document.getElementById('groupFormId');
+    const groupName = document.getElementById('group-name');
+    const permInputs = Array.from(document.querySelectorAll('input[name="group_permission_ids"]'));
+
+    if (mode === 'create') {
+      title.textContent = 'Add Group';
+      action.value = 'create_group';
+      groupId.value = '';
+      groupName.value = '';
+      resetCheckboxes(permInputs);
+    } else {
+      title.textContent = 'Edit Group';
+      action.value = 'update_group';
+      const row = trigger.closest('tr');
+      groupId.value = row.dataset.groupId;
+      groupName.value = row.dataset.groupName || '';
+      const permIds = (row.dataset.permissionIds || '').split(',').map(val => val.trim()).filter(Boolean);
+      applyCheckboxes(permInputs, permIds);
+    }
+
+    toggleGroupModal();
+  }
+
+  function submitGroupDelete(trigger) {
+    const row = trigger.closest('tr');
+    const groupName = row.dataset.groupName || 'this group';
+    if (!window.confirm(`Delete group "${groupName}"?`)) return;
+    const form = document.getElementById('groupDeleteForm');
+    const input = document.getElementById('deleteGroupId');
+    if (!form || !input) return;
+    input.value = row.dataset.groupId;
+    form.submit();
+  }
+
+  function bindFilter(inputId, listId) {
+    const input = document.getElementById(inputId);
+    const list = document.getElementById(listId);
+    if (!input || !list) return;
+    input.addEventListener('input', () => {
+      const term = input.value.toLowerCase().trim();
+      list.querySelectorAll('.checkbox-row').forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(term) ? '' : 'none';
+      });
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    bindFilter('group-filter', 'group-list');
+    bindFilter('permission-filter', 'permission-list');
+    bindFilter('group-permission-filter', 'group-permission-list');
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<style>
+  :root {
+    --brand-accent: {{ company.primary_color|default:"#fc6a3d" }};
+    --brand-navy: #182740;
+    --panel-border: rgba(15, 23, 42, 0.08);
+    --panel-bg: #ffffff;
+  }
+
+  .integrations-page {
+    padding: 18px 6px 26px;
+    background: transparent;
+  }
+
+  .integrations-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 6px 0 18px;
+  }
+
+  .integrations-header__title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: var(--brand-navy);
+    letter-spacing: -0.02em;
+  }
+
+  .integrations-header__subtitle {
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 0.98rem;
+  }
+
+  .panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.06);
+  }
+
+  .panel__title {
+    margin: 0 0 4px;
+    font-size: 1.12rem;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.01em;
+  }
+
+  .panel__subtitle {
+    margin: 0 0 16px;
+    color: #64748b;
+    font-size: 0.92rem;
+  }
+
+  .integrations-grid {
+    display: grid;
+    gap: 16px;
+  }
+
+  .integration-card {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 16px;
+    padding: 16px 18px;
+    background: rgba(255, 255, 255, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .integration-info {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .integration-logo {
+    height: 30px;
+    width: auto;
+  }
+
+  .integration-status {
+    margin: 0;
+    font-weight: 700;
+    font-size: 0.86rem;
+  }
+
+  .status-success {
+    color: #047857;
+  }
+
+  .status-fail {
+    color: #b91c1c;
+  }
+
+  .integration-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    border-radius: 14px !important;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    border: none;
+  }
+
+  .btn-primary {
+    background: var(--brand-navy) !important;
+    color: #ffffff !important;
+  }
+
+  .btn-secondary {
+    background: rgba(15, 23, 42, 0.06) !important;
+    color: #0f172a !important;
+    border: 1px solid rgba(15, 23, 42, 0.12) !important;
+  }
+
+  .btn-hubspot {
+    background: #f97316 !important;
+  }
+
+  .btn-salesforce {
+    background: #2563eb !important;
+  }
+
+  .btn-quickbooks {
+    background: #16a34a !important;
+  }
+
+  .btn-docusign {
+    background: #1d4ed8 !important;
+  }
+
+  @media (max-width: 720px) {
+    .integration-card {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+</style>
+
+<div class="integrations-page">
+  <div class="integrations-header">
+    <div>
+      <h2 class="integrations-header__title"><i class="material-icons">integration_instructions</i>Integrations</h2>
+      <p class="integrations-header__subtitle">Connect and manage external systems.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3 class="panel__title">Connections</h3>
+    <p class="panel__subtitle">Set up CRM, accounting, and e-sign integrations.</p>
+
+    <div class="integrations-grid">
+      <div class="integration-card">
+        <div class="integration-info">
+          <img src="https://cdn.worldvectorlogo.com/logos/hubspot-1.svg"
+               alt="HubSpot Logo"
+               class="integration-logo"
+               style="filter: {% if hubspot_connected %}none{% else %}grayscale(100%) opacity(50%){% endif %};">
+          <div>
+            {% if hubspot_connected %}
+              <p class="integration-status status-success">Connected</p>
+            {% else %}
+              <p class="integration-status status-fail">Not connected</p>
+            {% endif %}
+          </div>
+        </div>
+        <div class="integration-actions">
+          {% if hubspot_connected %}
+            <a href="/cpq/field-mapping/?crm=HubSpot&object_type=Opportunity" class="btn-secondary">
+              <i class="material-icons">tune</i>Map Fields
+            </a>
+          {% else %}
+            <a href="{% url 'start_hubspot_auth' %}" class="btn-primary btn-hubspot">
+              <i class="material-icons">vpn_key</i>Connect
+            </a>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="integration-card">
+        <div class="integration-info">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/Salesforce.com_logo.svg/320px-Salesforce.com_logo.svg.png"
+               alt="Salesforce Logo"
+               class="integration-logo"
+               style="filter: {% if salesforce_connected %}none{% else %}grayscale(100%) opacity(50%){% endif %};">
+          <div>
+            {% if salesforce_connected %}
+              <p class="integration-status status-success">Connected</p>
+            {% else %}
+              <p class="integration-status status-fail">Not connected</p>
+            {% endif %}
+          </div>
+        </div>
+        <div class="integration-actions">
+          {% if salesforce_connected %}
+            <a href="/cpq/field-mapping/?crm=Salesforce&object_type=Opportunity" class="btn-secondary">
+              <i class="material-icons">tune</i>Map Fields
+            </a>
+          {% else %}
+            <a href="{% url 'salesforce_login' %}" class="btn-primary btn-salesforce">
+              <i class="material-icons">vpn_key</i>Connect
+            </a>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="integration-card">
+        <div class="integration-info">
+          <img src="{% static 'img/quickbooks_logo.svg' %}"
+               alt="QuickBooks Logo"
+               class="integration-logo"
+               style="filter: {% if quickbooks_connected %}none{% else %}grayscale(100%) opacity(50%){% endif %};">
+          <div>
+            {% if quickbooks_connected %}
+              <p class="integration-status status-success">Connected</p>
+            {% else %}
+              <p class="integration-status status-fail">Not connected</p>
+            {% endif %}
+          </div>
+        </div>
+        <div class="integration-actions">
+          {% if quickbooks_connected %}
+            <a href="{% url 'quickbooks:create_invoice_from_quote_internal' 0 %}"
+               onclick="event.preventDefault(); alert('QuickBooks sandbox connection active. Use the Quotes tab to push invoices.');"
+               class="btn-secondary">
+              <i class="material-icons">check_circle</i>Connected
+            </a>
+          {% else %}
+            <a href="{% url 'quickbooks:quickbooks_connect' %}" class="btn-primary btn-quickbooks">
+              <i class="material-icons">vpn_key</i>Connect
+            </a>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="integration-card">
+        <div class="integration-info">
+          <img src="{% static 'img/docusign_logo.png' %}"
+               alt="DocuSign Logo"
+               class="integration-logo"
+               style="filter: {% if docusign_connected %}none{% else %}grayscale(100%) opacity(50%){% endif %};">
+          <div>
+            {% if docusign_connected %}
+              <p class="integration-status status-success">Connected</p>
+            {% else %}
+              <p class="integration-status status-fail">Not connected</p>
+            {% endif %}
+          </div>
+        </div>
+        <div class="integration-actions">
+          {% if docusign_connected %}
+            <a href="#" class="btn-secondary">
+              <i class="material-icons">description</i>Manage Templates
+            </a>
+          {% else %}
+            <a href="#" class="btn-primary btn-docusign">
+              <i class="material-icons">vpn_key</i>Connect
+            </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
