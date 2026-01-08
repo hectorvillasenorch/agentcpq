@@ -4882,14 +4882,18 @@ async function executeSingleRecordAutoSave(card) {
   setSingleRecordCardFeedback(feedback, 'Saving…', 'info');
 
   try {
+    const sessionId = getCurrentSessionId();
     const response = await fetch("/agents/chat/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: `Update Record: ${JSON.stringify(payload)}` })
+      body: JSON.stringify({
+        message: `Update Record: ${JSON.stringify(payload)}`,
+        session_id: sessionId,
+      })
     });
 
     const data = await response.json();
-    const result = data.response || {};
+    const result = (data.response && data.response.response) ? data.response.response : (data.response || {});
 
     const messageText = String(result.message || '')
       .replace(/<br\s*\/?>/gi, '\n')

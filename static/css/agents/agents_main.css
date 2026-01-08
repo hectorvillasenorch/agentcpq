@@ -1502,8 +1502,91 @@ body.is-chat-empty {
     padding: 12px 12px 14px;
   }
 
+  .chat-container.is-empty .chat-empty-state {
+    padding: 28px 16px 100px;
+  }
+
   .chat-empty-shell {
-    padding: 24px 20px;
+    width: min(560px, 90vw);
+    padding: 18px 16px;
+    border-radius: 20px;
+  }
+
+  .chat-empty-shell h1 {
+    font-size: clamp(1.2rem, 4.8vw, 1.6rem);
+    margin: 10px 0 6px;
+  }
+
+  .chat-empty-subtitle {
+    font-size: 0.95rem;
+    margin-bottom: 14px;
+  }
+
+  .chat-empty-actions {
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .chat-empty-chip {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+  }
+
+  .chat-empty-badge {
+    padding: 4px 10px;
+    font-size: 0.68rem;
+  }
+
+  .chat-empty-hint {
+    font-size: 0.85rem;
+  }
+
+  .chat-box {
+    padding: 10px 12px 72px;
+    font-size: 16px;
+  }
+
+  .chat-message {
+    padding: 10px;
+    margin: 10px 0;
+    font-size: 16px;
+  }
+
+  .chat-input-container {
+    padding: 6px 8px 8px;
+    margin-top: 8px;
+    border-radius: 16px;
+  }
+
+  .input-wrapper.upload-dropzone {
+    padding: 8px 10px 8px;
+    gap: 4px;
+    border-radius: 16px;
+  }
+
+  .input-wrapper.upload-dropzone .input-row {
+    gap: 6px;
+  }
+
+  .input-wrapper.upload-dropzone .input-row .chat-input {
+    min-height: 44px;
+  }
+
+  .input-wrapper.upload-dropzone .input-row .send-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .upload-clip-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  .input-wrapper.upload-dropzone .chat-input {
+    padding: 4px 0;
+    font-size: 0.98rem !important;
+    line-height: 1.2;
   }
 }
 
@@ -2340,4 +2423,60 @@ textarea.chat-input {
 
 .structured-toggle__body {
   margin-top: 10px;
+}
+
+@media (max-width: 768px) {
+  .chat-input-container {
+    padding: 4px 6px 6px !important;
+    margin-top: 6px !important;
+    border-radius: 14px;
+  }
+
+  .input-wrapper.upload-dropzone {
+    padding: 6px 8px 6px !important;
+    gap: 4px !important;
+    border-radius: 14px;
+  }
+
+  .input-wrapper.upload-dropzone .input-row {
+    gap: 6px !important;
+  }
+
+  .input-wrapper.upload-dropzone .input-row .chat-input {
+    min-height: 40px !important;
+  }
+
+  .input-wrapper.upload-dropzone .chat-input {
+    padding: 2px 0 !important;
+    font-size: 0.95rem !important;
+    line-height: 1.15;
+  }
+
+  .input-wrapper.upload-dropzone .input-row .send-button {
+    width: 38px !important;
+    height: 38px !important;
+  }
+
+  .upload-clip-btn {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 8px;
+  }
+
+  .attachment-preview {
+    margin-top: 4px !important;
+    padding: 4px 6px !important;
+    min-height: 24px !important;
+    font-size: 0.78rem !important;
+    gap: 6px;
+  }
+
+  .attachment-preview .material-icons {
+    font-size: 16px !important;
+  }
+
+  .attachment-preview .attachment-clear {
+    width: 22px !important;
+    height: 22px !important;
+  }
 }
