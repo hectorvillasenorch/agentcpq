@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from django.db import transaction
 
+from cpq.models import Quote
 from .utils.analytics_agent.handle_helpers import get_object_metadata
 from .utils.admin_agent.rules_helpers import check_for_validation_rules
 from .utils.record_agent.llm_helpers import extract_single_record_request
@@ -12,9 +13,55 @@ from .utils.record_agent.handle_helpers import (
     serialize_record,
     update_record_field,
 )
+from .utils.quote_agent.general_helpers import set_active_quote_to_session_data
 from .utils.session_context_helpers.session_context_helpers import get_session_context
 
 logger = logging.getLogger(__name__)
+
+_ACTIVE_RECORD_OBJECTS = {"account", "opportunity", "lead"}
+
+
+def _set_active_record(session_data, record_payload):
+    object_name = str(record_payload.get("object", "")).strip()
+    record_id = record_payload.get("record_id")
+    if not object_name or not record_id:
+        return
+
+    object_key = object_name.lower()
+    if object_key not in _ACTIVE_RECORD_OBJECTS:
+        return
+
+    active_payload = {
+        "object": object_name,
+        "record_id": record_id,
+        "record_label": record_payload.get("record_label"),
+        "record_value": record_payload.get("record_value"),
+    }
+
+    session_data["active_record"] = active_payload
+    session_data.setdefault("active_records", {})
+    session_data["active_records"][object_key] = active_payload
+
+    if active_payload.get("record_value"):
+        session_data[object_key] = active_payload["record_value"]
+
+
+def _get_active_record_request(session_data, show_requests):
+    target_object = None
+    if show_requests:
+        data = show_requests[0].get("data") if isinstance(show_requests[0], dict) else None
+        if isinstance(data, dict):
+            target_object = data.get("object")
+
+    if not target_object:
+        return None
+
+    object_key = str(target_object).lower()
+    active_by_object = session_data.get("active_records", {}).get(object_key)
+    if active_by_object:
+        return {"object": active_by_object["object"], "record_id": active_by_object["record_id"]}
+
+    return None
 
 
 def record_agent(user, action, user_message, session_data):
@@ -60,6 +107,23 @@ def show_single_record(user, user_message, session_data):
     session_data["state"]["summary"] = llm_result.get("summary")
 
     if not completed_requests:
+        fallback_request = _get_active_record_request(session_data, show_requests)
+        if fallback_request:
+            record_message, record_payload = get_single_record_payload(user, fallback_request)
+            if record_payload:
+                display_message = record_message or "Here’s what I found:"
+                _set_active_record(session_data, record_payload)
+                return {
+                    "message": display_message,
+                    "single_record": record_payload,
+                    "session_summary": llm_result.get("summary"),
+                    "hiddenMessage": True,
+                    "llm": {
+                        "tokens_used": tokens_used,
+                        "cost_estimate": cost_est,
+                    },
+                }
+
         agent_message = llm_result.get(
             "agent_message",
             "⚠️ I still need the record name or identifier you’d like me to open."
@@ -80,6 +144,20 @@ def show_single_record(user, user_message, session_data):
         }
 
     display_message = record_message or "Here’s what I found:"
+
+    if record_payload and str(record_payload.get("object", "")).lower() == "quote":
+        quote_id = record_payload.get("record_id")
+        if quote_id:
+            try:
+                quote = Quote.objects.get(id=quote_id)
+                set_active_quote_to_session_data(session_data, quote)
+            except Quote.DoesNotExist:
+                logger.warning("Quote %s not found when setting active quote.", quote_id)
+            except Exception as exc:
+                logger.warning("Unable to set active quote from single record: %s", exc)
+
+    if record_payload:
+        _set_active_record(session_data, record_payload)
 
     return {
         "message": display_message,

@@ -69,6 +69,7 @@ def save_quote_line_update(request, quote):
         quote_line_id = update["quote_line_id"]
 
 
+        bundle_parent_id = None
         with transaction.atomic():
             try:
                 quote_line = QuoteLine.objects.get(id=quote_line_id, quote=quote, product__sku=sku)
@@ -83,11 +84,6 @@ def save_quote_line_update(request, quote):
                     "message": "⚠️ Error: A term cannot be assigned to a product that is not a subscription.",
                     "success": False
                 }
-
-            # If product has custom fields, then create that custom fields to quote line
-            copy_custom_fields_values_from_product_to_quote_line(quote_line)
-
-            original_quote_line = deepcopy(quote_line)
 
             # ✅ Update based on the field dynamically
             if field == "quantity":
@@ -117,9 +113,6 @@ def save_quote_line_update(request, quote):
             temp_quote_line = build_temp_quote_line(quote, product, quantity, discount_type, Decimal(discount_value), term)
 
             ##################### ✅ Checkrules
-            # Get product from quote line
-            product = quote_line.product
-
             # Validate validations rules
             validations = check_for_rules_quote_line_level("quote_line", "validation", quote, product, temp_quote_line)
 
@@ -131,30 +124,43 @@ def save_quote_line_update(request, quote):
                 raise ValueError(response_message)
 
             # Save the quote line to calculate general values of quote line (subtotal, discounts, etc.)
-            
             quote_line.save()
-            print(f"\n\nQuote line antes de refresh_from_db: {json.dumps(model_to_dict(quote_line), indent=4, default=str)}\n\n")
-            quote_line.refresh_from_db()
-            print(f"\n\nQuote line despues de refresh_from_db: {json.dumps(model_to_dict(quote_line), indent=4, default=str)}\n\n")
-            quote_line.save()
-            print(f"\n\nQuote line despues del save de refresh_from_db: {json.dumps(model_to_dict(quote_line), indent=4, default=str)}\n\n")
 
-            if quote_line.is_bundle_child:
-                bundle = quote_line.parent_line
-                bundle.save()
+            if quote_line.is_bundle_child and quote_line.parent_line_id:
+                bundle_parent_id = quote_line.parent_line_id
 
-            # ✅ Update quote (subtotal, discounts fields and net amount)
+        try:
+            copy_custom_fields_values_from_product_to_quote_line(quote_line)
+        except Exception as exc:
+            logging.warning("⚠️ Unable to sync custom fields for quote line %s: %s", quote_line_id, exc)
+
+        if bundle_parent_id:
+            try:
+                bundle = QuoteLine.objects.filter(pk=bundle_parent_id).first()
+                if bundle:
+                    bundle.save()
+            except Exception as exc:
+                logging.warning("⚠️ Unable to update bundle parent %s: %s", bundle_parent_id, exc)
+
+        # ✅ Update quote (subtotal, discounts fields and net amount)
+        quote_update_warning = None
+        try:
+            quote.refresh_from_db()
             quote.save()
             update_opportunity_net_amount(quote.opportunity)
-            #########################################################################################################
+        except Exception as exc:
+            logging.warning("⚠️ Quote recalculation failed after quote line update: %s", exc)
+            quote_update_warning = exc
+        response_message = f"{SUCCESS_ICON} Quote line updated successfully."
+        if quote_update_warning:
+            response_message = (
+                f"{SUCCESS_ICON} Quote line updated. Totals may take a moment to refresh."
+            )
 
-
-            response_message = f"{SUCCESS_ICON} Quote line updated successfully."
-
-            return {
-                "message": response_message,
-                "success": True
-            }
+        return {
+            "message": response_message,
+            "success": True
+        }
 
     except ValueError as ve:
         return {

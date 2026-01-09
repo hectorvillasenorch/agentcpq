@@ -628,6 +628,7 @@ def related_opportunities_api(request):
                 "record_value": str(opp),
                 "object": "Opportunity",
                 "name": opp.name,
+                "account": account.name if account else None,
                 "amount": float(opp.amount) if opp.amount is not None else None,
                 "stage": opp.stage,
                 "expected_close_date": opp.expected_close_date.isoformat() if opp.expected_close_date else None,
@@ -640,6 +641,7 @@ def related_opportunities_api(request):
                 rows = [
                     {
                         "name": entry.get("name") or entry.get("record_value") or "Record",
+                        "account": entry.get("account"),
                         "amount": entry.get("amount"),
                         "stage": entry.get("stage"),
                         "expected_close_date": entry.get("expected_close_date"),
@@ -1073,10 +1075,11 @@ def single_record_api(request):
     if not object_name or not record_id:
         return JsonResponse({"error": "object and record_id are required"}, status=400)
 
+    record_id_int = None
     try:
         record_id_int = int(record_id)
     except (TypeError, ValueError):
-        return JsonResponse({"error": "record_id must be an integer"}, status=400)
+        record_id_int = None
 
     metadata = get_object_metadata(object_name)
     if not metadata:
@@ -1086,12 +1089,42 @@ def single_record_api(request):
     custom_object = metadata["custom_object"]
     custom_fields = metadata["custom_fields"]
 
-    try:
+    record_queryset = model.objects.all()
+    if custom_object:
+        record_queryset = record_queryset.filter(object_type=custom_object)
+
+    record = None
+    if record_id_int is not None:
+        try:
+            record = record_queryset.get(pk=record_id_int)
+        except model.DoesNotExist:
+            record = None
+    else:
+        alt_lookup_fields = []
         if custom_object:
-            record = model.objects.filter(object_type=custom_object).get(pk=record_id_int)
+            alt_lookup_fields = ["record_id", "custom_identifier"]
         else:
-            record = model.objects.get(pk=record_id_int)
-    except model.DoesNotExist:
+            alt_lookup_fields = {
+                "Lead": ["leadId"],
+                "Account": ["accid", "external_id"],
+                "Contact": ["contactId", "external_id"],
+                "Opportunity": ["oppid", "hs_deal_id"],
+                "Quote": ["qteid"],
+                "Product": ["prdid"],
+                "Activity": ["activityid"],
+                "Tenant": ["tenant_id"],
+            }.get(model.__name__, [])
+
+        for field_name in alt_lookup_fields:
+            try:
+                record = record_queryset.get(**{field_name: record_id})
+                break
+            except model.DoesNotExist:
+                continue
+            except Exception:
+                continue
+
+    if record is None:
         return JsonResponse({"error": "Record not found."}, status=404)
 
     payload = serialize_record(record, object_name, custom_object, custom_fields, user=request.user)
@@ -1109,7 +1142,7 @@ def single_record_api(request):
                 .exists()
             )
             if not exists:
-                content = f"single_record: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
+                content = f"single_record: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'), cls=DjangoJSONEncoder)}"
                 ChatMessage.objects.create(
                     session=session,
                     sender="agent",

@@ -2,6 +2,7 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, date, timedelta
 
 import difflib
+import json
 import re
 import unicodedata
 
@@ -10,6 +11,7 @@ from django.core.exceptions import FieldError
 from django.db.models import ForeignKey, OuterRef, Subquery, Q, Sum, Avg, Count, Min, Max, CharField, TextField
 from django.db.models.functions import Cast
 from django.db.models import DecimalField, DateField, DateTimeField
+from django.db import models
 from django.db.models.functions import TruncMonth, TruncWeek, TruncDay
 from django.utils.dateparse import parse_date
 from django.utils.timezone import now
@@ -1131,7 +1133,75 @@ def serialize_value(value):
 
 def serialize_custom_records(qs, custom_object, custom_fields):
     field_names = [field.name for field in custom_fields]
+    field_lookup = {field.name: field for field in custom_fields}
+    lookup_field_models = {}
+    model_to_ids = {}
+    record_values = []
     serialized = []
+
+    def _resolve_lookup_model(model_ref):
+        if not model_ref or not isinstance(model_ref, str) or "." not in model_ref:
+            return None
+        try:
+            app_label, model_name = model_ref.split(".", 1)
+            return apps.get_model(app_label, model_name)
+        except Exception:
+            return None
+
+    def _normalize_lookup_values(raw_value):
+        if raw_value is None:
+            return []
+        if isinstance(raw_value, (list, tuple)):
+            return list(raw_value)
+        raw_str = str(raw_value).strip()
+        if not raw_str:
+            return []
+        if raw_str.startswith("[") and raw_str.endswith("]"):
+            try:
+                parsed = json.loads(raw_str)
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                pass
+        if "," in raw_str:
+            return [item.strip() for item in raw_str.split(",") if item.strip()]
+        return [raw_str]
+
+    def _format_lookup_display(obj):
+        if obj is None:
+            return None
+        if hasattr(obj, "name") and obj.name:
+            return obj.name
+        if hasattr(obj, "custom_identifier") and obj.custom_identifier:
+            return obj.custom_identifier
+        if hasattr(obj, "record_id") and obj.record_id:
+            return obj.record_id
+        if hasattr(obj, "first_name") and hasattr(obj, "last_name"):
+            full = f"{obj.first_name} {obj.last_name}".strip()
+            if full:
+                return full
+        if hasattr(obj, "email") and obj.email:
+            return obj.email
+        return str(obj.pk)
+
+    def _resolve_lookup_display(raw_value, display_map):
+        values = _normalize_lookup_values(raw_value)
+        if not values:
+            return serialize_value(raw_value)
+        resolved = []
+        for val in values:
+            lookup = display_map.get(str(val))
+            resolved.append(lookup if lookup is not None else val)
+        if len(resolved) == 1:
+            return serialize_value(resolved[0])
+        return [serialize_value(item) for item in resolved]
+
+    for field_name, field in field_lookup.items():
+        if not field.lookup_model:
+            continue
+        model = _resolve_lookup_model(field.lookup_model)
+        if model:
+            lookup_field_models[field_name] = model
 
     for record in qs:
         row = {
@@ -1152,8 +1222,60 @@ def serialize_custom_records(qs, custom_object, custom_fields):
                 if field and field.name in field_names:
                     values_map[field.name] = value_instance.value
 
+        record_values.append((row, values_map))
+
+        for field_name, model in lookup_field_models.items():
+            raw_value = values_map.get(field_name)
+            for lookup_value in _normalize_lookup_values(raw_value):
+                if lookup_value in (None, ""):
+                    continue
+                model_to_ids.setdefault(model, set()).add(lookup_value)
+
+    model_display_map = {}
+    for model, raw_ids in model_to_ids.items():
+        if not raw_ids:
+            continue
+        pk_field = model._meta.pk
+        numeric_pk = isinstance(
+            pk_field,
+            (
+                models.AutoField,
+                models.IntegerField,
+                models.BigIntegerField,
+                models.PositiveIntegerField,
+                models.PositiveSmallIntegerField,
+                models.SmallIntegerField,
+                models.BigAutoField,
+            ),
+        )
+        ids = []
+        for raw in raw_ids:
+            if raw is None or raw == "":
+                continue
+            if numeric_pk:
+                try:
+                    ids.append(int(str(raw)))
+                except (TypeError, ValueError):
+                    continue
+            else:
+                ids.append(str(raw))
+        if not ids:
+            continue
+        display_map = {}
+        try:
+            for obj in model.objects.filter(pk__in=ids):
+                display_map[str(obj.pk)] = _format_lookup_display(obj)
+        except Exception:
+            display_map = {}
+        model_display_map[model] = display_map
+
+    for row, values_map in record_values:
         for field_name in field_names:
-            row[field_name] = serialize_value(values_map.get(field_name))
+            if field_name in lookup_field_models:
+                model = lookup_field_models[field_name]
+                row[field_name] = _resolve_lookup_display(values_map.get(field_name), model_display_map.get(model, {}))
+            else:
+                row[field_name] = serialize_value(values_map.get(field_name))
 
         serialized.append(row)
 
@@ -1165,19 +1287,19 @@ from django.db.models import ForeignKey
 
 # Allowed fields per model
 ALLOWED_FIELDS = {
-    "Lead": ["first_name", "last_name", "phone", "email", "source", "contact", "status", "notes", "assigned_to", "created_at", "activities"],
-    "Product": ["name", "sku", "price", "fixed_price", "price_mode", "is_subscription", "term", "is_bundle", "family", "is_active", "created_at", "description"],
-    "Account": ["name", "industry", "website", "phone", "street", "city", "state", "zip_code"],
-    "Contact": ["first_name", "last_name", "email", "phone", "company", "job_title", "notes", "account", "is_primary"],
-    "Opportunity": ["name", "account", "amount", "stage", "expected_close_date", "primary_quote", "owner", "created_by"],
-    "Quote": ["name", "account", "opportunity", "subtotal", "net_amount", "tax_percentage", "tax_amount", "status",
+    "Lead": ["id", "leadId", "first_name", "last_name", "phone", "email", "source", "contact", "status", "notes", "assigned_to", "created_at", "activities"],
+    "Product": ["id", "prdid", "name", "sku", "price", "fixed_price", "price_mode", "is_subscription", "term", "is_bundle", "family", "is_active", "created_at", "description"],
+    "Account": ["id", "accid", "external_id", "name", "industry", "website", "phone", "street", "city", "state", "zip_code"],
+    "Contact": ["id", "contactId", "external_id", "first_name", "last_name", "email", "phone", "company", "job_title", "notes", "account", "is_primary"],
+    "Opportunity": ["id", "oppid", "hs_deal_id", "name", "account", "amount", "stage", "expected_close_date", "primary_quote", "owner", "created_by"],
+    "Quote": ["id", "qteid", "name", "account", "opportunity", "subtotal", "net_amount", "tax_percentage", "tax_amount", "status",
               "discount_percentage", "discount_amount", "expiration_date", "notes", "created_at"],
-    "Activity": ["subject", "activity_type", "status", "due_date", "lead", "opportunity", "contact", "notes", "activityid", "created_at"],
-    "Contract": ["opportunity", "start_date", "end_date", "contract_status"],
-    "Subscription": ["quote", "quote_line", "product", "contract", "start_date", "end_date", "billing_cycle", "price_per_cycle", "term"],
-    "Option": ["parent_product", "product_option", "quantity", "is_required", "min_quantity", "max_quantity", "default_selected", "group_name"],
-    "Tenant": ["tenant_id", "name", "domain", "contact_email", "phone_number", "plan", "version", "created_at"],
-    "Knowledge": ["title", "content_text", "video_url", "image_url", "tags", "language", "is_active", "created_at", "updated_at"],
+    "Activity": ["id", "activityid", "subject", "activity_type", "status", "due_date", "lead", "opportunity", "contact", "notes", "created_at"],
+    "Contract": ["id", "opportunity", "start_date", "end_date", "contract_status"],
+    "Subscription": ["id", "quote", "quote_line", "product", "contract", "start_date", "end_date", "billing_cycle", "price_per_cycle", "term"],
+    "Option": ["id", "parent_product", "product_option", "quantity", "is_required", "min_quantity", "max_quantity", "default_selected", "group_name"],
+    "Tenant": ["id", "tenant_id", "name", "domain", "contact_email", "phone_number", "plan", "version", "created_at"],
+    "Knowledge": ["id", "title", "content_text", "video_url", "image_url", "tags", "language", "is_active", "created_at", "updated_at"],
 }
 
 def safe_serialize_queryset(qs, model_name, custom_object=None, custom_fields=None):

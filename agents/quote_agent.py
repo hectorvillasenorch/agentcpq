@@ -926,19 +926,34 @@ def update_quote_line_from_ui(user, user_message, session_data):
     """Handles updates to quote lines triggered from the UI."""
     logging.info("📝 Updating quote line(s) from front-end UI...")
 
-    # ✅ Looking for active quote
-    quote = get_active_quote(user_message, session_data)
-
-    # ⚠️ Verify if function return an error
-    if isinstance(quote, dict) and "message" in quote:
-        return quote
-
     try:
         json_match = re.search(r'\{.*\}', user_message)
 
         if user_message.startswith("Update Quote Line: ") and json_match:
             json_payload = user_message.replace("Update Quote Line: ", "", 1).strip()
             print(f"\n\n{json_payload}\n\n")
+
+            quote = None
+            try:
+                payload_data = json.loads(json_payload)
+            except Exception:
+                payload_data = None
+
+            if isinstance(payload_data, dict):
+                quote_id = payload_data.get("quote_id")
+                quote_name = payload_data.get("quote") or payload_data.get("quote_name")
+                if quote_id:
+                    quote = Quote.objects.filter(id=quote_id).first()
+                elif quote_name:
+                    quote = Quote.objects.filter(name=quote_name).first()
+
+            if quote is None:
+                # ✅ Looking for active quote as fallback
+                quote = get_active_quote(user_message, session_data)
+
+                # ⚠️ Verify if function return an error
+                if isinstance(quote, dict) and "message" in quote:
+                    return quote
 
             # Save original values in case something went wrong and restart values on UI
             original_value = get_backup_value_from_quote_line(json_payload, quote)

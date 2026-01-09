@@ -99,6 +99,7 @@ def handle_user_request(user,user_message, session_data):
 
     # 🧠 Shortcut manual
     message = user_message.lower()
+    normalized_message = user_message.strip().lower()
 
     trigger_phrases = get_trigger_phrases()
 
@@ -113,8 +114,13 @@ def handle_user_request(user,user_message, session_data):
             logging.info("Do NOT use GPT (pending create_quote opportunity selection)\n")
             return orchestrate_request_trigger(user, user_message, session_data, decision="CreateQuote")
 
+    # 🧠 Shortcut manual: "show details" (defaults to quote details)
+    if normalized_message in {"show details", "show detail", "show quote details", "show quote detail"}:
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowQuoteDetails")
+
     # 🧠 Shortcut manual: "show quote details for <quote_id>"
-    if user_message.lower().startswith("show quote details for "):
+    elif user_message.lower().startswith("show quote details for "):
         logging.info("Do NOT use GPT\n")
         response = orchestrate_request_trigger(user,user_message, session_data, decision="ShowQuoteDetails")
 

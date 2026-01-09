@@ -14,7 +14,11 @@ document.addEventListener("DOMContentLoaded", function () {
   initializeSingleRecordRelatedButtons(document);
   initializeQuoteListViewButtons();
   initializeRecordListViewButtons();
+  initializeQuoteDetailRecordLinks();
+  initializeLeadRecordCards();
+  initializeRecordCards();
   initializeAgentsEmptyState();
+  setAgentFeedbackVisibility(false);
 
   scrollToBottom("DOMContentLoaded", true);
 });
@@ -536,7 +540,7 @@ function showAgentFeedback() {
     }
   }
   if (feedback) {
-    feedback.style.display = "block";
+    setAgentFeedbackVisibility(true);
     startThinkingAnimation();
     scrollToBottom("showAgentFeedback");
   }
@@ -545,7 +549,24 @@ function showAgentFeedback() {
 function hideAgentFeedback() {
   const feedback = document.getElementById("agent-feedback");
   stopThinkingAnimation();
-  if (feedback) feedback.style.display = "none";
+  if (feedback) {
+    setAgentFeedbackVisibility(false);
+  }
+}
+
+function setAgentFeedbackVisibility(isVisible) {
+  const feedback = document.getElementById("agent-feedback");
+  if (!feedback) return;
+  const isMobile = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+  if (isMobile) {
+    feedback.style.display = "block";
+    feedback.style.visibility = isVisible ? "visible" : "hidden";
+    feedback.classList.toggle("is-visible", isVisible);
+  } else {
+    feedback.style.display = isVisible ? "block" : "none";
+    feedback.style.visibility = "";
+    feedback.classList.remove("is-visible");
+  }
 }
 
 let thinkingInterval = null;
@@ -554,8 +575,15 @@ function startThinkingAnimation() {
   if (!el) return;
   const text = "Thinking...";
   let idx = 0;
-  el.textContent = "";
+  const isMobile = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
   stopThinkingAnimation();
+  if (isMobile) {
+    el.classList.add("thinking-text--dots");
+    el.innerHTML = 'Thinking<span class="thinking-dot">.</span><span class="thinking-dot">.</span><span class="thinking-dot">.</span>';
+    return;
+  }
+  el.classList.remove("thinking-text--dots");
+  el.textContent = "";
   thinkingInterval = setInterval(() => {
     const len = text.length;
     el.textContent = text.slice(0, (idx % (len + 3)));
@@ -1080,6 +1108,25 @@ function stripStructuredSuffixesInHistory() {
   });
 }
 
+function renderPdfSuccess(downloadUrl, version) {
+  const safeUrl = escapeHtml(String(downloadUrl || ""));
+  const safeVersion = escapeHtml(String(version || ""));
+  return `
+    <div class="pdf-success-card">
+      <div class="pdf-success-icon">
+        <span class="material-icons" aria-hidden="true">description</span>
+      </div>
+      <div class="pdf-success-body">
+        <div class="pdf-success-title">PDF generated</div>
+        <div class="pdf-success-subtitle">Version v${safeVersion}</div>
+      </div>
+      <a class="pdf-download-btn" href="${safeUrl}" target="_blank" rel="noopener" aria-label="Download PDF">
+        <span class="material-icons" aria-hidden="true">download</span>
+      </a>
+    </div>
+  `;
+}
+
 function extractEmbeddedJsonPayload(rawMessage, key) {
   if (typeof rawMessage !== "string" || !rawMessage) return null;
   const idx = rawMessage.indexOf(key);
@@ -1363,10 +1410,7 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     const version = versionMatch ? versionMatch[1].trim() : null;
 
     if (downloadUrl && version) {
-      div.innerHTML = `
-        📄 Quote PDF (v${version}) generated successfully!
-        <a href="${downloadUrl}" target="_blank">Download Here</a>
-      `;
+      div.innerHTML = renderPdfSuccess(downloadUrl, version);
     } else {
       div.innerHTML = `<div class="error-message">⚠️ Could not extract PDF fields</div>`;
     }
@@ -1490,7 +1534,7 @@ async function sendMessage() {
         }
         // ✅ Handle Quote PDF Response
         else if (data.response.download_url) {
-            responseMessage += `📄 Quote PDF (v${data.response.document_version}) generated successfully! <a href="${data.response.download_url}" target="_blank">Download Here</a>`;
+            responseMessage += renderPdfSuccess(data.response.download_url, data.response.document_version);
         }
         // ✅ Handle Validation Rules Response
         else if (data.response && data.response.validation_rules_details) {
@@ -1791,6 +1835,7 @@ function appendMessage(className, message, options = {}) {
     initializeSingleRecordRelatedButtons(messageBubble);
     initializeQuoteListViewButtons();
     initializeRecordListViewButtons();
+    initializeQuoteDetailRecordLinks();
 
     initializeBundleStructureCards(messageBubble);
     initializeQuoteNotesEditors(messageBubble);
@@ -2118,14 +2163,6 @@ function renderQuoteDetails(quote) {
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
                   <div style="display: flex; align-items: center; gap: 8px;" class="status-select">
-                    <select
-                      name="status"
-                      data-field="status"
-                      data-quote="${quote.quote_name}"
-                      style="padding: 4px; border-radius: 4px; color: black;"
-                      onchange="updateQuote(this)">
-                      ${buildStatusOptions(quote)}
-                    </select>
                     <span style="${statusBadgeStyle(statusValue)}">${statusValue || "—"}</span>
                   </div>
               </div>
@@ -2594,87 +2631,155 @@ function renderQuoteDetailsMobile(quote) {
       "0"
     )}/${d.getUTCFullYear()}`;
 
-  const createdAt = new Date(quote.created_at);
-  const expiration = new Date(quote.expiration_date);
+  const formatDateValue = (value) => {
+    if (!value) return "—";
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? "—" : format(d);
+  };
+  const formatCurrencyValue = (value) => {
+    if (value === null || value === undefined || value === "") return "—";
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+    }
+    const raw = String(value).replace(/[$,]/g, "");
+    const num = parseFloat(raw);
+    if (Number.isNaN(num)) return escapeHtml(String(value));
+    return num.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  };
+  const safeText = (value) => {
+    if (value === null || value === undefined || value === "") return "—";
+    return escapeHtml(String(value));
+  };
+
   const discountPercentageValue = Number(quote.discount_percentage ?? 0);
   const discountAmountValue = Number(quote.discount_amount ?? 0);
   const safeDiscountPercentage = Number.isFinite(discountPercentageValue) ? discountPercentageValue : 0;
   const safeDiscountAmount = Number.isFinite(discountAmountValue) ? discountAmountValue : 0;
-  const formattedDiscountAmount = safeDiscountAmount.toLocaleString("en-US", { minimumFractionDigits: 2 });
+  const formattedDiscountAmount = formatCurrencyValue(safeDiscountAmount);
   const { raw: statusValue, normalized: normalizedStatus } = prepareQuoteStatusFields(quote);
   const rawNotes = quote && Object.prototype.hasOwnProperty.call(quote, "notes") ? (quote.notes || "") : "";
   const notesLooksHtml = /<\s*\w+[^>]*>/.test(String(rawNotes));
   const notesInitialHtml = sanitizeQuoteNotesHtml(
     notesLooksHtml ? String(rawNotes) : escapeHtml(String(rawNotes)).replace(/\n/g, "<br/>")
   );
+  const statusStyle = `${statusBadgeStyle(statusValue)}font-size:0.75rem;padding:3px 8px;`;
+  const discountDisplay = `${safeDiscountPercentage}%${formattedDiscountAmount !== "—" ? ` (${formattedDiscountAmount})` : ""}`;
+  const lineItems = Array.isArray(quote.line_items) ? quote.line_items : [];
+  const lineItemsHtml = lineItems.length
+    ? lineItems.map((item) => {
+        const itemName = escapeHtml(String(item.product || item.name || "Item"));
+        const quantity = item.quantity ?? "—";
+        const unitPrice = formatCurrencyValue(item.unit_price);
+        const totalPrice = formatCurrencyValue(item.total_price);
+        const subscriptionLabel = item.is_subscription ? `<span>Subscription</span>` : "";
+        const totalMarkup = totalPrice !== "—"
+          ? `<div class="quote-mobile-item-total">${totalPrice}</div>`
+          : "";
+        return `
+          <div class="quote-mobile-item">
+            <div class="quote-mobile-item-name">${itemName}</div>
+            <div class="quote-mobile-item-meta">
+              <span>Qty ${escapeHtml(String(quantity))}</span>
+              <span>Unit ${unitPrice}</span>
+              ${subscriptionLabel}
+            </div>
+            ${totalMarkup}
+          </div>
+        `;
+      }).join("")
+    : `<div class="quote-mobile-item quote-mobile-item--empty">No line items yet.</div>`;
+  const taxMarkup = quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)
+    ? `<div class="quote-mobile-total-row">
+        <span>Tax</span>
+        <span>
+          ${
+            quote.show_quote_tax_percentage && quote.show_quote_tax_amount
+              ? `(${parseFloat(quote.tax_percentage)}%) `
+              : quote.show_quote_tax_percentage
+              ? `${parseFloat(quote.tax_percentage)}% `
+              : ''
+          }
+          ${
+            quote.show_quote_tax_amount
+              ? formatCurrencyValue(quote.tax_amount)
+              : ''
+          }
+        </span>
+      </div>`
+    : "";
+  const accountId = quote.account_id || quote.accountId;
+  const opportunityId = quote.opportunity_id || quote.opportunityId;
+  const accountCardClass = accountId ? "quote-mobile-card quote-mobile-card--link" : "quote-mobile-card";
+  const opportunityCardClass = opportunityId ? "quote-mobile-card quote-mobile-card--link" : "quote-mobile-card";
+  const accountAttrs = accountId
+    ? ` data-record-id="${escapeHtml(String(accountId))}" data-object="Account" role="button" tabindex="0" aria-label="View Account record"`
+    : "";
+  const opportunityAttrs = opportunityId
+    ? ` data-record-id="${escapeHtml(String(opportunityId))}" data-object="Opportunity" role="button" tabindex="0" aria-label="View Opportunity record"`
+    : "";
 
   let html = `
-    <div class="quote-mobile" data-quote-name="${quote.quote_name}" style="font-family: Arial, sans-serif; line-height: 1.4">
-      <h3 style="margin:0 0 8px 0; color:#ff7f00; font-size:1.2rem; font-weight:600; background-color:#f5f5f5; padding:0.5rem">${quote.quote_name}</h3>
-      <p>🏢 <b>Account:</b> ${quote.account}</p>
-      <div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
-        <select
-          name="status"
-          data-field="status"
-          data-quote="${quote.quote_name}"
-          style="padding: 4px; border-radius: 4px; color: black;"
-          onchange="updateQuote(this)">
-          ${buildStatusOptions(quote)}
-        </select>
-        <span style="${statusBadgeStyle(statusValue)}">${statusValue || "—"}</span>
+    <div class="quote-mobile" data-quote-name="${quote.quote_name}">
+      <div class="quote-mobile-header">
+        <div class="quote-mobile-title-block">
+          <div class="quote-mobile-kicker">Quote</div>
+          <h3 class="quote-mobile-title">${escapeHtml(String(quote.quote_name || ""))}</h3>
+          <div class="quote-mobile-meta">
+            <div class="quote-mobile-meta-item">
+              <span class="material-icons quote-mobile-meta-icon" aria-hidden="true">calendar_today</span>
+              <span class="quote-mobile-meta-value">${formatDateValue(quote.created_at)}</span>
+            </div>
+            <div class="quote-mobile-meta-item quote-mobile-meta-item--expires">
+              <span class="quote-mobile-meta-label">Exp.</span>
+              <span class="quote-mobile-meta-value">${formatDateValue(quote.expiration_date)}</span>
+            </div>
+            <div class="quote-mobile-meta-item">
+              <span class="material-icons quote-mobile-meta-icon" aria-hidden="true">local_offer</span>
+              <span class="quote-mobile-meta-value">${discountDisplay}</span>
+            </div>
+          </div>
+        </div>
+        <div class="quote-mobile-status">
+          <span class="quote-mobile-status-pill" style="${statusStyle}">${escapeHtml(String(statusValue || "—"))}</span>
+        </div>
       </div>
-      <p>📆 <b>Expires:</b> ${format(expiration)}</p>
-      <p>🚀 <b>Opportunity:</b> ${quote.opportunity}</p>
-      <p>🏷️ <b>Discount:</b> ${safeDiscountPercentage}% (-$${formattedDiscountAmount})</p>
 
-      <h4 style="margin:16px 0 8px 0; font-size:1.3rem; color: #ff7f00; padding:0.5rem; border-bottom: 1px solid border-bottom: 1px solid #e7e7e7;) ">Line Items</h4>
-      <ul style="padding-left:18px; margin:0">
-        ${quote.line_items
-          .map(
-            (item) => `
-          <li>
-            ${item.quantity} × ${item.product} @ ${parseFloat(
-              item.unit_price.replace("$", "")
-            ).toLocaleString("en-US", { style: "currency", currency: "USD" })}
-            ${item.is_subscription ? " /sub" : ""}
-          </li>`
-          )
-          .join("")}
-      </ul>
+      <div class="quote-mobile-section">
+        <div class="quote-mobile-section-title">Details</div>
+        <div class="quote-mobile-grid">
+          <div class="${accountCardClass}"${accountAttrs}>
+            <span class="quote-mobile-label">Account</span>
+            <span class="quote-mobile-value">${safeText(quote.account)}</span>
+          </div>
+          <div class="${opportunityCardClass}"${opportunityAttrs}>
+            <span class="quote-mobile-label">Opportunity</span>
+            <span class="quote-mobile-value">${safeText(quote.opportunity)}</span>
+          </div>
+        </div>
+      </div>
 
-      <p style="margin-top:12px"><b>Subtotal:</b> ${parseFloat(
-        quote.subtotal.replace("$", "")
-      ).toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
+      <div class="quote-mobile-section">
+        <div class="quote-mobile-section-title">Line Items</div>
+        <div class="quote-mobile-items">${lineItemsHtml}</div>
+      </div>
 
-      ${
-        quote.show_tax_information && (quote.show_quote_tax_percentage || quote.show_quote_tax_amount)
-          ? `<p>
-              <b>Tax:</b>
-              ${
-                quote.show_quote_tax_percentage && quote.show_quote_tax_amount
-                  ? `(${parseFloat(quote.tax_percentage)}%) `
-                  : quote.show_quote_tax_percentage
-                  ? `${parseFloat(quote.tax_percentage)}% `
-                  : ''
-              }
-              ${
-                quote.show_quote_tax_amount
-                  ? parseFloat(quote.tax_amount).toLocaleString("en-US", {
-                      style: "currency",
-                      currency: "USD",
-                    })
-                  : ''
-              }
-            </p>`
-          : ''
-      }
+      <div class="quote-mobile-section">
+        <div class="quote-mobile-section-title">Totals</div>
+        <div class="quote-mobile-totals">
+          <div class="quote-mobile-total-row">
+            <span>Subtotal</span>
+            <span>${formatCurrencyValue(quote.subtotal)}</span>
+          </div>
+          ${taxMarkup}
+          <div class="quote-mobile-total-row is-grand">
+            <span>Net Amount</span>
+            <span>${formatCurrencyValue(quote.net_amount)}</span>
+          </div>
+        </div>
+      </div>
 
-      <p><span class="material-icons" style="font-size:20px;vertical-align:middle;color:#2e7d32;margin-right:4px;">attach_money</span><b>Net Amount:</b> ${parseFloat(
-        quote.net_amount.replace("$", "")
-      ).toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
-
-      <div style="margin-top:10px;">
-        <div style="font-weight:700;margin-bottom:6px;color:#041530;">Notes</div>
+      <div class="quote-mobile-section quote-notes-block">
+        <div class="quote-mobile-section-title">Notes</div>
         <div class="quote-notes-toolbar" role="toolbar" aria-label="Notes formatting">
           <button type="button" class="quote-notes-tool" data-cmd="bold" title="Bold"><span class="material-icons">format_bold</span></button>
           <button type="button" class="quote-notes-tool" data-cmd="italic" title="Italic"><span class="material-icons">format_italic</span></button>
@@ -2691,7 +2796,6 @@ function renderQuoteDetailsMobile(quote) {
           data-quote="${quote.quote_name}"
           data-initial-json="${escapeHtml(JSON.stringify(rawNotes))}"
           data-placeholder="Add notes for this quote…"
-          style="margin-top:8px;"
         >${notesInitialHtml}</div>
         <textarea class="quote-notes-textarea quote-notes-textarea--hidden" tabindex="-1" aria-hidden="true"></textarea>
       </div>
@@ -3131,7 +3235,7 @@ const RELATED_BUTTON_CONFIG = {
     objectName: "opportunity",
     listOnClick: true,
     listObjectLabel: "Opportunities",
-    listFields: ["name", "amount", "stage", "expected_close_date", "view_record"],
+    listFields: ["name", "account", "amount", "stage", "expected_close_date", "view_record"],
     viewObjectName: "Opportunity",
   },
   "related-contract-lines": {
@@ -3635,6 +3739,100 @@ function initializeRecordListViewButtons() {
     const anchorMessage = button.closest(".chat-message");
     if (!anchorMessage) return;
     fetchRecordDetailsFromList(recordId, objectName, anchorMessage, button);
+  });
+}
+
+function initializeQuoteDetailRecordLinks() {
+  if (document.documentElement.dataset.quoteDetailLinksBound === "true") return;
+  document.documentElement.dataset.quoteDetailLinksBound = "true";
+
+  const activateCard = (card) => {
+    if (!card) return;
+    const recordId = card.dataset.recordId;
+    const objectName = card.dataset.object;
+    if (!recordId || !objectName) return;
+    const anchorMessage = card.closest(".chat-message");
+    if (!anchorMessage) return;
+    fetchRecordDetailsFromList(recordId, objectName, anchorMessage, null);
+  };
+
+  document.addEventListener("click", (event) => {
+    const card = event.target.closest(".quote-mobile-card--link");
+    if (!card) return;
+    event.preventDefault();
+    activateCard(card);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target.closest(".quote-mobile-card--link");
+    if (!card) return;
+    event.preventDefault();
+    activateCard(card);
+  });
+}
+
+function initializeLeadRecordCards() {
+  if (document.documentElement.dataset.leadRecordCardsBound === "true") return;
+  document.documentElement.dataset.leadRecordCardsBound = "true";
+
+  const isMobileViewport = () => window.matchMedia("(max-width: 768px)").matches;
+
+  const handleActivate = (target) => {
+    if (!isMobileViewport()) return;
+    const card = target.closest(".records-lead-card");
+    if (!card) return;
+    if (target.closest(".record-list-view-btn")) return;
+    const recordId = card.dataset.recordId;
+    const objectName = card.dataset.object;
+    if (!recordId || !objectName) return;
+    const anchorMessage = card.closest(".chat-message");
+    if (!anchorMessage) return;
+    fetchRecordDetailsFromList(recordId, objectName, anchorMessage, null);
+  };
+
+  document.addEventListener("click", (event) => {
+    handleActivate(event.target);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target.closest(".records-lead-card");
+    if (!card) return;
+    event.preventDefault();
+    handleActivate(event.target);
+  });
+}
+
+function initializeRecordCards() {
+  if (document.documentElement.dataset.recordCardsBound === "true") return;
+  document.documentElement.dataset.recordCardsBound = "true";
+
+  const isMobileViewport = () => window.matchMedia("(max-width: 768px)").matches;
+
+  const handleActivate = (target) => {
+    if (!isMobileViewport()) return;
+    const card = target.closest(".records-card");
+    if (!card) return;
+    if (target.closest(".record-list-view-btn")) return;
+    const recordId = card.dataset.recordId;
+    const objectName = card.dataset.object;
+    if (!recordId || !objectName) return;
+    const anchorMessage = card.closest(".chat-message");
+    if (!anchorMessage) return;
+    fetchRecordDetailsFromList(recordId, objectName, anchorMessage, null);
+  };
+
+  document.addEventListener("click", (event) => {
+    handleActivate(event.target);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target.closest(".records-card");
+    if (!card) return;
+    event.preventDefault();
+    handleActivate(event.target);
   });
 }
 
@@ -5222,20 +5420,29 @@ async function updateQuoteLine(input) {
 
     //console.log(`🔄 Field Changed: ${field}, SKU: ${sku}, New Value: ${newValue}, Quote: ${quoteId}, QuoteLine: ${quoteLineId}`);
 
-    const updateData = { sku, field, value: newValue, quote_line_id: quoteLineId, hiddenMessage: true };
+    const updateData = {
+        sku,
+        field,
+        value: newValue,
+        quote_line_id: quoteLineId,
+        quote: quoteId,
+        hiddenMessage: true
+    };
     const userMessage = `Update Quote Line: ${JSON.stringify(updateData)}`;
+    const sessionId = getCurrentSessionId();
 
     try {
         const response = await fetch("/agents/chat/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: userMessage })
+            body: JSON.stringify({ message: userMessage, session_id: sessionId })
         });
 
         const data = await response.json();
+        const result = (data.response && data.response.response) ? data.response.response : (data.response || {});
 
-        if (data.response && data.response.quote_details) {
-            const updatedQuote = data.response.quote_details;
+        if (result && result.quote_details) {
+            const updatedQuote = result.quote_details;
             let quoteContainer = input.closest(".quote-container");
             if (!quoteContainer) {
               quoteContainer = document.querySelector(`.quote-container[data-quote-name="${updatedQuote.quote_name}"]`) ||
@@ -5244,6 +5451,7 @@ async function updateQuoteLine(input) {
             if (quoteContainer) {
               replaceQuoteDetailsElement(quoteContainer, updatedQuote);
               flashQuoteTotals(quoteContainer);
+              showQuoteToast("✅ Quote line updated.", "success");
               return; // replaced card; no need for inline updates
             }
 
@@ -5321,17 +5529,24 @@ async function updateQuoteLine(input) {
                 netAmountParagraph.textContent = `Net Amount: ${formattedTotalNetAmount}`;
             }
 
-            alert("✅ Quote line updated successfully.");
+            showQuoteToast("✅ Quote line updated.", "success");
         } else {
             // ⬅️ Restart original value of the input field
-            input.value = data.response.original_value
-            alert(data.response.message.replace(/<br\s*\/?>/gi, '\n'));
+            if (result && Object.prototype.hasOwnProperty.call(result, "original_value")) {
+              input.value = result.original_value;
+            }
+            if (result && result.message) {
+              const msg = String(result.message).replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').trim();
+              showQuoteToast(msg || "⚠️ Unable to update quote line.", "error");
+            }
         }
     } catch (error) {
         console.error("❌ Error updating quote line:", error);
         // ⬅️ Restart original value of the input field
-        input.value = data.response.original_value
-        alert("❌ Failed to update quote.");
+        if (input.dataset && Object.prototype.hasOwnProperty.call(input.dataset, "initialValue")) {
+          input.value = input.dataset.initialValue;
+        }
+        showQuoteToast("❌ Failed to update quote line.", "error");
     }
 }
 
@@ -5369,18 +5584,20 @@ async function updateQuote(input) {
     const userMessage = `Update Quote: ${JSON.stringify(updateData)}`;
 
     try {
+        const sessionId = getCurrentSessionId();
         const response = await fetch("/agents/chat/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: userMessage })
+            body: JSON.stringify({ message: userMessage, session_id: sessionId })
         });
 
         const data = await response.json();
+        const result = (data.response && data.response.response) ? data.response.response : (data.response || {});
 
-        if (data.response && data.response.success === true && data.response.quote_details) {
+        if (result && result.success === true && result.quote_details) {
             input.blur();
 
-            const updatedQuote = data.response.quote_details;
+            const updatedQuote = result.quote_details;
 
             let existingDetails = input.closest('[data-quote-name]');
             if (!existingDetails) {
@@ -5397,23 +5614,25 @@ async function updateQuote(input) {
               showQuoteToast("✅ Notes saved", "success");
               return;
             }
-            alert("✅ Quote updated successfully.");
+            showQuoteToast("✅ Quote updated.", "success");
         } else {
             // ⬅️ Restart original value of the input field
-            if (data.response && Object.prototype.hasOwnProperty.call(data.response, 'original_value')) {
+            if (result && Object.prototype.hasOwnProperty.call(result, 'original_value')) {
                 if (typeof input.value === "string") {
-                  input.value = data.response.original_value;
+                  input.value = result.original_value;
                 } else {
-                  input.innerHTML = data.response.original_value;
+                  input.innerHTML = result.original_value;
                 }
             }
             if (field === "notes") {
-              const raw = (data.response && data.response.message ? data.response.message : '⚠️ Unable to update notes.');
+              const raw = (result && result.message ? result.message : '⚠️ Unable to update notes.');
               const msg = String(raw).replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').trim();
               showQuoteToast(msg || "⚠️ Unable to update notes.", "error");
               return;
             }
-            alert((data.response && data.response.message ? data.response.message : '⚠️ Unable to update quote.').replace(/<br\s*\/?>/gi, '\n'));
+            const raw = result && result.message ? result.message : '⚠️ Unable to update quote.';
+            const msg = String(raw).replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').trim();
+            showQuoteToast(msg || "⚠️ Unable to update quote.", "error");
         }
     } catch (error) {
         console.error("❌ Error updating quote:", error);
@@ -5429,7 +5648,7 @@ async function updateQuote(input) {
           showQuoteToast("❌ Error saving notes.", "error");
           return;
         }
-        alert("❌ Error occurred while updating quote.");
+        showQuoteToast("❌ Error occurred while updating quote.", "error");
     }
 }
 
@@ -5514,14 +5733,6 @@ function showTemporaryQuoteDetails(quote) {
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
                   <div style="display: flex; align-items: center; gap: 8px;" class="status-select">
-                    <select
-                      name="status"
-                      data-field="status"
-                      data-quote="${quote.quote_name}"
-                      style="padding: 4px; border-radius: 4px; color: black;"
-                      onchange="updateQuote(this)">
-                      ${buildStatusOptions(quote)}
-                    </select>
                     <span style="${statusBadgeStyle(statusValue)}">${statusValue || "—"}</span>
                   </div>
               </div>
@@ -7146,6 +7357,37 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       }
     };
 
+    const formatRecordValue = (field, value) => {
+      if (value === null || value === undefined || value === "") return "—";
+      if (typeof value === "boolean") return value ? "Yes" : "No";
+      if (Array.isArray(value)) {
+        const flat = value
+          .map((item) => {
+            if (item === null || item === undefined || item === "") return "";
+            if (typeof item === "object") return JSON.stringify(item);
+            return String(item);
+          })
+          .filter(Boolean);
+        return flat.length ? flat.join(", ") : "—";
+      }
+      if (typeof value === "object") return "—";
+      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(T.*)?$/.test(value)) {
+        const d = new Date(value);
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          });
+        }
+      }
+      if (isMoneyField(field)) {
+        const num = typeof value === "number" ? value : parseFloat(value);
+        return isNaN(num) ? String(value) : formatCurrency(num);
+      }
+      return String(value);
+    };
+
     // If payload arrives as string, try to parse it
     if (typeof recordsDetails === "string") {
       try {
@@ -7159,11 +7401,18 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       return `${html}<div class="error-message">No records to display.</div>`;
     }
 
-    // Añadir estilos globales una sola vez
-    if (!document.getElementById("records-table-style")) {
-      const style = document.createElement("style");
+    const showMobileActions = typeof window !== "undefined"
+      && window.matchMedia
+      && window.matchMedia("(max-width: 768px)").matches;
+
+    // Add/update global styles (refresh on each render to avoid stale CSS).
+    let style = document.getElementById("records-table-style");
+    if (!style) {
+      style = document.createElement("style");
       style.id = "records-table-style";
-      style.innerHTML = `
+      document.head.appendChild(style);
+    }
+    style.textContent = `
       .records-container {
         font-family: 'Inter', sans-serif;
         color: #1f2937;
@@ -7251,6 +7500,256 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         background-color: #eff6ff;
       }
 
+      .records-card-grid {
+        display: none;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid #e5e7eb;
+        border-top: 0;
+        border-radius: 0 0 12px 12px;
+        background: #fff;
+      }
+
+      .records-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 12px 14px;
+        background: #f8fafc;
+        box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .records-card.is-clickable {
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease, border 120ms ease;
+      }
+
+      .records-card.is-clickable:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 20px rgba(15, 23, 42, 0.12);
+        border-color: rgba(148, 163, 184, 0.6);
+      }
+
+      .records-card.is-clickable:focus {
+        outline: 2px solid rgba(37, 99, 235, 0.35);
+        outline-offset: 2px;
+      }
+
+      .records-card-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .records-card-title {
+        font-weight: 700;
+        font-size: 1.05rem;
+        color: #111827;
+      }
+
+      .records-card-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(37, 99, 235, 0.12);
+        color: #1d4ed8;
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .records-card-meta {
+        display: grid;
+        gap: 6px;
+        font-size: 0.88rem;
+        color: #374151;
+      }
+
+      .records-card-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .records-card-label {
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+      }
+
+      .records-card-value {
+        font-weight: 600;
+        color: #0f172a;
+        text-align: right;
+        overflow-wrap: anywhere;
+      }
+
+      .records-card-view-row,
+      .records-card-view-inline {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        margin-top: 4px;
+      }
+
+      .records-card-empty {
+        color: #94a3b8;
+        font-size: 0.85rem;
+      }
+
+      .records-leads-grid {
+        display: none;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid #e5e7eb;
+        border-top: 0;
+        border-radius: 0 0 12px 12px;
+        background: #fff;
+      }
+
+      .records-lead-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 12px 14px;
+        background: #f8fafc;
+        box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .records-lead-card.is-clickable {
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease, border 120ms ease;
+      }
+
+      .records-lead-card.is-clickable:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 20px rgba(15, 23, 42, 0.12);
+        border-color: rgba(148, 163, 184, 0.6);
+      }
+
+      .records-lead-card.is-clickable:focus {
+        outline: 2px solid rgba(37, 99, 235, 0.35);
+        outline-offset: 2px;
+      }
+
+      .records-lead-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .records-lead-name {
+        font-weight: 700;
+        font-size: 1.05rem;
+        color: #111827;
+      }
+
+      .records-lead-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+
+      .records-lead-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(15, 118, 110, 0.12);
+        color: #0f766e;
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .records-lead-meta {
+        display: grid;
+        gap: 6px;
+        font-size: 0.88rem;
+        color: #374151;
+      }
+
+      .records-lead-view-row {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 4px;
+      }
+
+      .records-lead-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .records-lead-label {
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+      }
+
+      .records-lead-value {
+        font-weight: 600;
+        color: #0f172a;
+        text-align: right;
+        overflow-wrap: anywhere;
+      }
+
+      .records-lead-empty {
+        color: #94a3b8;
+        font-size: 0.85rem;
+      }
+
+      .records-leads-table {
+        display: block;
+      }
+
+      .records-table-wrapper--list {
+        display: block;
+      }
+
+      .records-card-view {
+        display: inline-flex;
+      }
+
+      .records-lead-view {
+        display: inline-flex;
+      }
+
+      .email-alert-container.popup .records-leads-grid {
+        display: none;
+      }
+
+      .email-alert-container.popup .records-leads-table {
+        display: block;
+      }
+
+      .email-alert-container.popup .records-card-grid {
+        display: none;
+      }
+
+      .email-alert-container.popup .records-table-wrapper--list {
+        display: block;
+      }
+
       /* Popup general */
       .records-overlay {
         position: fixed;
@@ -7316,10 +7815,55 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       @media (max-width:640px) {
         .popup { width: 96vw; max-height: 90vh; }
         .records-table th, .records-table td { padding: 0.5rem 0.6rem; }
+        .records-card-grid { grid-template-columns: 1fr; padding: 10px; }
+        .records-card { padding: 10px 12px; }
+        .records-leads-grid { grid-template-columns: 1fr; padding: 10px; }
+        .records-lead-card { padding: 10px 12px; }
+      }
+
+      @media (max-width: 768px) {
+        .records-card-grid {
+          display: grid;
+        }
+
+        .records-table-wrapper--list {
+          display: none;
+        }
+
+        .records-leads-grid {
+          display: grid;
+        }
+
+        .records-leads-table {
+          display: none;
+        }
+
+        .records-table--account th,
+        .records-table--account td {
+          display: none;
+        }
+
+        .records-table--account th[data-field="name" i],
+        .records-table--account td[data-field="name" i],
+        .records-table--account th[data-field="account_name" i],
+        .records-table--account td[data-field="account_name" i],
+        .records-table--account th[data-field="phone" i],
+        .records-table--account td[data-field="phone" i],
+        .records-table--account th[data-field="phone_number" i],
+        .records-table--account td[data-field="phone_number" i] {
+          display: table-cell;
+        }
+
+        .records-card--account .records-card-row {
+          display: none;
+        }
+
+        .records-card--account .records-card-row[data-field="phone" i],
+        .records-card--account .records-card-row[data-field="phone_number" i] {
+          display: flex;
+        }
       }
       `;
-      document.head.appendChild(style);
-    }
 
     // Renderizar objetos
     let entries = [];
@@ -7435,7 +7979,331 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
     }
 
     if (!Array.isArray(records) || records.length === 0) continue;
-    const allFields = Object.keys(records[0]);
+    const normalizedObject = String(objectName || "").toLowerCase();
+    const isLeadObject = normalizedObject === "lead" || normalizedObject === "leads";
+
+    if (isLeadObject) {
+      const getRecordField = (record, candidates) => {
+        const keys = Object.keys(record || {});
+        const lookup = new Map(keys.map((key) => [key.toLowerCase(), key]));
+        for (const candidate of candidates) {
+          const match = lookup.get(candidate.toLowerCase());
+          if (!match) continue;
+          const value = record[match];
+          if (value !== null && value !== undefined && value !== "") {
+            return value;
+          }
+        }
+        return "";
+      };
+      const safeText = (value) => {
+        if (value === null || value === undefined || value === "") return "";
+        return escapeHtml(String(value));
+      };
+
+      const leadCards = records.map((record) => {
+        const firstName = getRecordField(record, ["first_name", "firstname", "first", "given_name"]);
+        const lastName = getRecordField(record, ["last_name", "lastname", "last", "surname"]);
+        const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+        const displayName = fullName
+          || getRecordField(record, ["name", "full_name", "fullname"])
+          || "Unnamed Lead";
+
+        const email = getRecordField(record, ["email", "email_address"]);
+        const phone = getRecordField(record, [
+          "phone",
+          "phone_number",
+          "mobile",
+          "mobile_phone",
+          "mobilephone",
+          "phone_number__c",
+          "mobile_phone__c",
+        ]);
+        const company = getRecordField(record, ["company", "account", "account_name"]);
+        const title = getRecordField(record, ["title", "job_title"]);
+        const status = getRecordField(record, ["status", "lead_status"]);
+        const source = getRecordField(record, ["lead_source", "source"]);
+        const recordId = getRecordField(record, ["id", "record_id", "lead_id", "leadid", "sfid", "salesforce_id"]);
+
+        const rows = [];
+        if (email) rows.push(`<div class="records-lead-row"><span class="records-lead-label">Email</span><span class="records-lead-value">${safeText(email)}</span></div>`);
+        rows.push(`<div class="records-lead-row"><span class="records-lead-label">Phone</span><span class="records-lead-value">${phone ? safeText(phone) : "—"}</span></div>`);
+        if (company) rows.push(`<div class="records-lead-row"><span class="records-lead-label">Company</span><span class="records-lead-value">${safeText(company)}</span></div>`);
+        if (title) rows.push(`<div class="records-lead-row"><span class="records-lead-label">Title</span><span class="records-lead-value">${safeText(title)}</span></div>`);
+        if (source) rows.push(`<div class="records-lead-row"><span class="records-lead-label">Source</span><span class="records-lead-value">${safeText(source)}</span></div>`);
+
+        const statusPill = status ? `<span class="records-lead-pill">${safeText(status)}</span>` : "";
+        const viewButton = recordId
+          ? `<button type="button" class="record-list-view-btn records-lead-view" data-record-id="${escapeHtml(String(recordId))}" data-object="${escapeHtml(String(objectName))}" aria-label="View lead" title="View lead">
+              <span class="material-icons" aria-hidden="true">visibility</span>
+            </button>`
+          : "";
+        const actions = [statusPill].filter(Boolean).join("");
+
+        const cardAttrs = recordId
+          ? `data-record-id="${escapeHtml(String(recordId))}" data-object="${escapeHtml(String(objectName))}" role="button" tabindex="0"`
+          : "";
+        const cardClass = recordId ? "records-lead-card is-clickable" : "records-lead-card";
+
+        return `
+          <div class="${cardClass}" ${cardAttrs}>
+            <div class="records-lead-top">
+              <div class="records-lead-name">${safeText(displayName)}</div>
+              ${actions ? `<div class="records-lead-actions">${actions}</div>` : ""}
+            </div>
+            <div class="records-lead-meta">
+              ${rows.length ? rows.join("") : `<div class="records-lead-empty">No details available.</div>`}
+              ${viewButton ? `<div class="records-lead-view-row">${viewButton}</div>` : ""}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      const allFields = Object.keys(records[0] || {});
+      const tableClass = `records-table records-table--${String(objectName || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')}`;
+      const tableHtml = allFields.length ? `
+        <div class="records-table-wrapper records-leads-table">
+          <table class="${tableClass}">
+            <thead>
+              <tr>${allFields.map(f => `<th data-field="${escapeHtml(String(f))}">${normalizeFieldName(f)}</th>`).join('')}</tr>
+            </thead>
+            <tbody>
+              ${records.map(record => `
+                <tr>
+                  ${allFields.map(field => {
+                    let value = record[field];
+                    if (value === null || value === undefined || value === "") return `<td data-field="${escapeHtml(String(field))}">—</td>`;
+                    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(T.*)?$/.test(value)) {
+                      const d = new Date(value);
+                      if (!isNaN(d.getTime())) {
+                        value = d.toLocaleDateString('en-US', {
+                          year:"numeric",month:"2-digit",day:"2-digit"
+                        });
+                      }
+                    } else if (isMoneyField(field)) {
+                      const num = typeof value === "number" ? value : parseFloat(value);
+                      value = isNaN(num) ? value : formatCurrency(num);
+                    }
+                    return `<td data-field="${escapeHtml(String(field))}">${value}</td>`;
+                  }).join('')}
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : "";
+
+      html += `
+        <div class="email-alert-container" style="margin-bottom:10px; position:relative;">
+          <div class="email-alert-header" style="
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            background: linear-gradient(135deg, #041530, #233049);
+            color:#fff;
+            padding:10px 14px;
+            border-radius:12px 12px 0 0;
+          ">
+            <h4 style="margin:0;">${objectName} records.</h4>
+            <button onclick="makeDraggable(this)" class="record-popout-btn">
+              <span class="material-icons" aria-hidden="true">open_in_new</span>
+            </button>
+          </div>
+          <div class="records-leads-grid">
+            ${leadCards}
+          </div>
+          ${tableHtml}
+        </div>
+      `;
+      continue;
+    }
+
+    const allFields = Object.keys(records[0] || {});
+    const normalizedSlug = String(objectName || "").toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const tableClass = `records-table records-table--${normalizedSlug}`;
+    const cardGridClass = `records-card-grid records-card-grid--${normalizedSlug}`;
+    const requiredFields = normalizedSlug === "account"
+      ? new Set(["phone", "phone_number"])
+      : new Set();
+    const isContractLine = normalizedSlug.includes("contractline");
+    const contractLineFields = [
+      "product",
+      "product_name",
+      "product_id",
+      "productid",
+      "product_c",
+      "product__c",
+      "line_type",
+      "line_type_c",
+      "line_type__c",
+      "linetype",
+      "line_typec",
+    ];
+    const preferredFields = [
+      "phone",
+      "email",
+      "status",
+      "stage",
+      "source",
+      "account",
+      "account_name",
+      "company",
+      "title",
+      "amount",
+      "expected_close_date",
+      "estimated_close_date",
+      "website",
+      "industry",
+      "city",
+      "state",
+      "zip_code",
+      "created_at",
+    ];
+
+    const recordCards = records.map((record, index) => {
+      const keys = Object.keys(record || {});
+      const keyMap = new Map(keys.map((key) => [key.toLowerCase(), key]));
+
+      const getFieldInfo = (candidates) => {
+        for (const candidate of candidates) {
+          const key = keyMap.get(candidate.toLowerCase());
+          if (!key) continue;
+          const value = record[key];
+          if (value !== null && value !== undefined && value !== "") {
+            return { key, value };
+          }
+        }
+        return { key: null, value: "" };
+      };
+
+      const firstInfo = getFieldInfo(["first_name", "firstname", "first", "given_name"]);
+      const lastInfo = getFieldInfo(["last_name", "lastname", "last", "surname"]);
+      const nameInfo = getFieldInfo(["name", "title", "subject", "full_name", "fullname"]);
+      const recordInfo = getFieldInfo(["record_id", "custom_identifier"]);
+      const displayName = [firstInfo.value, lastInfo.value].filter(Boolean).join(" ").trim()
+        || nameInfo.value
+        || recordInfo.value
+        || `Record ${index + 1}`;
+
+      const statusInfo = getFieldInfo(["status", "stage"]);
+      const statusPill = statusInfo.value
+        ? `<span class="records-card-pill">${escapeHtml(String(statusInfo.value))}</span>`
+        : "";
+
+      const recordIdInfo = getFieldInfo([
+        "id",
+        "record_id",
+        "lead_id",
+        "leadid",
+        "accid",
+        "contactid",
+        "oppid",
+        "prdid",
+        "qteid",
+        "activityid",
+        "tenant_id",
+        "external_id",
+        "hs_deal_id",
+        "sfid",
+        "salesforce_id",
+        "custom_identifier",
+      ]);
+      const viewButton = recordIdInfo.value
+        ? `<button type="button" class="record-list-view-btn records-card-view" data-record-id="${escapeHtml(String(recordIdInfo.value))}" data-object="${escapeHtml(String(objectName))}" aria-label="View record" title="View record">
+            <span class="material-icons" aria-hidden="true">visibility</span>
+          </button>`
+        : "";
+
+      const skipFields = new Set(["id", "record_id", "lead_id", "sfid", "salesforce_id", "custom_identifier"]);
+      if (nameInfo.key) skipFields.add(nameInfo.key.toLowerCase());
+      if (firstInfo.key) skipFields.add(firstInfo.key.toLowerCase());
+      if (lastInfo.key) skipFields.add(lastInfo.key.toLowerCase());
+      if (statusInfo.key) skipFields.add(statusInfo.key.toLowerCase());
+
+      const fieldCandidates = [];
+      if (isContractLine) {
+        contractLineFields.forEach((candidate) => {
+          const key = keyMap.get(candidate.toLowerCase());
+          if (key && !fieldCandidates.includes(key)) {
+            fieldCandidates.push(key);
+          }
+        });
+      } else {
+        preferredFields.forEach((candidate) => {
+          const key = keyMap.get(candidate.toLowerCase());
+          if (key && !fieldCandidates.includes(key)) {
+            fieldCandidates.push(key);
+          }
+        });
+        keys.forEach((key) => {
+          if (!fieldCandidates.includes(key)) {
+            fieldCandidates.push(key);
+          }
+        });
+      }
+
+      const rows = [];
+      const maxFields = isContractLine ? 2 : 6;
+      for (const fieldKey of fieldCandidates) {
+        if (rows.length >= maxFields) break;
+        if (skipFields.has(fieldKey.toLowerCase())) continue;
+        const formatted = formatRecordValue(fieldKey, record[fieldKey]);
+        const fieldLower = fieldKey.toLowerCase();
+        if (formatted === "—" && !requiredFields.has(fieldLower)) continue;
+        const valueHtml = (fieldLower === "view_record" || fieldLower === "view_quote")
+          ? String(formatted)
+          : escapeHtml(String(formatted));
+        rows.push(
+          `<div class="records-card-row" data-field="${escapeHtml(fieldLower)}"><span class="records-card-label">${normalizeFieldName(fieldKey)}</span><span class="records-card-value">${valueHtml}</span></div>`
+        );
+      }
+
+      if (viewButton) {
+        rows.push(`<div class="records-card-row records-card-view-inline" data-field="view_record">
+          <span class="records-card-label">View record</span>
+          <span class="records-card-value">${viewButton}</span>
+        </div>`);
+      }
+
+      const cardAttrs = recordIdInfo.value
+        ? `data-record-id="${escapeHtml(String(recordIdInfo.value))}" data-object="${escapeHtml(String(objectName))}" role="button" tabindex="0"`
+        : "";
+      const cardClass = recordIdInfo.value
+        ? `records-card records-card--${escapeHtml(normalizedSlug)} is-clickable`
+        : `records-card records-card--${escapeHtml(normalizedSlug)}`;
+
+      return `
+        <div class="${cardClass}" ${cardAttrs}>
+          <div class="records-card-top">
+            <div class="records-card-title">${escapeHtml(String(displayName))}</div>
+            ${statusPill}
+          </div>
+          <div class="records-card-meta">
+            ${rows.length ? rows.join("") : `<div class="records-card-empty">No details available.</div>`}
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    const tableHtml = allFields.length ? `
+      <div class="records-table-wrapper records-table-wrapper--list">
+        <table class="${tableClass}">
+          <thead>
+            <tr>${allFields.map(f => `<th data-field="${escapeHtml(String(f))}">${normalizeFieldName(f)}</th>`).join('')}</tr>
+          </thead>
+          <tbody>
+            ${records.map(record => `
+              <tr>
+                ${allFields.map(field => {
+                  const formatted = formatRecordValue(field, record[field]);
+                  return `<td data-field="${escapeHtml(String(field))}">${escapeHtml(String(formatted))}</td>`;
+                }).join('')}
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    ` : "";
 
     html += `
       <div class="email-alert-container" style="margin-bottom:10px; position:relative;">
@@ -7453,51 +8321,10 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
             <span class="material-icons" aria-hidden="true">open_in_new</span>
           </button>
         </div>
-
-        <div class="email-alert-details" style="
-          overflow-x:auto;
-          overflow-y:auto;
-          max-height:350px;
-          border:1px solid #e5e7eb;
-          border-radius:0 0 12px 12px;
-          margin-top:0;
-        ">
-          <table style="
-            width:100%;
-            border-collapse:collapse;
-            background-color:white;
-            font-family:'Inter',sans-serif;
-            color:#111827;
-            font-size:1rem;
-            table-layout:auto;
-          ">
-            <thead>
-              <tr>${allFields.map(f => `<th>${normalizeFieldName(f)}</th>`).join('')}</tr>
-            </thead>
-            <tbody>
-              ${records.map(record => `
-                <tr>
-                  ${allFields.map(field => {
-                    let value = record[field];
-                    if (value === null || value === undefined || value === "") return `<td>—</td>`;
-                    // Dates (with or without time)
-                    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(T.*)?$/.test(value)) {
-                      const d = new Date(value);
-                      if (!isNaN(d.getTime())) {
-                        value = d.toLocaleDateString('en-US', {
-                          year:"numeric",month:"2-digit",day:"2-digit"
-                        });
-                      }
-                    } else if (isMoneyField(field)) {
-                      const num = typeof value === "number" ? value : parseFloat(value);
-                      value = isNaN(num) ? value : formatCurrency(num);
-                    }
-                    return `<td>${value}</td>`;
-                  }).join('')}
-                </tr>`).join('')}
-            </tbody>
-          </table>
+        <div class="${cardGridClass}">
+          ${recordCards || `<div class="records-card-empty">No details available.</div>`}
         </div>
+        ${tableHtml}
       </div>
     `;
   }
