@@ -353,8 +353,16 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
     func_name = (aggregate_def.get("function") or "sum").lower()
     field = aggregate_def.get("field")
     group_by = (aggregate_def.get("group_by") or "").lower()
+    group_field = aggregate_def.get("group_field")
+    if not group_field and group_by and group_by not in {"month", "week", "day", "field"}:
+        group_field = aggregate_def.get("group_by")
     date_field = aggregate_def.get("date_field") or ("updated_at" if hasattr(model, "updated_at") else None)
     range_key = aggregate_def.get("range")
+
+    if not field and func_name == "count":
+        field = "id"
+    if isinstance(field, str) and field.strip().lower() in {"*", "all"} and func_name == "count":
+        field = "id"
 
     if not field:
         return None, "aggregate field is required"
@@ -448,6 +456,45 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
             "field": field,
             "group_by": group_by,
             "date_field": date_field,
+            "range": range_key,
+            "series": series,
+            "total": float(total_value) if total_value is not None else None,
+        }, None
+
+    if group_by == "field" and not group_field:
+        return None, "group_field is required when group_by='field'"
+
+    # Categorical grouping
+    if group_field:
+        group_field_name = str(group_field)
+        group_label = group_field_name
+        try:
+            field_obj = model._meta.get_field(group_field_name)
+            if getattr(field_obj, "verbose_name", None):
+                group_label = str(field_obj.verbose_name).title()
+        except Exception:
+            return None, f"group_by field '{group_field_name}' does not exist"
+
+        aggregated = qs.values(group_field_name).annotate(value=agg_fn(field)).order_by("-value")
+
+        series = []
+        for entry in aggregated:
+            label = entry.get(group_field_name)
+            if label is None or label == "":
+                label = "Unknown"
+            val = entry.get("value")
+            series.append({
+                "period": str(label),
+                "value": float(val) if val is not None else None,
+            })
+
+        total_value = sum([item.get("value") or 0 for item in series])
+        return {
+            "function": func_name,
+            "field": field,
+            "group_by": "field",
+            "group_field": group_field_name,
+            "group_label": group_label,
             "range": range_key,
             "series": series,
             "total": float(total_value) if total_value is not None else None,

@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import uuid
+import openai
 
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -17,7 +18,10 @@ from django.views.decorators.csrf import csrf_exempt
 
 from dotenv import load_dotenv
 
-from agents.models import ChatSession, SingleRecordLayout
+from agents.models import ChatMessage, ChatSession, SingleRecordLayout
+from cpq.action_trigger.signal_controls import set_skip_signals
+from agents.standard_record_agent import MODEL_MAP, EXTRA_FIELDS, _refresh_allowed_fields
+from cpq.models import CustomField, CustomObject
 from agents.knowledge_agent import resolve_knowledge_video_request
 from cpq.models import Quote, QuotePendingAttachment
 
@@ -39,6 +43,108 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-4"
+OPENAI_BATCH_MODEL = os.getenv("OPENAI_BATCH_MODEL", "gpt-4o-mini")
+
+
+def _build_batch_schema_objects():
+    _refresh_allowed_fields()
+
+    objects = []
+
+    def _humanize(value):
+        text = str(value or "").replace("_", " ").strip()
+        return text.title() if text else ""
+
+    def _collect_headers(field_names):
+        headers = set()
+        for name in field_names:
+            if not name:
+                continue
+            headers.add(str(name))
+            human = _humanize(name)
+            if human:
+                headers.add(human)
+        return headers
+
+    for object_name, model in MODEL_MAP.items():
+        model_fields = [
+            f.name
+            for f in model._meta.get_fields()
+            if not getattr(f, "auto_created", False)
+            and getattr(f, "editable", True)
+            and not f.many_to_many
+        ]
+        extras = EXTRA_FIELDS.get(object_name, [])
+
+        custom_fields = list(
+            CustomField.objects.filter(custom_object__isnull=True, object_type=object_name)
+        )
+        custom_field_names = [cf.name for cf in custom_fields if cf.name] or []
+
+        canonical_fields = list({*model_fields, *extras, *custom_field_names})
+
+        headers = _collect_headers(canonical_fields)
+        for field in model._meta.get_fields():
+            if getattr(field, "auto_created", False) or field.many_to_many:
+                continue
+            if not getattr(field, "editable", True):
+                continue
+            verbose = getattr(field, "verbose_name", None)
+            if verbose:
+                headers.add(str(verbose))
+                headers.add(_humanize(verbose))
+
+        for cf in custom_fields:
+            if cf.label:
+                headers.add(cf.label)
+                headers.add(_humanize(cf.label))
+
+        labels = {object_name}
+        labels.add(_humanize(object_name))
+        if not object_name.lower().endswith("s"):
+            labels.add(f"{object_name}s")
+            labels.add(_humanize(f"{object_name}s"))
+
+        objects.append({
+            "name": object_name,
+            "label": object_name,
+            "labels": sorted(labels),
+            "fields": sorted(set(canonical_fields)),
+            "headers": sorted(h for h in headers if h),
+        })
+
+    for custom_object in CustomObject.objects.prefetch_related("custom_fields").all():
+        object_name = custom_object.name
+        label = custom_object.label or object_name
+        headers = set()
+        labels = {object_name, label}
+        labels.add(_humanize(label))
+        if not str(label).lower().endswith("s"):
+            labels.add(f"{label}s")
+            labels.add(_humanize(f"{label}s"))
+
+        canonical_fields = ["custom_identifier"]
+        headers.update(_collect_headers(canonical_fields))
+
+        for cf in custom_object.custom_fields.all():
+            if cf.name:
+                canonical_fields.append(cf.name)
+            if cf.label:
+                headers.add(cf.label)
+                headers.add(_humanize(cf.label))
+            if cf.name:
+                headers.add(cf.name)
+                headers.add(_humanize(cf.name))
+
+        objects.append({
+            "name": object_name,
+            "label": label,
+            "labels": sorted(labels),
+            "fields": sorted(set(canonical_fields)),
+            "headers": sorted(h for h in headers if h),
+        })
+
+    return objects
 
 
 @xframe_options_exempt
@@ -112,6 +218,7 @@ def chat_with_gpt(request):
         data = json.loads(request.body)
         user_message = data.get("message", "").strip()
         custom_session_id = data.get("session_id")  # 👈 Get in from Frontend
+        batch_info = data.get("batch_info")
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON format."}, status=400)
 
@@ -121,6 +228,17 @@ def chat_with_gpt(request):
     # --- 4. Load session data ---
     session_data = request.session.get("session_data", {})
     #logger.info(f"🔹 DEBUG: Session Data: {session_data}")
+
+    if isinstance(batch_info, dict):
+        index = batch_info.get("index")
+        total = batch_info.get("total")
+        label = batch_info.get("label")
+        if isinstance(index, int) and isinstance(total, int) and total > 0 and index > 0:
+            session_data["batch_info"] = {
+                "index": index,
+                "total": total,
+                "label": label or "",
+            }
 
     # --- 4.1 Load custom session data if exist---
     if custom_session_id:
@@ -158,11 +276,17 @@ def chat_with_gpt(request):
         session_data["session_id"] = str(new_chat_session.session_id)
         request.session["session_data"] = session_data
 
+        skip_signals = isinstance(batch_info, dict)
         try:
+            if skip_signals:
+                set_skip_signals(True)
             ai_response = handle_user_request(request.user.username, user_message, session_data)
         except Exception as e:
             logger.error(f"❌ Error in Orchestrator logic: {e}", exc_info=True)
             return JsonResponse({"error": "Internal server error."}, status=500)
+        finally:
+            if skip_signals:
+                set_skip_signals(False)
 
         # --- 7. Save updated session data ---
         request.session["session_data"] = session_data
@@ -176,16 +300,56 @@ def chat_with_gpt(request):
         })
 
     # --- 6. No pending action -> Orchestrate new user request ---
+    skip_signals = isinstance(batch_info, dict)
     try:
+        if skip_signals:
+            set_skip_signals(True)
         ai_response = handle_user_request(request.user.username, user_message, session_data)
     except Exception as e:
         logger.error(f"❌ Error in Orchestrator logic: {e}", exc_info=True)
         return JsonResponse({"error": "Internal server error."}, status=500)
+    finally:
+        if skip_signals:
+            set_skip_signals(False)
 
     # --- 7. Save updated session data ---
     request.session["session_data"] = session_data
 
     return JsonResponse({"response": ai_response})
+
+
+@csrf_exempt
+@login_required
+def log_agent_message(request):
+    """Persist a lightweight agent message without triggering the orchestrator."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method. Use POST."}, status=405)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format."}, status=400)
+
+    message = (data.get("message") or "").strip()
+    session_id = data.get("session_id")
+    if not message:
+        return JsonResponse({"error": "message is required"}, status=400)
+    if not session_id:
+        return JsonResponse({"error": "session_id is required"}, status=400)
+
+    chat_session = ChatSession.objects.filter(session_id=session_id, user=request.user).first()
+    if not chat_session:
+        return JsonResponse({"error": "session not found"}, status=404)
+
+    hidden = bool(data.get("hiddenMessage", False))
+    ChatMessage.objects.create(
+        session=chat_session,
+        sender="agent",
+        content=message,
+        hiddenMessage=hidden,
+    )
+
+    return JsonResponse({"ok": True})
 
 
 @csrf_exempt
@@ -227,6 +391,156 @@ def single_record_layout(request):
         return JsonResponse({"order": order, "hidden": hidden})
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@login_required
+def list_record_layout(request):
+    """Persist and return per-user list-record layout preferences."""
+
+    if request.method == "GET":
+        object_name = request.GET.get("object")
+        if not object_name:
+            return JsonResponse({"error": "object is required"}, status=400)
+
+        layout_key = f"{object_name}__list"
+        layout_obj = SingleRecordLayout.objects.filter(user=request.user, object_name=layout_key).first()
+        layout_data = layout_obj.layout if layout_obj and isinstance(layout_obj.layout, dict) else {}
+        return JsonResponse({
+            "order": layout_data.get("order", []),
+            "hidden": layout_data.get("hidden", []),
+        })
+
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON."}, status=400)
+
+        object_name = data.get("object")
+        if not object_name:
+            return JsonResponse({"error": "object is required"}, status=400)
+
+        order = data.get("order") if isinstance(data.get("order"), list) else []
+        hidden = data.get("hidden") if isinstance(data.get("hidden"), list) else []
+        layout_key = f"{object_name}__list"
+
+        SingleRecordLayout.objects.update_or_create(
+            user=request.user,
+            object_name=layout_key,
+            defaults={"layout": {"order": order, "hidden": hidden}},
+        )
+
+        return JsonResponse({"order": order, "hidden": hidden})
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@login_required
+def batch_schema(request):
+    """Return available object fields for batch imports (standard + custom)."""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    return JsonResponse({"objects": _build_batch_schema_objects()})
+
+
+@csrf_exempt
+@login_required
+def batch_map(request):
+    """Map batch headers to canonical field names using the LLM."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        payload = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON."}, status=400)
+
+    object_name = payload.get("object")
+    headers = payload.get("headers")
+    if not object_name or not isinstance(headers, list):
+        return JsonResponse({"error": "object and headers are required"}, status=400)
+
+    objects = _build_batch_schema_objects()
+    object_info = next(
+        (obj for obj in objects if str(obj.get("name", "")).lower() == str(object_name).lower()
+         or str(object_name).lower() in [lbl.lower() for lbl in obj.get("labels", [])]),
+        None,
+    )
+    if not object_info:
+        return JsonResponse({"error": "Unknown object."}, status=400)
+
+    allowed_fields = object_info.get("fields", [])
+    if not allowed_fields:
+        return JsonResponse({"mapped_headers": [None for _ in headers], "unmapped_headers": headers})
+
+    system_prompt = (
+        "You map user-provided column headers to canonical field names. "
+        "Return JSON only: {\"mapped_headers\": [..]} with one entry per header in order. "
+        "Each entry must be one of the allowed field names or null. "
+        "Do not invent field names."
+    )
+    user_prompt = json.dumps({
+        "object": object_info.get("name"),
+        "headers": headers,
+        "allowed_fields": allowed_fields,
+    })
+
+    mapped_headers = [None for _ in headers]
+    if OPENAI_API_KEY:
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        try:
+            response = client.chat.completions.create(
+                model=OPENAI_BATCH_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0,
+            )
+            raw = response.choices[0].message.content.strip()
+            result = json.loads(raw)
+            if isinstance(result, dict) and isinstance(result.get("mapped_headers"), list):
+                mapped_headers = result["mapped_headers"]
+        except Exception as exc:
+            logger.warning("Batch header mapping failed: %s", exc)
+
+    normalized_allowed = {str(field).lower(): field for field in allowed_fields}
+    normalized_headers = []
+    for header in headers:
+        norm = str(header or "").lower().replace(" ", "").replace("_", "")
+        normalized_headers.append(norm)
+
+    cleaned_headers = []
+    for idx, mapped in enumerate(mapped_headers):
+        if mapped:
+            key = str(mapped).lower()
+            cleaned_headers.append(normalized_allowed.get(key))
+            continue
+        header_norm = normalized_headers[idx]
+        best = None
+        for field in allowed_fields:
+            field_norm = str(field).lower().replace(" ", "").replace("_", "")
+            if field_norm == header_norm or header_norm.startswith(field_norm) or field_norm.startswith(header_norm):
+                if not best or len(field_norm) > len(best):
+                    best = field
+        cleaned_headers.append(best)
+
+    unmapped = []
+    final_headers = []
+    for idx, header in enumerate(cleaned_headers):
+        if header and header in allowed_fields:
+            final_headers.append(header)
+        else:
+            final_headers.append(None)
+            unmapped.append(headers[idx])
+
+    return JsonResponse({
+        "mapped_headers": final_headers,
+        "unmapped_headers": unmapped,
+    })
 
 
 @csrf_exempt

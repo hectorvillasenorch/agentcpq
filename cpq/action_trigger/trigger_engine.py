@@ -15,6 +15,7 @@ from decimal import Decimal
 import re
 
 from cpq.actions.executor import CustomActionExecutor
+from cpq.action_trigger.signal_controls import should_skip_signals
 from cpq.models import ActionLog, CustomObject, CustomField, CustomFieldValue, CustomRecord
 
 # Get email handler
@@ -104,6 +105,8 @@ class TriggerEngine:
         Receiver con ejecución deduplicada mediante execution_fingerprint.
         """
         def _receiver(sender, instance, **kwargs):
+            if should_skip_signals() or getattr(instance, "_skip_trigger", False):
+                return
             # Snapshot original instance for update comparisons
             self._attach_original_snapshot(sender, instance, timing, kwargs)
             # --------------------------------------------------------------

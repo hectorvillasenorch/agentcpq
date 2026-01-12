@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
@@ -27,6 +28,7 @@ from cpq.models import (
     QuoteLine,
     Subscription,
     Tenant,
+    generate_agentcpq_id,
 )
 from django.contrib.contenttypes.models import ContentType
 from .utils.agents_utils import clean_llm_json
@@ -56,6 +58,15 @@ CREATE_SUPPORTED_OBJECTS = [
     "Tenant",
     "Knowledge",
 ]
+
+BULK_CREATE_SUPPORTED_OBJECTS = {
+    "Lead",
+    "Account",
+    "Knowledge",
+    "Tenant",
+}
+BULK_CREATE_THRESHOLD = int(os.getenv("BULK_CREATE_THRESHOLD", "2"))
+BULK_CREATE_BATCH_SIZE = int(os.getenv("BULK_CREATE_BATCH_SIZE", "50"))
 
 # Keep update/delete limited to the original supported objects for now.
 UPDATE_DELETE_SUPPORTED_OBJECTS = ["Lead", "Account", "Contact", "Opportunity"]
@@ -236,7 +247,24 @@ def _create_standard_records(user, user_message, session_data):
     created_records = []
     errors = []
 
+    grouped_requests = defaultdict(list)
     for req in completed_requests:
+        obj_name = (req.get("data") or {}).get("object")
+        if obj_name:
+            grouped_requests[obj_name].append(req)
+
+    handled_requests = set()
+
+    for obj_name, requests in grouped_requests.items():
+        if obj_name in BULK_CREATE_SUPPORTED_OBJECTS and len(requests) >= BULK_CREATE_THRESHOLD:
+            bulk_created, bulk_errors = _bulk_create_standard_records(user, obj_name, requests)
+            created_records.extend(bulk_created)
+            errors.extend(bulk_errors)
+            handled_requests.update(id(req) for req in requests)
+
+    for req in completed_requests:
+        if id(req) in handled_requests:
+            continue
         obj_name = req["data"].get("object")
         fields = req["data"].get("fields") or {}
         success, message, record_payload = _persist_record(user, obj_name, fields)
@@ -260,6 +288,198 @@ def _create_standard_records(user, user_message, session_data):
         "session_summary": llm_result.get("summary"),
         "hiddenMessage": False,
     }
+
+
+def _bulk_create_standard_records(user, object_name: str, requests: List[dict]) -> Tuple[List[dict], List[str]]:
+    created_records: List[dict] = []
+    errors: List[str] = []
+
+    build_map = {
+        "Lead": _build_bulk_lead_instance,
+        "Account": _build_bulk_account_instance,
+        "Knowledge": _build_bulk_knowledge_instance,
+        "Tenant": _build_bulk_tenant_instance,
+    }
+    build_fn = build_map.get(object_name)
+    if not build_fn:
+        for req in requests:
+            fields = (req.get("data") or {}).get("fields") or {}
+            success, message, record_payload = _persist_record(user, object_name, fields)
+            if success:
+                created_records.append(record_payload)
+            else:
+                errors.append(message)
+        return created_records, errors
+
+    required_fields = REQUIRED_FIELDS.get(object_name, [])
+    custom_map = _get_custom_field_map(object_name)
+    instances = []
+    instance_fields = []
+
+    for req in requests:
+        fields = (req.get("data") or {}).get("fields") or {}
+        missing = [f for f in required_fields if not fields.get(f)]
+        if missing:
+            errors.append(f"⚠️ Missing required fields for {object_name}: {', '.join(missing)}.")
+            continue
+
+        instance, error = build_fn(user, fields, custom_map)
+        if error:
+            errors.append(error)
+            continue
+
+        instances.append(instance)
+        instance_fields.append((instance, fields))
+
+    if not instances:
+        return created_records, errors
+
+    model = instances[0].__class__
+    model.objects.bulk_create(instances, batch_size=BULK_CREATE_BATCH_SIZE)
+
+    if object_name in {"Lead", "Account", "Tenant"}:
+        id_field = {"Lead": "leadId", "Account": "accid", "Tenant": "tenant_id"}[object_name]
+        identifiers = [getattr(instance, id_field, None) for instance in instances if getattr(instance, id_field, None)]
+        if identifiers:
+            fetched = model.objects.filter(**{f"{id_field}__in": identifiers})
+            id_map = {getattr(row, id_field): row for row in fetched}
+            for instance in instances:
+                identifier = getattr(instance, id_field, None)
+                if not identifier:
+                    continue
+                match = id_map.get(identifier)
+                if match:
+                    instance.id = match.id
+
+    _bulk_save_custom_fields(instance_fields, object_name, user)
+
+    for instance in instances:
+        created_records.append(_record_payload(object_name, instance))
+
+    return created_records, errors
+
+
+def _bulk_save_custom_fields(records_with_fields: List[Tuple[object, Dict[str, object]]], object_name: str, user):
+    if not records_with_fields:
+        return
+    custom_map = _get_custom_field_map(object_name)
+    if not custom_map:
+        return
+
+    try:
+        ct = ContentType.objects.get_for_model(records_with_fields[0][0].__class__)
+    except Exception:
+        return
+
+    values = []
+    for record, fields in records_with_fields:
+        if not getattr(record, "id", None):
+            continue
+        for key, value in (fields or {}).items():
+            cf = custom_map.get(_normalize_key(key))
+            if not cf:
+                continue
+            values.append(
+                CustomFieldValue(
+                    field=cf,
+                    content_type=ct,
+                    object_id=record.id,
+                    value="" if value is None else str(value),
+                    record=None,
+                    updated_by_user=user,
+                )
+            )
+
+    if values:
+        CustomFieldValue.objects.bulk_create(values, batch_size=BULK_CREATE_BATCH_SIZE)
+
+
+def _build_bulk_lead_instance(user, fields: Dict[str, object], custom_map: Dict[str, CustomField]) -> Tuple[Optional[Lead], str]:
+    status = fields.get("status")
+    if status and status not in dict(Lead.STATUS_CHOICES):
+        return None, f"⚠️ Invalid lead status '{status}'. Allowed: {', '.join(dict(Lead.STATUS_CHOICES))}."
+
+    notes = (fields.get("notes") or "").strip()
+    extras = []
+
+    def _has_cf(key: str) -> bool:
+        return key and key.lower() in custom_map
+
+    for key in ("company", "company_name"):
+        if fields.get(key) and not _has_cf(key):
+            extras.append(f"Company: {fields.get(key)}")
+            break
+    if fields.get("title") and not _has_cf("title"):
+        extras.append(f"Title: {fields.get('title')}")
+    if extras:
+        notes = (notes + ("\n" if notes else "") + "\n".join(extras)).strip()
+
+    lead = Lead(
+        first_name=str(fields.get("first_name")),
+        last_name=str(fields.get("last_name")),
+        email=fields.get("email") or "",
+        phone=fields.get("phone") or "",
+        leadId=fields.get("leadId") or generate_agentcpq_id(),
+        source=fields.get("source") or "",
+        status=status or Lead.STATUS_CHOICES[0][0],
+        notes=notes,
+        assigned_to=fields.get("assigned_to") or "",
+        owner=_resolve_user(fields.get("owner")),
+        created_by=user,
+    )
+
+    return lead, ""
+
+
+def _build_bulk_account_instance(user, fields: Dict[str, object], custom_map: Dict[str, CustomField]) -> Tuple[Optional[Account], str]:
+    account = Account(
+        name=str(fields.get("name")),
+        industry=fields.get("industry") or "",
+        website=fields.get("website") or None,
+        phone=fields.get("phone") or None,
+        street=fields.get("street") or None,
+        city=fields.get("city") or None,
+        state=fields.get("state") or None,
+        zip_code=fields.get("zip_code") or None,
+        tenant_id=fields.get("tenant_id") or None,
+        accid=fields.get("accid") or generate_agentcpq_id(),
+        owner=_resolve_user(fields.get("owner")),
+        created_by=user,
+    )
+    return account, ""
+
+
+def _build_bulk_knowledge_instance(user, fields: Dict[str, object], custom_map: Dict[str, CustomField]) -> Tuple[Optional[Knowledge], str]:
+    knowledge = Knowledge(
+        title=str(fields.get("title")),
+        content_text=str(fields.get("content_text")),
+        video_url=fields.get("video_url") or None,
+        image_url=fields.get("image_url") or None,
+        tags=fields.get("tags") or "",
+        language=fields.get("language") or "en",
+        created_by=user,
+        updated_by=user,
+        is_active=_coerce_bool(fields.get("is_active") if fields.get("is_active") is not None else True),
+    )
+    return knowledge, ""
+
+
+def _build_bulk_tenant_instance(user, fields: Dict[str, object], custom_map: Dict[str, CustomField]) -> Tuple[Optional[Tenant], str]:
+    if not getattr(user, "is_superuser", False):
+        return None, "⚠️ Only superusers can create Tenants via chat."
+    tenant = Tenant(
+        tenant_id=fields.get("tenant_id") or generate_agentcpq_id(),
+        name=str(fields.get("name")),
+        domain=fields.get("domain") or None,
+        contact_email=fields.get("contact_email") or None,
+        phone_number=fields.get("phone_number") or None,
+        street_address=fields.get("street_address") or None,
+        city=fields.get("city") or None,
+        state=fields.get("state") or None,
+        version=fields.get("version") or Tenant._meta.get_field("version").default,
+        plan=fields.get("plan") or Tenant._meta.get_field("plan").default,
+    )
+    return tenant, ""
 
 
 def _update_standard_records(user, user_message, session_data):

@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", function () {
   initializeRecordCards();
   initializeAgentsEmptyState();
   setAgentFeedbackVisibility(false);
+  initializeRecordListLayouts(document);
 
   scrollToBottom("DOMContentLoaded", true);
 });
@@ -80,6 +81,15 @@ if (typeof window !== "undefined") {
 var pendingAttachments = (typeof window !== "undefined" && window.pendingAttachments)
   ? window.pendingAttachments
   : [];
+if (typeof window !== "undefined") {
+  window.pendingBatchUpload = window.pendingBatchUpload || null;
+}
+var pendingBatchUpload = (typeof window !== "undefined" && window.pendingBatchUpload)
+  ? window.pendingBatchUpload
+  : null;
+var pendingBatchLogs = (typeof window !== "undefined" && window.pendingBatchLogs)
+  ? window.pendingBatchLogs
+  : [];
 var sessionContextMenu = (typeof window !== "undefined" && window.sessionContextMenu) ? window.sessionContextMenu : null;
 var sessionContextTarget = (typeof window !== "undefined" && window.sessionContextTarget) ? window.sessionContextTarget : null;
 
@@ -88,6 +98,14 @@ function setPendingAttachments(next) {
   if (typeof window !== "undefined") {
     window.pendingAttachments = pendingAttachments;
   }
+}
+
+function setPendingBatchUpload(next) {
+  pendingBatchUpload = next || null;
+  if (typeof window !== "undefined") {
+    window.pendingBatchUpload = pendingBatchUpload;
+  }
+  updateBatchUploadStatus();
 }
 
 function getUploadHintElement(dropzone) {
@@ -108,6 +126,23 @@ function getCurrentSessionId() {
   const urlParams = new URLSearchParams(window.location.search);
   //console.log(urlParams.get("session_id"));
   return urlParams.get("session_id");
+}
+
+function updateSessionIdFromRedirect(redirectUrl) {
+  if (!redirectUrl) return null;
+  try {
+    const nextUrl = new URL(redirectUrl, window.location.origin);
+    const sessionId = nextUrl.searchParams.get("session_id");
+    if (!sessionId) return null;
+    const current = new URL(window.location.href);
+    current.searchParams.set("session_id", sessionId);
+    window.history.replaceState({}, "", current.toString());
+    flushPendingBatchLogs(sessionId);
+    return sessionId;
+  } catch (error) {
+    console.warn("Failed to update session id from redirect:", error);
+    return null;
+  }
 }
 
 function initializeAgentsEmptyState() {
@@ -632,10 +667,29 @@ function setupChatListeners() {
   console.log("Chat listeners attached.");
 }
 
+const BATCH_FILE_TYPES = new Set([
+  "text/csv",
+  "text/tab-separated-values",
+  "application/vnd.ms-excel",
+  "text/plain",
+]);
+const BATCH_FILE_EXTENSIONS = [".csv", ".tsv"];
+
+function isBatchFile(file) {
+  if (!file) return false;
+  const name = String(file.name || "").toLowerCase();
+  if (BATCH_FILE_EXTENSIONS.some((ext) => name.endsWith(ext))) {
+    return true;
+  }
+  return file.type ? BATCH_FILE_TYPES.has(file.type) : false;
+}
+
 function setupUploadZone() {
   const dropzone = document.getElementById("upload-dropzone");
   const fileInput = document.getElementById("upload-input");
   const browseBtn = document.getElementById("upload-browse-btn");
+  const batchInput = document.getElementById("batch-upload-input");
+  const batchBtn = document.getElementById("batch-upload-btn");
 
   if (!dropzone || !fileInput) {
     updateAttachmentPreview();
@@ -664,7 +718,10 @@ function setupUploadZone() {
     event.preventDefault();
     dropzone.classList.remove("is-dragover");
     const files = Array.from(event.dataTransfer?.files || []);
-    handleAttachmentFiles(files);
+    const batchFiles = files.filter((file) => isBatchFile(file));
+    const attachmentFiles = files.filter((file) => !isBatchFile(file));
+    handleBatchFiles(batchFiles);
+    handleAttachmentFiles(attachmentFiles);
   });
 
   if (browseBtn) {
@@ -680,6 +737,22 @@ function setupUploadZone() {
     handleAttachmentFiles(files);
     fileInput.value = "";
   });
+
+  if (batchBtn && batchInput) {
+    batchBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      batchInput.click();
+    });
+  }
+
+  if (batchInput) {
+    batchInput.addEventListener("change", (event) => {
+      const files = Array.from(event.target.files || []);
+      handleBatchFiles(files);
+      batchInput.value = "";
+    });
+  }
 }
 
 async function loadPendingAttachments() {
@@ -718,6 +791,49 @@ async function loadPendingAttachments() {
     console.error("Failed to load pending attachments:", error);
     setPendingAttachments([]);
     renderAttachmentList();
+  }
+}
+
+async function handleBatchFiles(files) {
+  if (!files.length) {
+    return;
+  }
+
+  if (document.documentElement.dataset.agentsEmptyDismissed !== "true") {
+    document.documentElement.dataset.agentsEmptyDismissed = "true";
+    if (typeof updateAgentsEmptyState === "function") {
+      updateAgentsEmptyState();
+    }
+  }
+
+  for (const file of files) {
+    if (!file) continue;
+    try {
+      const content = await file.text();
+      const cleaned = String(content || "").trim();
+      if (!cleaned) {
+        showQuoteToast(`⚠️ ${file.name} is empty.`, "error");
+        continue;
+      }
+
+      const replaced = pendingBatchUpload && pendingBatchUpload.name;
+      setPendingBatchUpload({
+        name: file.name,
+        content: cleaned,
+        receivedAt: new Date().toISOString(),
+      });
+      const replaceNote = replaced ? ` (replaced ${escapeHtml(replaced)})` : "";
+      appendBatchStatusMessage(
+        `CSV ready: ${escapeHtml(file.name)}${replaceNote}. Tell me what to create (e.g. "Create Leads from upload").`,
+        "info"
+      );
+      showQuoteToast(`CSV loaded: ${file.name}.`, "info");
+    } catch (error) {
+      console.error("Batch file processing failed:", error);
+      showQuoteToast(`❌ Couldn't import ${file.name}: ${error.message}`, "error");
+    } finally {
+      hideAgentFeedback();
+    }
   }
 }
 
@@ -784,9 +900,14 @@ function renderAttachmentList() {
 function updateAttachmentPreview() {
   const previewEl = document.getElementById("attachment-preview");
   if (!previewEl) return;
+  const detailEl = previewEl.querySelector("[data-attachment-details]");
+  const supportsDetails = Boolean(detailEl);
 
   if (!pendingAttachments.length) {
     previewEl.classList.add("is-empty");
+    if (supportsDetails) {
+      detailEl.innerHTML = "";
+    }
     return;
   }
 
@@ -798,11 +919,28 @@ function updateAttachmentPreview() {
   }
 
   previewEl.classList.remove("is-empty");
-  previewEl.innerHTML = `
+  const content = `
     <span class="material-icons" aria-hidden="true">attach_file</span>
     <span class="attachment-name">${escapeHtml(name)}</span>
     ${meta ? `<span class="attachment-meta">${escapeHtml(meta)}</span>` : ""}
   `;
+  if (supportsDetails) {
+    detailEl.innerHTML = content;
+  } else {
+    previewEl.innerHTML = content;
+  }
+}
+
+function updateBatchUploadStatus() {
+  const statusEl = document.getElementById("batch-upload-status");
+  if (!statusEl) return;
+  if (!pendingBatchUpload || !pendingBatchUpload.name) {
+    statusEl.textContent = "";
+    statusEl.classList.remove("is-active");
+    return;
+  }
+  statusEl.textContent = `CSV ready: ${pendingBatchUpload.name}`;
+  statusEl.classList.add("is-active");
 }
 
 function agentNoticeMarkup(message) {
@@ -1439,6 +1577,771 @@ function escapeHtml(text) {
 }
 
 
+const BATCH_ROW_SIZE = 5;
+const batchSchemaCache = {
+  loaded: false,
+  data: null,
+};
+
+function normalizeBatchHeader(label) {
+  return String(label || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function normalizeBatchSearch(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function parseDelimitedLine(line, delimiter) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (char === delimiter && !inQuotes) {
+      result.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function parseDelimitedBatch(cleaned) {
+  const rawLines = cleaned.split(/\r?\n/);
+  let headerIndex = -1;
+  let delimiter = null;
+  let headerColumns = [];
+
+  for (let i = 0; i < rawLines.length; i += 1) {
+    const line = rawLines[i].trim();
+    if (!line) continue;
+    if (line.includes("\t")) {
+      const parsed = parseDelimitedLine(line, "\t");
+      if (parsed.length > 1) {
+        headerIndex = i;
+        delimiter = "\t";
+        headerColumns = parsed;
+        break;
+      }
+    }
+    if (line.includes(",")) {
+      const parsed = parseDelimitedLine(line, ",");
+      if (parsed.length > 1) {
+        headerIndex = i;
+        delimiter = ",";
+        headerColumns = parsed;
+        break;
+      }
+    }
+  }
+
+  if (headerIndex === -1) {
+    return null;
+  }
+
+  const preambleLines = rawLines.slice(0, headerIndex).map((line) => line.trim()).filter(Boolean);
+  const headerLines = headerColumns.map((col) => col.trim()).filter(Boolean);
+  if (headerLines.length < 2) {
+    return null;
+  }
+
+  const records = [];
+  let rowMismatch = false;
+  const headerLength = headerLines.length;
+  for (let i = headerIndex + 1; i < rawLines.length; i += 1) {
+    const line = rawLines[i];
+    if (!line || !line.trim()) {
+      continue;
+    }
+    const parsed = parseDelimitedLine(line, delimiter);
+    if (parsed.length === 1 && !parsed[0]) {
+      continue;
+    }
+    let row = parsed;
+    if (row.length < headerLength) {
+      rowMismatch = true;
+      row = [...row, ...Array(headerLength - row.length).fill("")];
+    } else if (row.length > headerLength) {
+      rowMismatch = true;
+      const head = row.slice(0, headerLength - 1);
+      const tail = row.slice(headerLength - 1).join(" ");
+      row = [...head, tail];
+    }
+    records.push(row);
+  }
+
+  if (!records.length) {
+    return null;
+  }
+
+  return {
+    headerLines,
+    records,
+    preambleLines,
+    rowMismatch,
+  };
+}
+
+async function fetchBatchSchema() {
+  if (batchSchemaCache.loaded) return batchSchemaCache.data;
+  try {
+    const response = await fetch("/agents/batch-schema/");
+    const data = await response.json();
+    batchSchemaCache.loaded = true;
+    batchSchemaCache.data = data;
+    return data;
+  } catch (err) {
+    console.warn("Unable to load batch schema:", err);
+    batchSchemaCache.loaded = true;
+    batchSchemaCache.data = null;
+    return null;
+  }
+}
+
+async function mapBatchHeaders(objectName, headers) {
+  if (!objectName || !Array.isArray(headers) || headers.length === 0) {
+    return { headers, unmapped: [] };
+  }
+  try {
+    const response = await fetch("/agents/batch-map/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ object: objectName, headers }),
+    });
+    const data = await response.json();
+    if (!Array.isArray(data.mapped_headers) || data.mapped_headers.length !== headers.length) {
+      return { headers, unmapped: [] };
+    }
+    const mapped = data.mapped_headers.map((value, idx) => value || headers[idx]);
+    const unmapped = Array.isArray(data.unmapped_headers) ? data.unmapped_headers : [];
+    return { headers: mapped, unmapped };
+  } catch (err) {
+    console.warn("Unable to map batch headers:", err);
+    return { headers, unmapped: [] };
+  }
+}
+
+function findHeaderRun(lines, allowedSet) {
+  let best = { start: -1, length: 0 };
+  let currentStart = -1;
+  let currentLength = 0;
+
+  lines.forEach((line, idx) => {
+    const token = normalizeBatchHeader(line);
+    if (!token || !allowedSet.has(token)) {
+      if (currentLength > best.length) {
+        best = { start: currentStart, length: currentLength };
+      }
+      currentStart = -1;
+      currentLength = 0;
+      return;
+    }
+    if (currentLength === 0) {
+      currentStart = idx;
+    }
+    currentLength += 1;
+  });
+
+  if (currentLength > best.length) {
+    best = { start: currentStart, length: currentLength };
+  }
+
+  return best;
+}
+
+function isHeaderCandidate(line, allowedSet) {
+  const trimmed = String(line || "").trim();
+  if (!trimmed) return false;
+  if (/\bcreate\b/i.test(trimmed)) return false;
+  const normalized = normalizeBatchHeader(trimmed);
+  if (allowedSet && allowedSet.has(normalized)) return true;
+  if (/@|https?:\/\/|www\./i.test(trimmed)) return false;
+  const letters = (trimmed.match(/[a-z]/gi) || []).length;
+  if (letters < 2) return false;
+  const digits = (trimmed.match(/[0-9]/g) || []).length;
+  if (digits > letters) return false;
+  return true;
+}
+
+function findHeaderBlock(lines, allowedSet) {
+  let start = -1;
+  let length = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (isHeaderCandidate(lines[i], allowedSet)) {
+      start = i;
+      break;
+    }
+  }
+  if (start === -1) return { start: -1, length: 0 };
+  for (let i = start; i < lines.length; i += 1) {
+    if (!isHeaderCandidate(lines[i], allowedSet)) {
+      break;
+    }
+    length += 1;
+  }
+  return { start, length };
+}
+function detectBatchObject(cleaned, lines, schemaObjects, headerTokens = null) {
+  const normalizedMessage = normalizeBatchSearch(cleaned);
+  let match = null;
+
+  schemaObjects.forEach((obj) => {
+    if (!obj || !Array.isArray(obj.labels)) return;
+    obj.labels.forEach((label) => {
+      const normalizedLabel = normalizeBatchSearch(label);
+      if (!normalizedLabel) return;
+      const regex = new RegExp(`\\b${normalizedLabel.replace(/\s+/g, "\\s+")}\\b`, "i");
+      if (regex.test(normalizedMessage)) {
+        if (!match || normalizedLabel.length > match.labelLength) {
+          match = { object: obj, labelLength: normalizedLabel.length };
+        }
+      }
+    });
+  });
+
+  if (match) {
+    return match.object;
+  }
+
+  let best = null;
+  schemaObjects.forEach((obj) => {
+    const allowedSet = new Set((obj.headers || []).map(normalizeBatchHeader));
+    if (!allowedSet.size) return;
+    if (Array.isArray(headerTokens) && headerTokens.length) {
+      const score = headerTokens.reduce((count, token) => (
+        allowedSet.has(normalizeBatchHeader(token)) ? count + 1 : count
+      ), 0);
+      if (score >= 2 && (!best || score > best.score)) {
+        best = { object: obj, score };
+      }
+      return;
+    }
+    const run = findHeaderRun(lines, allowedSet);
+    if (run.length >= 2 && (!best || run.length > best.run.length)) {
+      best = { object: obj, run };
+    }
+  });
+
+  return best ? best.object : null;
+}
+
+function buildBatchCreateLine(objectInfo) {
+  const label = (objectInfo && (objectInfo.label || objectInfo.name)) || "records";
+  if (/record/i.test(label)) {
+    return `Create ${label}`;
+  }
+  return `Create ${label} records`;
+}
+
+function buildBatchStatusMarkup(text, variant) {
+  const safeText = escapeHtml(text || "");
+  const variantClass = variant ? ` batch-result-status--${variant}` : "";
+  return `<div class="batch-result-status${variantClass}">${safeText}</div>`;
+}
+
+async function persistAgentMessage(message, sessionId) {
+  if (!message || !sessionId) return;
+  try {
+    await fetch("/agents/log-message/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      keepalive: true,
+      body: JSON.stringify({ message, session_id: sessionId }),
+    });
+  } catch (error) {
+    console.warn("Unable to persist agent message:", error);
+  }
+}
+
+function logAgentMessage(message, sessionId) {
+  if (!message) return;
+  if (!sessionId) {
+    pendingBatchLogs.push(message);
+    if (typeof window !== "undefined") {
+      window.pendingBatchLogs = pendingBatchLogs;
+    }
+    return;
+  }
+  persistAgentMessage(message, sessionId);
+}
+
+function flushPendingBatchLogs(sessionId) {
+  if (!sessionId || !pendingBatchLogs.length) return;
+  const messages = pendingBatchLogs.slice();
+  pendingBatchLogs = [];
+  if (typeof window !== "undefined") {
+    window.pendingBatchLogs = pendingBatchLogs;
+  }
+  messages.forEach((message) => {
+    persistAgentMessage(message, sessionId);
+  });
+}
+
+function shouldDiscardBatchUpload(message) {
+  const lowered = normalizeBatchSearch(message);
+  if (!lowered) return false;
+  if (!/(upload|csv|file|batch)/i.test(message)) return false;
+  return /(discard|clear|remove|delete|cancel)/i.test(message);
+}
+
+function getBatchObjectFromMessage(message, schemaObjects) {
+  const lines = String(message || "").split(/\r?\n/);
+  return detectBatchObject(message || "", lines, schemaObjects, null);
+}
+
+function shouldUsePendingBatchUpload(message, schemaObjects) {
+  if (!message || !schemaObjects) return false;
+  if (/(upload|csv|spreadsheet|file)/i.test(message)) return true;
+  if (/(create|import|load|ingest)/i.test(message)) {
+    return Boolean(getBatchObjectFromMessage(message, schemaObjects));
+  }
+  return false;
+}
+
+function appendBatchStatusMessage(text, status = "info") {
+  const icon = status === "success" ? "✅" : status === "error" ? "⚠️" : "ℹ️";
+  appendMessage("agent", agentNoticeMarkup(`${icon} ${escapeHtml(text)}`));
+  scrollToBottom("batchStatus", true);
+}
+
+function buildBatchMetricsMessage(batchPayload) {
+  if (!batchPayload) return null;
+  const objectLabel = batchPayload.objectLabel || batchPayload.objectName || "records";
+  const totalRecords = Number(batchPayload.totalRecords || 0);
+  const limit = Number.isFinite(totalRecords) && totalRecords > 0
+    ? Math.min(Math.max(totalRecords, 5), 25)
+    : 10;
+  return `Show metrics: Show all ${objectLabel} records order by created_at DESC limit ${limit}`;
+}
+
+async function buildBatchPayload(message) {
+  if (!/^batch\s*:/i.test(message || "")) return null;
+
+  const cleaned = message.replace(/^batch\s*:/i, "").trim();
+  if (!cleaned) return null;
+
+  const rawLines = cleaned.split(/\r?\n/);
+  while (rawLines.length && !rawLines[0].trim()) {
+    rawLines.shift();
+  }
+  if (!rawLines.length) return null;
+
+  const schema = await fetchBatchSchema();
+  if (!schema || !Array.isArray(schema.objects) || schema.objects.length === 0) {
+    return { fallbackMessage: cleaned, error: "schema_unavailable" };
+  }
+
+  const delimited = parseDelimitedBatch(cleaned);
+  const headerTokens = delimited ? delimited.headerLines : null;
+  const objectInfo = detectBatchObject(cleaned, rawLines, schema.objects, headerTokens);
+  if (!objectInfo) {
+    return { fallbackMessage: cleaned, error: "unknown_object" };
+  }
+
+  let headerLines = [];
+  let preambleLines = [];
+  let records = [];
+  let rowMismatch = false;
+
+  if (delimited) {
+    headerLines = delimited.headerLines;
+    preambleLines = delimited.preambleLines || [];
+    records = delimited.records || [];
+    rowMismatch = delimited.rowMismatch || false;
+  } else {
+    const allowedSet = new Set((objectInfo.headers || []).map(normalizeBatchHeader));
+    let headerRun = findHeaderRun(rawLines, allowedSet);
+    if (headerRun.length < 2) {
+      headerRun = findHeaderBlock(rawLines, allowedSet);
+    }
+    if (headerRun.length < 2) {
+      return { fallbackMessage: cleaned, error: "missing_header" };
+    }
+
+    const headerStart = headerRun.start;
+    const headerEnd = headerStart + headerRun.length;
+    headerLines = rawLines.slice(headerStart, headerEnd).map((line) => line.trim());
+    preambleLines = rawLines.slice(0, headerStart).map((line) => line.trim()).filter(Boolean);
+    let dataLines = rawLines.slice(headerEnd).map((line) => line.trim());
+
+    while (dataLines.length && !dataLines[dataLines.length - 1]) {
+      dataLines.pop();
+    }
+
+    if (!dataLines.length) {
+      return { fallbackMessage: cleaned, error: "row_mismatch" };
+    }
+
+    if (dataLines.length % headerLines.length !== 0) {
+      rowMismatch = true;
+      const remainder = dataLines.length % headerLines.length;
+      const padCount = headerLines.length - remainder;
+      for (let i = 0; i < padCount; i += 1) {
+        dataLines.push("");
+      }
+    }
+
+    for (let i = 0; i < dataLines.length; i += headerLines.length) {
+      records.push(dataLines.slice(i, i + headerLines.length));
+    }
+  }
+
+  if (!headerLines.length || !records.length) {
+    return { fallbackMessage: cleaned, error: "row_mismatch" };
+  }
+
+  const mapped = await mapBatchHeaders(objectInfo.name, headerLines);
+  const mappedHeaders = mapped.headers || headerLines;
+
+  const batches = [];
+  const objectLabel = objectInfo.label || objectInfo.name || "records";
+  const createLine = buildBatchCreateLine(objectInfo);
+  for (let i = 0; i < records.length; i += BATCH_ROW_SIZE) {
+    const batchLines = [];
+    if (preambleLines.length) {
+      batchLines.push(...preambleLines);
+    } else {
+      batchLines.push(createLine);
+    }
+    batchLines.push(...mappedHeaders);
+    batchLines.push(...records.slice(i, i + BATCH_ROW_SIZE).flat());
+    batches.push(batchLines.join("\n"));
+  }
+
+  return {
+    batches,
+    totalRecords: records.length,
+    objectLabel,
+    objectName: objectInfo.name,
+    unmappedHeaders: mapped.unmapped || [],
+    rowMismatch,
+  };
+}
+
+async function buildBatchPayloadFromUpload(message, upload) {
+  if (!upload || !upload.content) return null;
+
+  const schema = await fetchBatchSchema();
+  if (!schema || !Array.isArray(schema.objects) || schema.objects.length === 0) {
+    return { error: "schema_unavailable" };
+  }
+
+  if (!shouldUsePendingBatchUpload(message, schema.objects)) {
+    return null;
+  }
+
+  const objectInfo = getBatchObjectFromMessage(message, schema.objects);
+  if (!objectInfo) {
+    return { error: "missing_object" };
+  }
+
+  const delimited = parseDelimitedBatch(upload.content);
+  if (!delimited) {
+    return { error: "missing_header" };
+  }
+
+  const headerLines = delimited.headerLines || [];
+  const records = delimited.records || [];
+  const rowMismatch = delimited.rowMismatch || false;
+
+  if (!headerLines.length || !records.length) {
+    return { error: "row_mismatch" };
+  }
+
+  const mapped = await mapBatchHeaders(objectInfo.name, headerLines);
+  const mappedHeaders = mapped.headers || headerLines;
+  const allowedSet = new Set((objectInfo.headers || []).map(normalizeBatchHeader));
+  const overlap = headerLines.filter((header) => allowedSet.has(normalizeBatchHeader(header))).length;
+  const headerMismatch = overlap < 2;
+
+  const batches = [];
+  const objectLabel = objectInfo.label || objectInfo.name || "records";
+  const createLine = buildBatchCreateLine(objectInfo);
+  for (let i = 0; i < records.length; i += BATCH_ROW_SIZE) {
+    const batchLines = [];
+    batchLines.push(createLine);
+    batchLines.push(...mappedHeaders);
+    batchLines.push(...records.slice(i, i + BATCH_ROW_SIZE).flat());
+    batches.push(batchLines.join("\n"));
+  }
+
+  return {
+    payload: {
+      batches,
+      totalRecords: records.length,
+      objectLabel,
+      objectName: objectInfo.name,
+      unmappedHeaders: mapped.unmapped || [],
+      rowMismatch,
+      headerMismatch,
+    }
+  };
+}
+
+async function handleBatchPayload(batchPayload, sessionId) {
+  if (!batchPayload) {
+    return false;
+  }
+
+  if (batchPayload.fallbackMessage) {
+    let warning = "⚠️ Batch format not recognized. Fix the headers and try again.";
+    if (batchPayload.error === "schema_unavailable") {
+      warning = "⚠️ Batch schema unavailable. Try again later.";
+    } else if (batchPayload.error === "unknown_object") {
+      warning = "⚠️ Batch object not found. Add the object name in the message.";
+    } else if (batchPayload.error === "missing_header") {
+      warning = "⚠️ Batch headers not detected. Include a header row.";
+    } else if (batchPayload.error === "row_mismatch") {
+      warning = "⚠️ Batch rows don't match the header count. Ensure every record has the same number of lines.";
+    }
+    showQuoteToast(warning, "error");
+    return true;
+  }
+
+  if (batchPayload.batches && batchPayload.batches.length > 0) {
+    const totalBatches = batchPayload.batches.length;
+    const totalRecords = batchPayload.totalRecords || (totalBatches * BATCH_ROW_SIZE);
+    const label = batchPayload.objectLabel || "records";
+    if (batchPayload.unmappedHeaders && batchPayload.unmappedHeaders.length) {
+      showQuoteToast("⚠️ Some headers were not mapped; they were sent as-is.", "info");
+    }
+    if (batchPayload.rowMismatch) {
+      showQuoteToast("⚠️ Batch rows were incomplete; missing values were left blank.", "info");
+    }
+    showQuoteToast(`Processing ${totalRecords} ${label} in ${totalBatches} batches...`, "info");
+    for (let i = 0; i < totalBatches; i += 1) {
+      if (!sessionId) {
+        sessionId = getCurrentSessionId();
+        flushPendingBatchLogs(sessionId);
+      }
+      showQuoteToast(`Batch ${i + 1}/${totalBatches} started`, "info");
+      const startedText = `⏳ Batch ${i + 1}/${totalBatches} started.`;
+      appendBatchStatusMessage(startedText, "info");
+      await logAgentMessage(buildBatchStatusMarkup(startedText, "info"), sessionId);
+      try {
+        await sendMessageRequest(batchPayload.batches[i], sessionId, {
+          keepFeedback: true,
+          allowRedirect: false,
+          batchInfo: { index: i + 1, total: totalBatches, label }
+        });
+        showQuoteToast(`Batch ${i + 1}/${totalBatches} completed`, "success");
+      } catch (error) {
+        console.error(`Batch ${i + 1} failed:`, error);
+        showQuoteToast(`⚠️ Batch ${i + 1}/${totalBatches} failed. Continuing...`, "error");
+        const failedText = `⚠️ Batch ${i + 1}/${totalBatches} failed. Continuing...`;
+        appendBatchStatusMessage(failedText, "error");
+        await logAgentMessage(buildBatchStatusMarkup(failedText, "error"), sessionId);
+      }
+      if (!sessionId) {
+        sessionId = getCurrentSessionId();
+      }
+    }
+    const metricsMessage = buildBatchMetricsMessage(batchPayload);
+    if (metricsMessage) {
+      const metricsText = `📊 Showing latest ${label} records.`;
+      appendBatchStatusMessage(metricsText, "info");
+      await logAgentMessage(buildBatchStatusMarkup(metricsText, "neutral"), sessionId);
+      try {
+        await sendMessageRequest(metricsMessage, sessionId, { keepFeedback: true, allowRedirect: false });
+      } catch (error) {
+        console.error("Batch metrics request failed:", error);
+        showQuoteToast("⚠️ Could not load the latest records yet. Try again in a moment.", "error");
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
+async function sendMessageRequest(userMessage, sessionId, options = {}) {
+  const payload = { message: userMessage };
+  if (sessionId) {
+    payload.session_id = sessionId;
+  }
+  if (options.batchInfo && typeof options.batchInfo === "object") {
+    const { index, total, label } = options.batchInfo;
+    if (Number.isInteger(index) && Number.isInteger(total)) {
+      payload.batch_info = { index, total, label };
+    }
+  }
+
+  const response = await fetch("/agents/chat/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`HTTP error! Status: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  handleAgentResponse(data, options);
+  return data;
+}
+
+function handleAgentResponse(data, options = {}) {
+  const keepFeedback = Boolean(options.keepFeedback);
+  const batchInfo = options.batchInfo || null;
+  const allowRedirect = options.allowRedirect !== false;
+  let aiResponse = data.response;
+  const chatBox = document.getElementById("chat-box");
+
+  if (aiResponse && aiResponse.session_created && aiResponse.redirect_url) {
+    if (allowRedirect) {
+      window.location.href = aiResponse.redirect_url;
+      return;
+    }
+    updateSessionIdFromRedirect(aiResponse.redirect_url);
+    if (aiResponse.response) {
+      aiResponse = aiResponse.response;
+      data.response = aiResponse;
+    }
+  }
+
+  let responseMessage = "";
+  let embeddedQuoteDetails = null;
+  let batchPrefix = "";
+  if (batchInfo && batchInfo.total) {
+    const labelText = batchInfo.label ? ` ${batchInfo.label}` : "";
+    batchPrefix = `
+      <div class="batch-result-header">
+        <span class="batch-result-pill">Batch ${batchInfo.index}/${batchInfo.total}</span>
+        <span class="batch-result-label">Results${labelText}</span>
+      </div>
+      <div class="batch-result-status">✅ Batch ${batchInfo.index}/${batchInfo.total} completed.</div>
+    `;
+  }
+
+  if (data.response && data.response.warnings) {
+    responseMessage += `<div class="warning-message"><strong>⚠️ Warnings:</strong><ul>`;
+    data.response.warnings.forEach(warning => {
+      responseMessage += `<li>${warning}</li>`;
+    });
+    responseMessage += `</ul></div>`;
+  }
+
+  if (data.response && data.response.history) {
+    responseMessage += renderApprovalHistory(data.response);
+  }
+  else if (data.response && data.response.single_record) {
+    responseMessage += renderSingleRecord(data.response.single_record);
+  }
+  else if (data.response && data.response.quote_details && !data.response.quote_notes) {
+    ensureQuoteStatusValue(data.response.quote_details);
+    responseMessage += renderQuoteDetails(data.response.quote_details);
+  }
+  else if (data.response && data.response.quote_notes) {
+    responseMessage += renderQuoteNotes(data.response.quote_details, data.response.quote_notes);
+  }
+  else if (data.response.download_url) {
+    responseMessage += renderPdfSuccess(data.response.download_url, data.response.document_version);
+  }
+  else if (data.response && data.response.validation_rules_details) {
+    responseMessage += renderValidationRuleDetails(data.response.validation_rules_details);
+  }
+  else if (data.response && data.response.hiddenMessage && data.response.temporaryMessage) {
+    if (!keepFeedback) {
+      hideAgentFeedback();
+    }
+    return;
+  }
+  else if (data.response && data.response.inclusion_rules_details) {
+    responseMessage += renderInclusionRuleDetails(data.response.message, data.response.inclusion_rules_details);
+  }
+  else if (data.response && data.response.exclusion_rules_details) {
+    responseMessage += renderExclusionRuleDetails(data.response.message, data.response.exclusion_rules_details);
+  }
+  else if (data.response && data.response.action_triggers_details) {
+    responseMessage += renderActionTriggersDetails(data.response.message, data.response.action_triggers_details);
+  }
+  else if (data.response && data.response.rules && data.response.read_only) {
+    responseMessage += renderRules(data.response.rules);
+  }
+  else if (data.response && data.response.email_alerts_details) {
+    responseMessage += renderEmailAlerstDetails(data.response.email_alerts_details);
+  }
+  else if (data.response && data.response.retrieved_records) {
+    const rendered = renderRetrievedRecords("", data.response.retrieved_records);
+    if (rendered && rendered.trim()) {
+      responseMessage += rendered;
+    } else if (data.response.message) {
+      const cleaned = stripStructuredSuffixFromAgentMessage(
+        data.response.message,
+        ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
+      );
+      responseMessage += `<div class="general-message">${cleaned.message}</div>`;
+    }
+  }
+  else if (data.response && data.response.openGraphicBuilder) {
+    modelSchema = data.response.cpq_model_schema || {};
+    console.log("📦 CPQ Model Schema loaded:", modelSchema);
+    responseMessage += renderGraphicBuilderForActionTrigger(
+      data.response.openGraphicBuilder
+    );
+  }
+  else if (data.response && data.response.message) {
+    const cleaned = stripStructuredSuffixFromAgentMessage(
+      data.response.message,
+      ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
+    );
+    responseMessage += `<div class="general-message">${cleaned.message}</div>`;
+
+    if (cleaned.stripped) {
+      embeddedQuoteDetails = extractEmbeddedJsonPayload(data.response.message, "quote_details:");
+    }
+  }
+  else {
+    responseMessage += `<div class="error-message">🤖 No response received. Please try again.</div>`;
+  }
+
+  if (batchPrefix) {
+    responseMessage = `${batchPrefix}${responseMessage}`;
+  }
+
+  if (!shouldSkipDuplicateAgentMessage(responseMessage)) {
+    const agentBubble = appendMessage("agent", `<div class="senderagent"><img width="110px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
+    if (agentBubble) {
+      const target = agentBubble.querySelector(".message .general-message") || agentBubble.querySelector(".message");
+      if (embeddedQuoteDetails) {
+        attachQuoteDetailsToggle(target, embeddedQuoteDetails);
+      }
+      initializeRecordListLayouts(agentBubble);
+      if (data.response && data.response.update_details) {
+        attachQuoteDetailsToggle(target, data.response.update_details);
+      }
+    }
+    window.lastAgentMessageAt = Date.now();
+  }
+  loadPendingAttachments();
+  if (!keepFeedback) {
+    hideAgentFeedback();
+  }
+  scrollToBottom("sendMessage:agentResponse", true);
+  if (chatBox) {
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
+}
+
 /**
 * ✅ Send user message to the agent and handle response
 */
@@ -1454,188 +2357,64 @@ async function sendMessage() {
       updateAgentsEmptyState();
     }
 
-    // Append user message to chat
     const safeUserMessage = escapeHtml(userMessage).replace(/\n/g, "<br>");
     appendMessage(
       "user",
       `<div class="chat-text user"><div class="sender">You: </div><div class="message">${safeUserMessage}</div></div>`
     )
 
-    inputField.value = ""; // Clear input field
+    inputField.value = "";
     if (inputField && inputField.tagName === "TEXTAREA") {
       inputField.style.height = "auto";
       inputField.style.overflowY = "hidden";
     }
 
-    // Auto-scroll chat
     scrollToBottom("sendMessage:user", true);
 
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get("session_id");
     try {
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get("session_id");  // 👈 Obtén el session_id desde la URL
-
         showAgentFeedback();
-
         requestAnimationFrame(() => scrollToBottom("sendMessage:pending"));
-
-        const response = await fetch("/agents/chat/", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: userMessage, session_id: sessionId})
-        });
-
-        //console.log("Full Response:", response);
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP error! Status: ${response.status} - ${errorText}`);
-        }
-
-        const data = await response.json();
-
-        const aiResponse = data.response;
-
-        // --- 1. Check if a new session was created ---
-        if (aiResponse.session_created && aiResponse.redirect_url) {
-            window.location.href = aiResponse.redirect_url; // Redirect to new session
+        if (pendingBatchUpload) {
+          if (shouldDiscardBatchUpload(userMessage)) {
+            setPendingBatchUpload(null);
+            appendBatchStatusMessage("CSV upload discarded.", "info");
+            hideAgentFeedback();
             return;
+          }
+          const uploadResult = await buildBatchPayloadFromUpload(userMessage, pendingBatchUpload);
+          if (uploadResult) {
+            if (uploadResult.error) {
+              let warning = "⚠️ Upload needs a header row. Please check the CSV.";
+              if (uploadResult.error === "schema_unavailable") {
+                warning = "⚠️ Batch schema unavailable. Try again later.";
+              } else if (uploadResult.error === "missing_object") {
+                warning = "⚠️ Tell me which object to create (e.g. 'Create Leads from upload').";
+              } else if (uploadResult.error === "row_mismatch") {
+                warning = "⚠️ Upload rows don't match the header count. Ensure every record has the same number of columns.";
+              }
+              showQuoteToast(warning, "error");
+              hideAgentFeedback();
+              return;
+            }
+            if (uploadResult.payload && uploadResult.payload.headerMismatch) {
+              showQuoteToast("⚠️ Upload headers do not closely match the selected object.", "info");
+            }
+            const handled = await handleBatchPayload(uploadResult.payload, sessionId);
+            if (handled) {
+              setPendingBatchUpload(null);
+              hideAgentFeedback();
+              return;
+            }
+          }
         }
-
-        let responseMessage = ""; // Initialize message variable
-        let embeddedQuoteDetails = null;
-
-        // ✅ Handle Missing Product Warnings
-        if (data.response && data.response.warnings) {
-            responseMessage += `<div class="warning-message"><strong>⚠️ Warnings:</strong><ul>`;
-            data.response.warnings.forEach(warning => {
-                responseMessage += `<li>${warning}</li>`;
-            });
-            responseMessage += `</ul></div>`;
-        }
-
-        // ✅ Handle Approval History Response
-        if (data.response && data.response.history) {
-            responseMessage += renderApprovalHistory(data.response);
-        }
-        else if (data.response && data.response.single_record) {
-          responseMessage += renderSingleRecord(data.response.single_record);
-        }
-        // ✅ Handle Quote Details Response
-        else if (data.response && data.response.quote_details && !data.response.quote_notes) {
-          //console.log("Quote Details");
-          ensureQuoteStatusValue(data.response.quote_details);
-          responseMessage += renderQuoteDetails(data.response.quote_details);
-        }
-        // ✅ Handle Quote Notes Response
-        else if (data.response && data.response.quote_notes) {
-          //console.log("Quote Notes");
-          responseMessage += renderQuoteNotes(data.response.quote_details, data.response.quote_notes);
-        }
-        // ✅ Handle Quote PDF Response
-        else if (data.response.download_url) {
-            responseMessage += renderPdfSuccess(data.response.download_url, data.response.document_version);
-        }
-        // ✅ Handle Validation Rules Response
-        else if (data.response && data.response.validation_rules_details) {
-          //console.log(data.response);
-          //console.log(data.response.validation_rules_details)
-          responseMessage += renderValidationRuleDetails(data.response.validation_rules_details);
-        }
-        else if (data.response && data.response.hiddenMessage && data.response.temporaryMessage) {
+        const batchPayload = await buildBatchPayload(userMessage);
+        if (await handleBatchPayload(batchPayload, sessionId)) {
           hideAgentFeedback();
           return;
         }
-        // ✅ Handle Inclusion Rules Response
-        else if (data.response && data.response.inclusion_rules_details) {
-          responseMessage += renderInclusionRuleDetails(data.response.message, data.response.inclusion_rules_details);
-        }
-        // ✅ Handle Exclusion Rules Response
-        else if (data.response && data.response.exclusion_rules_details) {
-          responseMessage += renderExclusionRuleDetails(data.response.message, data.response.exclusion_rules_details);
-        }
-        // ✅ Handle Action Triggers Response
-        else if (data.response && data.response.action_triggers_details) {
-          responseMessage += renderActionTriggersDetails(data.response.message, data.response.action_triggers_details);
-        }
-        // ✅ Show Rules
-        else if (data.response && data.response.rules && data.response.read_only) {
-          //console.log(data.response);
-          //console.log(data.response.validation_rules_details)
-          responseMessage += renderRules(data.response.rules);
-        }
-        // ✅ Email Alerts
-        else if (data.response && data.response.email_alerts_details) {
-          //console.log(data.response);
-          //console.log(data.response.email_alerts_details)
-          responseMessage += renderEmailAlerstDetails(data.response.email_alerts_details);
-        }
-        // ✅ Analytics Records - retrieved_records
-        else if (data.response && data.response.retrieved_records) {
-          const rendered = renderRetrievedRecords("", data.response.retrieved_records);
-          if (rendered && rendered.trim()) {
-            responseMessage += rendered;
-          } else if (data.response.message) {
-            const cleaned = stripStructuredSuffixFromAgentMessage(
-              data.response.message,
-              ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
-            );
-            responseMessage += `<div class="general-message">${cleaned.message}</div>`;
-          }
-        }
-        // ✅ openGraphicBuilder - for Action Triggers graphic mode
-        else if (data.response && data.response.openGraphicBuilder) {
-
-          // 🔑 PASO 1: guardar schema global
-          modelSchema = data.response.cpq_model_schema || {};
-          console.log("📦 CPQ Model Schema loaded:", modelSchema);
-
-          // 🔑 PASO 2: renderizar builder
-          responseMessage += renderGraphicBuilderForActionTrigger(
-            data.response.openGraphicBuilder
-          );
-        }
-        // ✅ Default Response (Handle General Messages)
-        else if (data.response && data.response.message) {
-            const cleaned = stripStructuredSuffixFromAgentMessage(
-              data.response.message,
-              ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
-            );
-            responseMessage += `<div class="general-message">${cleaned.message}</div>`;
-
-            if (cleaned.stripped) {
-              embeddedQuoteDetails = extractEmbeddedJsonPayload(data.response.message, "quote_details:");
-            }
-        }
-        // ✅ Handle Unexpected Empty Response
-        else {
-            responseMessage += `<div class="error-message">🤖 No response received. Please try again.</div>`;
-        }
-
-        // ✅ Append the final response message to the chat
-        if (!shouldSkipDuplicateAgentMessage(responseMessage)) {
-          const agentBubble = appendMessage("agent", `<div class="senderagent"><img width="110px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo"> </div> <div class="message">${responseMessage}</div>`);
-          if (agentBubble) {
-            const target = agentBubble.querySelector(".message .general-message") || agentBubble.querySelector(".message");
-            if (embeddedQuoteDetails) {
-              attachQuoteDetailsToggle(target, embeddedQuoteDetails);
-            }
-            // Persistently show quote details when backend provides `update_details`
-            // (avoid temporary message that disappears).
-            if (data.response && data.response.update_details) {
-              attachQuoteDetailsToggle(target, data.response.update_details);
-            }
-          }
-          window.lastAgentMessageAt = Date.now();
-        }
-        loadPendingAttachments();
-        hideAgentFeedback();
-        scrollToBottom("sendMessage:agentResponse", true);
-
-        // NOTE: `update_details` are now attached as a persistent toggle above; do not render as temporary.
-
-        // Auto-scroll chat
-        chatBox.scrollTop = chatBox.scrollHeight;
+        await sendMessageRequest(userMessage, sessionId);
     } catch (error) {
         console.error("Error:", error);
         appendMessage("agent-message", `<strong>Error:</strong> ${error.message}`);
@@ -4041,6 +4820,7 @@ async function showRelatedRecordsList({ relationId, anchorMessage, parentName, c
       if (config.relatedAttr) {
         bubble.setAttribute(config.relatedAttr, String(relationId));
       }
+      initializeRecordListLayouts(bubble);
       bubble.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   } catch (error) {
@@ -7387,6 +8167,42 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       }
       return String(value);
     };
+    const resolveRecordFieldValue = (record, candidates) => {
+      const keys = Object.keys(record || {});
+      if (!keys.length) return "";
+      const lookup = new Map(keys.map((key) => [key.toLowerCase(), key]));
+      for (const candidate of candidates) {
+        const match = lookup.get(String(candidate).toLowerCase());
+        if (!match) continue;
+        const value = record[match];
+        if (value !== null && value !== undefined && value !== "") {
+          return value;
+        }
+      }
+      return "";
+    };
+    const resolveRecordObjectName = (record, fallback) => {
+      const objectValue = resolveRecordFieldValue(record, [
+        "object",
+        "record_object",
+        "api_object",
+        "object_name",
+      ]);
+      return objectValue || fallback;
+    };
+    const buildListViewValue = (record, viewField, fallbackObject, idCandidates) => {
+      if (!record || !viewField) return "";
+      const viewLower = String(viewField).toLowerCase();
+      const existing = resolveRecordFieldValue(record, [viewLower]);
+      if (existing) return existing;
+      const recordId = resolveRecordFieldValue(record, idCandidates);
+      if (!recordId) return "";
+      if (viewLower === "view_quote") {
+        return buildQuoteListViewButton(recordId);
+      }
+      const objectName = resolveRecordObjectName(record, fallbackObject);
+      return buildRecordListViewButton(recordId, objectName);
+    };
 
     // If payload arrives as string, try to parse it
     if (typeof recordsDetails === "string") {
@@ -7750,6 +8566,24 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         display: block;
       }
 
+      .email-alert-container.popup {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+
+      .email-alert-container.popup .email-alert-header {
+        flex: 0 0 auto;
+      }
+
+      .email-alert-container.popup .records-table-wrapper,
+      .email-alert-container.popup .records-table-wrapper--list,
+      .email-alert-container.popup .records-leads-table {
+        flex: 1 1 auto;
+        max-height: none;
+        height: 100%;
+      }
+
       /* Popup general */
       .records-overlay {
         position: fixed;
@@ -7910,6 +8744,9 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         ? `<span class="material-icons" aria-hidden="true" style="vertical-align:middle;font-size:20px;margin-right:6px;font-family:'Material Icons';color:#9ca3af;">trending_up</span>Opportunity`
         : objectName;
       const aggId = `agg-${objectName}-${Math.random().toString(36).slice(2, 8)}`;
+      const isTimeGroup = ["month", "week", "day", "year"].includes(String(agg.group_by || "").toLowerCase());
+      const groupLabel = agg.group_label || agg.group_field || "Group";
+      const groupHeader = isTimeGroup ? "Period" : normalizeFieldName(String(groupLabel));
       html += `
         <div class="email-alert-container" style="margin-bottom:10px; position:relative;">
           <div class="email-alert-header" style="
@@ -7953,7 +8790,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
             ${series.length ? `
               <div id="${aggId}-table" class="records-table-wrapper">
                 <table class="records-table">
-                  <thead><tr><th>Period</th><th>Value</th></tr></thead>
+                  <thead><tr><th>${groupHeader}</th><th>Value</th></tr></thead>
                   <tbody>
                     ${series.map(item => `
                       <tr>
@@ -7969,6 +8806,8 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
                   data-labels='${JSON.stringify(series.map(s => formatPeriodLabel(s.period, agg.group_by)))}'
                   data-values='${JSON.stringify(series.map(s => s.value || 0))}'
                   data-money='${money ? "1" : "0"}'
+                  data-group-by='${escapeHtml(String(agg.group_by || ""))}'
+                  data-series-label='${escapeHtml(String(labelText || "Total"))}'
                   style="width:100%; height:100%;"></canvas>
               </div>
             ` : ""}
@@ -8059,21 +8898,30 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         `;
       }).join("");
 
+      const leadIdCandidates = ["id", "record_id", "lead_id", "leadid", "sfid", "salesforce_id"];
       const allFields = Object.keys(records[0] || {});
+      const lowerFields = allFields.map((field) => String(field).toLowerCase());
+      const hasTable = allFields.length > 0;
+      const hasViewField = lowerFields.includes("view_record") || lowerFields.includes("view_quote");
+      const hasRecordIds = records.some((record) => resolveRecordFieldValue(record, leadIdCandidates));
+      const tableFields = hasViewField || !hasRecordIds ? allFields : [...allFields, "view_record"];
       const tableClass = `records-table records-table--${String(objectName || '')
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')}`;
-      const tableHtml = allFields.length ? `
-        <div class="records-table-wrapper records-leads-table">
+      const tableHtml = hasTable ? `
+        <div class="records-table-wrapper records-leads-table" data-record-object="${escapeHtml(String(objectName))}" data-fields='${escapeHtml(JSON.stringify(tableFields))}'>
           <table class="${tableClass}">
             <thead>
-              <tr>${allFields.map(f => `<th data-field="${escapeHtml(String(f))}">${normalizeFieldName(f)}</th>`).join('')}</tr>
+              <tr>${tableFields.map(f => `<th data-field="${escapeHtml(String(f))}">${normalizeFieldName(f)}</th>`).join('')}</tr>
             </thead>
             <tbody>
               ${records.map(record => `
                 <tr>
-                  ${allFields.map(field => {
-                    let value = record[field];
+                  ${tableFields.map(field => {
+                    const fieldLower = String(field).toLowerCase();
+                    let value = fieldLower === "view_record" || fieldLower === "view_quote"
+                      ? buildListViewValue(record, fieldLower, objectName, leadIdCandidates)
+                      : record[field];
                     if (value === null || value === undefined || value === "") return `<td data-field="${escapeHtml(String(field))}">—</td>`;
                     if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(T.*)?$/.test(value)) {
                       const d = new Date(value);
@@ -8095,7 +8943,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       ` : "";
 
       html += `
-        <div class="email-alert-container" style="margin-bottom:10px; position:relative;">
+        <div class="email-alert-container" style="margin-bottom:10px; position:relative;"${hasTable ? ` data-record-object="${escapeHtml(String(objectName))}"` : ""}>
           <div class="email-alert-header" style="
             display:flex;
             justify-content:space-between;
@@ -8106,10 +8954,17 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
             border-radius:12px 12px 0 0;
           ">
             <h4 style="margin:0;">${objectName} records.</h4>
-            <button onclick="makeDraggable(this)" class="record-popout-btn">
-              <span class="material-icons" aria-hidden="true">open_in_new</span>
-            </button>
+            <div class="records-header-actions">
+              ${hasTable ? `
+              <button type="button" class="records-columns-btn" data-object="${escapeHtml(String(objectName))}" aria-label="Choose columns" title="Choose columns">
+                <span class="material-icons" aria-hidden="true">view_column</span>
+              </button>` : ""}
+              <button onclick="makeDraggable(this)" class="record-popout-btn">
+                <span class="material-icons" aria-hidden="true">open_in_new</span>
+              </button>
+            </div>
           </div>
+          ${hasTable ? `<div class="records-columns-panel" data-object="${escapeHtml(String(objectName))}"></div>` : ""}
           <div class="records-leads-grid">
             ${leadCards}
           </div>
@@ -8119,7 +8974,33 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       continue;
     }
 
+    const recordIdCandidates = [
+      "id",
+      "record_id",
+      "lead_id",
+      "leadid",
+      "accid",
+      "contactid",
+      "oppid",
+      "prdid",
+      "qteid",
+      "activityid",
+      "tenant_id",
+      "external_id",
+      "hs_deal_id",
+      "sfid",
+      "salesforce_id",
+      "custom_identifier",
+    ];
     const allFields = Object.keys(records[0] || {});
+    const lowerFields = allFields.map((field) => String(field).toLowerCase());
+    const hasViewQuote = lowerFields.includes("view_quote");
+    const hasViewRecord = lowerFields.includes("view_record");
+    const hasRecordIds = records.some((record) => resolveRecordFieldValue(record, recordIdCandidates));
+    const hasQuoteIds = lowerFields.includes("qteid");
+    const isQuoteObject = hasViewQuote || hasQuoteIds || normalizedObject === "quote" || normalizedObject === "quotes";
+    const viewField = isQuoteObject ? "view_quote" : "view_record";
+    const tableFields = (hasViewQuote || hasViewRecord || !hasRecordIds) ? allFields : [...allFields, viewField];
     const normalizedSlug = String(objectName || "").toLowerCase().replace(/[^a-z0-9]+/g, '-');
     const tableClass = `records-table records-table--${normalizedSlug}`;
     const cardGridClass = `records-card-grid records-card-grid--${normalizedSlug}`;
@@ -8286,18 +9167,26 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       `;
     }).join("");
 
-    const tableHtml = allFields.length ? `
-      <div class="records-table-wrapper records-table-wrapper--list">
+    const hasTable = allFields.length > 0;
+    const tableHtml = hasTable ? `
+      <div class="records-table-wrapper records-table-wrapper--list" data-record-object="${escapeHtml(String(objectName))}" data-fields='${escapeHtml(JSON.stringify(tableFields))}'>
         <table class="${tableClass}">
           <thead>
-            <tr>${allFields.map(f => `<th data-field="${escapeHtml(String(f))}">${normalizeFieldName(f)}</th>`).join('')}</tr>
+            <tr>${tableFields.map(f => `<th data-field="${escapeHtml(String(f))}">${normalizeFieldName(f)}</th>`).join('')}</tr>
           </thead>
           <tbody>
             ${records.map(record => `
               <tr>
-                ${allFields.map(field => {
-                  const formatted = formatRecordValue(field, record[field]);
-                  return `<td data-field="${escapeHtml(String(field))}">${escapeHtml(String(formatted))}</td>`;
+                ${tableFields.map(field => {
+                  const fieldLower = String(field).toLowerCase();
+                  const rawValue = (fieldLower === "view_record" || fieldLower === "view_quote")
+                    ? buildListViewValue(record, fieldLower, objectName, recordIdCandidates)
+                    : record[field];
+                  const formatted = formatRecordValue(field, rawValue);
+                  const valueHtml = (fieldLower === "view_record" || fieldLower === "view_quote")
+                    ? String(formatted)
+                    : escapeHtml(String(formatted));
+                  return `<td data-field="${escapeHtml(String(field))}">${valueHtml}</td>`;
                 }).join('')}
               </tr>`).join('')}
           </tbody>
@@ -8306,7 +9195,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
     ` : "";
 
     html += `
-      <div class="email-alert-container" style="margin-bottom:10px; position:relative;">
+      <div class="email-alert-container" style="margin-bottom:10px; position:relative;"${hasTable ? ` data-record-object="${escapeHtml(String(objectName))}"` : ""}>
         <div class="email-alert-header" style="
           display:flex;
           justify-content:space-between;
@@ -8317,10 +9206,17 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
           border-radius:12px 12px 0 0;
         ">
           <h4 style="margin:0;">${objectName} records.</h4>
-          <button onclick="makeDraggable(this)" class="record-popout-btn">
-            <span class="material-icons" aria-hidden="true">open_in_new</span>
-          </button>
+          <div class="records-header-actions">
+            ${hasTable ? `
+            <button type="button" class="records-columns-btn" data-object="${escapeHtml(String(objectName))}" aria-label="Choose columns" title="Choose columns">
+              <span class="material-icons" aria-hidden="true">view_column</span>
+            </button>` : ""}
+            <button onclick="makeDraggable(this)" class="record-popout-btn">
+              <span class="material-icons" aria-hidden="true">open_in_new</span>
+            </button>
+          </div>
         </div>
+        ${hasTable ? `<div class="records-columns-panel" data-object="${escapeHtml(String(objectName))}"></div>` : ""}
         <div class="${cardGridClass}">
           ${recordCards || `<div class="records-card-empty">No details available.</div>`}
         </div>
@@ -8418,23 +9314,27 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
           const labels = JSON.parse(canvas.dataset.labels || "[]");
           const values = JSON.parse(canvas.dataset.values || "[]");
           const isMoney = canvas.dataset.money === "1";
+          const groupBy = String(canvas.dataset.groupBy || "").toLowerCase();
+          const isTimeGroup = ["month", "week", "day", "year"].includes(groupBy);
+          const seriesLabel = canvas.dataset.seriesLabel || (isMoney ? "Revenue" : "Total");
+          const chartType = isTimeGroup ? "line" : "bar";
           const ctx = canvas.getContext("2d");
           if (canvas._chartInstance) {
             canvas._chartInstance.destroy();
           }
           canvas._chartInstance = new Chart(ctx, {
-            type: "line",
+            type: chartType,
             data: {
               labels,
               datasets: [
                 {
-                  label: "Revenue",
+                  label: seriesLabel,
                   data: values,
                   borderColor: "#16a34a",
                   backgroundColor: "rgba(22, 163, 74, 0.15)",
                   tension: 0.35,
-                  fill: true,
-                  pointRadius: 4,
+                  fill: chartType === "line",
+                  pointRadius: chartType === "line" ? 4 : 0,
                   pointBackgroundColor: "#16a34a"
                 }
               ]
@@ -8509,6 +9409,149 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
     console.warn("renderRetrievedRecords failed:", e);
     return `<div class="error-message">Unable to display records.</div>`;
   }
+}
+
+const listRecordLayoutCache = {};
+
+async function fetchListRecordLayout(objectName) {
+  const key = String(objectName || "");
+  if (!key) return { order: [], hidden: [] };
+  if (listRecordLayoutCache[key]) return listRecordLayoutCache[key];
+  try {
+    const response = await fetch(`/agents/list-record-layout/?object=${encodeURIComponent(key)}`);
+    const data = await response.json();
+    const layout = {
+      order: Array.isArray(data.order) ? data.order : [],
+      hidden: Array.isArray(data.hidden) ? data.hidden : []
+    };
+    listRecordLayoutCache[key] = layout;
+    return layout;
+  } catch (err) {
+    console.warn("Failed to load list layout:", err);
+    return { order: [], hidden: [] };
+  }
+}
+
+async function saveListRecordLayout(objectName, layout) {
+  const key = String(objectName || "");
+  if (!key) return;
+  listRecordLayoutCache[key] = layout;
+  try {
+    await fetch("/agents/list-record-layout/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        object: key,
+        order: Array.isArray(layout.order) ? layout.order : [],
+        hidden: Array.isArray(layout.hidden) ? layout.hidden : []
+      })
+    });
+  } catch (err) {
+    console.warn("Failed to save list layout:", err);
+  }
+}
+
+function applyListColumnVisibility(table, hiddenFields) {
+  if (!table) return;
+  const hiddenSet = new Set((hiddenFields || []).map((f) => String(f).toLowerCase()));
+  table.querySelectorAll("th[data-field], td[data-field]").forEach((cell) => {
+    const key = String(cell.dataset.field || "").toLowerCase();
+    if (!key) return;
+    if (hiddenSet.has(key)) {
+      cell.classList.add("records-col-hidden");
+    } else {
+      cell.classList.remove("records-col-hidden");
+    }
+  });
+}
+
+function buildListColumnsPanel(panel, fields, hiddenFields, onToggle) {
+  const hiddenSet = new Set((hiddenFields || []).map((f) => String(f).toLowerCase()));
+  const rows = fields.map((field) => {
+    const key = String(field);
+    const keyLower = key.toLowerCase();
+    const checked = hiddenSet.has(keyLower) ? "" : "checked";
+    return `
+      <label class="records-columns-item">
+        <input type="checkbox" data-field="${escapeHtml(key)}" ${checked}>
+        <span>${normalizeFieldName(key)}</span>
+      </label>
+    `;
+  }).join("");
+
+  panel.innerHTML = `
+    <div class="records-columns-title">
+      <span>Columns</span>
+      <button type="button" class="records-columns-close" aria-label="Close columns panel">
+        <span class="material-icons" aria-hidden="true">close</span>
+      </button>
+    </div>
+    <div class="records-columns-list">
+      ${rows}
+    </div>
+  `;
+
+  const closeBtn = panel.querySelector(".records-columns-close");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      panel.classList.remove("is-open");
+    });
+  }
+
+  panel.querySelectorAll("input[type='checkbox']").forEach((input) => {
+    input.addEventListener("change", () => {
+      const key = String(input.dataset.field || "").toLowerCase();
+      if (!key) return;
+      if (input.checked) {
+        hiddenSet.delete(key);
+      } else {
+        hiddenSet.add(key);
+      }
+      onToggle(Array.from(hiddenSet));
+    });
+  });
+}
+
+async function initializeRecordListLayouts(root = document) {
+  const containers = root.querySelectorAll(".email-alert-container[data-record-object]");
+  containers.forEach(async (container) => {
+    if (container.dataset.columnsReady === "true") return;
+    const objectName = container.dataset.recordObject;
+    const tableWrapper = container.querySelector(".records-table-wrapper[data-fields]");
+    const panel = container.querySelector(".records-columns-panel");
+    const columnsBtn = container.querySelector(".records-columns-btn");
+    if (!objectName || !tableWrapper || !panel || !columnsBtn) return;
+
+    let fields = [];
+    try {
+      fields = JSON.parse(tableWrapper.dataset.fields || "[]");
+    } catch (err) {
+      fields = [];
+    }
+    if (!Array.isArray(fields) || fields.length === 0) return;
+
+    const table = tableWrapper.querySelector("table");
+    const layout = await fetchListRecordLayout(objectName);
+    const normalizedOrder = Array.isArray(layout.order) ? layout.order : [];
+    const orderedFields = normalizedOrder.length
+      ? [...normalizedOrder.filter((field) => fields.includes(field)), ...fields.filter((field) => !normalizedOrder.includes(field))]
+      : fields;
+    const hidden = Array.isArray(layout.hidden) ? layout.hidden : [];
+
+    applyListColumnVisibility(table, hidden);
+
+    buildListColumnsPanel(panel, orderedFields, hidden, (updatedHidden) => {
+      applyListColumnVisibility(table, updatedHidden);
+      saveListRecordLayout(objectName, { order: orderedFields, hidden: updatedHidden });
+    });
+
+    columnsBtn.addEventListener("click", () => {
+      panel.classList.toggle("is-open");
+    });
+
+    container.dataset.columnsReady = "true";
+  });
 }
 
 // =====================================================

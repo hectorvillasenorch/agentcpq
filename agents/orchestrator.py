@@ -3,6 +3,7 @@ import re
 import json
 import os
 import logging
+from html import escape as html_escape
 from agents.quote_agent import quote_agent
 from agents.product_agent import product_agent
 from agents.bundles_agent import bundles_agent
@@ -29,6 +30,30 @@ def _decode_chat_text(text: str) -> str:
         except UnicodeDecodeError:
             pass
     return decoded
+
+
+def _build_batch_prefix(session_data: dict) -> str:
+    if not session_data:
+        return ""
+    batch_info = session_data.pop("batch_info", None)
+    if not isinstance(batch_info, dict):
+        return ""
+    try:
+        index = int(batch_info.get("index"))
+        total = int(batch_info.get("total"))
+    except (TypeError, ValueError):
+        return ""
+    if index <= 0 or total <= 0:
+        return ""
+    label = str(batch_info.get("label") or "").strip()
+    label_text = f" {html_escape(label)}" if label else ""
+    return (
+        '<div class="batch-result-header">'
+        f'<span class="batch-result-pill">Batch {index}/{total}</span>'
+        f'<span class="batch-result-label">Results{label_text}</span>'
+        "</div>"
+        f'<div class="batch-result-status">✅ Batch {index}/{total} completed.</div>'
+    )
 from django.contrib.auth.models import User
 from django.utils import timezone
 from uuid import uuid4
@@ -550,6 +575,8 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
     if decision in action_map:
         result = action_map[decision](user, decision, user_message, session_data)
 
+        batch_prefix = _build_batch_prefix(session_data)
+
         suppress_chat = result.get("suppress_chat", False)
         hiddenMessage = result.get("hiddenMessage", False)
 
@@ -565,7 +592,7 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
 
             # Persist only the structured payloads needed to re-render the UI on refresh.
             structured_keys = ("quote_details", "single_record", "retrieved_records", "validation_rules_details")
-            agent_message_for_storage = display_message
+            agent_message_for_storage = f"{batch_prefix}{display_message}" if batch_prefix else display_message
             for key in structured_keys:
                 if key in result:
                     agent_message_for_storage += (
@@ -601,10 +628,12 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
 
         agent_message = _strip_session_summary_text(_decode_chat_text(agent_message))
 
+        agent_message_for_storage = f"{batch_prefix}{agent_message}" if batch_prefix else agent_message
+
         ChatMessage.objects.create(
             session=chat_session,
             sender="agent",
-            content=agent_message,
+            content=agent_message_for_storage,
             hiddenMessage=hiddenMessage
         )
 

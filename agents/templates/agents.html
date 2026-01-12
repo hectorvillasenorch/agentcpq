@@ -157,11 +157,19 @@
                 </button>
             </div>
             <input type="file" id="upload-input" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" hidden>
+            <input type="file" id="batch-upload-input" accept=".csv,.tsv,text/csv,text/tab-separated-values" hidden>
             
             <div class="attachment-preview" id="attachment-preview">
-              <button type="button" id="upload-browse-btn" class="upload-clip-btn" aria-label="Attach file">
-                    <span class="material-icons" aria-hidden="true">attach_file</span>
+              <div class="attachment-actions">
+                <button type="button" id="upload-browse-btn" class="upload-clip-btn" aria-label="Attach file">
+                  <span class="material-icons" aria-hidden="true">attach_file</span>
                 </button>
+                <button type="button" id="batch-upload-btn" class="upload-clip-btn upload-csv-btn" aria-label="Upload CSV" title="Upload CSV for batch">
+                  <span class="material-icons" aria-hidden="true">table_view</span>
+                </button>
+              </div>
+              <div class="attachment-details" data-attachment-details></div>
+              <div class="batch-upload-status" id="batch-upload-status"></div>
             </div>
           </div>
         

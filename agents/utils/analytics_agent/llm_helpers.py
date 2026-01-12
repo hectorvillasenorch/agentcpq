@@ -162,7 +162,8 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
                 "aggregate": {
                     "function": "sum|count|avg|min|max",
                     "field": <field_name>,
-                    "group_by": "month|week|day|null",
+                    "group_by": "month|week|day|field|null",
+                    "group_field": <field_name_or_null>,
                     "date_field": <date_field_name_or_null>,
                     "range": "last_3_months|last_month|last_90_days|custom|null"
                 },
@@ -203,6 +204,7 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
     - "conditions" (a list of conditions for filtering)
     - "sort" (optional, can be null)
     - "aggregate" (optional; include when the user asks for totals, averages, counts, or charts/over-time views. Use group_by when the user wants a chart series.)
+      - For categorical grouping (e.g., "group by source"), set group_by="field" and group_field to the field name. Use function="count" and field="id" when counting records.
       - For date ranges, prefer: this_year, next_year, this_month, last_3_months, last_month, last_90_days, three_months, six_months, nine_months, twelve_months.
       - If the user asks for a time-bound metric (e.g., “this year”, “this month”, “last 3 months”) set aggregate.range accordingly.
 
