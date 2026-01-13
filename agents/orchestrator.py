@@ -824,6 +824,7 @@ def get_action_map():
 
 def get_trigger_phrases():
     return [
+        "pdf",
         "generate doc",
         "generate document",
         "generate pdf",
