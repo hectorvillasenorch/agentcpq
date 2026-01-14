@@ -66,7 +66,14 @@ from botocore.config import Config
 import stripe
 import requests
 from django.db import transaction
-from cpq.permissions import get_custom_object_perms, perms_to_template_dict, user_can_access_custom_object
+from cpq.permissions import (
+    apply_partner_access_filter,
+    get_custom_object_perms,
+    is_partner_user,
+    partner_can_access_record,
+    perms_to_template_dict,
+    user_can_access_custom_object,
+)
 
 # HubSpot sync
 from hubspot.views import sync_opportunity_to_hubspot
@@ -513,9 +520,124 @@ def _redirect_to_custom_fields(object_name=None):
 
 def product_list(request):
     """Fetch all products and display them in a table."""
+    if request.method == "POST":
+        if not request.user.is_authenticated:
+            return HttpResponseForbidden("You must be logged in to manage products.")
+
+        action = (request.POST.get("action") or "").strip().lower()
+        next_url = request.POST.get("next") or request.GET.get("next") or request.path
+
+        if action not in {"create", "update"}:
+            messages.error(request, "Invalid product action.")
+            return redirect(next_url)
+
+        product = None
+        if action == "update":
+            product_id = request.POST.get("product_id")
+            if not product_id:
+                messages.error(request, "Missing product ID for update.")
+                return redirect(next_url)
+            product = get_object_or_404(Product, id=product_id)
+            if not (request.user.is_staff or request.user.is_superuser):
+                if is_partner_user(request.user) and product.created_by_id != request.user.id:
+                    return HttpResponseForbidden("You do not have permission to edit this product.")
+        else:
+            product = Product(created_by=request.user)
+
+        name = (request.POST.get("name") or "").strip()
+        sku = (request.POST.get("sku") or "").strip()
+        family = (request.POST.get("family") or "").strip()
+        description = (request.POST.get("description") or "").strip()
+        price_raw = (request.POST.get("price") or "").strip()
+        term_raw = (request.POST.get("term") or "").strip()
+        fixed_price_raw = (request.POST.get("fixed_price") or "").strip()
+        price_mode = (request.POST.get("price_mode") or "").strip().lower()
+
+        errors = []
+        if not name:
+            errors.append("Name is required.")
+        if not sku:
+            errors.append("SKU is required.")
+        if not family:
+            errors.append("Family is required.")
+
+        price = None
+        if price_raw:
+            try:
+                price = Decimal(price_raw)
+            except InvalidOperation:
+                errors.append("Price must be a valid number.")
+        else:
+            errors.append("Price is required.")
+
+        term = None
+        if term_raw:
+            try:
+                term = int(term_raw)
+            except (TypeError, ValueError):
+                errors.append("Term must be a whole number.")
+
+        fixed_price = None
+        if fixed_price_raw:
+            try:
+                fixed_price = Decimal(fixed_price_raw)
+            except InvalidOperation:
+                errors.append("Fixed price must be a valid number.")
+
+        if price_mode not in {"fixed", "sum"}:
+            price_mode = "fixed"
+
+        if errors:
+            for error in errors:
+                messages.error(request, error)
+            return redirect(next_url)
+
+        product.name = name
+        product.sku = sku
+        product.family = family
+        product.description = description
+        product.price = price
+        product.term = term
+        product.is_subscription = request.POST.get("is_subscription") == "on"
+        product.is_bundle = request.POST.get("is_bundle") == "on"
+        product.is_active = request.POST.get("is_active") == "on"
+        product.price_mode = price_mode
+
+        if fixed_price is not None:
+            product.fixed_price = fixed_price
+        elif price_mode == "fixed":
+            product.fixed_price = price
+
+        product.updated_by = request.user
+
+        try:
+            product.save()
+            messages.success(
+                request,
+                "Product updated successfully." if action == "update" else "Product created successfully.",
+            )
+        except Exception as exc:
+            messages.error(request, f"Unable to save product: {exc}")
+
+        return redirect(next_url)
+
     products = Product.objects.all()
     options = Option.objects.all()
-    return render(request, "products.html", {"products": products, "options": options})
+    for product in products:
+        product.bundle_options = [
+            opt for opt in options if opt.parent_product_id == product.id
+        ]
+    bundles = [product for product in products if product.is_bundle]
+    return render(
+        request,
+        "products.html",
+        {
+            "products": products,
+            "options": options,
+            "bundles": bundles,
+            "is_partner_user": is_partner_user(request.user),
+        },
+    )
 
 def product_detail(request, product_id):
     """View detailed product information."""
@@ -532,7 +654,11 @@ def build_account_quote_hierarchy_for_user(user):
     if user.is_superuser:
         base_qs = Quote.objects.all()
     else:
-        base_qs = Quote.objects.filter(owner=user)
+        base_qs = Quote.objects.all()
+        if not is_partner_user(user):
+            base_qs = base_qs.filter(owner=user)
+
+    base_qs = apply_partner_access_filter(user, "Quote", base_qs)
 
     quotes = (
         base_qs.select_related("account", "opportunity__account")
@@ -595,7 +721,11 @@ def related_opportunities_api(request):
         return JsonResponse({"error": "account_id must be an integer"}, status=400)
 
     account = get_object_or_404(Account, pk=account_id_int)
+    if not partner_can_access_record(request.user, "Account", account):
+        return HttpResponseForbidden("You do not have access to this account.")
+
     opportunities = Opportunity.objects.filter(account=account).order_by("-created_at")
+    opportunities = apply_partner_access_filter(request.user, "Opportunity", opportunities)
     record_id = request.GET.get("record_id")
     if record_id:
         try:
@@ -741,7 +871,11 @@ def related_quotes_api(request):
         return JsonResponse({"error": "Missing opportunity_id"}, status=400)
 
     opportunity = get_object_or_404(Opportunity, pk=opportunity_id)
+    if not partner_can_access_record(request.user, "Opportunity", opportunity):
+        return HttpResponseForbidden("You do not have access to this opportunity.")
+
     quotes = Quote.objects.filter(opportunity=opportunity).order_by("-id")
+    quotes = apply_partner_access_filter(request.user, "Quote", quotes)
     record_id = request.GET.get("record_id")
     if record_id:
         try:
@@ -896,6 +1030,8 @@ def related_contract_lines_api(request):
         return JsonResponse({"error": "Missing account_id"}, status=400)
 
     account = get_object_or_404(Account, pk=account_id)
+    if not partner_can_access_record(request.user, "Account", account):
+        return HttpResponseForbidden("You do not have access to this account.")
     custom_object = CustomObject.objects.filter(name__iexact="contractline__c").first()
     if not custom_object:
         return JsonResponse({
@@ -1041,6 +1177,8 @@ def quote_details_api(request):
         return JsonResponse({"error": "quote_id must be an integer"}, status=400)
 
     quote = get_object_or_404(Quote, pk=quote_id_int)
+    if not partner_can_access_record(request.user, "Quote", quote):
+        return HttpResponseForbidden("You do not have access to this quote.")
     details = get_quote_details(quote)
     if isinstance(details, dict) and details.get("error"):
         return JsonResponse({"quote_details": details}, status=400, encoder=DjangoJSONEncoder)
@@ -1126,6 +1264,9 @@ def single_record_api(request):
 
     if record is None:
         return JsonResponse({"error": "Record not found."}, status=404)
+
+    if not partner_can_access_record(request.user, object_name, record, custom_object=custom_object):
+        return HttpResponseForbidden("You do not have access to this record.")
 
     payload = serialize_record(record, object_name, custom_object, custom_fields, user=request.user)
 
@@ -1668,6 +1809,8 @@ def get_custom_record_form(request, record_id):
     record = get_object_or_404(CustomRecord, id=record_id)
     if not user_can_access_custom_object(request.user, record.object_type, "change"):
         return HttpResponseForbidden("You do not have permission to edit records for this object.")
+    if not partner_can_access_record(request.user, record.object_type.name, record, custom_object=record.object_type):
+        return HttpResponseForbidden("You do not have access to this record.")
     DynamicForm = generate_dynamic_form(record.object_type)
 
     initial_data = {}
@@ -1700,6 +1843,8 @@ def edit_custom_record(request, record_id):
     record = get_object_or_404(CustomRecord, id=record_id)
     if not user_can_access_custom_object(request.user, record.object_type, "change"):
         return HttpResponseForbidden("You do not have permission to edit records for this object.")
+    if not partner_can_access_record(request.user, record.object_type.name, record, custom_object=record.object_type):
+        return HttpResponseForbidden("You do not have access to this record.")
     DynamicForm = generate_dynamic_form(record.object_type)
 
     if request.method == "POST":
@@ -1741,7 +1886,12 @@ def edit_custom_record(request, record_id):
                     if value in (None, "", []):
                         continue
 
-                    cfv.value = value
+                    if custom_field.data_type == "lookup" and value:
+                        cfv.value = str(value.pk)
+                    elif isinstance(value, bool):
+                        cfv.value = str(value)
+                    else:
+                        cfv.value = "" if value is None else str(value)
                     cfv.save(update_fields=["value"])
             messages.success(request, f"{record.object_type.label} record updated successfully.")
 
@@ -1762,6 +1912,8 @@ def delete_custom_record(request, record_id):
         record = get_object_or_404(CustomRecord, id=record_id)
         if not user_can_access_custom_object(request.user, record.object_type, "delete"):
             return JsonResponse({"status": "error", "error": "You do not have permission to delete this record."}, status=403)
+        if not partner_can_access_record(request.user, record.object_type.name, record, custom_object=record.object_type):
+            return JsonResponse({"status": "error", "error": "You do not have access to this record."}, status=403)
         record.delete()
         return JsonResponse({'status': 'success'})
     return JsonResponse({'status': 'error'}, status=400)
@@ -2152,7 +2304,7 @@ def create_custom_record(request, object_name, user_id):
     else:
         form = DynamicForm()
 
-    lookup_options = get_lookup_data_for_form(custom_object)
+    lookup_options = get_lookup_data_for_form(custom_object, request.user)
 
     return render(request, 'custom_objects/record_form.html', {
         'form': form,
@@ -2163,7 +2315,7 @@ def create_custom_record(request, object_name, user_id):
 
 
 
-def get_lookup_data_for_form(custom_object):
+def get_lookup_data_for_form(custom_object, user=None):
     lookup_data = {}
     for field in CustomField.objects.filter(custom_object=custom_object, data_type="lookup"):
         try:
@@ -2172,10 +2324,19 @@ def get_lookup_data_for_form(custom_object):
 
             if model:
                 queryset = model.objects.all()
+                if user:
+                    queryset = apply_partner_access_filter(user, model.__name__, queryset)
             elif field.lookup_model:
                 try:
                     target_co = CustomObject.objects.get(name=field.lookup_model)
                     queryset = CustomRecord.objects.filter(object_type=target_co)
+                    if user:
+                        queryset = apply_partner_access_filter(
+                            user,
+                            target_co.name,
+                            queryset,
+                            custom_object=target_co,
+                        )
                 except CustomObject.DoesNotExist:
                     queryset = None
 

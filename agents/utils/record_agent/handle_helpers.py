@@ -29,6 +29,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 from ..analytics_agent.handle_helpers import ALLOWED_FIELDS, get_object_metadata
 from ..message_formatters import SUCCESS_ICON
 from cpq.models import CustomFieldValue
+from cpq.permissions import partner_can_access_record, partner_label_for_user
 from agents.models import SingleRecordLayout
 
 logger = logging.getLogger(__name__)
@@ -184,6 +185,9 @@ def get_single_record_payload(user, request_payload: Dict[str, Union[str, int]])
             None,
         )
 
+    if not partner_can_access_record(user, object_name, record, custom_object=custom_object):
+        return ("⚠️ You don't have access to that record.", None)
+
     payload = serialize_record(record, object_name, custom_object, custom_fields, user=user)
     return ("", payload)
 
@@ -284,7 +288,7 @@ def _serialize_record(record: Model, object_name: str, custom_object, custom_fie
     default_order = [build_field_key(field["name"], field.get("is_custom"), field.get("field_id")) for field in all_fields]
     layout = _get_saved_layout(user, object_name, default_order)
 
-    return {
+    payload = {
         "object": object_name,
         "display_label": display_label,
         "record_label": primary_label,
@@ -295,6 +299,12 @@ def _serialize_record(record: Model, object_name: str, custom_object, custom_fie
         "is_custom_object": bool(custom_object),
         "layout": layout,
     }
+
+    partner_label = partner_label_for_user(user)
+    if partner_label:
+        payload["partner_label"] = partner_label
+
+    return payload
 
 
 def build_field_key(name: Optional[str], is_custom: bool, field_id: Optional[int]) -> str:

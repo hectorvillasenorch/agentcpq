@@ -4,6 +4,179 @@
 {% if not embedded_in_dashboard %}
   <script src="{% static 'js/agents/agent_main.js' %}" defer></script>
 {% endif %}
+
+<div class="product-modal-backdrop" id="product-modal-backdrop" aria-hidden="true">
+  <div class="product-modal cpq-form-card" role="dialog" aria-modal="true" aria-labelledby="product-modal-title">
+    <div class="cpq-form-card__header product-modal-header">
+      <div>
+        <div class="cpq-form-card__eyebrow">Products</div>
+        <div class="cpq-form-card__title" id="product-modal-title">Add Product</div>
+        <p class="cpq-form-card__subtitle">Maintain your catalog without leaving this page.</p>
+      </div>
+      <button type="button" class="product-modal-close" data-product-modal-close>
+        <i class="material-icons">close</i>
+      </button>
+    </div>
+    <form id="product-form" class="cpq-form" method="post" action="{% url 'cpq:product_list' %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" id="product-form-action" value="create">
+      <input type="hidden" name="product_id" id="product-form-id">
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <div class="cpq-form-grid">
+        <div class="cpq-form-field">
+          <label for="product-name">Name</label>
+          <input id="product-name" class="cpq-input" type="text" name="name" required>
+        </div>
+        <div class="cpq-form-field">
+          <label for="product-sku">SKU</label>
+          <input id="product-sku" class="cpq-input" type="text" name="sku" required>
+        </div>
+        <div class="cpq-form-field">
+          <label for="product-price">Price</label>
+          <input id="product-price" class="cpq-input" type="number" name="price" step="0.01" required>
+        </div>
+        <div class="cpq-form-field">
+          <label for="product-family">Family</label>
+          <input id="product-family" class="cpq-input" type="text" name="family" required>
+        </div>
+        <div class="cpq-form-field">
+          <label for="product-price-mode">Price Mode</label>
+          <select id="product-price-mode" name="price_mode" class="cpq-input cpq-select browser-default">
+            <option value="fixed">Fixed</option>
+            <option value="sum">Sum of Components</option>
+          </select>
+        </div>
+        <div class="cpq-form-field">
+          <label for="product-fixed-price">Fixed Price</label>
+          <input id="product-fixed-price" class="cpq-input" type="number" name="fixed_price" step="0.01">
+        </div>
+        <div class="cpq-form-field">
+          <label for="product-term">Term (months)</label>
+          <input id="product-term" class="cpq-input" type="number" name="term" min="0">
+        </div>
+        <div class="cpq-form-field cpq-form-field--full">
+          <label for="product-description">Description</label>
+          <textarea id="product-description" class="cpq-input" name="description" rows="2"></textarea>
+        </div>
+        <div class="cpq-form-field cpq-form-field--checkbox">
+          <label class="cpq-checkbox">
+            <input id="product-is-subscription" class="cpq-checkbox-input" type="checkbox" name="is_subscription">
+            <span>Subscription</span>
+          </label>
+        </div>
+        <div class="cpq-form-field cpq-form-field--checkbox">
+          <label class="cpq-checkbox">
+            <input id="product-is-bundle" class="cpq-checkbox-input" type="checkbox" name="is_bundle">
+            <span>Bundle</span>
+          </label>
+        </div>
+        <div class="cpq-form-field cpq-form-field--checkbox">
+          <label class="cpq-checkbox">
+            <input id="product-is-active" class="cpq-checkbox-input" type="checkbox" name="is_active" checked>
+            <span>Active</span>
+          </label>
+        </div>
+      </div>
+      <div class="cpq-form-footer">
+        <span></span>
+        <div class="cpq-form-footer__actions">
+          <button type="button" class="cpq-btn cpq-btn--ghost" data-product-modal-close>Cancel</button>
+          <button type="submit" class="cpq-btn cpq-btn--primary" id="product-form-submit">Save Product</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const backdrop = document.getElementById("product-modal-backdrop");
+    const createBtn = document.getElementById("product-create-btn");
+    const closeButtons = document.querySelectorAll("[data-product-modal-close]");
+    const form = document.getElementById("product-form");
+    const formAction = document.getElementById("product-form-action");
+    const formId = document.getElementById("product-form-id");
+    const title = document.getElementById("product-modal-title");
+    const submitBtn = document.getElementById("product-form-submit");
+
+    const fields = {
+      name: document.getElementById("product-name"),
+      sku: document.getElementById("product-sku"),
+      price: document.getElementById("product-price"),
+      family: document.getElementById("product-family"),
+      priceMode: document.getElementById("product-price-mode"),
+      fixedPrice: document.getElementById("product-fixed-price"),
+      term: document.getElementById("product-term"),
+      description: document.getElementById("product-description"),
+      isSubscription: document.getElementById("product-is-subscription"),
+      isBundle: document.getElementById("product-is-bundle"),
+      isActive: document.getElementById("product-is-active"),
+    };
+
+    const openModal = (mode, data) => {
+      const isEdit = mode === "edit";
+      formAction.value = isEdit ? "update" : "create";
+      formId.value = isEdit ? (data.productId || "") : "";
+      title.textContent = isEdit ? "Edit Product" : "Add Product";
+      submitBtn.textContent = isEdit ? "Update Product" : "Save Product";
+
+      fields.name.value = data.name || "";
+      fields.sku.value = data.sku || "";
+      fields.price.value = data.price || "";
+      fields.family.value = data.family || "";
+      fields.description.value = data.description || "";
+      fields.term.value = data.term || "";
+      fields.priceMode.value = data.priceMode || "fixed";
+      fields.fixedPrice.value = data.fixedPrice || "";
+      fields.isSubscription.checked = (data.isSubscription || "false") === "true";
+      fields.isBundle.checked = (data.isBundle || "false") === "true";
+      fields.isActive.checked = (data.isActive || "true") === "true";
+
+      backdrop.classList.add("is-open");
+      backdrop.setAttribute("aria-hidden", "false");
+    };
+
+    const closeModal = () => {
+      backdrop.classList.remove("is-open");
+      backdrop.setAttribute("aria-hidden", "true");
+    };
+
+    if (createBtn) {
+      createBtn.addEventListener("click", function () {
+        openModal("create", {});
+      });
+    }
+
+    document.querySelectorAll(".product-edit-btn").forEach((button) => {
+      button.addEventListener("click", function () {
+        openModal("edit", {
+          productId: button.dataset.productId,
+          name: button.dataset.name,
+          sku: button.dataset.sku,
+          price: button.dataset.price,
+          family: button.dataset.family,
+          description: button.dataset.description,
+          isSubscription: button.dataset.isSubscription,
+          term: button.dataset.term,
+          isBundle: button.dataset.isBundle,
+          priceMode: button.dataset.priceMode,
+          fixedPrice: button.dataset.fixedPrice,
+          isActive: button.dataset.isActive,
+        });
+      });
+    });
+
+    closeButtons.forEach((button) => {
+      button.addEventListener("click", closeModal);
+    });
+
+    backdrop.addEventListener("click", function (event) {
+      if (event.target === backdrop) {
+        closeModal();
+      }
+    });
+  });
+</script>
 <style>
   .icon-button {
     display: inline-flex;
@@ -114,6 +287,79 @@
   padding: 16px;
 }
 
+.product-messages {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 16px;
+}
+
+.product-message {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+  font-weight: 600;
+}
+
+.product-message--error {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
+.product-message--success {
+  background: #ecfdf3;
+  color: #166534;
+  border-color: #bbf7d0;
+}
+
+.product-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.product-edit-btn {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+}
+
+.product-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 2147483000;
+}
+
+.product-modal-backdrop.is-open {
+  display: flex;
+}
+
+.product-modal {
+  width: min(780px, 95vw);
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.product-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.product-modal-close {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #6b7280;
+}
+
+
 /* ───── phone view: hide the extra columns ───── */
 @media only screen and (max-width: 599px) {
   .mobile-hide {      /* cells & headers marked with this class disappear */
@@ -123,13 +369,24 @@
 </style>
 
 <div class="container">
+ {% if messages %}
+  <div class="product-messages">
+    {% for message in messages %}
+      <div class="product-message product-message--{{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+  </div>
+ {% endif %}
  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
   <h4 style="display: flex; align-items: center; margin: 0; font-weight: 600;">
     <i class="material-icons" style="margin-right: 8px;">inventory_2</i>
     Product Catalog
   </h4>
 
-  <div style="display: flex; gap: 8px;">
+  <div class="product-actions">
+    <button type="button" class="cpq-btn cpq-btn--primary" id="product-create-btn">
+      <i class="material-icons" style="font-size: 18px;">add</i>
+      Add Product
+    </button>
     <form action="{% url 'sync_hubspot_products' %}" method="post" style="margin: 0;">
       {% csrf_token %}
       <input type="hidden" name="user_id" value="default">
@@ -157,6 +414,7 @@
       <th class="mobile-hide">Subscription</th>
       <th class="mobile-hide">Term</th>
       <th class="mobile-hide">Bundle</th>
+      <th>Actions</th>
     </tr>
   </thead>
 
@@ -181,11 +439,31 @@
           <td class="mobile-hide">
             {{ product.is_bundle|yesno:"✔️,✖️" }}
           </td>
+          <td>
+            {% if not is_partner_user or product.created_by_id == request.user.id or request.user.is_staff or request.user.is_superuser %}
+              <button type="button"
+                class="cpq-btn cpq-btn--secondary product-edit-btn"
+                data-product-id="{{ product.id }}"
+                data-name="{{ product.name|escape }}"
+                data-sku="{{ product.sku|escape }}"
+                data-price="{{ product.price }}"
+                data-family="{{ product.family|escape }}"
+                data-description="{{ product.description|default:''|escape }}"
+                data-is-subscription="{{ product.is_subscription|yesno:'true,false' }}"
+                data-term="{{ product.term|default:'' }}"
+                data-is-bundle="{{ product.is_bundle|yesno:'true,false' }}"
+                data-price-mode="{{ product.price_mode|default:'fixed' }}"
+                data-fixed-price="{{ product.fixed_price|default:'' }}"
+                data-is-active="{{ product.is_active|yesno:'true,false' }}">
+                <i class="material-icons" style="font-size:18px;">edit</i>
+              </button>
+            {% endif %}
+          </td>
         </tr>
       {% endif %}
     {% empty %}
       <tr>
-        <td colspan="6" class="no-products">No products found.</td>
+        <td colspan="7" class="no-products">No products found.</td>
       </tr>
     {% endfor %}
   </tbody>
@@ -211,7 +489,7 @@
         <th class="mobile-hide">Subscription</th>
         <th class="mobile-hide">Term</th>
         <th class="mobile-hide">Bundle</th>
-        <th class="mobile-hide"></th>
+        <th>Actions</th>
         <th class="mobile-hide"></th>
       </tr>
     </thead>
@@ -226,7 +504,26 @@
             <th class="mobile-hide">{{ product.is_subscription|yesno:"✔️,✖️" }}</th>
             <th class="mobile-hide">{{ product.term|default:"N/A" }}</th>
             <th class="mobile-hide">{{ product.is_bundle|yesno:"✔️,✖️" }}</th>
-            <th></th>
+            <th>
+              {% if not is_partner_user or product.created_by_id == request.user.id or request.user.is_staff or request.user.is_superuser %}
+                <button type="button"
+                  class="cpq-btn cpq-btn--secondary product-edit-btn"
+                  data-product-id="{{ product.id }}"
+                  data-name="{{ product.name|escape }}"
+                  data-sku="{{ product.sku|escape }}"
+                  data-price="{{ product.price }}"
+                  data-family="{{ product.family|escape }}"
+                  data-description="{{ product.description|default:''|escape }}"
+                  data-is-subscription="{{ product.is_subscription|yesno:'true,false' }}"
+                  data-term="{{ product.term|default:'' }}"
+                  data-is-bundle="{{ product.is_bundle|yesno:'true,false' }}"
+                  data-price-mode="{{ product.price_mode|default:'fixed' }}"
+                  data-fixed-price="{{ product.fixed_price|default:'' }}"
+                  data-is-active="{{ product.is_active|yesno:'true,false' }}">
+                  <i class="material-icons" style="font-size:18px;">edit</i>
+                </button>
+              {% endif %}
+            </th>
             <th></th>
           </tr>
 

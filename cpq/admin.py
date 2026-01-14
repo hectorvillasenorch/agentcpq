@@ -22,6 +22,7 @@ from .models import (
     CustomRecord,
     ActionUsage,
     Contact,
+    PartnerProfile,
     Tenant,
     QuoteDocument,
     SystemFieldMapping,
@@ -187,6 +188,14 @@ class CustomFieldValueAdmin(UTCDisplayAdmin, admin.ModelAdmin):
     )
     raw_id_fields = ("field", "updated_by_user", "record")
     ordering = ("-created_at",)
+
+
+@admin.register(PartnerProfile)
+class PartnerProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "partner_name", "is_partner", "created_at", "updated_at")
+    list_filter = ("is_partner",)
+    search_fields = ("user__username", "user__email", "partner_name")
+    filter_horizontal = ("accounts", "contacts")
 
 
 

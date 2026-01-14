@@ -149,6 +149,11 @@ def handle_user_request(user,user_message, session_data):
         logging.info("Do NOT use GPT\n")
         response = orchestrate_request_trigger(user,user_message, session_data, decision="ShowQuoteDetails")
 
+    # 🧠 Shortcut manual: "show metrics: ..."
+    elif normalized_message.startswith("show metrics:"):
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowMetrics")
+
     # 🧠 Shortcut manual: "Update Quote Line:"
     elif user_message.startswith("Update Quote Line:"):
         logging.info("Do NOT use GPT\n")

@@ -91,7 +91,7 @@ def handle_products_to_add(user, completed_products, quote, allow_updates=False,
 
         if not product:
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ Product `{sku if sku else name}` not found in the database.")
-            result_payload["error"] = f"Error: Product not found in the dabase.."
+            result_payload["error"] = "Product not found in the database."
             result.append(result_payload)
             continue  # Skip this product and move to the next
 

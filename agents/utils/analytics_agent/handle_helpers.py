@@ -18,6 +18,7 @@ from django.utils.timezone import now
 from dateutil.relativedelta import relativedelta
 from django.contrib.contenttypes.models import ContentType
 
+from cpq.permissions import apply_partner_access_filter, partner_label_for_user
 from cpq.models import (
     Product,
     Lead,
@@ -156,6 +157,8 @@ def handle_show_metrics(user, completed_metrics):
         else:
             qs = model.objects.all()
 
+        qs = apply_partner_access_filter(user, object_name, qs, custom_object=custom_object)
+
         display_name = (custom_object.label or custom_object.name) if custom_object else object_name
         object_labels[object_name] = display_name
 
@@ -288,6 +291,10 @@ def handle_show_metrics(user, completed_metrics):
             qs = qs[:limit]
 
         serialized = safe_serialize_queryset(qs, object_name, custom_object=custom_object, custom_fields=custom_fields)
+        partner_label = partner_label_for_user(user)
+        if partner_label:
+            for record in serialized:
+                record["_partner_label"] = partner_label
         record_count = len(serialized)
 
         results[object_name] = serialized

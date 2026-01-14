@@ -25,6 +25,7 @@ from django.db.models import Q
 from django.forms.models import model_to_dict
 from django.db.models import ForeignKey
 from datetime import datetime
+from cpq.permissions import partner_can_access_record
 
 # LLM Utils
 from .utils.quote_agent.llm_helpers import extract_quote_details_with_llm, generate_final_create_quote_message, generate_final_delete_quote_lines_message, generate_final_quote_updates_message, extract_quote_line_to_delete_with_llm
@@ -427,6 +428,29 @@ def add_product_to_quote(user, user_message, session_data):
     result = handle_products_to_add(user, completed_products, quote, allow_updates=True)
 
     quote.save()
+
+    successful = [entry for entry in result if entry.get("status") == "success"]
+    failed = [entry for entry in result if entry.get("status") == "fail"]
+    if failed and not successful:
+        failed_labels = []
+        for entry in failed:
+            product = entry.get("product") or {}
+            label = product.get("sku") or product.get("name") or "that product"
+            failed_labels.append(label)
+        failed_text = ", ".join(failed_labels)
+        message = (
+            f"{WARNING_ICON} I could not find {failed_text} in the product catalog, so nothing changed. "
+            "Want to try a different product name or SKU?"
+        )
+        summary = (
+            f"{previous_summary or ''} "
+            f"Attempted to add {failed_text} to quote {quote.name}, but the product was not found."
+        ).strip()
+        return {
+            "message": message,
+            "session_summary": summary,
+            "quote_details": get_quote_details(quote)
+        }
 
     # --- 5️⃣ Generar mensaje final dinámico usando función separada ---
     dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_add_product_to_quote_message(
@@ -876,7 +900,13 @@ def generate_quote_pdf(user,user_message, session_data):
         return quote
 
     try:
-        result = get_document_pdf(quote, session_data=session_data)
+        if not partner_can_access_record(user, "Quote", quote):
+            return {
+                "message": "⚠️ You don't have access to that quote.",
+                "success": False,
+            }
+
+        result = get_document_pdf(quote, session_data=session_data, user=user)
 
 
         # ✅ Save quote in session data

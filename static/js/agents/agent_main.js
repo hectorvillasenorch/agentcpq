@@ -608,22 +608,9 @@ let thinkingInterval = null;
 function startThinkingAnimation() {
   const el = document.querySelector("#agent-feedback .thinking-text");
   if (!el) return;
-  const text = "Thinking...";
-  let idx = 0;
-  const isMobile = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
   stopThinkingAnimation();
-  if (isMobile) {
-    el.classList.add("thinking-text--dots");
-    el.innerHTML = 'Thinking<span class="thinking-dot">.</span><span class="thinking-dot">.</span><span class="thinking-dot">.</span>';
-    return;
-  }
-  el.classList.remove("thinking-text--dots");
-  el.textContent = "";
-  thinkingInterval = setInterval(() => {
-    const len = text.length;
-    el.textContent = text.slice(0, (idx % (len + 3)));
-    idx += 1;
-  }, 120);
+  el.classList.add("thinking-text--dots");
+  el.innerHTML = 'Thinking<span class="thinking-dot">.</span><span class="thinking-dot">.</span><span class="thinking-dot">.</span>';
 }
 
 function stopThinkingAnimation() {
@@ -1210,6 +1197,20 @@ function stripStructuredSuffixFromAgentMessage(message, keys) {
   }
 
   return { message, stripped: false };
+}
+
+const WARNING_ICON_HTML =
+  '<span class="material-icons" style="font-size:22px;vertical-align:middle;color:#ffd32e;margin-right:6px;">warning</span>';
+
+function addWarningIconPrefix(message) {
+  if (typeof message !== "string" || !message) return message;
+  if (message.includes("{WARNING_ICON}")) {
+    return message.replace(/{WARNING_ICON}/g, WARNING_ICON_HTML);
+  }
+  if (message.includes(WARNING_ICON_HTML)) return message;
+  const textOnly = message.replace(/<[^>]*>/g, "").trim();
+  if (!/^warning\b/i.test(textOnly)) return message;
+  return `${WARNING_ICON_HTML} ${message}`;
 }
 
 function stripStructuredSuffixInElement(el, keys) {
@@ -1923,7 +1924,7 @@ function appendBatchStatusMessage(text, status = "info") {
 
 function buildBatchMetricsMessage(batchPayload) {
   if (!batchPayload) return null;
-  const objectLabel = batchPayload.objectLabel || batchPayload.objectName || "records";
+  const objectLabel = batchPayload.objectName || batchPayload.objectLabel || "records";
   const totalRecords = Number(batchPayload.totalRecords || 0);
   const limit = Number.isFinite(totalRecords) && totalRecords > 0
     ? Math.min(Math.max(totalRecords, 5), 25)
@@ -2248,6 +2249,15 @@ function handleAgentResponse(data, options = {}) {
   }
   else if (data.response && data.response.quote_details && !data.response.quote_notes) {
     ensureQuoteStatusValue(data.response.quote_details);
+    if (data.response.message) {
+      const cleaned = stripStructuredSuffixFromAgentMessage(
+        data.response.message,
+        ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
+      );
+      if (cleaned.message) {
+        responseMessage += `<div class="general-message">${addWarningIconPrefix(cleaned.message)}</div>`;
+      }
+    }
     responseMessage += renderQuoteDetails(data.response.quote_details);
   }
   else if (data.response && data.response.quote_notes) {
@@ -2304,7 +2314,7 @@ function handleAgentResponse(data, options = {}) {
       data.response.message,
       ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
     );
-    responseMessage += `<div class="general-message">${cleaned.message}</div>`;
+    responseMessage += `<div class="general-message">${addWarningIconPrefix(cleaned.message)}</div>`;
 
     if (cleaned.stripped) {
       embeddedQuoteDetails = extractEmbeddedJsonPayload(data.response.message, "quote_details:");
@@ -2653,7 +2663,20 @@ function renderQuoteDiscountControls(quote) {
   const hasValues = Boolean(type) && percentageRaw !== null && percentageRaw !== undefined && amountRaw !== null && amountRaw !== undefined;
 
   if (!hasValues) {
-    return "*****";
+    return `
+      <div class="quote-detail-inline-item">
+        <div class="quote-detail-inline-label">Discount %</div>
+        <div class="quote-detail-inline-field">
+          <span class="quote-detail-value">—</span>
+        </div>
+      </div>
+      <div class="quote-detail-inline-item">
+        <div class="quote-detail-inline-label">Disc Amount</div>
+        <div class="quote-detail-inline-field">
+          <span class="quote-detail-value">—</span>
+        </div>
+      </div>
+    `.trim();
   }
 
   const percentageValue = Number(percentageRaw);
@@ -2666,21 +2689,28 @@ function renderQuoteDiscountControls(quote) {
   const quoteName = quote && quote.quote_name ? quote.quote_name : '';
 
   return `
-    <input type="number"
-      value="${safePercentage}"
-      data-field="discount_percentage"
-      data-quote="${quoteName}"
-      onchange="updateQuote(this)"
-      style="width: 3rem; color: red;">
-    <span style="color: red;">%</span>
-    <span style="color: red;">( - $</span>
-    <input type="text"
-      value="${formattedAmount}"
-      data-field="discount_amount"
-      data-quote="${quoteName}"
-      onchange="updateQuote(this)"
-      style="width: 6rem; color: red;">
-    <span style="color: red;"> )</span>
+    <div class="quote-detail-inline-item">
+      <div class="quote-detail-inline-label">Discount %</div>
+      <div class="quote-detail-inline-field">
+        <input type="number"
+          value="${safePercentage}"
+          data-field="discount_percentage"
+          data-quote="${quoteName}"
+          onchange="updateQuote(this)"
+          class="quote-detail-inline-input">
+      </div>
+    </div>
+    <div class="quote-detail-inline-item">
+      <div class="quote-detail-inline-label">Disc Amount</div>
+      <div class="quote-detail-inline-field">
+        <input type="text"
+          value="${formattedAmount}"
+          data-field="discount_amount"
+          data-quote="${quoteName}"
+          onchange="updateQuote(this)"
+          class="quote-detail-inline-input">
+      </div>
+    </div>
   `.trim();
 }
 
@@ -2938,6 +2968,16 @@ function renderQuoteDetails(quote) {
   const notesInitialHtml = sanitizeQuoteNotesHtml(
     notesLooksHtml ? String(rawNotes) : escapeHtml(String(rawNotes)).replace(/\n/g, "<br/>")
   );
+  const accountId = quote.account_id || quote.accountId;
+  const opportunityId = quote.opportunity_id || quote.opportunityId;
+  const accountText = quote.account ? escapeHtml(String(quote.account)) : "*****";
+  const opportunityText = quote.opportunity ? escapeHtml(String(quote.opportunity)) : "*****";
+  const accountValue = accountId
+    ? `<button type="button" class="quote-detail-link quote-detail-value" data-record-id="${escapeHtml(String(accountId))}" data-object="Account" aria-label="View Account" title="View Account">${accountText}</button>`
+    : `<span class="quote-detail-value">${accountText}</span>`;
+  const opportunityValue = opportunityId
+    ? `<button type="button" class="quote-detail-link quote-detail-value" data-record-id="${escapeHtml(String(opportunityId))}" data-object="Opportunity" aria-label="View Opportunity" title="View Opportunity">${opportunityText}</button>`
+    : `<span class="quote-detail-value">${opportunityText}</span>`;
   var html = `<div class="quote-container" data-quote-name="${quote.quote_name}">
               <div class="quote-header">
                   <h3>Quote: ${quote.quote_name}</h3>
@@ -2946,30 +2986,38 @@ function renderQuoteDetails(quote) {
                   </div>
               </div>
               <div class="quote-details">
-                <div class="account">
-                  <p><strong>Account:</strong> ${quote.account ? quote.account : "*****"}</p>
+                <div class="quote-detail-item">
+                  <div class="quote-detail-label-row">
+                    <span class="material-icons quote-detail-icon" aria-hidden="true">apartment</span>
+                    <span class="quote-detail-label">Account</span>
+                  </div>
+                  ${accountValue}
                 </div>
-                <div class="opportunity">
-                  <p><strong>Opportunity:</strong> ${quote.opportunity ? quote.opportunity : "*****"}</p>
+                <div class="quote-detail-item">
+                  <div class="quote-detail-label-row">
+                    <span class="material-icons quote-detail-icon" aria-hidden="true">insights</span>
+                    <span class="quote-detail-label">Opportunity</span>
+                  </div>
+                  ${opportunityValue}
                 </div>
-                <div class="created">
-                  <p><strong>Created At:</strong> ${quote.created_at ? formattedDate : "*****"}</p>
-                </div>
-                <div class="expiration">
-                  <p><strong>Expiration Date:</strong>
-                  ${quote.expiration_date ? `
-                  <input type="text" id="expiration_date" name="expiration_date"
-                          data-field="expiration_date"
-                          data-quote="${quote.quote_name}"
-                          placeholder="MM/DD/YYYY"
-                          style="display: inline-block; width: 7rem; margin-top: 0px; color: black;"
-                          value="${formattedDate_e}"/>
-                  ` : "*****"}
-                  </p>
-                </div>
-
-                <div class="discount">
-                  <p><strong>Discount: </strong>${renderQuoteDiscountControls(quote)}</p>
+                <div class="quote-detail-item quote-detail-item--wide">
+                  <div class="quote-detail-inline-row">
+                    ${renderQuoteDiscountControls(quote)}
+                    <div class="quote-detail-inline-item">
+                      <div class="quote-detail-inline-label">Exp: Date</div>
+                      <div class="quote-detail-date-field">
+                        <span class="material-icons quote-detail-date-icon" aria-hidden="true">event</span>
+                        ${quote.expiration_date ? `
+                          <input type="text" id="expiration_date" name="expiration_date"
+                            class="quote-detail-date-input"
+                            data-field="expiration_date"
+                            data-quote="${quote.quote_name}"
+                            placeholder="MM/DD/YYYY"
+                            value="${formattedDate_e}"/>
+                        ` : `<span class="quote-detail-date-value">${escapeHtml("*****")}</span>`}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
               <h4>Line Items</h4>`;
@@ -3602,6 +3650,26 @@ function renderReadOnlyQuoteDetails(quote) {
   const yearFormatted = expirationDate.getUTCFullYear();
 
   const formattedDate_e = `${monthFormatted}/${dayFormatted}/${yearFormatted}`;
+  const accountId = quote.account_id || quote.accountId;
+  const opportunityId = quote.opportunity_id || quote.opportunityId;
+  const accountText = quote.account ? escapeHtml(String(quote.account)) : "---";
+  const opportunityText = quote.opportunity ? escapeHtml(String(quote.opportunity)) : "---";
+  const accountValue = accountId
+    ? `<button type="button" class="quote-detail-link quote-detail-value" data-record-id="${escapeHtml(String(accountId))}" data-object="Account" aria-label="View Account" title="View Account">${accountText}</button>`
+    : `<span class="quote-detail-value">${accountText}</span>`;
+  const opportunityValue = opportunityId
+    ? `<button type="button" class="quote-detail-link quote-detail-value" data-record-id="${escapeHtml(String(opportunityId))}" data-object="Opportunity" aria-label="View Opportunity" title="View Opportunity">${opportunityText}</button>`
+    : `<span class="quote-detail-value">${opportunityText}</span>`;
+  const discountPercentDisplay = quote.discount_percentage !== null && quote.discount_percentage !== undefined
+    ? escapeHtml(String(quote.discount_percentage))
+    : "---";
+  const discountAmountRaw = quote.discount_amount !== null && quote.discount_amount !== undefined
+    ? quote.discount_amount
+    : null;
+  const discountAmountNumber = Number(discountAmountRaw);
+  const discountAmountDisplay = Number.isFinite(discountAmountNumber)
+    ? discountAmountNumber.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : (discountAmountRaw !== null ? escapeHtml(String(discountAmountRaw)) : "---");
 
   var html = `<div class="quote-container" data-quote-name="${quote.quote_name}">
               <div class="quote-header">
@@ -3611,23 +3679,51 @@ function renderReadOnlyQuoteDetails(quote) {
                   </div>
               </div>
               <div class="quote-details">
-                <div class="account">
-                  <p><strong>Account:</strong> ${quote.account ? quote.account : "---"}</p>
+                <div class="quote-detail-item">
+                  <div class="quote-detail-label-row">
+                    <span class="material-icons quote-detail-icon" aria-hidden="true">apartment</span>
+                    <span class="quote-detail-label">Account</span>
+                  </div>
+                  ${accountValue}
                 </div>
-                <div class="opportunity">
-                  <p><strong>Opportunity:</strong> ${quote.opportunity ? quote.opportunity : "---"}</p>
+                <div class="quote-detail-item">
+                  <div class="quote-detail-label-row">
+                    <span class="material-icons quote-detail-icon" aria-hidden="true">insights</span>
+                    <span class="quote-detail-label">Opportunity</span>
+                  </div>
+                  ${opportunityValue}
                 </div>
-                <div class="created">
-                  <p><strong>Created At:</strong> ${quote.created_at ? formattedDate : "---"}</p>
-                </div>
-                <div class="expiration">
-                  <p><strong>Expiration Date:</strong> ${quote.expiration_date ? formattedDate : "---"}</p>
-                </div>
-
-                <div class="discount">
-                  <p style="color: red;"><strong>Discount: </strong>
-                    ${quote.discount_percentage}% ( - $${quote.discount_amount} )
-                  </p>
+                <div class="quote-detail-item quote-detail-item--wide">
+                  <div class="quote-detail-inline-row">
+                    <div class="quote-detail-inline-item">
+                      <div class="quote-detail-inline-label">Discount %</div>
+                      <div class="quote-detail-inline-field">
+                        <input type="text"
+                          class="quote-detail-inline-input"
+                          value="${discountPercentDisplay}"
+                          readonly />
+                      </div>
+                    </div>
+                    <div class="quote-detail-inline-item">
+                      <div class="quote-detail-inline-label">Disc Amount</div>
+                      <div class="quote-detail-inline-field">
+                        <input type="text"
+                          class="quote-detail-inline-input"
+                          value="${discountAmountDisplay}"
+                          readonly />
+                      </div>
+                    </div>
+                    <div class="quote-detail-inline-item">
+                      <div class="quote-detail-inline-label">Exp: Date</div>
+                      <div class="quote-detail-date-field">
+                        <span class="material-icons quote-detail-date-icon" aria-hidden="true">event</span>
+                        <input type="text"
+                          class="quote-detail-date-input"
+                          value="${quote.expiration_date ? formattedDate_e : "---"}"
+                          readonly />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
               <h4>Line Items</h4>`;
@@ -4094,6 +4190,10 @@ function renderSingleRecord(record) {
   const subtitle = objectLabel ? `<div class="single-record-subtitle">${escapeHtml(objectLabel)}</div>` : '';
   const headerLabel = '';
   const customBadge = record.is_custom_object ? `<span class="single-record-badge">Custom object</span>` : '';
+  const partnerLabel = record.partner_label || record._partner_label;
+  const partnerBadge = partnerLabel
+    ? `<span class="single-record-badge single-record-badge--partner">${escapeHtml(String(partnerLabel))}</span>`
+    : '';
   const layoutAttr = layout ? ` data-layout='${escapeHtml(JSON.stringify(layout))}'` : '';
   const showLayoutButton = typeof window !== "undefined" ? !!window.isAdmin : false;
   if (showLayoutButton) {
@@ -4173,6 +4273,7 @@ function renderSingleRecord(record) {
         </div>
         <div class="single-record-header-meta">
           ${headerLabel}
+          ${partnerBadge}
           ${customBadge}
           ${headerActions}
         </div>
@@ -4472,8 +4573,14 @@ function findQuoteDetailsMessage(quoteId) {
 
 function buildQuoteListViewButton(recordId) {
   if (!recordId) return "";
+  const icon = `
+    <svg class="record-view-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+      <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  `;
   return `<button type="button" class="quote-list-view-btn" data-quote-id="${recordId}" aria-label="View quote details" title="View quote details">
-    <span class="material-icons" aria-hidden="true">visibility</span>
+    ${icon}
   </button>`;
 }
 
@@ -4481,8 +4588,14 @@ function buildRecordListViewButton(recordId, objectName) {
   if (!recordId) return "";
   const objectLabel = objectName ? `View ${objectName}` : "View record";
   const objectValue = objectName || "";
+  const icon = `
+    <svg class="record-view-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+      <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  `;
   return `<button type="button" class="record-list-view-btn" data-record-id="${recordId}" data-object="${objectValue}" aria-label="${objectLabel}" title="${objectLabel}">
-    <span class="material-icons" aria-hidden="true">visibility</span>
+    ${icon}
   </button>`;
 }
 
@@ -4536,7 +4649,7 @@ function initializeQuoteDetailRecordLinks() {
   };
 
   document.addEventListener("click", (event) => {
-    const card = event.target.closest(".quote-mobile-card--link");
+    const card = event.target.closest(".quote-mobile-card--link, .quote-detail-link");
     if (!card) return;
     event.preventDefault();
     activateCard(card);
@@ -4544,7 +4657,7 @@ function initializeQuoteDetailRecordLinks() {
 
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
-    const card = event.target.closest(".quote-mobile-card--link");
+    const card = event.target.closest(".quote-mobile-card--link, .quote-detail-link");
     if (!card) return;
     event.preventDefault();
     activateCard(card);
@@ -5585,6 +5698,7 @@ function buildSingleRecordInput(field, inputId) {
     `data-field="${field.name}"`,
     `data-is-custom="${field.is_custom ? 'true' : 'false'}"`,
     field.field_id ? `data-field-id="${field.field_id}"` : '',
+    `data-skip-materialize="true"`,
     `onchange="handleSingleRecordAutoSave(this)"`,
   ];
 
@@ -5613,7 +5727,7 @@ function buildSingleRecordInput(field, inputId) {
   if (dataType === 'choice') {
     const options = buildSingleRecordChoiceOptions(field.options, valueForInput);
     return `
-      <select ${baseAttrs.join(' ')} data-skip-materialize="true">
+      <select ${baseAttrs.join(' ')}>
         <option value="" ${valueForInput === '' ? 'selected' : ''}>Select…</option>
         ${options}
       </select>
@@ -5623,7 +5737,7 @@ function buildSingleRecordInput(field, inputId) {
   if (dataType === 'lookup') {
     const options = buildSingleRecordChoiceOptions(field.options, valueForInput);
     return `
-      <select ${baseAttrs.join(' ')} data-skip-materialize="true">
+      <select ${baseAttrs.join(' ')}>
         <option value="" ${valueForInput === '' ? 'selected' : ''}>Select…</option>
         ${options}
       </select>
@@ -6504,6 +6618,26 @@ function showTemporaryQuoteDetails(quote) {
   const formattedDate_e = `${monthFormatted}/${dayFormatted}/${yearFormatted}`;
 
   const { raw: statusValue, normalized: normalizedStatus } = prepareQuoteStatusFields(quote);
+  const accountId = quote.account_id || quote.accountId;
+  const opportunityId = quote.opportunity_id || quote.opportunityId;
+  const accountText = quote.account ? escapeHtml(String(quote.account)) : "---";
+  const opportunityText = quote.opportunity ? escapeHtml(String(quote.opportunity)) : "---";
+  const accountValue = accountId
+    ? `<button type="button" class="quote-detail-link quote-detail-value" data-record-id="${escapeHtml(String(accountId))}" data-object="Account" aria-label="View Account" title="View Account">${accountText}</button>`
+    : `<span class="quote-detail-value">${accountText}</span>`;
+  const opportunityValue = opportunityId
+    ? `<button type="button" class="quote-detail-link quote-detail-value" data-record-id="${escapeHtml(String(opportunityId))}" data-object="Opportunity" aria-label="View Opportunity" title="View Opportunity">${opportunityText}</button>`
+    : `<span class="quote-detail-value">${opportunityText}</span>`;
+  const discountPercentDisplay = quote.discount_percentage !== null && quote.discount_percentage !== undefined
+    ? escapeHtml(String(quote.discount_percentage))
+    : "---";
+  const discountAmountRaw = quote.discount_amount !== null && quote.discount_amount !== undefined
+    ? quote.discount_amount
+    : null;
+  const discountAmountNumber = Number(discountAmountRaw);
+  const discountAmountDisplay = Number.isFinite(discountAmountNumber)
+    ? discountAmountNumber.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : (discountAmountRaw !== null ? escapeHtml(String(discountAmountRaw)) : "---");
 
   var html = `
               <div>
@@ -6517,23 +6651,51 @@ function showTemporaryQuoteDetails(quote) {
                   </div>
               </div>
               <div class="quote-details">
-                <div class="account">
-                  <p><strong>Account:</strong> ${quote.account ? quote.account : "---"}</p>
+                <div class="quote-detail-item">
+                  <div class="quote-detail-label-row">
+                    <span class="material-icons quote-detail-icon" aria-hidden="true">apartment</span>
+                    <span class="quote-detail-label">Account</span>
+                  </div>
+                  ${accountValue}
                 </div>
-                <div class="opportunity">
-                  <p><strong>Opportunity:</strong> ${quote.opportunity ? quote.opportunity : "---"}</p>
+                <div class="quote-detail-item">
+                  <div class="quote-detail-label-row">
+                    <span class="material-icons quote-detail-icon" aria-hidden="true">insights</span>
+                    <span class="quote-detail-label">Opportunity</span>
+                  </div>
+                  ${opportunityValue}
                 </div>
-                <div class="created">
-                  <p><strong>Created At:</strong> ${quote.created_at ? formattedDate : "---"}</p>
-                </div>
-                <div class="expiration">
-                  <p><strong>Expiration Date:</strong> ${quote.expiration_date ? formattedDate : "---"}</p>
-                </div>
-
-                <div class="discount">
-                  <p style="color: red;"><strong>Discount: </strong>
-                    ${quote.discount_percentage}% ( - $${quote.discount_amount} )
-                  </p>
+                <div class="quote-detail-item quote-detail-item--wide">
+                  <div class="quote-detail-inline-row">
+                    <div class="quote-detail-inline-item">
+                      <div class="quote-detail-inline-label">Discount %</div>
+                      <div class="quote-detail-inline-field">
+                        <input type="text"
+                          class="quote-detail-inline-input"
+                          value="${discountPercentDisplay}"
+                          readonly />
+                      </div>
+                    </div>
+                    <div class="quote-detail-inline-item">
+                      <div class="quote-detail-inline-label">Disc Amount</div>
+                      <div class="quote-detail-inline-field">
+                        <input type="text"
+                          class="quote-detail-inline-input"
+                          value="${discountAmountDisplay}"
+                          readonly />
+                      </div>
+                    </div>
+                    <div class="quote-detail-inline-item">
+                      <div class="quote-detail-inline-label">Exp: Date</div>
+                      <div class="quote-detail-date-field">
+                        <span class="material-icons quote-detail-date-icon" aria-hidden="true">event</span>
+                        <input type="text"
+                          class="quote-detail-date-input"
+                          value="${quote.expiration_date ? formattedDate_e : "---"}"
+                          readonly />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
               <h4>Line Items</h4>`;
@@ -8106,12 +8268,29 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
     };
     const formatCurrency = (val) => {
       if (val === null || val === undefined) return "—";
-      if (typeof val === "number") return val.toLocaleString("en-US", { style: "currency", currency: "USD" });
+      if (typeof val === "number") {
+        return val.toLocaleString("en-US", {
+          style: "currency",
+          currency: "USD",
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+      }
       return val;
     };
     const isMoneyField = (field) => {
       const f = (field || "").toLowerCase();
-      return ["amount", "net_amount", "subtotal", "total", "revenue"].some(k => f.includes(k));
+      return [
+        "amount",
+        "net_amount",
+        "subtotal",
+        "total",
+        "revenue",
+        "price",
+        "cost",
+        "fee",
+        "currency",
+      ].some(k => f.includes(k));
     };
     const getISOWeek = (date) => {
       const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -8167,6 +8346,29 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       }
       return String(value);
     };
+    const isBooleanValue = (value) => {
+      if (typeof value === "boolean") return true;
+      if (typeof value !== "string") return false;
+      const normalized = value.trim().toLowerCase();
+      return ["true", "false", "yes", "no"].includes(normalized);
+    };
+    const normalizeBooleanValue = (value) => {
+      if (typeof value === "boolean") return value;
+      if (typeof value !== "string") return null;
+      const normalized = value.trim().toLowerCase();
+      if (["true", "yes"].includes(normalized)) return true;
+      if (["false", "no"].includes(normalized)) return false;
+      return null;
+    };
+    const renderBooleanIcon = (value) => {
+      const normalized = normalizeBooleanValue(value);
+      if (normalized === null) return "—";
+      const icon = normalized ? "check_circle" : "radio_button_unchecked";
+      const className = normalized
+        ? "records-boolean-icon records-boolean-icon--true"
+        : "records-boolean-icon records-boolean-icon--false";
+      return `<span class="${className}"><span class="material-icons" aria-hidden="true">${icon}</span></span>`;
+    };
     const resolveRecordFieldValue = (record, candidates) => {
       const keys = Object.keys(record || {});
       if (!keys.length) return "";
@@ -8181,6 +8383,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       }
       return "";
     };
+    const getPartnerLabel = (record) => resolveRecordFieldValue(record, ["_partner_label", "partner_label"]);
     const resolveRecordObjectName = (record, fallback) => {
       const objectValue = resolveRecordFieldValue(record, [
         "object",
@@ -8202,6 +8405,20 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       }
       const objectName = resolveRecordObjectName(record, fallbackObject);
       return buildRecordListViewButton(recordId, objectName);
+    };
+    const orderListFields = (fields) => {
+      if (!Array.isArray(fields)) return [];
+      const viewFields = [];
+      const rest = [];
+      fields.forEach((field) => {
+        const lower = String(field).toLowerCase();
+        if (lower === "view_record" || lower === "view_quote") {
+          viewFields.push(field);
+        } else {
+          rest.push(field);
+        }
+      });
+      return [...viewFields, ...rest];
     };
 
     // If payload arrives as string, try to parse it
@@ -8244,10 +8461,30 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         border-radius: 0.5rem 0.5rem 0 0;
       }
 
+      .records-header-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
       .records-header h5 {
         margin: 0;
         font-size: 1rem;
         letter-spacing: 0.5px;
+      }
+
+      .records-partner-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(16, 185, 129, 0.16);
+        color: #047857;
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        white-space: nowrap;
       }
 
       .records-popout-btn {
@@ -8274,7 +8511,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       .records-table-wrapper {
         overflow-x: auto;
         overflow-y: auto;
-        max-height: 320px;
+        max-height: 500px;
         border: 1px solid #e5e7eb;
         border-radius: 0 0 0.5rem 0.5rem;
         box-shadow: 0 2px 8px rgba(0,0,0,0.08);
@@ -8284,7 +8521,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         width: 100%;
         border-collapse: collapse;
         background: white;
-        font-size: 0.9rem;
+        font-size: 1.12rem;
       }
 
       .records-table thead {
@@ -8305,7 +8542,91 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         font-weight: 600;
         color: #374151;
         text-transform: uppercase;
-        font-size: 0.8rem;
+        font-size: 1.1rem;
+        background: #f8fafc;
+        border-right: 1px solid #e5e7eb;
+        box-shadow: inset 0 -1px 0 #e5e7eb;
+      }
+
+      .records-table th:last-child,
+      .records-table td:last-child {
+        border-right: none;
+      }
+
+      .records-table td {
+        border-right: 1px solid #f1f5f9;
+      }
+
+      .records-table th.is-sortable {
+        cursor: pointer;
+        position: relative;
+      }
+
+      .records-table th.is-sortable::after {
+        content: "";
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        margin-left: 8px;
+        vertical-align: middle;
+        background: #9ca3af;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 4l-4 4h3v6h2V8h3l-4-4zm0 16l4-4h-3V10h-2v6H8l4 4z'/%3E%3C/svg%3E") center / contain no-repeat;
+        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 4l-4 4h3v6h2V8h3l-4-4zm0 16l4-4h-3V10h-2v6H8l4 4z'/%3E%3C/svg%3E") center / contain no-repeat;
+      }
+
+      .records-table th.is-sorted::after {
+        background: #2563eb;
+      }
+
+      .records-table th.is-sorted[data-sort-order="asc"]::after {
+        mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 14l5-5 5 5H7z'/%3E%3C/svg%3E");
+        -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 14l5-5 5 5H7z'/%3E%3C/svg%3E");
+      }
+
+      .records-table th.is-sorted[data-sort-order="desc"]::after {
+        mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5H7z'/%3E%3C/svg%3E");
+        -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5H7z'/%3E%3C/svg%3E");
+      }
+
+      .records-boolean-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #0ea5e9;
+        width: 100%;
+      }
+
+      .records-boolean-icon--false {
+        color: #cbd5e1;
+      }
+
+      .records-boolean-icon .material-icons {
+        font-size: 22px;
+      }
+
+      .records-boolean-cell {
+        text-align: center;
+      }
+
+      .records-table td[data-field="description" i] {
+        white-space: normal;
+        word-break: break-word;
+        max-width: 280px;
+      }
+
+      .records-table td[data-field="notes" i] {
+        white-space: normal;
+        word-break: break-word;
+        max-width: 840px;
+      }
+
+      .records-table--lead th[data-field="notes" i],
+      .records-table--lead td[data-field="notes" i],
+      .records-table--leads th[data-field="notes" i],
+      .records-table--leads td[data-field="notes" i] {
+        min-width: 420px;
       }
 
       .records-table tbody tr:nth-child(even) {
@@ -8330,12 +8651,13 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       .records-card {
         border: 1px solid #e5e7eb;
         border-radius: 14px;
-        padding: 12px 14px;
+        padding: 16px;
         background: #f8fafc;
         box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 14px;
+        min-height: 135px;
       }
 
       .records-card.is-clickable {
@@ -8359,6 +8681,14 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         align-items: flex-start;
         justify-content: space-between;
         gap: 10px;
+      }
+
+      .records-card-pills {
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: flex-end;
       }
 
       .records-card-title {
@@ -8437,12 +8767,13 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       .records-lead-card {
         border: 1px solid #e5e7eb;
         border-radius: 14px;
-        padding: 12px 14px;
+        padding: 16px;
         background: #f8fafc;
         box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 14px;
+        min-height: 135px;
       }
 
       .records-lead-card.is-clickable {
@@ -8548,6 +8879,32 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
 
       .records-lead-view {
         display: inline-flex;
+      }
+
+      .records-columns-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 6px;
+        border-radius: 6px;
+        cursor: grab;
+      }
+
+      .records-columns-row.is-dragging {
+        background: #f1f5f9;
+        opacity: 0.6;
+      }
+
+      .records-columns-drag {
+        cursor: grab;
+        font-size: 18px;
+        color: #94a3b8;
+      }
+
+      .records-columns-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
       }
 
       .email-alert-container.popup .records-leads-grid {
@@ -8840,6 +9197,11 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         return escapeHtml(String(value));
       };
 
+      const headerPartnerLabel = records.map(getPartnerLabel).find(Boolean);
+      const headerPartnerPill = headerPartnerLabel
+        ? `<span class="records-partner-pill">${safeText(headerPartnerLabel)}</span>`
+        : "";
+
       const leadCards = records.map((record) => {
         const firstName = getRecordField(record, ["first_name", "firstname", "first", "given_name"]);
         const lastName = getRecordField(record, ["last_name", "lastname", "last", "surname"]);
@@ -8871,13 +9233,15 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         if (title) rows.push(`<div class="records-lead-row"><span class="records-lead-label">Title</span><span class="records-lead-value">${safeText(title)}</span></div>`);
         if (source) rows.push(`<div class="records-lead-row"><span class="records-lead-label">Source</span><span class="records-lead-value">${safeText(source)}</span></div>`);
 
+        const partnerTag = getRecordField(record, ["_partner_label", "partner_label"]);
+        const partnerPill = partnerTag ? `<span class="records-partner-pill">${safeText(partnerTag)}</span>` : "";
         const statusPill = status ? `<span class="records-lead-pill">${safeText(status)}</span>` : "";
         const viewButton = recordId
           ? `<button type="button" class="record-list-view-btn records-lead-view" data-record-id="${escapeHtml(String(recordId))}" data-object="${escapeHtml(String(objectName))}" aria-label="View lead" title="View lead">
               <span class="material-icons" aria-hidden="true">visibility</span>
             </button>`
           : "";
-        const actions = [statusPill].filter(Boolean).join("");
+        const actions = [partnerPill, statusPill].filter(Boolean).join("");
 
         const cardAttrs = recordId
           ? `data-record-id="${escapeHtml(String(recordId))}" data-object="${escapeHtml(String(objectName))}" role="button" tabindex="0"`
@@ -8899,12 +9263,14 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       }).join("");
 
       const leadIdCandidates = ["id", "record_id", "lead_id", "leadid", "sfid", "salesforce_id"];
-      const allFields = Object.keys(records[0] || {});
+      const allFields = Object.keys(records[0] || {}).filter((field) => !String(field).startsWith("_"));
       const lowerFields = allFields.map((field) => String(field).toLowerCase());
       const hasTable = allFields.length > 0;
       const hasViewField = lowerFields.includes("view_record") || lowerFields.includes("view_quote");
       const hasRecordIds = records.some((record) => resolveRecordFieldValue(record, leadIdCandidates));
-      const tableFields = hasViewField || !hasRecordIds ? allFields : [...allFields, "view_record"];
+      const tableFields = orderListFields(
+        hasViewField || !hasRecordIds ? allFields : [...allFields, "view_record"]
+      );
       const tableClass = `records-table records-table--${String(objectName || '')
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')}`;
@@ -8912,7 +9278,12 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         <div class="records-table-wrapper records-leads-table" data-record-object="${escapeHtml(String(objectName))}" data-fields='${escapeHtml(JSON.stringify(tableFields))}'>
           <table class="${tableClass}">
             <thead>
-              <tr>${tableFields.map(f => `<th data-field="${escapeHtml(String(f))}">${normalizeFieldName(f)}</th>`).join('')}</tr>
+              <tr>${tableFields.map(f => {
+                const fieldLower = String(f).toLowerCase();
+                const sortable = (fieldLower === "view_record" || fieldLower === "view_quote") ? "false" : "true";
+                const sortClass = sortable === "true" ? "is-sortable" : "";
+                return `<th data-field="${escapeHtml(String(f))}" data-sortable="${sortable}" class="${sortClass}">${normalizeFieldName(f)}</th>`;
+              }).join('')}</tr>
             </thead>
             <tbody>
               ${records.map(record => `
@@ -8923,6 +9294,9 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
                       ? buildListViewValue(record, fieldLower, objectName, leadIdCandidates)
                       : record[field];
                     if (value === null || value === undefined || value === "") return `<td data-field="${escapeHtml(String(field))}">—</td>`;
+                    if (isBooleanValue(value)) {
+                      return `<td class="records-boolean-cell" data-field="${escapeHtml(String(field))}">${renderBooleanIcon(value)}</td>`;
+                    }
                     if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(T.*)?$/.test(value)) {
                       const d = new Date(value);
                       if (!isNaN(d.getTime())) {
@@ -8953,7 +9327,10 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
             padding:10px 14px;
             border-radius:12px 12px 0 0;
           ">
-            <h4 style="margin:0;">${objectName} records.</h4>
+            <div class="records-header-title">
+              <h4 style="margin:0;">${objectName} records.</h4>
+              ${headerPartnerPill}
+            </div>
             <div class="records-header-actions">
               ${hasTable ? `
               <button type="button" class="records-columns-btn" data-object="${escapeHtml(String(objectName))}" aria-label="Choose columns" title="Choose columns">
@@ -8992,7 +9369,11 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       "salesforce_id",
       "custom_identifier",
     ];
-    const allFields = Object.keys(records[0] || {});
+    const headerPartnerLabel = records.map(getPartnerLabel).find(Boolean);
+    const headerPartnerPill = headerPartnerLabel
+      ? `<span class="records-partner-pill">${escapeHtml(String(headerPartnerLabel))}</span>`
+      : "";
+    const allFields = Object.keys(records[0] || {}).filter((field) => !String(field).startsWith("_"));
     const lowerFields = allFields.map((field) => String(field).toLowerCase());
     const hasViewQuote = lowerFields.includes("view_quote");
     const hasViewRecord = lowerFields.includes("view_record");
@@ -9000,7 +9381,9 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
     const hasQuoteIds = lowerFields.includes("qteid");
     const isQuoteObject = hasViewQuote || hasQuoteIds || normalizedObject === "quote" || normalizedObject === "quotes";
     const viewField = isQuoteObject ? "view_quote" : "view_record";
-    const tableFields = (hasViewQuote || hasViewRecord || !hasRecordIds) ? allFields : [...allFields, viewField];
+    const tableFields = orderListFields(
+      (hasViewQuote || hasViewRecord || !hasRecordIds) ? allFields : [...allFields, viewField]
+    );
     const normalizedSlug = String(objectName || "").toLowerCase().replace(/[^a-z0-9]+/g, '-');
     const tableClass = `records-table records-table--${normalizedSlug}`;
     const cardGridClass = `records-card-grid records-card-grid--${normalizedSlug}`;
@@ -9043,7 +9426,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
     ];
 
     const recordCards = records.map((record, index) => {
-      const keys = Object.keys(record || {});
+      const keys = Object.keys(record || {}).filter((key) => !String(key).startsWith("_"));
       const keyMap = new Map(keys.map((key) => [key.toLowerCase(), key]));
 
       const getFieldInfo = (candidates) => {
@@ -9068,9 +9451,14 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         || `Record ${index + 1}`;
 
       const statusInfo = getFieldInfo(["status", "stage"]);
+      const partnerTag = getPartnerLabel(record);
+      const partnerPill = partnerTag
+        ? `<span class="records-partner-pill">${escapeHtml(String(partnerTag))}</span>`
+        : "";
       const statusPill = statusInfo.value
         ? `<span class="records-card-pill">${escapeHtml(String(statusInfo.value))}</span>`
         : "";
+      const pills = [partnerPill, statusPill].filter(Boolean).join("");
 
       const recordIdInfo = getFieldInfo([
         "id",
@@ -9125,7 +9513,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       }
 
       const rows = [];
-      const maxFields = isContractLine ? 2 : 6;
+      const maxFields = isContractLine ? 2 : 12;
       for (const fieldKey of fieldCandidates) {
         if (rows.length >= maxFields) break;
         if (skipFields.has(fieldKey.toLowerCase())) continue;
@@ -9158,7 +9546,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         <div class="${cardClass}" ${cardAttrs}>
           <div class="records-card-top">
             <div class="records-card-title">${escapeHtml(String(displayName))}</div>
-            ${statusPill}
+            ${pills ? `<div class="records-card-pills">${pills}</div>` : ""}
           </div>
           <div class="records-card-meta">
             ${rows.length ? rows.join("") : `<div class="records-card-empty">No details available.</div>`}
@@ -9172,7 +9560,12 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       <div class="records-table-wrapper records-table-wrapper--list" data-record-object="${escapeHtml(String(objectName))}" data-fields='${escapeHtml(JSON.stringify(tableFields))}'>
         <table class="${tableClass}">
           <thead>
-            <tr>${tableFields.map(f => `<th data-field="${escapeHtml(String(f))}">${normalizeFieldName(f)}</th>`).join('')}</tr>
+            <tr>${tableFields.map(f => {
+              const fieldLower = String(f).toLowerCase();
+              const sortable = (fieldLower === "view_record" || fieldLower === "view_quote") ? "false" : "true";
+              const sortClass = sortable === "true" ? "is-sortable" : "";
+              return `<th data-field="${escapeHtml(String(f))}" data-sortable="${sortable}" class="${sortClass}">${normalizeFieldName(f)}</th>`;
+            }).join('')}</tr>
           </thead>
           <tbody>
             ${records.map(record => `
@@ -9182,6 +9575,12 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
                   const rawValue = (fieldLower === "view_record" || fieldLower === "view_quote")
                     ? buildListViewValue(record, fieldLower, objectName, recordIdCandidates)
                     : record[field];
+                  if (rawValue === null || rawValue === undefined || rawValue === "") {
+                    return `<td data-field="${escapeHtml(String(field))}">—</td>`;
+                  }
+                  if (isBooleanValue(rawValue)) {
+                    return `<td class="records-boolean-cell" data-field="${escapeHtml(String(field))}">${renderBooleanIcon(rawValue)}</td>`;
+                  }
                   const formatted = formatRecordValue(field, rawValue);
                   const valueHtml = (fieldLower === "view_record" || fieldLower === "view_quote")
                     ? String(formatted)
@@ -9465,17 +9864,199 @@ function applyListColumnVisibility(table, hiddenFields) {
   });
 }
 
-function buildListColumnsPanel(panel, fields, hiddenFields, onToggle) {
+function reorderTableColumns(table, orderedFields) {
+  if (!table || !Array.isArray(orderedFields) || orderedFields.length === 0) return;
+  const orderKeys = orderedFields.map((field) => String(field).toLowerCase());
+
+  const reorderCells = (row) => {
+    const cells = Array.from(row.children).filter((cell) => cell.matches("th, td"));
+    if (!cells.length) return;
+    const cellMap = new Map();
+    cells.forEach((cell, index) => {
+      const key = String(cell.dataset.field || "").toLowerCase();
+      if (!key) return;
+      cellMap.set(key, { cell, index });
+    });
+    const ordered = [];
+    const used = new Set();
+    orderKeys.forEach((key) => {
+      const entry = cellMap.get(key);
+      if (!entry) return;
+      if (used.has(entry.cell)) return;
+      ordered.push(entry.cell);
+      used.add(entry.cell);
+    });
+    cells.forEach((cell) => {
+      if (used.has(cell)) return;
+      ordered.push(cell);
+    });
+    ordered.forEach((cell) => row.appendChild(cell));
+  };
+
+  const headRow = table.tHead && table.tHead.rows.length ? table.tHead.rows[0] : null;
+  if (headRow) {
+    reorderCells(headRow);
+  }
+  const body = table.tBodies && table.tBodies.length ? table.tBodies[0] : null;
+  if (body) {
+    Array.from(body.rows).forEach(reorderCells);
+  }
+}
+
+function parseSortValue(text) {
+  if (text === null || text === undefined) return { type: "empty", value: "" };
+  const raw = String(text).trim();
+  if (!raw || raw === "—") return { type: "empty", value: "" };
+
+  const lowered = raw.toLowerCase();
+  if (lowered === "yes" || lowered === "no") {
+    return { type: "boolean", value: lowered === "yes" ? 1 : 0 };
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    const parsed = Date.parse(raw);
+    if (!Number.isNaN(parsed)) {
+      return { type: "date", value: parsed };
+    }
+  }
+  if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(raw)) {
+    const parts = raw.split("/");
+    const month = parseInt(parts[0], 10);
+    const day = parseInt(parts[1], 10);
+    let year = parseInt(parts[2], 10);
+    if (year < 100) year += 2000;
+    const parsed = new Date(year, month - 1, day).getTime();
+    if (!Number.isNaN(parsed)) {
+      return { type: "date", value: parsed };
+    }
+  }
+
+  const numeric = raw.replace(/[^0-9.\-]/g, "");
+  if (numeric && numeric !== "-" && numeric !== "." && numeric !== "-.") {
+    const parsed = parseFloat(numeric);
+    if (!Number.isNaN(parsed)) {
+      return { type: "number", value: parsed };
+    }
+  }
+
+  return { type: "string", value: lowered };
+}
+
+function detectColumnType(rows, field) {
+  for (const row of rows) {
+    const cell = getCellByField(row, field);
+    if (!cell) continue;
+    const parsed = parseSortValue(cell.textContent);
+    if (parsed.type !== "empty") {
+      return parsed.type;
+    }
+  }
+  return "string";
+}
+
+function getCellByField(row, field) {
+  const target = String(field || "").toLowerCase();
+  if (!target) return null;
+  const cells = Array.from(row.querySelectorAll("td[data-field]"));
+  return cells.find((cell) => String(cell.dataset.field || "").toLowerCase() === target) || null;
+}
+
+function sortTableByField(table, field, order) {
+  if (!table) return;
+  const body = table.tBodies && table.tBodies.length ? table.tBodies[0] : null;
+  if (!body) return;
+  const rows = Array.from(body.rows);
+  if (!rows.length) return;
+
+  const columnType = detectColumnType(rows, field);
+  const direction = order === "asc" ? 1 : -1;
+  const rowsWithIndex = rows.map((row, index) => ({ row, index }));
+
+  rowsWithIndex.sort((a, b) => {
+    const aCell = getCellByField(a.row, field);
+    const bCell = getCellByField(b.row, field);
+    const aValue = parseSortValue(aCell ? aCell.textContent : "");
+    const bValue = parseSortValue(bCell ? bCell.textContent : "");
+
+    if (aValue.type === "empty" && bValue.type === "empty") {
+      return a.index - b.index;
+    }
+    if (aValue.type === "empty") return 1;
+    if (bValue.type === "empty") return -1;
+
+    let comparison = 0;
+    if (columnType === "number" || columnType === "date" || columnType === "boolean") {
+      comparison = (aValue.value || 0) - (bValue.value || 0);
+    } else {
+      comparison = String(aValue.value).localeCompare(String(bValue.value));
+    }
+
+    if (comparison === 0) {
+      return a.index - b.index;
+    }
+    return comparison * direction;
+  });
+
+  rowsWithIndex.forEach(({ row }) => {
+    body.appendChild(row);
+  });
+}
+
+function applyTableSortIndicator(table, field, order) {
+  if (!table) return;
+  const fieldKey = String(field || "").toLowerCase();
+  const headers = table.querySelectorAll("th[data-field]");
+  headers.forEach((header) => {
+    const headerKey = String(header.dataset.field || "").toLowerCase();
+    if (fieldKey && headerKey === fieldKey) {
+      header.classList.add("is-sorted");
+      header.dataset.sortOrder = order;
+    } else {
+      header.classList.remove("is-sorted");
+      header.removeAttribute("data-sort-order");
+    }
+  });
+}
+
+function initializeRecordTableSorting(table) {
+  if (!table || table.dataset.sortReady === "true") return;
+  const headers = table.querySelectorAll("th[data-field]");
+  headers.forEach((header) => {
+    const sortable = header.dataset.sortable !== "false";
+    if (!sortable) return;
+    header.classList.add("is-sortable");
+    header.addEventListener("click", () => {
+      const field = header.dataset.field;
+      if (!field) return;
+      const current = header.dataset.sortOrder || "desc";
+      const nextOrder = current === "asc" ? "desc" : "asc";
+      sortTableByField(table, field, nextOrder);
+      applyTableSortIndicator(table, field, nextOrder);
+      table.dataset.sortField = field;
+      table.dataset.sortOrder = nextOrder;
+    });
+  });
+
+  if (table.dataset.sortField && table.dataset.sortOrder) {
+    applyTableSortIndicator(table, table.dataset.sortField, table.dataset.sortOrder);
+  }
+  table.dataset.sortReady = "true";
+}
+
+function buildListColumnsPanel(panel, fields, hiddenFields, onToggle, onReorder) {
   const hiddenSet = new Set((hiddenFields || []).map((f) => String(f).toLowerCase()));
   const rows = fields.map((field) => {
     const key = String(field);
     const keyLower = key.toLowerCase();
     const checked = hiddenSet.has(keyLower) ? "" : "checked";
     return `
-      <label class="records-columns-item">
-        <input type="checkbox" data-field="${escapeHtml(key)}" ${checked}>
-        <span>${normalizeFieldName(key)}</span>
-      </label>
+      <div class="records-columns-row" data-field="${escapeHtml(key)}" draggable="true">
+        <span class="material-icons records-columns-drag" aria-hidden="true">drag_indicator</span>
+        <label class="records-columns-item">
+          <input type="checkbox" data-field="${escapeHtml(key)}" ${checked}>
+          <span>${normalizeFieldName(key)}</span>
+        </label>
+      </div>
     `;
   }).join("");
 
@@ -9511,6 +10092,55 @@ function buildListColumnsPanel(panel, fields, hiddenFields, onToggle) {
       onToggle(Array.from(hiddenSet));
     });
   });
+
+  const list = panel.querySelector(".records-columns-list");
+  if (!list) return;
+
+  let dragItem = null;
+  list.addEventListener("dragstart", (event) => {
+    if (event.target.closest("input[type='checkbox']")) {
+      event.preventDefault();
+      return;
+    }
+    dragItem = event.target.closest(".records-columns-row");
+    if (!dragItem) return;
+    dragItem.classList.add("is-dragging");
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", dragItem.dataset.field || "");
+    }
+  });
+
+  list.addEventListener("dragover", (event) => {
+    if (!dragItem) return;
+    event.preventDefault();
+    const targetRow = event.target.closest(".records-columns-row");
+    if (!targetRow || targetRow === dragItem) return;
+    const rect = targetRow.getBoundingClientRect();
+    const shouldInsertBefore = event.clientY < rect.top + rect.height / 2;
+    if (shouldInsertBefore) {
+      list.insertBefore(dragItem, targetRow);
+    } else {
+      list.insertBefore(dragItem, targetRow.nextSibling);
+    }
+  });
+
+  list.addEventListener("drop", () => {
+    if (!dragItem) return;
+    const newOrder = Array.from(list.querySelectorAll(".records-columns-row"))
+      .map((row) => row.dataset.field)
+      .filter(Boolean);
+    if (typeof onReorder === "function") {
+      onReorder(newOrder);
+    }
+  });
+
+  list.addEventListener("dragend", () => {
+    if (dragItem) {
+      dragItem.classList.remove("is-dragging");
+    }
+    dragItem = null;
+  });
 }
 
 async function initializeRecordListLayouts(root = document) {
@@ -9534,16 +10164,29 @@ async function initializeRecordListLayouts(root = document) {
     const table = tableWrapper.querySelector("table");
     const layout = await fetchListRecordLayout(objectName);
     const normalizedOrder = Array.isArray(layout.order) ? layout.order : [];
-    const orderedFields = normalizedOrder.length
+    let orderedFields = normalizedOrder.length
       ? [...normalizedOrder.filter((field) => fields.includes(field)), ...fields.filter((field) => !normalizedOrder.includes(field))]
       : fields;
-    const hidden = Array.isArray(layout.hidden) ? layout.hidden : [];
+    let hidden = Array.isArray(layout.hidden) ? layout.hidden : [];
 
+    reorderTableColumns(table, orderedFields);
     applyListColumnVisibility(table, hidden);
+    initializeRecordTableSorting(table);
+    if (table && table.dataset.sortField && table.dataset.sortOrder) {
+      applyTableSortIndicator(table, table.dataset.sortField, table.dataset.sortOrder);
+    }
 
     buildListColumnsPanel(panel, orderedFields, hidden, (updatedHidden) => {
+      hidden = updatedHidden;
       applyListColumnVisibility(table, updatedHidden);
       saveListRecordLayout(objectName, { order: orderedFields, hidden: updatedHidden });
+    }, (newOrder) => {
+      orderedFields = Array.isArray(newOrder) && newOrder.length ? newOrder : orderedFields;
+      reorderTableColumns(table, orderedFields);
+      if (tableWrapper) {
+        tableWrapper.dataset.fields = JSON.stringify(orderedFields);
+      }
+      saveListRecordLayout(objectName, { order: orderedFields, hidden });
     });
 
     columnsBtn.addEventListener("click", () => {

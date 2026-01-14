@@ -4,6 +4,7 @@ from django.urls import reverse
 from django.utils.safestring import mark_safe
 from cpq.models import Product, Quote, CustomObject, CustomField, CustomFieldValue, CustomRecord, Account, ActionUsage, Tenant, TenantUsageLog, Option
 from cpq.views import set_primary_quote, build_account_quote_hierarchy_for_user
+from cpq.permissions import is_partner_user
 from salesforce.models import SalesforceToken
 from hubspot.models import HubspotToken
 from quickbooks.models import QuickbooksToken
@@ -12,6 +13,7 @@ from agents.models import ChatSession, ChatMessage
 from django.utils.timezone import now
 import requests
 from cpq.forms import  generate_dynamic_form
+from cpq.permissions import apply_partner_access_filter
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
@@ -114,8 +116,6 @@ def dashboard(request):
 
     if view == "products":
         product_queryset = Product.objects.filter(is_active=True)
-        if not user.is_superuser:
-            product_queryset = product_queryset.filter(created_by=user)
 
         products = list(product_queryset)
         product_ids = [product.id for product in products]
@@ -175,8 +175,8 @@ def dashboard(request):
     tenant = Tenant.objects.first()
     tenant_version = tenant.version if tenant and tenant.version else ""
 
-    records_custom_object, field_values_by_record = get_values_by_record(custom_object)
-    lookup_options = get_lookup_data_for_form(custom_object)
+    records_custom_object, field_values_by_record = get_values_by_record(custom_object, user)
+    lookup_options = get_lookup_data_for_form(custom_object, user)
 
 
     return render(request, "dashboard.html", {
@@ -200,6 +200,7 @@ def dashboard(request):
         'field_values_by_record': field_values_by_record,
         'lookup_options': lookup_options,
         'tenant_version': tenant_version,
+        "is_partner_user": is_partner_user(user),
 })
 
 
@@ -245,12 +246,21 @@ def get_user_accounts(user):
         return Account.objects.all()
     return Account.objects.filter(owner=user)
 
-def get_values_by_record(custom_object):
+def get_values_by_record(custom_object, user=None):
+    if not custom_object:
+        return CustomRecord.objects.none(), {}
     records_custom_object = (
         CustomRecord.objects.filter(object_type=custom_object)
         .prefetch_related("custom_field_values__field")
         .order_by('-created_at')
     )
+    if user:
+        records_custom_object = apply_partner_access_filter(
+            user,
+            custom_object.name,
+            records_custom_object,
+            custom_object=custom_object,
+        )
 
     field_values_by_record = {}
 
@@ -262,13 +272,15 @@ def get_values_by_record(custom_object):
 
     return records_custom_object, field_values_by_record
 
-def get_lookup_data_for_form(custom_object):
+def get_lookup_data_for_form(custom_object, user=None):
     lookup_data = {}
     for field in CustomField.objects.filter(custom_object=custom_object, data_type="lookup"):
         try:
             model = apps.get_model(field.lookup_model)
             # Only grab id and name or string version
             instances = model.objects.all()
+            if user:
+                instances = apply_partner_access_filter(user, model.__name__, instances)
             lookup_data[field.name] = [{"id": i.id, "label": str(i)} for i in instances]
         except Exception as e:
             lookup_data[field.name] = []

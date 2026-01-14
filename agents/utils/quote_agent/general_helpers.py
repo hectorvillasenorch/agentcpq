@@ -19,6 +19,7 @@ from cpq.models import (
     QuoteDocument,
     QuotePendingAttachment,
 )
+from cpq.permissions import get_partner_profile, partner_label_for_user
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db.utils import OperationalError, ProgrammingError
@@ -469,7 +470,7 @@ def restrict_quote_document_settings_to_line_item_object_types(object_types: lis
 
 
 
-def get_document_pdf(quote, session_data=None):
+def get_document_pdf(quote, session_data=None, user=None):
     try:
         # ✅ Fetch related quote lines
         quote_lines = QuoteLine.objects.filter(quote=quote)
@@ -482,6 +483,11 @@ def get_document_pdf(quote, session_data=None):
 
         # ✅ Fetch related account
         account = quote.account
+        partner_profile = get_partner_profile(user)
+        partner_label = partner_label_for_user(user)
+        partner_logo_name = None
+        if partner_profile and partner_profile.partner_logo:
+            partner_logo_name = partner_profile.partner_logo.name
 
         # ✅ Pending attachments to merge after main content
         try:
@@ -538,23 +544,42 @@ def get_document_pdf(quote, session_data=None):
         pdf.setFillColor(HexColor(CBLACK))
 
         # ✅ Add Logo (via default_storage, not .path)
-        if template.show_company_logo and company and company.logo:
-            logo_name = company.logo.name  # relative key in R2
-            if default_storage.exists(logo_name):
-                with default_storage.open(logo_name, 'rb') as logo_file:
-                    img = ImageReader(logo_file)
-                    pdf.drawImage(
-                        img,
-                        430, 710,
-                        width=150, height=60,
-                        preserveAspectRatio=True,
-                        mask='auto'
-                    )
+        logo_name = None
+        if template.show_company_logo:
+            if partner_logo_name:
+                logo_name = partner_logo_name
+            elif company and company.logo:
+                logo_name = company.logo.name  # relative key in R2
+
+        if logo_name and default_storage.exists(logo_name):
+            with default_storage.open(logo_name, 'rb') as logo_file:
+                img = ImageReader(logo_file)
+                pdf.drawImage(
+                    img,
+                    430, 710,
+                    width=150, height=60,
+                    preserveAspectRatio=True,
+                    mask='auto'
+                )
 
         # ------------------------------------
         pdf.setStrokeColor(HexColor(PCOLOR))
         pdf.setLineWidth(2)
         pdf.line(32, 700, 580, 700)
+
+        if partner_label:
+            pdf.setFont("Helvetica-Bold", 9)
+            label_text = str(partner_label)
+            text_width = pdf.stringWidth(label_text, "Helvetica-Bold", 9)
+            pill_width = text_width + 14
+            pill_height = 14
+            pill_x = 580 - pill_width
+            pill_y = 683
+            pdf.setFillColor(HexColor("#e6f4ea"))
+            pdf.roundRect(pill_x, pill_y, pill_width, pill_height, 7, fill=1, stroke=0)
+            pdf.setFillColor(HexColor("#137333"))
+            pdf.drawString(pill_x + 7, pill_y + 4, label_text)
+            pdf.setFillColor(HexColor(CBLACK))
 
         # ✅ Set Y and X position for Company Information
         y_position = 660

@@ -5,7 +5,7 @@ import openai
 import logging
 import re
 from dotenv import load_dotenv
-from cpq.models import Quote, Account, Opportunity, QuoteLine, Product
+from cpq.models import Quote, Account, Opportunity, QuoteLine, Product, CustomObject
 from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 from .utils.analytics_agent.llm_helpers import extract_metrics_with_llm, generate_final_metrics_message
 
 # Handle Helpers
-from .utils.analytics_agent.handle_helpers import handle_show_metrics
+from .utils.analytics_agent.handle_helpers import handle_show_metrics, get_object_metadata
 
 # Windows Context Helpers
 from .utils.session_context_helpers.session_context_helpers import get_session_context
@@ -39,6 +39,108 @@ def analytics_agent(user, action, user_message, session_data):
 
     return {"message": "🤖 Sorry, I couldn’t understand your request."}
 
+_DIRECT_METRICS_RE = re.compile(
+    r"^\s*show\s+metrics\s*:\s*show(?:\s+all)?\s+(?P<object>.+?)\s+records?"
+    r"(?:\s+order\s+by\s+(?P<order_field>[\w\.]+)\s+(?P<order_dir>asc|desc))?"
+    r"(?:\s+limit\s+(?P<limit>\d+))?\s*$",
+    re.IGNORECASE,
+)
+_LATEST_LIST_RE = re.compile(
+    r"^\s*(?:show|list|display|fetch|give)?\s*(?:me\s*)?(?:the\s*)?"
+    r"(?:latest|recent|new|newest)\s+(?:(?P<limit>\d+)\s+)?(?P<object>.+?)"
+    r"(?:\s+records?)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _resolve_metrics_object_name(raw_object):
+    if not raw_object:
+        return None
+    cleaned = re.sub(r"\s+", " ", str(raw_object).strip())
+    normalized = cleaned.lower()
+    if not cleaned:
+        return None
+
+    candidates = []
+
+    def add_candidate(value):
+        if not value:
+            return
+        candidates.append(value)
+        if value.lower().endswith("s"):
+            candidates.append(value[:-1])
+
+    add_candidate(cleaned)
+    add_candidate(cleaned.title())
+    add_candidate(cleaned.replace(" ", "_"))
+    add_candidate(cleaned.title().replace(" ", "_"))
+
+    for candidate in candidates:
+        if get_object_metadata(candidate):
+            return candidate
+
+    try:
+        for custom_object in CustomObject.objects.all():
+            name = (custom_object.name or "").lower()
+            label = (custom_object.label or "").lower()
+            if normalized in {name, label}:
+                return custom_object.name
+            if normalized.endswith("s") and normalized[:-1] in {name, label}:
+                return custom_object.name
+    except Exception:
+        return None
+
+    return None
+
+
+def _parse_direct_metrics_request(user_message):
+    if not user_message:
+        return None
+    match = _DIRECT_METRICS_RE.match(user_message)
+    if not match:
+        return None
+    object_raw = match.group("object")
+    resolved_object = _resolve_metrics_object_name(object_raw)
+    if not resolved_object:
+        return None
+
+    order_field = match.group("order_field") or "created_at"
+    order_dir = (match.group("order_dir") or "desc").lower()
+    try:
+        limit = int(match.group("limit")) if match.group("limit") else 10
+    except (TypeError, ValueError):
+        limit = 10
+
+    return {
+        "object": resolved_object,
+        "method": "read",
+        "conditions": [],
+        "sort": {"field": order_field, "order": order_dir},
+        "limit": limit,
+    }
+
+def _parse_latest_metrics_request(user_message):
+    if not user_message:
+        return None
+    match = _LATEST_LIST_RE.match(user_message)
+    if not match:
+        return None
+    object_raw = match.group("object")
+    resolved_object = _resolve_metrics_object_name(object_raw)
+    if not resolved_object:
+        return None
+    try:
+        limit = int(match.group("limit")) if match.group("limit") else 10
+    except (TypeError, ValueError):
+        limit = 10
+    return {
+        "object": resolved_object,
+        "method": "read",
+        "conditions": [],
+        "sort": {"field": "created_at", "order": "desc"},
+        "limit": limit,
+    }
+
 def show_metrics(user, user_message, session_data):
     """
     Handles metrics display requests for system objects.
@@ -46,6 +148,22 @@ def show_metrics(user, user_message, session_data):
     and generates dynamic summaries or insights for monitoring.
     """
     logging.info("🔧 Showing metrics...\n\n")
+
+    direct_request = _parse_direct_metrics_request(user_message) or _parse_latest_metrics_request(user_message)
+    if direct_request:
+        response_message, results, object_labels = handle_show_metrics(user, [direct_request])
+        display_label = object_labels.get(direct_request["object"], direct_request["object"])
+        message = f"📊 Showing latest {display_label} records."
+        if results:
+            return {
+                "message": message,
+                "retrieved_records": results,
+                "object_labels": object_labels,
+                "hiddenMessage": True,
+            }
+        if response_message:
+            return {"message": response_message}
+        return {"message": message}
 
 
     current_state, previous_summary = get_session_context("show_metrics", session_data)

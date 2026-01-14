@@ -3,6 +3,8 @@ from django.db.models import Sum
 from datetime import datetime
 from django.utils import timezone
 from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
+from django.core.files.images import get_image_dimensions
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 from decimal import Decimal, ROUND_HALF_UP
@@ -321,6 +323,36 @@ class Contact(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name or ''}".strip()
 
+
+
+def partner_logo_path(instance, filename):
+    ext = os.path.splitext(filename)[1]
+    random_name = f"{uuid.uuid4().hex}{ext}"
+    user_id = instance.user_id or "unsaved"
+    return f"partners/{user_id}/logos/{random_name}"
+
+
+class PartnerProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="partner_profile")
+    accounts = models.ManyToManyField(Account, blank=True, related_name="partner_profiles")
+    contacts = models.ManyToManyField(Contact, blank=True, related_name="partner_profiles")
+    is_partner = models.BooleanField(default=True)
+    partner_name = models.CharField(max_length=255, blank=True)
+    partner_logo = models.ImageField(upload_to=partner_logo_path, blank=True, null=True)
+    brand_color = models.CharField(max_length=7, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        super().clean()
+        if self.partner_logo:
+            width, height = get_image_dimensions(self.partner_logo)
+            if width > 400 or height > 200:
+                raise ValidationError("Partner logo must be 400x200 pixels or smaller.")
+
+    def __str__(self):
+        label = self.partner_name or getattr(self.user, "username", "Partner")
+        return f"PartnerProfile({label})"
 
 
 class Opportunity(models.Model):
