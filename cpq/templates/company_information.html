@@ -121,6 +121,7 @@
 
   .company-page input[type="text"],
   .company-page input[type="email"],
+  .company-page input[type="number"],
   .company-page textarea.materialize-textarea {
     background: rgba(255, 255, 255, 0.62);
     border-radius: 14px;
@@ -132,6 +133,24 @@
     box-sizing: border-box;
     margin: 0 !important;
     transition: border-color 60ms linear, box-shadow 60ms linear, background-color 60ms linear !important;
+  }
+
+  .company-page select {
+    background: rgba(255, 255, 255, 0.62);
+    border-radius: 14px;
+    padding: 10px 36px 10px 12px;
+    border: 1px solid rgba(15, 23, 42, 0.10) !important;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset !important;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.10) !important;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 !important;
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, rgba(15, 23, 42, 0.75) 50%),
+                      linear-gradient(135deg, rgba(15, 23, 42, 0.75) 50%, transparent 50%);
+    background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%;
+    background-size: 6px 6px, 6px 6px;
+    background-repeat: no-repeat;
   }
 
   /* Remove Materialize "floating label over input" behavior on this page (prevents overlap). */
@@ -167,15 +186,17 @@
     min-height: 92px;
   }
 
-	  .company-page input[type="text"]:focus,
-	  .company-page input[type="email"]:focus,
-	  .company-page textarea.materialize-textarea:focus {
-	    background: var(--panel-bg-strong);
-	    outline: none;
-	    border: 1px solid rgba(24, 39, 64, 0.35) !important;
-	    border-bottom: 1px solid rgba(24, 39, 64, 0.35) !important;
-	    box-shadow: 0 0 0 3px rgba(24, 39, 64, 0.12) !important;
-	  }
+  .company-page input[type="text"]:focus,
+  .company-page input[type="email"]:focus,
+  .company-page input[type="number"]:focus,
+  .company-page textarea.materialize-textarea:focus,
+  .company-page select:focus {
+    background: var(--panel-bg-strong);
+    outline: none;
+    border: 1px solid rgba(24, 39, 64, 0.35) !important;
+    border-bottom: 1px solid rgba(24, 39, 64, 0.35) !important;
+    box-shadow: 0 0 0 3px rgba(24, 39, 64, 0.12) !important;
+  }
 
   /* Make focus/hover feel instant (shortest possible transition) across all controls on this page. */
   .company-page input,
@@ -490,7 +511,19 @@
             <input id="phone_number" name="phone_number" type="text" value="{{ company.phone_number|default_if_none:'' }}">
             <label for="phone_number" class="active">Phone Number</label>
           </div>
-          <div class="col-6"></div>
+          <div class="input-field col-6">
+            <input id="fiscal_year_start_month" name="fiscal_year_start_month" type="number" min="1" max="12" value="{{ company.fiscal_year_start_month|default_if_none:'1' }}">
+            <label for="fiscal_year_start_month" class="active">Fiscal Year Start Month (1-12)</label>
+            <div class="help">Used to calculate fiscal quarters in analytics.</div>
+          </div>
+          <div class="input-field col-6">
+            <select id="fiscal_year_label_mode" name="fiscal_year_label_mode" class="browser-default">
+              <option value="start" {% if company.fiscal_year_label_mode != "end" %}selected{% endif %}>Start Year (FY25 covers Feb 2025-Jan 2026)</option>
+              <option value="end" {% if company.fiscal_year_label_mode == "end" %}selected{% endif %}>End Year (FY26 covers Feb 2025-Jan 2026)</option>
+            </select>
+            <label for="fiscal_year_label_mode" class="active">Fiscal Year Labeling</label>
+            <div class="help">Choose whether FY labels use the start or end year.</div>
+          </div>
         </div>
 
         <div style="height: 1px; background: rgba(15, 23, 42, 0.08); margin: 18px 0;"></div>
@@ -532,6 +565,10 @@
           <div class="kv-row">
             <span class="kv-row__key">Version</span>
             <span class="kv-row__val">{{ company.version|default:"—" }}</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-row__key">Current Fiscal Quarter</span>
+            <span class="kv-row__val">{{ current_fiscal_quarter|default:"—" }}</span>
           </div>
         </div>
       </div>

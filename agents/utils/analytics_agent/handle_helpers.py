@@ -9,7 +9,7 @@ import unicodedata
 from django.apps import apps
 from django.core.exceptions import FieldError
 from django.db.models import ForeignKey, OuterRef, Subquery, Q, Sum, Avg, Count, Min, Max, CharField, TextField
-from django.db.models.functions import Cast
+from django.db.models.functions import Cast, Coalesce
 from django.db.models import DecimalField, DateField, DateTimeField
 from django.db import models
 from django.db.models.functions import TruncMonth, TruncWeek, TruncDay
@@ -93,6 +93,77 @@ def get_object_metadata(object_name):
     }
 
 
+def _normalize_object_token(value: str) -> str:
+    text = str(value or "").strip().lower()
+    text = re.sub(r"__(c|r|x)$", "", text)
+    text = re.sub(r"[^a-z0-9]", "", text)
+    return text
+
+
+def resolve_metrics_object_name(raw_object: str) -> str | None:
+    if not raw_object:
+        return None
+    cleaned = str(raw_object).strip()
+    if not cleaned:
+        return None
+
+    lowered = cleaned.lower()
+    lowered = re.sub(r"\b(do|did|does)\s+(i|we|you)\s+have\b", "", lowered)
+    lowered = re.sub(r"\b(i|we|you)\s+have\b", "", lowered)
+    lowered = re.sub(r"\b(my|our|your|the)\b", "", lowered)
+    lowered = re.sub(r"\b(total|overall|currently|right\s+now|in\s+total)\b", "", lowered)
+    lowered = re.sub(r"\s+", " ", lowered).strip()
+    if lowered:
+        cleaned = lowered
+
+    alias_map = {
+        "deal": "Opportunity",
+        "deals": "Opportunity",
+        "opp": "Opportunity",
+        "opps": "Opportunity",
+        "opportunity": "Opportunity",
+        "opportunities": "Opportunity",
+        "company": "Account",
+        "companies": "Account",
+        "customer": "Account",
+        "customers": "Account",
+    }
+    alias_target = alias_map.get(cleaned.lower())
+    if alias_target and get_object_metadata(alias_target):
+        return alias_target
+
+    candidates = []
+    def add_candidate(value: str) -> None:
+        if not value:
+            return
+        candidates.append(value)
+        if value.lower().endswith("s"):
+            candidates.append(value[:-1])
+
+    add_candidate(cleaned)
+    add_candidate(cleaned.title())
+    add_candidate(cleaned.replace(" ", "_"))
+    add_candidate(cleaned.title().replace(" ", "_"))
+
+    for candidate in candidates:
+        if get_object_metadata(candidate):
+            return candidate
+
+    normalized = _normalize_object_token(cleaned)
+    normalized_singular = normalized[:-1] if normalized.endswith("s") else normalized
+
+    try:
+        for custom_object in CustomObject.objects.all():
+            name_norm = _normalize_object_token(custom_object.name)
+            label_norm = _normalize_object_token(custom_object.label or "")
+            if normalized in {name_norm, label_norm} or normalized_singular in {name_norm, label_norm}:
+                return custom_object.name
+    except Exception:
+        return None
+
+    return None
+
+
 def handle_show_metrics(user, completed_metrics):
     response_message = ""
     results = {}
@@ -102,10 +173,6 @@ def handle_show_metrics(user, completed_metrics):
         object_name = metric.get("object")
         conditions = metric.get("conditions", [])
         aggregate = metric.get("aggregate") if isinstance(metric.get("aggregate"), dict) else None
-        if aggregate:
-            rng = aggregate.get("range")
-            if not rng or rng in ("custom", "", None):
-                aggregate["range"] = "this_year"
 
         if (not object_name) and conditions:
             first_condition = conditions[0]
@@ -134,6 +201,10 @@ def handle_show_metrics(user, completed_metrics):
         if not object_name:
             response_message += "⚠️ Missing object name in metrics request.<br>"
             continue
+
+        resolved_object = resolve_metrics_object_name(object_name)
+        if resolved_object:
+            object_name = resolved_object
 
         metadata = get_object_metadata(object_name)
         if not metadata:
@@ -280,6 +351,24 @@ def handle_show_metrics(user, completed_metrics):
                 response_message += f"⚠️ Aggregate failed for {display_name}: {agg_error}.<br>"
                 continue
             results[object_name] = {"aggregate": agg_payload}
+            agg_func = (aggregate.get("function") or "").lower()
+            agg_group_by = (aggregate.get("group_by") or "").lower()
+            agg_group_field = aggregate.get("group_field")
+            if agg_func == "count" and not agg_group_by and not agg_group_field:
+                list_qs = qs
+                if limit:
+                    list_qs = list_qs[:limit]
+                serialized = safe_serialize_queryset(
+                    list_qs,
+                    object_name,
+                    custom_object=custom_object,
+                    custom_fields=custom_fields,
+                )
+                partner_label = partner_label_for_user(user)
+                if partner_label:
+                    for record in serialized:
+                        record["_partner_label"] = partner_label
+                results[object_name]["records"] = serialized
             # Build a short human-friendly note
             if agg_payload.get("series"):
                 response_message += f"📈 {display_name} {agg_payload.get('function')}({agg_payload.get('field')}) over {agg_payload.get('range') or 'all time'} with {len(agg_payload['series'])} points.<br>"
@@ -361,7 +450,9 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
     field = aggregate_def.get("field")
     group_by = (aggregate_def.get("group_by") or "").lower()
     group_field = aggregate_def.get("group_field")
-    if not group_field and group_by and group_by not in {"month", "week", "day", "field"}:
+    if group_by in {"qtr", "quarterly"}:
+        group_by = "quarter"
+    if not group_field and group_by and group_by not in {"month", "week", "day", "quarter", "field"}:
         group_field = aggregate_def.get("group_by")
     date_field = aggregate_def.get("date_field") or ("updated_at" if hasattr(model, "updated_at") else None)
     range_key = aggregate_def.get("range")
@@ -373,6 +464,14 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
 
     if not field:
         return None, "aggregate field is required"
+
+    if model.__name__ == "Opportunity" and isinstance(field, str):
+        normalized_field = field.strip().lower()
+        if normalized_field in {"forecast_amount", "expected_revenue", "net_amount"}:
+            qs = qs.annotate(
+                _forecast_value=Coalesce("primary_quote__net_amount", "amount")
+            )
+            field = "_forecast_value"
 
     agg_map = {
         "sum": Sum,
@@ -401,6 +500,146 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
         custom_field = custom_field_lookup.get(field.lower())
 
     # Time bucketed series
+    if group_by == "quarter" and not date_field:
+        return None, "date_field is required when group_by='quarter'"
+
+    if group_by == "quarter" and date_field:
+        if func_name not in {"sum", "count", "avg", "average", "min", "max"}:
+            return None, f"unsupported aggregate function '{func_name}'"
+
+        fiscal_start_month = 1
+        fiscal_label_mode = "start"
+        try:
+            tenant = Tenant.objects.first()
+            raw_start = getattr(tenant, "fiscal_year_start_month", None)
+            fiscal_start_month = int(raw_start) if raw_start else 1
+            raw_label_mode = getattr(tenant, "fiscal_year_label_mode", None)
+            if raw_label_mode in {"start", "end"}:
+                fiscal_label_mode = raw_label_mode
+        except Exception:
+            fiscal_start_month = 1
+        if fiscal_start_month < 1 or fiscal_start_month > 12:
+            fiscal_start_month = 1
+
+        def _quarter_bucket(period_val):
+            period_date = period_val.date() if hasattr(period_val, "date") else period_val
+            if not isinstance(period_date, date):
+                return None
+            month = period_date.month
+            year = period_date.year
+            fiscal_year = year if month >= fiscal_start_month else year - 1
+            offset = (month - fiscal_start_month) % 12
+            quarter = (offset // 3) + 1
+            return fiscal_year, quarter
+
+        def _quarter_label(fy_year, quarter):
+            label_year = fy_year + (1 if fiscal_label_mode == "end" else 0)
+            label_year_short = str(label_year % 100).zfill(2)
+            return f"FY{label_year_short} Q{quarter}"
+
+        if custom_field:
+            data_type = (custom_field.data_type or "").lower()
+            if data_type not in NUMERIC_TYPES:
+                return None, f"aggregate not supported for non-numeric custom field '{field}'"
+
+            values_qs = CustomFieldValue.objects.filter(field=custom_field)
+            date_prefix = "record__" if custom_object else "content_object__"
+
+            if custom_object:
+                values_qs = values_qs.filter(record_id__in=qs.values_list("id", flat=True))
+            else:
+                try:
+                    ct = ContentType.objects.get_for_model(model)
+                    values_qs = values_qs.filter(content_type=ct, object_id__in=qs.values_list("id", flat=True))
+                except Exception:
+                    return None, "unable to resolve content type for custom field aggregation"
+
+            if range_key and date_field:
+                date_field_path = f"{date_prefix}{date_field}"
+                values_qs = _apply_date_range(values_qs, date_field_path, range_key)
+
+            values_qs = values_qs.annotate(value_cast=Cast("value", output_field=DecimalField(max_digits=30, decimal_places=10)))
+            values_qs = values_qs.annotate(period=TruncMonth(date_prefix + date_field))
+            if func_name in {"avg", "average"}:
+                aggregated = values_qs.values("period").annotate(
+                    sum_val=Sum("value_cast"),
+                    count_val=Count("value_cast"),
+                ).order_by("period")
+            elif func_name == "min":
+                aggregated = values_qs.values("period").annotate(value=Min("value_cast")).order_by("period")
+            elif func_name == "max":
+                aggregated = values_qs.values("period").annotate(value=Max("value_cast")).order_by("period")
+            elif func_name == "count":
+                aggregated = values_qs.values("period").annotate(value=Count("value_cast")).order_by("period")
+            else:
+                aggregated = values_qs.values("period").annotate(value=Sum("value_cast")).order_by("period")
+        else:
+            qs = qs.annotate(period=TruncMonth(date_field))
+            if func_name in {"avg", "average"}:
+                aggregated = qs.values("period").annotate(
+                    sum_val=Sum(field),
+                    count_val=Count(field),
+                ).order_by("period")
+            elif func_name == "min":
+                aggregated = qs.values("period").annotate(value=Min(field)).order_by("period")
+            elif func_name == "max":
+                aggregated = qs.values("period").annotate(value=Max(field)).order_by("period")
+            else:
+                aggregated = qs.values("period").annotate(value=agg_fn(field)).order_by("period")
+
+        buckets = {}
+        for entry in aggregated:
+            period_val = entry.get("period")
+            if period_val is None:
+                continue
+            quarter_key = _quarter_bucket(period_val)
+            if not quarter_key:
+                continue
+            bucket = buckets.setdefault(quarter_key, {"sum": 0, "count": 0, "min": None, "max": None})
+
+            if func_name in {"avg", "average"}:
+                bucket["sum"] += entry.get("sum_val") or 0
+                bucket["count"] += entry.get("count_val") or 0
+            elif func_name == "min":
+                val = entry.get("value")
+                if val is None:
+                    continue
+                bucket["min"] = val if bucket["min"] is None or val < bucket["min"] else bucket["min"]
+            elif func_name == "max":
+                val = entry.get("value")
+                if val is None:
+                    continue
+                bucket["max"] = val if bucket["max"] is None or val > bucket["max"] else bucket["max"]
+            else:
+                bucket["sum"] += entry.get("value") or 0
+
+        series = []
+        for fy_year, quarter in sorted(buckets.keys()):
+            bucket = buckets[(fy_year, quarter)]
+            if func_name in {"avg", "average"}:
+                value = (bucket["sum"] / bucket["count"]) if bucket["count"] else None
+            elif func_name == "min":
+                value = bucket["min"]
+            elif func_name == "max":
+                value = bucket["max"]
+            else:
+                value = bucket["sum"]
+            series.append({
+                "period": _quarter_label(fy_year, quarter),
+                "value": float(value) if value is not None else None,
+            })
+
+        total_value = sum([item.get("value") or 0 for item in series])
+        return {
+            "function": func_name,
+            "field": field,
+            "group_by": "quarter",
+            "date_field": date_field,
+            "range": range_key,
+            "series": series,
+            "total": float(total_value) if total_value is not None else None,
+        }, None
+
     if group_by in {"month", "week", "day"} and date_field:
         trunc_map = {
             "month": TruncMonth,
@@ -475,23 +714,119 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
     if group_field:
         group_field_name = str(group_field)
         group_label = group_field_name
+        group_custom_field = None
+        field_obj = None
         try:
             field_obj = model._meta.get_field(group_field_name)
             if getattr(field_obj, "verbose_name", None):
                 group_label = str(field_obj.verbose_name).title()
         except Exception:
-            return None, f"group_by field '{group_field_name}' does not exist"
+            field_obj = None
 
-        aggregated = qs.values(group_field_name).annotate(value=agg_fn(field)).order_by("-value")
+        if not field_obj:
+            group_custom_field = custom_field_lookup.get(group_field_name.lower())
+            if group_custom_field:
+                group_field_name = group_custom_field.name
+                group_label = group_custom_field.label or group_field_name
+            else:
+                return None, f"group_by field '{group_field_name}' does not exist"
+
+        content_type = None
+        if not custom_object and (group_custom_field or (custom_field and func_name != "count")):
+            try:
+                content_type = ContentType.objects.get_for_model(model)
+            except Exception:
+                return None, "unable to resolve content type for custom field aggregation"
+
+        def build_custom_subquery(field_obj, cast_field=None):
+            values_qs = CustomFieldValue.objects.filter(field=field_obj)
+            if custom_object:
+                values_qs = values_qs.filter(record_id=OuterRef("pk"))
+            else:
+                values_qs = values_qs.filter(content_type=content_type, object_id=OuterRef("pk"))
+            if cast_field:
+                values_qs = values_qs.annotate(value_cast=Cast("value", output_field=cast_field))
+                return Subquery(values_qs.values("value_cast")[:1])
+            return Subquery(values_qs.values("value")[:1])
+
+        agg_target = field
+        if func_name == "count":
+            agg_target = "id"
+        elif custom_field:
+            data_type = (custom_field.data_type or "").lower()
+            if data_type not in NUMERIC_TYPES:
+                return None, f"aggregate not supported for non-numeric custom field '{field}'"
+            agg_expr = build_custom_subquery(
+                custom_field,
+                DecimalField(max_digits=30, decimal_places=10),
+            )
+            qs = qs.annotate(_agg_value=agg_expr)
+            agg_target = "_agg_value"
+
+        group_field_key = group_field_name
+        group_data_type = ""
+        if group_custom_field:
+            group_data_type = (group_custom_field.data_type or "").lower()
+            group_cast = None
+            if group_data_type in DATE_TYPES:
+                group_cast = DateField()
+            elif group_data_type in NUMERIC_TYPES:
+                group_cast = DecimalField(max_digits=30, decimal_places=10)
+            group_expr = build_custom_subquery(group_custom_field, group_cast)
+            qs = qs.annotate(_group_value=group_expr)
+            group_field_key = "_group_value"
+
+        aggregated = list(
+            qs.values(group_field_key)
+            .annotate(value=agg_fn(agg_target))
+            .order_by("-value")
+        )
+
+        lookup_labels = {}
+        if group_custom_field and group_data_type == "lookup":
+            raw_ids = [
+                str(entry.get(group_field_key))
+                for entry in aggregated
+                if entry.get(group_field_key) not in (None, "")
+            ]
+            if raw_ids:
+                lookup_model = None
+                target_custom_object = None
+                model_ref = group_custom_field.lookup_model
+                if isinstance(model_ref, str) and "." in model_ref:
+                    try:
+                        app_label, model_name = model_ref.split(".", 1)
+                        lookup_model = apps.get_model(app_label, model_name)
+                    except Exception:
+                        lookup_model = None
+                if lookup_model is None and model_ref:
+                    try:
+                        target_custom_object = CustomObject.objects.get(name=model_ref)
+                        lookup_model = CustomRecord
+                    except CustomObject.DoesNotExist:
+                        lookup_model = None
+                if lookup_model is not None:
+                    lookup_qs = lookup_model.objects.filter(pk__in=raw_ids)
+                    if lookup_model is CustomRecord and target_custom_object:
+                        lookup_qs = lookup_qs.filter(object_type=target_custom_object)
+                    lookup_labels = {str(obj.pk): str(obj) for obj in lookup_qs}
 
         series = []
         for entry in aggregated:
-            label = entry.get(group_field_name)
+            label = entry.get(group_field_key)
             if label is None or label == "":
                 label = "Unknown"
+            else:
+                if isinstance(label, datetime):
+                    label = label.date().isoformat()
+                elif isinstance(label, date):
+                    label = label.isoformat()
+                label = str(label)
+                if lookup_labels:
+                    label = lookup_labels.get(label, label)
             val = entry.get("value")
             series.append({
-                "period": str(label),
+                "period": label,
                 "value": float(val) if val is not None else None,
             })
 

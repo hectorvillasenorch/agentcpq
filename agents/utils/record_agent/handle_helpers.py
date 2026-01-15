@@ -29,7 +29,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 from ..analytics_agent.handle_helpers import ALLOWED_FIELDS, get_object_metadata
 from ..message_formatters import SUCCESS_ICON
 from cpq.models import CustomFieldValue
-from cpq.permissions import partner_can_access_record, partner_label_for_user
+from cpq.permissions import partner_can_access_record, partner_label_for_user, user_can_access_custom_object
 from agents.models import SingleRecordLayout
 
 logger = logging.getLogger(__name__)
@@ -303,6 +303,15 @@ def _serialize_record(record: Model, object_name: str, custom_object, custom_fie
     partner_label = partner_label_for_user(user)
     if partner_label:
         payload["partner_label"] = partner_label
+
+    can_delete = False
+    if user and hasattr(user, "has_perm"):
+        if custom_object:
+            can_delete = user_can_access_custom_object(user, custom_object, "delete")
+        else:
+            perm_name = f"{record._meta.app_label}.delete_{record._meta.model_name}"
+            can_delete = user.has_perm(perm_name)
+    payload["can_delete"] = bool(can_delete)
 
     return payload
 

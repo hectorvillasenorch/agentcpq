@@ -393,6 +393,49 @@ input[type="number"] {
   gap: 8px;
 }
 
+.single-record-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.single-record-delete-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.16);
+  color: #fee2e2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.single-record-delete-btn:hover {
+  background: rgba(248, 113, 113, 0.28);
+  box-shadow: 0 6px 14px rgba(248, 113, 113, 0.25);
+  transform: translateY(-1px);
+}
+
+.single-record-delete-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: none;
+  transform: none;
+}
+
+.single-record-card--deleted {
+  opacity: 0.7;
+}
+
+.single-record-card--removing {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
 .single-record-related-actions {
   display: flex;
   align-items: center;
@@ -2840,6 +2883,215 @@ textarea.chat-input {
   box-sizing: border-box;
 }
 
+/* Metric cards */
+.records-metric-card {
+  padding: 0;
+  background: #ffffff;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+
+.records-metric-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #041530, #233049);
+  color: #ffffff;
+  border-radius: 18px 18px 0 0;
+}
+
+.records-metric-title {
+  font-size: 1rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.records-metric-title .material-icons {
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.records-metric-context {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.records-metric-body {
+  padding: 14px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-radius: 0 0 18px 18px;
+}
+
+.records-metric-kpi {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.records-metric-icon {
+  font-size: 26px;
+  color: #94a3b8;
+}
+
+.records-metric-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.1;
+}
+
+.records-metric-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.records-metric-insight {
+  font-size: 0.88rem;
+  color: #1f2937;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.records-metric-cta {
+  align-self: flex-start;
+  border: none;
+  background: #041530;
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.records-metric-cta:hover {
+  background: #0f2347;
+}
+
+.records-metric-cta:active {
+  transform: translateY(1px);
+}
+
+.records-metric-details {
+  display: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.24);
+  padding-top: 10px;
+}
+
+.records-metric-details.is-open {
+  display: block;
+}
+
+.records-metric-definition {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.records-metric-definition-label {
+  display: block;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #94a3b8;
+}
+
+.records-metric-definition-value {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.records-metric-chart {
+  width: 100%;
+  height: 190px;
+}
+
+.records-metric-chart--spark {
+  height: 110px;
+}
+
+.metric-segmented-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+
+.metric-segment {
+  height: 100%;
+  background: var(--segment-color);
+  flex-basis: var(--segment-size);
+  min-width: 6px;
+}
+
+.metric-segmented-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 6px 12px;
+  margin-bottom: 8px;
+}
+
+.metric-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: #334155;
+}
+
+.metric-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--segment-color);
+}
+
+.metric-legend-count {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.metric-progress {
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+
+.metric-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+  width: var(--progress);
+}
+
+.metric-progress-meta {
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.records-metric-table {
+  margin-top: 8px;
+}
+
 /* ✅ Rule Header */
 .email-alert-header {
   display: flex;
@@ -3202,6 +3454,18 @@ textarea.chat-input {
 @media (max-width: 768px) {
   .email-alert-container {
     padding: 10px !important;
+  }
+
+  .records-metric-card {
+    padding: 0 !important;
+  }
+
+  .records-metric-body {
+    padding: 12px;
+  }
+
+  .records-metric-value {
+    font-size: 1.6rem;
   }
 
   .single-record-lead-meta {

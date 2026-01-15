@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 from .utils.analytics_agent.llm_helpers import extract_metrics_with_llm, generate_final_metrics_message
 
 # Handle Helpers
-from .utils.analytics_agent.handle_helpers import handle_show_metrics, get_object_metadata
+from .utils.analytics_agent.handle_helpers import handle_show_metrics, get_object_metadata, resolve_metrics_object_name
 
 # Windows Context Helpers
 from .utils.session_context_helpers.session_context_helpers import get_session_context
@@ -51,46 +51,30 @@ _LATEST_LIST_RE = re.compile(
     r"(?:\s+records?)?\s*$",
     re.IGNORECASE,
 )
+_REVENUE_TO_DATE_RE = re.compile(
+    r"\brevenue\b.*\b(to\s+date|year\s+to\s+date|ytd|this\s+year|current\s+year|so\s+far|today)\b",
+    re.IGNORECASE,
+)
+_PIPELINE_FORECAST_RE = re.compile(
+    r"\b(pipeline|forecast|expected\s+revenue|expected\s+sales|expected\s+amount)\b",
+    re.IGNORECASE,
+)
+_COUNT_REQUEST_RE = re.compile(r"\b(how\s+many|count|number\s+of)\b", re.IGNORECASE)
+_GROUPING_HINT_RE = re.compile(r"\b(by|group|grouped|per|monthly|weekly|daily)\b", re.IGNORECASE)
+_COUNT_METRICS_RE = re.compile(
+    r"^\s*(?:show\s+metrics\s*:)?\s*(?:how\s+many|count|number\s+of)\s+(?P<object>.+?)"
+    r"(?:\s+records?)?\s*$",
+    re.IGNORECASE,
+)
+_BASIC_LIST_RE = re.compile(
+    r"^\s*(?:show|list|display|fetch|get)\s+(?:all\s+)?(?P<object>.+?)"
+    r"(?:\s+records?)?\s*$",
+    re.IGNORECASE,
+)
 
 
 def _resolve_metrics_object_name(raw_object):
-    if not raw_object:
-        return None
-    cleaned = re.sub(r"\s+", " ", str(raw_object).strip())
-    normalized = cleaned.lower()
-    if not cleaned:
-        return None
-
-    candidates = []
-
-    def add_candidate(value):
-        if not value:
-            return
-        candidates.append(value)
-        if value.lower().endswith("s"):
-            candidates.append(value[:-1])
-
-    add_candidate(cleaned)
-    add_candidate(cleaned.title())
-    add_candidate(cleaned.replace(" ", "_"))
-    add_candidate(cleaned.title().replace(" ", "_"))
-
-    for candidate in candidates:
-        if get_object_metadata(candidate):
-            return candidate
-
-    try:
-        for custom_object in CustomObject.objects.all():
-            name = (custom_object.name or "").lower()
-            label = (custom_object.label or "").lower()
-            if normalized in {name, label}:
-                return custom_object.name
-            if normalized.endswith("s") and normalized[:-1] in {name, label}:
-                return custom_object.name
-    except Exception:
-        return None
-
-    return None
+    return resolve_metrics_object_name(raw_object)
 
 
 def _parse_direct_metrics_request(user_message):
@@ -141,6 +125,136 @@ def _parse_latest_metrics_request(user_message):
         "limit": limit,
     }
 
+
+def _parse_basic_list_request(user_message):
+    if not user_message:
+        return None
+    match = _BASIC_LIST_RE.match(user_message)
+    if not match:
+        return None
+    object_raw = match.group("object")
+    if not object_raw:
+        return None
+    cleaned = str(object_raw).strip()
+    if not cleaned or not cleaned.lower().endswith("s"):
+        return None
+    resolved_object = _resolve_metrics_object_name(cleaned)
+    if not resolved_object:
+        return None
+    return {
+        "object": resolved_object,
+        "method": "read",
+        "conditions": [],
+        "sort": {"field": "created_at", "order": "desc"},
+        "limit": 100,
+    }
+
+
+def _parse_revenue_request(user_message):
+    if not user_message:
+        return None
+    if not _REVENUE_TO_DATE_RE.search(user_message):
+        return None
+    return {
+        "object": "Opportunity",
+        "method": "read",
+        "conditions": [
+            {"field": "stage", "operator": "equals", "value": "closedwon"},
+        ],
+        "sort": None,
+        "limit": 100,
+        "aggregate": {
+            "function": "sum",
+            "field": "amount",
+            "group_by": None,
+            "group_field": None,
+            "date_field": "created_at",
+            "range": "this_year",
+        },
+    }
+
+
+def _extract_range_key(user_message: str) -> str | None:
+    if not user_message:
+        return None
+    lowered = user_message.lower()
+    if re.search(r"\b(this year|year to date|ytd|current year|to date)\b", lowered):
+        return "this_year"
+    if re.search(r"\bthis month\b", lowered):
+        return "this_month"
+    if re.search(r"\blast month\b", lowered):
+        return "last_month"
+    if re.search(r"\blast 90 days\b", lowered):
+        return "last_90_days"
+    if re.search(r"\blast 3 months\b", lowered):
+        return "last_3_months"
+    if re.search(r"\blast 6 months\b", lowered):
+        return "six_months"
+    if re.search(r"\blast 9 months\b", lowered):
+        return "nine_months"
+    if re.search(r"\blast 12 months\b", lowered):
+        return "twelve_months"
+    return None
+
+
+def _parse_pipeline_forecast_request(user_message):
+    if not user_message:
+        return None
+    if not _PIPELINE_FORECAST_RE.search(user_message):
+        return None
+    if _GROUPING_HINT_RE.search(user_message):
+        return None
+
+    range_key = _extract_range_key(user_message) or "this_year"
+    is_count = bool(_COUNT_REQUEST_RE.search(user_message))
+    aggregate_field = "forecast_amount" if not is_count else "id"
+
+    return {
+        "object": "Opportunity",
+        "method": "read",
+        "conditions": [
+            {"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost"]},
+        ],
+        "sort": None,
+        "limit": 100,
+        "aggregate": {
+            "function": "count" if is_count else "sum",
+            "field": aggregate_field,
+            "group_by": None,
+            "group_field": None,
+            "date_field": "expected_close_date",
+            "range": range_key,
+        },
+    }
+
+
+def _parse_count_metrics_request(user_message):
+    if not user_message:
+        return None
+    match = _COUNT_METRICS_RE.match(user_message)
+    if not match:
+        return None
+    object_raw = match.group("object")
+    resolved_object = _resolve_metrics_object_name(object_raw)
+    if not resolved_object:
+        return None
+    range_key = _extract_range_key(user_message)
+    return {
+        "object": resolved_object,
+        "method": "read",
+        "conditions": [],
+        "sort": None,
+        "limit": 100,
+        "aggregate": {
+            "function": "count",
+            "field": "id",
+            "group_by": None,
+            "group_field": None,
+            "date_field": "created_at",
+            "range": range_key,
+        },
+    }
+
 def show_metrics(user, user_message, session_data):
     """
     Handles metrics display requests for system objects.
@@ -149,7 +263,14 @@ def show_metrics(user, user_message, session_data):
     """
     logging.info("🔧 Showing metrics...\n\n")
 
-    direct_request = _parse_direct_metrics_request(user_message) or _parse_latest_metrics_request(user_message)
+    direct_request = (
+        _parse_revenue_request(user_message)
+        or _parse_pipeline_forecast_request(user_message)
+        or _parse_count_metrics_request(user_message)
+        or _parse_direct_metrics_request(user_message)
+        or _parse_latest_metrics_request(user_message)
+        or _parse_basic_list_request(user_message)
+    )
     if direct_request:
         response_message, results, object_labels = handle_show_metrics(user, [direct_request])
         display_label = object_labels.get(direct_request["object"], direct_request["object"])

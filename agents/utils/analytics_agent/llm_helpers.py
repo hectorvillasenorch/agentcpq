@@ -16,7 +16,7 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # Session Context Helpers
 from ..orchestrator.context_handle_helpers import estimate_cost
-from cpq.models import CustomObject
+from cpq.models import CustomObject, CustomField
 
 
 CUSTOM_RECORD_BASE_FILTERS = [
@@ -106,8 +106,35 @@ def build_whitelist_fields():
         logging.warning(f"⚠️ Unable to load custom objects for analytics whitelist: {exc}")
         return whitelist
 
+    try:
+        standard_custom_fields = list(CustomField.objects.filter(custom_object__isnull=True))
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logging.warning(f"⚠️ Unable to load standard custom fields for analytics whitelist: {exc}")
+        standard_custom_fields = []
+
+    standard_custom_field_map = {}
+    for field in standard_custom_fields:
+        object_name = field.object_type
+        if object_name not in whitelist:
+            continue
+        standard_custom_field_map.setdefault(object_name, [])
+        if field.name not in standard_custom_field_map[object_name]:
+            standard_custom_field_map[object_name].append(field.name)
+        if field.label and field.label not in standard_custom_field_map[object_name]:
+            standard_custom_field_map[object_name].append(field.label)
+
+    for object_name, extra_fields in standard_custom_field_map.items():
+        whitelist_filters = whitelist[object_name]["filters"]
+        for field_name in extra_fields:
+            if field_name not in whitelist_filters:
+                whitelist_filters.append(field_name)
+
     for custom_obj in custom_objects:
-        field_names = [field.name for field in custom_obj.custom_fields.all()]
+        field_names = []
+        for field in custom_obj.custom_fields.all():
+            field_names.append(field.name)
+            if field.label:
+                field_names.append(field.label)
         sortable_custom_fields = [
             field.name
             for field in custom_obj.custom_fields.all()
@@ -144,6 +171,8 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
     2) Use ONLY fields listed in whitelist["<Object>"]["sort"] for sorting.
     3) If the user does NOT specify any conditions, that is VALID. Set conditions=[] and completed=true.
        - Never ask for filtering conditions when the user simply wants "all", "list", "show", "latest", or "recent".
+       - Phrases like "show me a list of opportunities" or "list accounts" are valid metrics requests.
+       - If the user uses a plural object name (e.g., "accounts", "opportunities"), map it to the singular object name in `object`.
     4) If the user specifies a limit, use it; otherwise default to 100.
     5) If the user specifies sorting, use it. If they say "latest/newest/recent", set sort to {"field":"created_at","order":"desc"}.
        If they say "oldest/earliest", set order="asc". Otherwise set sort=null.
@@ -167,7 +196,7 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
             "aggregate": {
               "function": "sum|count|avg|min|max",
               "field": <field_name>,
-              "group_by": "month|week|day|field|null",
+              "group_by": "month|week|day|quarter|field|null",
               "group_field": <field_name_or_null>,
               "date_field": <date_field_name_or_null>,
               "range": "last_3_months|last_month|last_90_days|three_months|six_months|nine_months|twelve_months|this_month|this_year|next_year|custom|null"
@@ -201,8 +230,24 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
 
     AGGREGATION RULES
     - For "group by <field>": group_by="field", group_field=<field>, function="count", field="id".
-    - For time series: group_by="month|week|day" and date_field=<date field>.
-    - If user requests totals without date range, set aggregate.range="this_year".
+    - For time series: group_by="month|week|day|quarter" and date_field=<date field>.
+      If no date field is specified, use created_at by default.
+    - If the user does not mention a date range, leave aggregate.range=null.
+    - If the user says "all time", leave aggregate.range=null.
+    - If the user asks for "quarter" or "quarterly", use group_by="quarter".
+    - If the user asks for "revenue to date" or "year-to-date revenue", interpret as:
+      object="Opportunity", aggregate sum(field="amount"), conditions stage equals "closedwon",
+      aggregate.range="this_year", aggregate.date_field="created_at".
+    - If the user asks for "revenue" and does NOT mention pipeline/forecast, interpret as:
+      object="Opportunity", aggregate sum(field="amount"), conditions stage equals "closedwon".
+    - If the user asks about forecast/pipeline/expected revenue, interpret as:
+      object="Opportunity", aggregate sum(field="amount"),
+      conditions stage not_in ["closedwon","closedlost"],
+      aggregate.date_field="expected_close_date" and aggregate.range based on the requested timeframe.
+    - If the user asks "how many deals in pipeline", interpret as:
+      object="Opportunity", aggregate count(field="id"),
+      conditions stage not_in ["closedwon","closedlost"],
+      aggregate.date_field="expected_close_date" and aggregate.range based on the requested timeframe.
 
     AGENT_MESSAGE RULES
     - Only talk about extraction status or missing info.

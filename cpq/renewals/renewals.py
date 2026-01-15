@@ -11,12 +11,15 @@ logger = logging.getLogger(__name__)
 def create_contract_after_closed_won(opportunity):
     quote = opportunity.quotes.first()
     tomorrow = date.today() + timedelta(days=1)
+    if not quote:
+        logger.warning("⚠️ Opportunity %s has no quote; skipping contract creation.", opportunity.id)
+        return
 
     contract, created = Contract.objects.get_or_create(
         opportunity=opportunity,
         defaults={
             "start_date": tomorrow,
-            "end_date": None,
+            "end_date": tomorrow + relativedelta(months=12),
             "contract_status": "Active"
         }
     )

@@ -32,7 +32,6 @@ from .notifications.notifications import (
 )
 
 # Actions and contracts
-from .renewals.renewals import create_contract_after_closed_won
 from cpq.action_trigger.trigger_engine import engine as action_trigger_engine
 
 # Action Trigger Helpers
@@ -152,7 +151,6 @@ def check_opportunity_stage_change(sender, instance, **kwargs):
     if old_instance.stage != instance.stage:
         if instance.stage == "closedwon":
             print(f"\n{instance.name} moved to Closed Won ✅.\n")
-            create_contract_after_closed_won(instance)
             run_async(notify_opportunity_closed_won, instance)
 
             # Action Trigger

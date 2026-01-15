@@ -1200,6 +1200,10 @@ class Tenant(models.Model):
         ('business', 'Business'),
         ('enterprise', 'Enterprise'),
     ]
+    FISCAL_YEAR_LABEL_CHOICES = [
+        ("start", "Start Year"),
+        ("end", "End Year"),
+    ]
     tenant_id = models.CharField(max_length=20, unique=True, blank=True)
     name = models.CharField(max_length=255)
     domain = models.CharField(max_length=255, blank=True, null=True)
@@ -1219,6 +1223,8 @@ class Tenant(models.Model):
     sidebar_bg_color_1 = models.CharField(max_length=7, blank=True, null=True, default="#041530")
     sidebar_bg_color_2 = models.CharField(max_length=7, blank=True, null=True, default="#233049")
     sidebar_text_color = models.CharField(max_length=7, blank=True, null=True, default="#ffffff")
+    fiscal_year_start_month = models.PositiveSmallIntegerField(default=1)
+    fiscal_year_label_mode = models.CharField(max_length=5, choices=FISCAL_YEAR_LABEL_CHOICES, default="start")
     api_key = models.CharField(max_length=43,null=True,editable=False,default=gen_api_key,help_text="Public API key, auto-generated")
     api_secret = models.CharField(max_length=43,null=True,editable=False,default=gen_api_key,help_text="Private key used for request signing")
 

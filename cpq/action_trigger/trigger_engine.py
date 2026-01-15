@@ -1218,12 +1218,21 @@ class TriggerEngine:
             op = (action.get("operation") or "").upper()
             target = action.get("target")
             value_def = action.get("value") or {}
+            mode = (action.get("mode") or "").lower()
 
             # BULK filters
             action_filters = action.get("filters")  # usado en BULK CREATE / BULK CLONE
             target_filters = None
             if isinstance(target, dict):
                 target_filters = target.get("filters")
+
+            # ==================================================================
+            # ✅ CREATE contract/subscriptions from Closed Won (custom mode)
+            # ==================================================================
+            if op == "CREATE" and mode == "closed_won_contract":
+                result = self._handle_closed_won_contract(action, instance)
+                results.append({"action": action, "status": "ok", "result": result})
+                continue
 
             # ==================================================================
             # 🔁 BULK CLONE (usa action.filters → source_object + items[])
@@ -2337,6 +2346,24 @@ class TriggerEngine:
             "custom_identifier": custom_record.custom_identifier,
             "instance": custom_record,  # 🔥 CLAVE
         }
+
+    def _handle_closed_won_contract(self, action, instance):
+        """
+        Create contract/subscriptions from an Opportunity Closed Won event.
+        """
+        from cpq.renewals.renewals import create_contract_after_closed_won
+
+        if self._normalize_model_name(instance.__class__.__name__) != "opportunity":
+            return {"created": False, "reason": "unsupported_instance"}
+
+        try:
+            if not getattr(instance, "quotes", None) or not instance.quotes.exists():
+                return {"created": False, "reason": "missing_quote"}
+            create_contract_after_closed_won(instance)
+            return {"created": True}
+        except Exception as exc:
+            logger.exception("❌ Closed Won contract creation failed: %s", exc)
+            return {"created": False, "error": str(exc)}
 
     def _handle_delete(self, action, instance, context):
         """

@@ -51,7 +51,7 @@ from .forms import BusinessRuleForm, get_rule_condition_formset
 from .forms import QUOTE_FIELDS, QUOTE_LINE_FIELDS, PRODUCT_FIELDS
 from django.utils.safestring import mark_safe
 import uuid, os
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
 from decimal import Decimal, InvalidOperation
 from collections import defaultdict, OrderedDict
 from django.contrib.auth.models import User, Group, Permission
@@ -1293,6 +1293,96 @@ def single_record_api(request):
 
     return JsonResponse({"single_record": payload}, encoder=DjangoJSONEncoder)
 
+
+@login_required
+@require_http_methods(["POST"])
+def delete_single_record_api(request):
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+
+    object_name = payload.get("object") or payload.get("object_name")
+    record_id = payload.get("record_id")
+    if not object_name or not record_id:
+        return JsonResponse({"error": "object and record_id are required"}, status=400)
+
+    try:
+        record_id_int = int(record_id)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "record_id must be an integer"}, status=400)
+
+    metadata = get_object_metadata(object_name)
+    if not metadata:
+        return JsonResponse({"error": f"Unknown object '{object_name}'."}, status=404)
+
+    model = metadata["model"]
+    custom_object = metadata["custom_object"]
+
+    record_queryset = model.objects.all()
+    if custom_object:
+        record_queryset = record_queryset.filter(object_type=custom_object)
+
+    try:
+        record = record_queryset.get(pk=record_id_int)
+    except model.DoesNotExist:
+        return JsonResponse({"error": "Record not found."}, status=404)
+
+    if not partner_can_access_record(request.user, object_name, record, custom_object=custom_object):
+        return HttpResponseForbidden("You do not have access to this record.")
+
+    if custom_object:
+        if not user_can_access_custom_object(request.user, custom_object, "delete"):
+            return JsonResponse({"error": "You do not have permission to delete this record."}, status=403)
+    else:
+        perm_name = f"{model._meta.app_label}.delete_{model._meta.model_name}"
+        if not request.user.has_perm(perm_name):
+            return JsonResponse({"error": "You do not have permission to delete this record."}, status=403)
+
+    deleted_count, deleted_map = record.delete()
+    return JsonResponse({
+        "success": True,
+        "object": object_name,
+        "record_id": record_id_int,
+        "deleted_count": deleted_count,
+        "deleted_map": deleted_map,
+    }, encoder=DjangoJSONEncoder)
+
+
+@login_required
+@require_http_methods(["POST"])
+def delete_single_record_chatlog_api(request):
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+
+    session_id = payload.get("session_id")
+    object_name = payload.get("object") or payload.get("object_name")
+    record_id = payload.get("record_id")
+    if not session_id or not object_name or not record_id:
+        return JsonResponse({"error": "session_id, object, and record_id are required"}, status=400)
+
+    session = ChatSession.objects.filter(session_id=session_id, user=request.user).first()
+    if not session:
+        return JsonResponse({"error": "Chat session not found"}, status=404)
+
+    try:
+        record_id_int = int(record_id)
+    except (TypeError, ValueError):
+        record_id_int = None
+
+    object_marker = f"\"object\":{json.dumps(str(object_name))}"
+    messages = ChatMessage.objects.filter(session=session, sender="agent", content__contains="single_record:")
+    messages = messages.filter(content__contains=object_marker)
+    if record_id_int is not None:
+        messages = messages.filter(content__contains=f"\"record_id\":{record_id_int}")
+    else:
+        messages = messages.filter(content__contains=f"\"record_id\":\"{record_id}\"")
+
+    deleted_count, _ = messages.delete()
+    return JsonResponse({"success": True, "deleted_count": deleted_count}, encoder=DjangoJSONEncoder)
+
 MODEL_CHOICES = {
     "Opportunity": "Opportunity",  # ✅ Use class name, not table name
     "Quote": "Quote",
@@ -1724,6 +1814,17 @@ def get_company_information(request):
         company.street_address = request.POST.get('street_address', '')
         company.city = request.POST.get('city', '')
         company.state = request.POST.get('state', '')
+        fiscal_start_raw = (request.POST.get('fiscal_year_start_month', '') or "").strip()
+        if fiscal_start_raw:
+            try:
+                fiscal_start = int(fiscal_start_raw)
+                if 1 <= fiscal_start <= 12:
+                    company.fiscal_year_start_month = fiscal_start
+            except ValueError:
+                pass
+        fiscal_label_mode = (request.POST.get('fiscal_year_label_mode', '') or "").strip().lower()
+        if fiscal_label_mode in {"start", "end"}:
+            company.fiscal_year_label_mode = fiscal_label_mode
 
         # company.plan = request.POST.get('plan', '')
 
@@ -1743,10 +1844,30 @@ def get_company_information(request):
     logo_url = ''
     if company and company.logo:
         logo_url = default_storage.url(company.logo.name)
+    current_fiscal_quarter = None
+    if company:
+        try:
+            fiscal_start = int(getattr(company, "fiscal_year_start_month", 1) or 1)
+            if fiscal_start < 1 or fiscal_start > 12:
+                fiscal_start = 1
+            current_date = now().date()
+            month = current_date.month
+            year = current_date.year
+            fiscal_year = year if month >= fiscal_start else year - 1
+            offset = (month - fiscal_start) % 12
+            quarter = (offset // 3) + 1
+            label_mode = getattr(company, "fiscal_year_label_mode", "start")
+            label_mode = label_mode if label_mode in {"start", "end"} else "start"
+            label_year = fiscal_year + (1 if label_mode == "end" else 0)
+            label_year_short = str(label_year % 100).zfill(2)
+            current_fiscal_quarter = f"FY{label_year_short} Q{quarter}"
+        except Exception:
+            current_fiscal_quarter = None
 
     return render(request, 'company_information.html', {
         'company': company or Tenant(),
-        'logo_url': logo_url
+        'logo_url': logo_url,
+        'current_fiscal_quarter': current_fiscal_quarter,
     })
 
 

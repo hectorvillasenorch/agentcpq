@@ -17,6 +17,7 @@ from agents.action_trigger_agent import action_trigger_agent
 from agents.standard_record_agent import standard_record_agent
 from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
+from functools import lru_cache
 
 
 def _decode_chat_text(text: str) -> str:
@@ -139,6 +140,18 @@ def handle_user_request(user,user_message, session_data):
             logging.info("Do NOT use GPT (pending create_quote opportunity selection)\n")
             return orchestrate_request_trigger(user, user_message, session_data, decision="CreateQuote")
 
+    # 🧠 Pending single-record flow (follow-up identifier)
+    pending_single_record = session_data.get("state", {}).get("show_single_record")
+    if pending_single_record:
+        lowered = user_message.lower()
+        looks_like_new_action = re.search(
+            r"\b(show|list|display|view|open|create|update|delete|add|remove|metrics)\b",
+            lowered,
+        )
+        if not looks_like_new_action:
+            logging.info("Do NOT use GPT (pending show_single_record follow-up)\n")
+            return orchestrate_request_trigger(user, user_message, session_data, decision="ShowSingleRecord")
+
     # 🧠 Shortcut manual: "show details" (defaults to quote details)
     if normalized_message in {"show details", "show detail", "show quote details", "show quote detail"}:
         logging.info("Do NOT use GPT\n")
@@ -153,6 +166,16 @@ def handle_user_request(user,user_message, session_data):
     elif normalized_message.startswith("show metrics:"):
         logging.info("Do NOT use GPT\n")
         response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowMetrics")
+
+    # 🧠 Shortcut manual: list/all/latest metrics phrasing
+    elif _should_shortcut_to_metrics(user_message):
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowMetrics")
+
+    # 🧠 Shortcut manual: singular object should be single-record
+    elif _should_shortcut_to_single_record(user_message):
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowSingleRecord")
 
     # 🧠 Shortcut manual: "Update Quote Line:"
     elif user_message.startswith("Update Quote Line:"):
@@ -409,6 +432,16 @@ def orchestrate_request(user, user_message, session_data):
             return {
                 "message": "⚠️ I couldn’t find an active quote. Please specify a quote name (e.g., Q-00066) or ask me to create a new quote."
             }
+
+        # 🔒 Guard: singular requests should open single-record, not metrics list
+        if decision == "ShowMetrics" and _should_shortcut_to_single_record(user_message):
+            logging.info("Guarding against metrics for singular record; rerouting to ShowSingleRecord.")
+            decision = "ShowSingleRecord"
+
+        # 🔒 Guard: plural/list requests should go to metrics, not single-record
+        if decision == "ShowSingleRecord" and _should_shortcut_to_metrics(user_message):
+            logging.info("Guarding against single-record for list request; rerouting to ShowMetrics.")
+            decision = "ShowMetrics"
 
         # 🔒 Prevent accidental ShowSingleRecord unless the user explicitly asks to view a record
         if decision == "ShowSingleRecord":
@@ -671,6 +704,183 @@ def _should_shortcut_to_knowledge(user_message: str) -> bool:
     )
 
     return any(phrase in lowered for phrase in knowledge_phrases)
+
+
+def _is_view_request(lowered: str) -> bool:
+    return re.search(r"\b(show|list|display|view|open|see|get|fetch)\b", lowered) is not None
+
+
+def _has_any_term(lowered: str, terms) -> bool:
+    return any(re.search(rf"\b{re.escape(term)}\b", lowered) for term in terms)
+
+
+def _has_plural_objects(lowered: str) -> bool:
+    plural_terms = (
+        "opportunities",
+        "accounts",
+        "leads",
+        "contacts",
+        "quotes",
+        "products",
+        "activities",
+        "contracts",
+        "subscriptions",
+        "tenants",
+        "options",
+        "bundles",
+        "records",
+    )
+    if _has_any_term(lowered, plural_terms):
+        return True
+    return _matches_custom_object_plural(lowered)
+
+
+def _has_singular_objects(lowered: str) -> bool:
+    singular_terms = (
+        "opportunity",
+        "account",
+        "lead",
+        "contact",
+        "quote",
+        "product",
+        "activity",
+        "contract",
+        "subscription",
+        "tenant",
+        "option",
+        "bundle",
+        "record",
+    )
+    if _has_any_term(lowered, singular_terms):
+        return True
+    return _matches_custom_object_singular(lowered)
+
+
+def _normalize_compact(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+@lru_cache(maxsize=1)
+def _custom_object_token_sets() -> tuple[set[str], set[str]]:
+    singular: set[str] = set()
+    plural: set[str] = set()
+    try:
+        for obj in CustomObject.objects.all():
+            name = str(obj.name or "")
+            label = str(obj.label or "")
+            for raw in (name, label):
+                if not raw:
+                    continue
+                base = re.sub(r"__(c|r|x)$", "", raw.strip(), flags=re.IGNORECASE)
+                compact = _normalize_compact(base)
+                if not compact:
+                    continue
+                singular_base = compact[:-1] if compact.endswith("s") else compact
+                plural_base = compact if compact.endswith("s") else f"{compact}s"
+                singular.add(singular_base)
+                plural.add(plural_base)
+    except Exception:
+        return set(), set()
+    return singular, plural
+
+
+def _matches_custom_object_plural(lowered: str) -> bool:
+    normalized = _normalize_compact(lowered)
+    if not normalized:
+        return False
+    _, plural = _custom_object_token_sets()
+    for token in plural:
+        if token and token in normalized:
+            return True
+    return False
+
+
+def _matches_custom_object_singular(lowered: str) -> bool:
+    normalized = _normalize_compact(lowered)
+    if not normalized:
+        return False
+    singular, _ = _custom_object_token_sets()
+    for token in singular:
+        if token and token in normalized:
+            return True
+    return False
+
+
+def _has_list_keywords(lowered: str) -> bool:
+    list_keywords = (
+        "list",
+        "show all",
+        "all",
+        "latest",
+        "recent",
+        "newest",
+        "oldest",
+        "top",
+        "last",
+        "first",
+        "table",
+        "records",
+        "metrics",
+        "summary",
+        "count",
+        "group by",
+        "grouped by",
+    )
+    for keyword in list_keywords:
+        if " " in keyword:
+            if keyword in lowered:
+                return True
+        else:
+            if re.search(rf"\\b{re.escape(keyword)}\\b", lowered):
+                return True
+    return False
+
+
+def _should_shortcut_to_metrics(user_message: str) -> bool:
+    if not user_message:
+        return False
+
+    lowered = user_message.lower()
+    if _is_revenue_metrics_query(lowered):
+        return True
+    if not _is_view_request(lowered):
+        return False
+
+    if _has_plural_objects(lowered):
+        return True
+
+    if _has_singular_objects(lowered) and _has_list_keywords(lowered):
+        return True
+
+    return False
+
+
+def _should_shortcut_to_single_record(user_message: str) -> bool:
+    if not user_message:
+        return False
+
+    lowered = user_message.lower()
+    if not _is_view_request(lowered):
+        return False
+
+    if _has_plural_objects(lowered):
+        return False
+
+    if _has_list_keywords(lowered):
+        return False
+
+    return _has_singular_objects(lowered)
+
+
+def _is_revenue_metrics_query(lowered: str) -> bool:
+    if "revenue" not in lowered and "forecast" not in lowered and "pipeline" not in lowered:
+        return False
+    return bool(
+        re.search(
+            r"\b(revenue|forecast|pipeline|expected)\b",
+            lowered,
+        )
+    )
 
 
 def handle_general_query(user,decision, user_message, session_data):

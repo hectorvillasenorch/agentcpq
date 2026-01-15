@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", function () {
   initializeMaterializeSelects(document);
   initializeBundleStructureCards(document);
   initializeSingleRecordRelatedButtons(document);
+  initializeSingleRecordDeleteButtons(document);
   initializeQuoteListViewButtons();
   initializeRecordListViewButtons();
   initializeQuoteDetailRecordLinks();
@@ -20,6 +21,7 @@ document.addEventListener("DOMContentLoaded", function () {
   initializeAgentsEmptyState();
   setAgentFeedbackVisibility(false);
   initializeRecordListLayouts(document);
+  initializeMetricCards(document);
 
   scrollToBottom("DOMContentLoaded", true);
 });
@@ -1504,6 +1506,7 @@ function enhanceStructuredAgentMessagesHistoryChat() {
       if (matchedKey === 'retrieved_records:') {
         const html = renderRetrievedRecords("", data);
         div.innerHTML = html;
+        initializeMetricCards(div);
         return;
       }
 
@@ -2336,6 +2339,7 @@ function handleAgentResponse(data, options = {}) {
         attachQuoteDetailsToggle(target, embeddedQuoteDetails);
       }
       initializeRecordListLayouts(agentBubble);
+      initializeMetricCards(agentBubble);
       if (data.response && data.response.update_details) {
         attachQuoteDetailsToggle(target, data.response.update_details);
       }
@@ -2601,6 +2605,7 @@ function appendMessage(className, message, options = {}) {
     } else {
       chatBox.appendChild(messageBubble);
     }
+    initializeMetricCards(messageBubble);
 
     // ✅ Re-initializes select from Materialize
   const selects = messageBubble.querySelectorAll('select');
@@ -2622,6 +2627,7 @@ function appendMessage(className, message, options = {}) {
       initializeSingleRecordCardLayout(card);
     });
     initializeSingleRecordRelatedButtons(messageBubble);
+    initializeSingleRecordDeleteButtons(messageBubble);
     initializeQuoteListViewButtons();
     initializeRecordListViewButtons();
     initializeQuoteDetailRecordLinks();
@@ -4242,11 +4248,19 @@ function renderSingleRecord(record) {
          <span class="material-icons" aria-hidden="true">tune</span>
        </button>`
     : '';
+  const deleteButton = record && record.can_delete
+    ? `<button type="button" class="single-record-delete-btn" data-role="delete-record" aria-label="Delete record" title="Delete record">
+         <span class="material-icons" aria-hidden="true">delete_forever</span>
+       </button>`
+    : '';
   const relatedRoles = RELATED_BUTTONS_BY_OBJECT[objectName] || [];
   const relatedButtons = relatedRoles.map(renderRelatedButton).filter(Boolean).join('');
   const relatedButtonsRow = relatedButtons ? `<div class="single-record-related-actions">${relatedButtons}</div>` : '';
-  const headerActions = (relatedButtonsRow || layoutButton)
-    ? `<div class="single-record-header-actions">${layoutButton}${relatedButtonsRow}</div>`
+  const headerControls = (layoutButton || deleteButton)
+    ? `<div class="single-record-header-controls">${layoutButton}${deleteButton}</div>`
+    : '';
+  const headerActions = (relatedButtonsRow || headerControls)
+    ? `<div class="single-record-header-actions">${headerControls}${relatedButtonsRow}</div>`
     : '';
 
   const sectionsHtml = renderSingleRecordSection(
@@ -4315,6 +4329,116 @@ function initializeSingleRecordRelatedButtons(root = document) {
     });
     setupRelatedPopoverHandlers(button, card, config);
   });
+}
+
+function initializeSingleRecordDeleteButtons(root = document) {
+  if (!root) return;
+  const buttons = root.querySelectorAll('.single-record-delete-btn[data-role="delete-record"]');
+  buttons.forEach(button => {
+    if (button.dataset.bound === "true") return;
+    button.dataset.bound = "true";
+    button.addEventListener('click', () => handleSingleRecordDeleteClick(button));
+  });
+}
+
+async function handleSingleRecordDeleteClick(button) {
+  const card = button.closest('.single-record-card');
+  if (!card) return;
+
+  const feedback = card.querySelector('[data-role="card-feedback"]');
+  const objectName = card.dataset.recordObject || '';
+  const recordId = card.dataset.recordId;
+  const recordName = card.dataset.recordName || '';
+
+  if (!objectName || !recordId) {
+    setSingleRecordCardFeedback(feedback, "Missing record details for deletion.", "error");
+    return;
+  }
+
+  const labelText = recordName ? ` "${recordName}"` : '';
+  const confirmMessage = `Delete this ${objectName}${labelText}? This will also delete related records.`;
+  if (!window.confirm(confirmMessage)) {
+    return;
+  }
+
+  setSingleRecordCardFeedback(feedback, `Deleting ${objectName}...`, "info");
+  button.disabled = true;
+
+  try {
+    const response = await fetch("/cpq/single-record/delete/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCSRFToken(),
+      },
+      body: JSON.stringify({
+        object: objectName,
+        record_id: recordId,
+      }),
+    });
+
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (error) {
+      data = {};
+    }
+
+    if (!response.ok) {
+      throw new Error(data.error || "Unable to delete the record.");
+    }
+
+    const deletedCount = typeof data.deleted_count === "number" ? data.deleted_count : null;
+    const relatedCount = deletedCount && deletedCount > 1 ? deletedCount - 1 : 0;
+    const successMessage = relatedCount
+      ? `Deleted ${objectName} and ${relatedCount} related record${relatedCount === 1 ? "" : "s"}.`
+      : `Deleted ${objectName}.`;
+
+    setSingleRecordCardFeedback(feedback, successMessage, "success");
+    card.classList.add("single-record-card--deleted");
+    card.querySelectorAll('input, select, textarea, button').forEach(el => {
+      if (el !== button) {
+        el.disabled = true;
+      }
+    });
+
+    const sessionId = getCurrentSessionId();
+    purgeSingleRecordChatLog({
+      sessionId,
+      objectName,
+      recordId,
+    });
+
+    setTimeout(() => {
+      card.classList.add("single-record-card--removing");
+      setTimeout(() => {
+        card.remove();
+      }, 220);
+    }, 900);
+  } catch (error) {
+    setSingleRecordCardFeedback(feedback, error.message || "Unable to delete the record.", "error");
+    button.disabled = false;
+  }
+}
+
+async function purgeSingleRecordChatLog({ sessionId, objectName, recordId }) {
+  if (!sessionId || !objectName || !recordId) return;
+  try {
+    await fetch("/cpq/single-record/delete-log/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCSRFToken(),
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        object: objectName,
+        record_id: recordId,
+      }),
+    });
+  } catch (error) {
+    console.warn("Unable to purge single record chat log:", error);
+  }
 }
 
 function buildRelatedRecordsUrl(config, relationId, options = {}) {
@@ -4934,6 +5058,7 @@ async function showRelatedRecordsList({ relationId, anchorMessage, parentName, c
         bubble.setAttribute(config.relatedAttr, String(relationId));
       }
       initializeRecordListLayouts(bubble);
+      initializeMetricCards(bubble);
       bubble.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   } catch (error) {
@@ -8301,6 +8426,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
     };
     const formatPeriodLabel = (periodStr, groupBy) => {
       if (!periodStr) return "—";
+      if ((groupBy || "").toLowerCase() === "quarter") return String(periodStr);
       const d = new Date(periodStr);
       if (isNaN(d.getTime())) return periodStr;
       switch ((groupBy || "").toLowerCase()) {
@@ -8314,6 +8440,53 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         default:
           return d.toLocaleString("en-US", { month: "long" });
       }
+    };
+    const formatRangeLabel = (rangeKey) => {
+      if (!rangeKey || rangeKey === "null") return "";
+      if (Array.isArray(rangeKey)) return "Custom range";
+      const key = String(rangeKey).toLowerCase();
+      const map = {
+        last_3_months: "Last 3 months",
+        last_month: "Last month",
+        last_90_days: "Last 90 days",
+        this_year: "This year",
+        next_year: "Next year",
+        this_month: "This month",
+        three_months: "Last 3 months",
+        six_months: "Last 6 months",
+        nine_months: "Last 9 months",
+        twelve_months: "Last 12 months",
+      };
+      return map[key] || "Custom range";
+    };
+    const capitalizeWord = (value) => {
+      if (!value) return "";
+      const text = String(value).toLowerCase();
+      return text.charAt(0).toUpperCase() + text.slice(1);
+    };
+    const isStatusGroupField = (value) => {
+      const text = String(value || "").toLowerCase();
+      return ["status", "stage", "type", "lifecycle"].some((token) => text.includes(token));
+    };
+    const buildInsightText = (series, totalVal, formatter, isTimeGroup, isFieldGroup, groupLabel) => {
+      if (!Array.isArray(series) || series.length < 1) return "";
+      if (isTimeGroup && series.length > 1) {
+        const prev = Number(series[series.length - 2].value || 0);
+        const curr = Number(series[series.length - 1].value || 0);
+        if (prev === 0) return "";
+        const delta = ((curr - prev) / prev) * 100;
+        const arrow = delta >= 0 ? "↑" : "↓";
+        return `${arrow} ${Math.abs(delta).toFixed(1)}% vs prior period`;
+      }
+      if (isFieldGroup) {
+        const topItem = [...series]
+          .sort((a, b) => Number(b.value || 0) - Number(a.value || 0))[0];
+        if (!topItem || topItem.value == null) return "";
+        const percent = totalVal ? (Number(topItem.value || 0) / Number(totalVal || 1)) * 100 : 0;
+        const label = topItem.period ? String(topItem.period) : "Unknown";
+        return `Top ${normalizeFieldName(groupLabel)}: ${label} (${formatter(topItem.value)}, ${percent.toFixed(1)}%)`;
+      }
+      return "";
     };
 
     const formatRecordValue = (field, value) => {
@@ -9067,8 +9240,12 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
 
   for (const [objectName, records] of entries) {
     if (!records) continue;
+    const listRecords = Array.isArray(records)
+      ? records
+      : (records && Array.isArray(records.records) ? records.records : []);
+    const hasListRecords = Array.isArray(listRecords) && listRecords.length > 0;
 
-    // Aggregates: render summary + optional series table
+    // Aggregates: render intent-driven metric card
     if (!Array.isArray(records) && records.aggregate) {
       const agg = records.aggregate;
       const series = Array.isArray(agg.series) ? agg.series : [];
@@ -9097,88 +9274,136 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
               : func === "max"
                 ? "north_east"
                 : "functions";
+      const safeObjectName = escapeHtml(String(objectName || "Record"));
       const aggTitle = objectName === "Opportunity"
-        ? `<span class="material-icons" aria-hidden="true" style="vertical-align:middle;font-size:20px;margin-right:6px;font-family:'Material Icons';color:#9ca3af;">trending_up</span>Opportunity`
-        : objectName;
+        ? `<span class="material-icons" aria-hidden="true">trending_up</span>${safeObjectName}`
+        : safeObjectName;
       const aggId = `agg-${objectName}-${Math.random().toString(36).slice(2, 8)}`;
-      const isTimeGroup = ["month", "week", "day", "year"].includes(String(agg.group_by || "").toLowerCase());
+      const groupBy = String(agg.group_by || "").toLowerCase();
+      const groupField = agg.group_field || "";
       const groupLabel = agg.group_label || agg.group_field || "Group";
-      const groupHeader = isTimeGroup ? "Period" : normalizeFieldName(String(groupLabel));
-      html += `
-        <div class="email-alert-container" style="margin-bottom:10px; position:relative;">
-          <div class="email-alert-header" style="
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            background: linear-gradient(135deg, #041530, #233049);
-            color:#fff;
-            padding:10px 14px;
-            border-radius:12px 12px 0 0;
-          ">
-            <h4 style="margin:0; display:flex; align-items:center; gap:6px;">${aggTitle}</h4>
-
-          </div>
-          <div class="email-alert-details" style="
-            padding:12px;
-            border:1px solid #e5e7eb;
-            border-radius:0 0 12px 12px;
-            background:#fff;
-          ">
-            <div style="
-              margin-bottom:12px;
-              font-size:1.25rem;
-              font-weight:700;
-            display:flex;
-            align-items:center;
-            gap:8px;
-          ">
-              <span class="material-icons" aria-hidden="true" style="font-size:24px;color:#9ca3af;font-family:'Material Icons';">${iconName}</span>
-              <span>${labelText}: ${totalText}</span>
+      const isTimeGroup = ["month", "week", "day", "quarter", "year"].includes(groupBy);
+      const isFieldGroup = groupBy === "field";
+      const isStatusGroup = isFieldGroup && isStatusGroupField(groupField || groupLabel);
+      const rangeText = formatRangeLabel(agg.range);
+      const contextParts = [];
+      if (rangeText) contextParts.push(rangeText);
+      if (isTimeGroup) contextParts.push(`${capitalizeWord(groupBy)} trend`);
+      if (isFieldGroup) contextParts.push(`By ${normalizeFieldName(groupLabel)}`);
+      const contextText = contextParts.length ? contextParts.join(" | ") : "All time";
+      const insightText = buildInsightText(series, totalVal, formatter, isTimeGroup, isFieldGroup, groupLabel);
+      const targetValue = parseFloat(agg.target || agg.goal || agg.target_value);
+      const hasTarget = Number.isFinite(targetValue) && targetValue > 0;
+      const progressPct = hasTarget ? Math.min(100, (Number(totalVal || 0) / targetValue) * 100) : 0;
+      const segmentTotal = Number(totalVal) || series.reduce((sum, item) => sum + Number(item.value || 0), 0);
+      const palette = ["#2563eb", "#0ea5e9", "#7c3aed", "#f97316", "#22c55e", "#ef4444", "#14b8a6", "#eab308"];
+      const seriesOrdered = isTimeGroup
+        ? series
+        : [...series].sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+      const detailsTable = series.length ? `
+        <div class="records-metric-table">
+          <table class="records-table">
+            <thead><tr><th>${isTimeGroup ? "Period" : normalizeFieldName(String(groupLabel))}</th><th>Value</th></tr></thead>
+            <tbody>
+              ${seriesOrdered.map(item => `
+                <tr>
+                  <td>${isTimeGroup ? formatPeriodLabel(item.period, agg.group_by) : escapeHtml(String(item.period || "Unknown"))}</td>
+                  <td>${item.value != null ? formatter(item.value) : "—"}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : "";
+      const definitionRows = [
+        { label: "Metric", value: `${labelText} (${func || "sum"})` },
+        { label: "Field", value: normalizeFieldName(agg.field || "—") },
+        { label: "Range", value: rangeText || "All time" },
+        { label: "Group", value: isTimeGroup ? `${capitalizeWord(groupBy)} of ${normalizeFieldName(agg.date_field || "date")}` : (isFieldGroup ? normalizeFieldName(groupLabel) : "None") },
+      ].filter(row => row.value);
+      const definitionHtml = `
+        <div class="records-metric-definition">
+          ${definitionRows.map(row => `
+            <div class="records-metric-definition-item">
+              <span class="records-metric-definition-label">${row.label}</span>
+              <span class="records-metric-definition-value">${escapeHtml(String(row.value))}</span>
             </div>
-            ${series.length ? `
-            <div style="margin-bottom:12px; display:flex; gap:8px;">
-              <button class="records-popout-btn" onclick="toggleAggView('${aggId}','table')" style="display:flex;align-items:center;gap:4px;color:#4b5563;">
-                <span class="material-icons" style="font-family:'Material Icons';font-size:16px;color:#9ca3af;">table_chart</span> Table
-              </button>
-              <button class="records-popout-btn" onclick="toggleAggView('${aggId}','chart')" style="display:flex;align-items:center;gap:4px;color:#4b5563;">
-                <span class="material-icons" style="font-family:'Material Icons';font-size:16px;color:#9ca3af;">bar_chart</span> Graph
-              </button>
-            </div>` : ""}
-            ${series.length ? `
-              <div id="${aggId}-table" class="records-table-wrapper">
-                <table class="records-table">
-                  <thead><tr><th>${groupHeader}</th><th>Value</th></tr></thead>
-                  <tbody>
-                    ${series.map(item => `
-                      <tr>
-                        <td>${formatPeriodLabel(item.period, agg.group_by)}</td>
-                        <td>${item.value != null ? formatter(item.value) : "—"}</td>
-                      </tr>
-                    `).join("")}
-                  </tbody>
-                </table>
+          `).join("")}
+        </div>
+      `;
+      const segmentedHtml = isStatusGroup && series.length ? `
+        <div class="metric-segmented">
+          <div class="metric-segmented-legend">
+            ${seriesOrdered.map((item, idx) => `
+              <div class="metric-legend-item">
+                <span class="metric-legend-dot" style="--segment-color:${palette[idx % palette.length]};"></span>
+                <span class="metric-legend-label">${escapeHtml(String(item.period || "Unknown"))}</span>
+                <span class="metric-legend-count">: ${formatter(item.value || 0)}</span>
               </div>
-              <div id="${aggId}-chart" style="display:none; padding:4px 2px; height:260px;">
-                <canvas id="${aggId}-chart-canvas"
-                  data-labels='${JSON.stringify(series.map(s => formatPeriodLabel(s.period, agg.group_by)))}'
-                  data-values='${JSON.stringify(series.map(s => s.value || 0))}'
-                  data-money='${money ? "1" : "0"}'
-                  data-group-by='${escapeHtml(String(agg.group_by || ""))}'
-                  data-series-label='${escapeHtml(String(labelText || "Total"))}'
-                  style="width:100%; height:100%;"></canvas>
+            `).join("")}
+          </div>
+          <div class="metric-segmented-bar">
+            ${seriesOrdered.map((item, idx) => {
+              const value = Number(item.value || 0);
+              const pct = segmentTotal ? (value / segmentTotal) * 100 : 0;
+              return `<span class="metric-segment" style="--segment-size:${pct.toFixed(2)}%;--segment-color:${palette[idx % palette.length]};"></span>`;
+            }).join("")}
+          </div>
+        </div>
+      ` : "";
+      const progressHtml = hasTarget ? `
+        <div class="metric-progress">
+          <div class="metric-progress-bar" style="--progress:${progressPct.toFixed(1)}%;"></div>
+        </div>
+        <div class="metric-progress-meta">${formatter(totalVal)} of ${formatter(targetValue)} target</div>
+      ` : "";
+      const chartHtml = (!isStatusGroup && !hasTarget && series.length) ? `
+        <div class="records-metric-chart ${isTimeGroup ? "records-metric-chart--spark" : ""}">
+          <canvas id="${aggId}-chart-canvas"
+            data-labels='${JSON.stringify(seriesOrdered.map(s => isTimeGroup ? formatPeriodLabel(s.period, agg.group_by) : String(s.period || "Unknown")))}'
+            data-values='${JSON.stringify(seriesOrdered.map(s => s.value || 0))}'
+            data-money='${money ? "1" : "0"}'
+            data-intent='${isTimeGroup ? "trend" : "comparison"}'
+            data-series-label='${escapeHtml(String(labelText || "Total"))}'
+            style="width:100%; height:100%;"></canvas>
+        </div>
+      ` : "";
+      html += `
+        <div class="email-alert-container records-metric-card" style="margin-bottom:10px; position:relative;">
+          <div class="records-metric-header">
+            <div class="records-metric-title">${aggTitle}</div>
+            <div class="records-metric-context">${escapeHtml(contextText)}</div>
+          </div>
+          <div class="records-metric-body">
+            <div class="records-metric-kpi">
+              <span class="material-icons records-metric-icon" aria-hidden="true">${iconName}</span>
+              <div>
+                <div class="records-metric-value">${totalText}</div>
+                <div class="records-metric-label">${labelText}</div>
               </div>
-            ` : ""}
+            </div>
+            ${segmentedHtml || progressHtml || chartHtml || ""}
+            ${insightText ? `<div class="records-metric-insight">${escapeHtml(insightText)}</div>` : ""}
+            <button type="button" class="records-metric-cta" onclick="toggleAggDetails('${aggId}', this)">View details</button>
+            <div id="${aggId}-details" class="records-metric-details">
+              ${definitionHtml}
+              ${detailsTable}
+            </div>
           </div>
         </div>
       `;
-      continue;
+      if (!hasListRecords) {
+        continue;
+      }
     }
 
-    if (!Array.isArray(records) || records.length === 0) continue;
+    if (!hasListRecords) continue;
+    const recordsList = listRecords;
     const normalizedObject = String(objectName || "").toLowerCase();
     const isLeadObject = normalizedObject === "lead" || normalizedObject === "leads";
 
     if (isLeadObject) {
+      const recordCount = recordsList.length;
       const getRecordField = (record, candidates) => {
         const keys = Object.keys(record || {});
         const lookup = new Map(keys.map((key) => [key.toLowerCase(), key]));
@@ -9197,12 +9422,12 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         return escapeHtml(String(value));
       };
 
-      const headerPartnerLabel = records.map(getPartnerLabel).find(Boolean);
+      const headerPartnerLabel = recordsList.map(getPartnerLabel).find(Boolean);
       const headerPartnerPill = headerPartnerLabel
         ? `<span class="records-partner-pill">${safeText(headerPartnerLabel)}</span>`
         : "";
 
-      const leadCards = records.map((record) => {
+      const leadCards = recordsList.map((record) => {
         const firstName = getRecordField(record, ["first_name", "firstname", "first", "given_name"]);
         const lastName = getRecordField(record, ["last_name", "lastname", "last", "surname"]);
         const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
@@ -9263,11 +9488,11 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       }).join("");
 
       const leadIdCandidates = ["id", "record_id", "lead_id", "leadid", "sfid", "salesforce_id"];
-      const allFields = Object.keys(records[0] || {}).filter((field) => !String(field).startsWith("_"));
+      const allFields = Object.keys(recordsList[0] || {}).filter((field) => !String(field).startsWith("_"));
       const lowerFields = allFields.map((field) => String(field).toLowerCase());
       const hasTable = allFields.length > 0;
       const hasViewField = lowerFields.includes("view_record") || lowerFields.includes("view_quote");
-      const hasRecordIds = records.some((record) => resolveRecordFieldValue(record, leadIdCandidates));
+      const hasRecordIds = recordsList.some((record) => resolveRecordFieldValue(record, leadIdCandidates));
       const tableFields = orderListFields(
         hasViewField || !hasRecordIds ? allFields : [...allFields, "view_record"]
       );
@@ -9286,7 +9511,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
               }).join('')}</tr>
             </thead>
             <tbody>
-              ${records.map(record => `
+              ${recordsList.map(record => `
                 <tr>
                   ${tableFields.map(field => {
                     const fieldLower = String(field).toLowerCase();
@@ -9328,7 +9553,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
             border-radius:12px 12px 0 0;
           ">
             <div class="records-header-title">
-              <h4 style="margin:0;">${objectName} records.</h4>
+              <h4 style="margin:0;">${objectName} records (${formatNumber(recordCount)}).</h4>
               ${headerPartnerPill}
             </div>
             <div class="records-header-actions">
@@ -9351,6 +9576,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       continue;
     }
 
+    const recordCount = recordsList.length;
     const recordIdCandidates = [
       "id",
       "record_id",
@@ -9369,15 +9595,15 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       "salesforce_id",
       "custom_identifier",
     ];
-    const headerPartnerLabel = records.map(getPartnerLabel).find(Boolean);
+    const headerPartnerLabel = recordsList.map(getPartnerLabel).find(Boolean);
     const headerPartnerPill = headerPartnerLabel
       ? `<span class="records-partner-pill">${escapeHtml(String(headerPartnerLabel))}</span>`
       : "";
-    const allFields = Object.keys(records[0] || {}).filter((field) => !String(field).startsWith("_"));
+    const allFields = Object.keys(recordsList[0] || {}).filter((field) => !String(field).startsWith("_"));
     const lowerFields = allFields.map((field) => String(field).toLowerCase());
     const hasViewQuote = lowerFields.includes("view_quote");
     const hasViewRecord = lowerFields.includes("view_record");
-    const hasRecordIds = records.some((record) => resolveRecordFieldValue(record, recordIdCandidates));
+    const hasRecordIds = recordsList.some((record) => resolveRecordFieldValue(record, recordIdCandidates));
     const hasQuoteIds = lowerFields.includes("qteid");
     const isQuoteObject = hasViewQuote || hasQuoteIds || normalizedObject === "quote" || normalizedObject === "quotes";
     const viewField = isQuoteObject ? "view_quote" : "view_record";
@@ -9425,7 +9651,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       "created_at",
     ];
 
-    const recordCards = records.map((record, index) => {
+    const recordCards = recordsList.map((record, index) => {
       const keys = Object.keys(record || {}).filter((key) => !String(key).startsWith("_"));
       const keyMap = new Map(keys.map((key) => [key.toLowerCase(), key]));
 
@@ -9568,7 +9794,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
             }).join('')}</tr>
           </thead>
           <tbody>
-            ${records.map(record => `
+            ${recordsList.map(record => `
               <tr>
                 ${tableFields.map(field => {
                   const fieldLower = String(field).toLowerCase();
@@ -9604,7 +9830,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
           padding:10px 14px;
           border-radius:12px 12px 0 0;
         ">
-          <h4 style="margin:0;">${objectName} records.</h4>
+          <h4 style="margin:0;">${objectName} records (${formatNumber(recordCount)}).</h4>
           <div class="records-header-actions">
             ${hasTable ? `
             <button type="button" class="records-columns-btn" data-object="${escapeHtml(String(objectName))}" aria-label="Choose columns" title="Choose columns">
@@ -9685,23 +9911,13 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
         }
       }
 
-      if (!window.toggleAggView) {
-        window.toggleAggView = function(id, view) {
-          const table = document.getElementById(id + "-table");
-          const chart = document.getElementById(id + "-chart");
-          if (!table || !chart) return;
-          if (view === "chart") {
-            table.style.display = "none";
-            chart.style.display = "block";
-            const initChart = () => renderAggChart(id);
-            if (window.Chart) {
-              initChart();
-            } else {
-              loadChartJs(initChart);
-            }
-          } else {
-            table.style.display = "block";
-            chart.style.display = "none";
+      if (!window.toggleAggDetails) {
+        window.toggleAggDetails = function(id, btn) {
+          const details = document.getElementById(id + "-details");
+          if (!details) return;
+          const isOpen = details.classList.toggle("is-open");
+          if (btn) {
+            btn.textContent = isOpen ? "Hide details" : "View details";
           }
         }
       }
@@ -9713,11 +9929,12 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
           const labels = JSON.parse(canvas.dataset.labels || "[]");
           const values = JSON.parse(canvas.dataset.values || "[]");
           const isMoney = canvas.dataset.money === "1";
-          const groupBy = String(canvas.dataset.groupBy || "").toLowerCase();
-          const isTimeGroup = ["month", "week", "day", "year"].includes(groupBy);
+          const intent = String(canvas.dataset.intent || "comparison").toLowerCase();
+          const isTrend = intent === "trend";
+          const chartType = isTrend ? "line" : "bar";
           const seriesLabel = canvas.dataset.seriesLabel || (isMoney ? "Revenue" : "Total");
-          const chartType = isTimeGroup ? "line" : "bar";
           const ctx = canvas.getContext("2d");
+          const barColor = "#2563eb";
           if (canvas._chartInstance) {
             canvas._chartInstance.destroy();
           }
@@ -9729,41 +9946,66 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
                 {
                   label: seriesLabel,
                   data: values,
-                  borderColor: "#16a34a",
-                  backgroundColor: "rgba(22, 163, 74, 0.15)",
+                  borderColor: isTrend ? "#2563eb" : "#1d4ed8",
                   tension: 0.35,
-                  fill: chartType === "line",
-                  pointRadius: chartType === "line" ? 4 : 0,
-                  pointBackgroundColor: "#16a34a"
+                  fill: isTrend,
+                  pointRadius: isTrend ? 3 : 0,
+                  pointHoverRadius: isTrend ? 5 : 0,
+                  pointHitRadius: isTrend ? 8 : 0,
+                  pointBorderWidth: isTrend ? 2 : 0,
+                  pointBorderColor: "#1d4ed8",
+                  pointBackgroundColor: isTrend ? "#ffffff" : "#1d4ed8",
+                  borderWidth: 2,
+                  backgroundColor: isTrend ? "rgba(37, 99, 235, 0.12)" : barColor,
+                  borderRadius: isTrend ? 0 : 6,
+                  barThickness: isTrend ? undefined : 20
                 }
               ]
             },
             options: {
               responsive: true,
               maintainAspectRatio: false,
+              layout: {
+                padding: isTrend
+                  ? { top: 8, right: 8, bottom: 8, left: 8 }
+                  : { top: 4, right: 4, bottom: 4, left: 4 }
+              },
               plugins: {
                 legend: {
-                  display: true,
+                  display: false,
+                  position: "top",
                   labels: {
-                    font: { size: 14 }, // ~10% larger than default
+                    font: { size: 12 },
                     color: "#111827"
                   }
                 },
                 tooltip: {
                   callbacks: {
                     label: (ctx) => {
-                      const val = ctx.parsed.y || 0;
+                      const parsed = ctx.parsed;
+                      const val = typeof parsed === "number"
+                        ? parsed
+                        : (parsed && typeof parsed.y !== "undefined" ? parsed.y : 0);
                       return isMoney ? "$" + val.toLocaleString("en-US") : val.toLocaleString("en-US");
                     }
                   }
                 }
               },
-              scales: {
+              scales: isTrend ? {
+                x: { display: false },
+                y: { display: false }
+              } : {
+                x: {
+                  ticks: { color: "#64748b" },
+                  grid: { display: false }
+                },
                 y: {
                   beginAtZero: true,
                   ticks: {
+                    color: "#64748b",
                     callback: (val) => isMoney ? "$" + Number(val).toLocaleString("en-US") : Number(val).toLocaleString("en-US")
-                  }
+                  },
+                  grid: { color: "rgba(148, 163, 184, 0.18)" }
                 }
               }
             }
@@ -10194,6 +10436,25 @@ async function initializeRecordListLayouts(root = document) {
     });
 
     container.dataset.columnsReady = "true";
+  });
+}
+
+function initializeMetricCards(root = document) {
+  const canvases = root.querySelectorAll(".records-metric-chart canvas");
+  canvases.forEach((canvas) => {
+    if (canvas.dataset.chartReady === "true") return;
+    const aggId = canvas.id.replace(/-chart-canvas$/, "");
+    const initChart = () => {
+      if (window.renderAggChart && aggId) {
+        window.renderAggChart(aggId);
+      }
+    };
+    if (window.Chart) {
+      initChart();
+    } else if (window.loadChartJs) {
+      window.loadChartJs(initChart);
+    }
+    canvas.dataset.chartReady = "true";
   });
 }
 

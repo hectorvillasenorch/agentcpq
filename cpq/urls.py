@@ -43,6 +43,8 @@ urlpatterns = [
     path("related-contract-lines/", views.related_contract_lines_api, name="related_contract_lines_api"),
     path("quote-details/", views.quote_details_api, name="quote_details_api"),
     path("single-record/", views.single_record_api, name="single_record_api"),
+    path("single-record/delete/", views.delete_single_record_api, name="delete_single_record_api"),
+    path("single-record/delete-log/", views.delete_single_record_chatlog_api, name="delete_single_record_chatlog_api"),
 
     #EDIT CUSTOM RECORD
     path('records/<int:record_id>/form/', views.get_custom_record_form, name='get_custom_record_form'),
