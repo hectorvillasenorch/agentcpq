@@ -41,7 +41,7 @@
               </div>
             </div>
             {% for msg in chat_messages %}
-              {% if msg.hiddenMessage == False or msg.sender == 'agent' and 'download_url' in msg.content or msg.sender == 'agent' and 'quote_details' in msg.content or msg.sender == 'agent' and 'update_details' in msg.content or msg.sender == 'agent' and 'validation_rules_details' in msg.content or msg.sender == 'agent' and 'inclusion_rules_details' in msg.content or msg.sender == 'agent' and 'exclusion_rules_details' in msg.content or msg.sender == 'agent' and 'action_triggers_details' in msg.content or msg.sender == 'agent' and 'email_alerts_details' in msg.content or msg.sender == 'agent' and 'single_record' in msg.content or msg.sender == 'agent' and 'retrieved_records' in msg.content %}
+              {% if msg.hiddenMessage == False or msg.sender == 'agent' and 'download_url' in msg.content or msg.sender == 'agent' and 'quote_details' in msg.content or msg.sender == 'agent' and 'update_details' in msg.content or msg.sender == 'agent' and 'validation_rules_details' in msg.content or msg.sender == 'agent' and 'inclusion_rules_details' in msg.content or msg.sender == 'agent' and 'exclusion_rules_details' in msg.content or msg.sender == 'agent' and 'action_triggers_details' in msg.content or msg.sender == 'agent' and 'email_alerts_details' in msg.content or msg.sender == 'agent' and 'single_record' in msg.content or msg.sender == 'agent' and 'retrieved_records' in msg.content or msg.sender == 'agent' and 'intelligence_dashboard' in msg.content %}
               <div class="chat-message {{ msg.sender }}">
                 {% if msg.sender == 'user' and msg.hiddenMessage == False %}
                   <div class="chat-text user">
@@ -133,6 +133,13 @@
                   <div class="chat-text agent">
                       <img width="115px" src="{% static 'img/agentcpq-chat-icon.png' %}" alt="AgentCPQ Logo">
                       <div class="agent-json hola-hola" data-raw="{{ msg.content|escapejs }}"></div>
+                  </div>
+                {% endif %}
+
+                {% if msg.sender == 'agent' and 'intelligence_dashboard' in msg.content %}
+                  <div class="chat-text agent">
+                      <img width="115px" src="{% static 'img/agentcpq-chat-icon.png' %}" alt="AgentCPQ Logo">
+                      <div class="agent-json" data-raw="{{ msg.content|escapejs }}"></div>
                   </div>
                 {% endif %}
               </div>

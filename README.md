@@ -104,6 +104,60 @@ python manage.py runserver
 
 ---
 
+## **🧠 Intelligence (Lead Dashboards)**
+The Intelligence app adds role-aware lead dashboards inside chat. It calculates lead metrics, highlights risks, and renders a compact dashboard tailored to Executive, BizOps, or Sales Exec audiences.
+
+### **✅ Admin Setup Checklist**
+1) **Migrations**
+```bash
+python manage.py migrate
+```
+
+2) **Enable the feature flag**
+- **Admin**: Django Admin → Intelligence → Feature Flags → set `INTELLIGENCE_ENABLED = true` for the tenant.
+- **Env override** (optional): set `INTELLIGENCE_ENABLED_GLOBAL=true` to enable for all tenants.
+
+3) **Set planning targets (required)**
+- Django Admin → Intelligence → Planning Configs
+- Create a record for:
+  - `domain = leads`
+  - `timeframe_key = week|month|quarter|year`
+  - `period_start` / `period_end`
+  - `pipeline_required_leads` (required)
+
+4) **Set SLA days (optional but recommended)**
+- Django Admin → Intelligence → SLA Configs
+- Set `key = LEADS_NEW_SLA_DAYS` and `value = 30` (or your SLA)
+- SLA changes automatically clear cached snapshots so the next dashboard run recomputes.
+
+5) **Assign roles**
+Users are mapped by Django Group names (any of the aliases below):
+- Executive: `executive`, `executives`
+- BizOps: `bizops`, `biz ops`, `business ops`, `business operations`
+- Sales Exec: `sales_exec`, `sales exec`, `sales executive`, `sales executives`
+
+### **✅ How to Use (Chat Triggers)**
+These phrases route to the lead dashboard:
+- “show my dashboard”
+- “show me my dashboard”
+- “lead summary”
+- “how are leads doing”
+- “leads status”
+- “leads dashboard”
+
+### **✅ What You’ll See**
+- **Executive**: KPI grid + lead health
+- **BizOps**: KPI row + leads by status + SLA watch
+- **Sales Exec**: today’s actions + overdue leads + status mix
+
+### **✅ Snapshot Jobs (optional manual run)**
+```bash
+python manage.py intelligence_snapshot_leads_daily
+python manage.py intelligence_snapshot_leads_weekly
+```
+
+---
+
 ## **🎯 Usage Workflow**
 1️⃣ **Sales rep:** “Create a quote with Product A001 for ACME Corp.”
 2️⃣ **AI:** “✅ Created quote for ACME Corp. Would you like to add products?”

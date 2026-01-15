@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     "salesforce",
     "hubspot",
     "quickbooks",
+    "agentcpq.intelligence",
     'django.contrib.humanize',
     'storages',
     'api',

@@ -1224,7 +1224,7 @@ function stripStructuredSuffixInElement(el, keys) {
 }
 
 function stripStructuredSuffixesInHistory() {
-  const keys = ["quote_details:", "update_details:"];
+  const keys = ["quote_details:", "update_details:", "intelligence_dashboard:"];
   const messages = document.querySelectorAll(".chat-message.agent .message");
   messages.forEach((el) => {
     if (!el || !el.innerHTML) return;
@@ -1397,6 +1397,7 @@ function enhanceStructuredAgentMessagesHistoryChat() {
     const keys = [
       'quote_details:',
       'update_details:',
+      'intelligence_dashboard:',
       'single_record:',
       'validation_rules_details:',
       'rules:',
@@ -1507,6 +1508,13 @@ function enhanceStructuredAgentMessagesHistoryChat() {
         const html = renderRetrievedRecords("", data);
         div.innerHTML = html;
         initializeMetricCards(div);
+        return;
+      }
+
+      // === INTELLIGENCE DASHBOARD ===
+      if (matchedKey === 'intelligence_dashboard:') {
+        const html = renderIntelligenceDashboard(data);
+        div.innerHTML = html;
         return;
       }
 
@@ -2255,7 +2263,7 @@ function handleAgentResponse(data, options = {}) {
     if (data.response.message) {
       const cleaned = stripStructuredSuffixFromAgentMessage(
         data.response.message,
-        ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
+        ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:", "intelligence_dashboard:"]
       );
       if (cleaned.message) {
         responseMessage += `<div class="general-message">${addWarningIconPrefix(cleaned.message)}</div>`;
@@ -2300,10 +2308,21 @@ function handleAgentResponse(data, options = {}) {
     } else if (data.response.message) {
       const cleaned = stripStructuredSuffixFromAgentMessage(
         data.response.message,
-        ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
+        ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:", "intelligence_dashboard:"]
       );
       responseMessage += `<div class="general-message">${cleaned.message}</div>`;
     }
+  }
+  else if (data.response && data.response.intelligence_dashboard) {
+    const rendered = renderIntelligenceDashboard(data.response.intelligence_dashboard);
+    if (data.response.message) {
+      const cleaned = stripStructuredSuffixFromAgentMessage(
+        data.response.message,
+        ["intelligence_dashboard:"]
+      );
+      responseMessage += `<div class="general-message">${cleaned.message}</div>`;
+    }
+    responseMessage += rendered;
   }
   else if (data.response && data.response.openGraphicBuilder) {
     modelSchema = data.response.cpq_model_schema || {};
@@ -2313,9 +2332,16 @@ function handleAgentResponse(data, options = {}) {
     );
   }
   else if (data.response && data.response.message) {
+    const embeddedDashboard = extractEmbeddedJsonPayload(data.response.message, "intelligence_dashboard:");
+    if (embeddedDashboard) {
+      const rendered = renderIntelligenceDashboard(embeddedDashboard);
+      if (rendered) {
+        responseMessage += rendered;
+      }
+    }
     const cleaned = stripStructuredSuffixFromAgentMessage(
       data.response.message,
-      ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
+      ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:", "intelligence_dashboard:"]
     );
     responseMessage += `<div class="general-message">${addWarningIconPrefix(cleaned.message)}</div>`;
 
@@ -2589,6 +2615,26 @@ function appendMessage(className, message, options = {}) {
       }
     }
 
+    // ✅ Detect stored intelligence dashboards
+    if (className === "agent" && message.includes("intelligence_dashboard:")) {
+      try {
+        const key = "intelligence_dashboard:";
+        const idx = message.indexOf(key);
+        const prefixRaw = idx > 0 ? message.slice(0, idx).trim() : "";
+        const cleanedPrefix = prefixRaw.replace(/📦\s*$/u, "").trim();
+        const afterKey = message.slice(idx + key.length);
+        const jsonStr = extractJson(afterKey);
+        if (jsonStr) {
+          const payload = JSON.parse(jsonStr);
+          const rendered = renderIntelligenceDashboard(payload);
+          const prefix = cleanedPrefix ? `<div class="general-message">${cleanedPrefix}</div>` : "";
+          message = `${prefix}${rendered || ""}`;
+        }
+      } catch (e) {
+        console.warn("Failed to parse intelligence_dashboard JSON:", e);
+      }
+    }
+
     messageBubble.innerHTML = message;
 
     // If an agent message contains a human prefix + structured payload (e.g. quote_details: {...}),
@@ -2597,7 +2643,7 @@ function appendMessage(className, message, options = {}) {
       const msgEl = messageBubble.querySelector(".message") || messageBubble;
       stripStructuredSuffixInElement(
         msgEl,
-        ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:"]
+        ["quote_details:", "action_triggers_details:", "validation_rules_details:", "retrieved_records:", "intelligence_dashboard:"]
       );
     }
     if (options && options.anchor && options.anchor.parentNode) {
@@ -8376,6 +8422,266 @@ function normalizeFieldName(fieldName) {
   return fieldName
     .replace(/_/g, " ")                    // reemplaza _ por espacio
     .replace(/\b\w/g, char => char.toUpperCase()); // primera letra de cada palabra en mayúscula
+}
+
+function resolveTemplateString(template, metrics) {
+  if (typeof template !== "string") return template;
+  return template.replace(/{{\s*([^}]+)\s*}}/g, (match, key) => {
+    const value = metrics[key.trim()];
+    if (value === null || value === undefined || value === "") return "—";
+    return String(value);
+  });
+}
+
+function extractTemplateTokens(template) {
+  if (typeof template !== "string") return [];
+  const matches = [...template.matchAll(/{{\s*([^}]+)\s*}}/g)];
+  return matches.map((match) => match[1].trim());
+}
+
+function formatMetricValue(value, format) {
+  if (value === null || value === undefined || value === "") return "—";
+  const num = Number(value);
+  if (Number.isNaN(num)) return String(value);
+  if (!format) return num.toLocaleString("en-US");
+
+  if (format.startsWith("percent")) {
+    const decimals = format.endsWith("1dp") ? 1 : 0;
+    const normalized = Math.abs(num) <= 1 ? num * 100 : num;
+    return `${normalized.toFixed(decimals)}%`;
+  }
+
+  if (format.startsWith("ratio")) {
+    const decimals = format.endsWith("2dp") ? 2 : 1;
+    return num.toFixed(decimals);
+  }
+
+  if (format === "int") {
+    return Math.round(num).toLocaleString("en-US");
+  }
+
+  return num.toLocaleString("en-US");
+}
+
+function formatTrendValue(value, format) {
+  const formatted = formatMetricValue(value, format);
+  const num = Number(value);
+  if (!Number.isNaN(num) && num > 0) {
+    return `+${formatted}`;
+  }
+  return formatted;
+}
+
+function evaluateEmphasisRule(condition, metrics) {
+  if (!condition) return false;
+  const match = condition.match(/{{\s*([^}]+)\s*}}\s*(<=|>=|==|!=|<|>)\s*(['"]?[^'"]+['"]?)/);
+  if (!match) return false;
+  const key = match[1].trim();
+  const op = match[2];
+  let right = match[3].trim();
+  const left = metrics[key];
+
+  if ((right.startsWith("'") && right.endsWith("'")) || (right.startsWith('"') && right.endsWith('"'))) {
+    right = right.slice(1, -1);
+    const leftStr = String(left);
+    if (op === "==") return leftStr === right;
+    if (op === "!=") return leftStr !== right;
+    return false;
+  }
+
+  const leftNum = Number(left);
+  const rightNum = Number(right);
+  if (Number.isNaN(leftNum) || Number.isNaN(rightNum)) return false;
+
+  if (op === "<") return leftNum < rightNum;
+  if (op === "<=") return leftNum <= rightNum;
+  if (op === ">") return leftNum > rightNum;
+  if (op === ">=") return leftNum >= rightNum;
+  if (op === "==") return leftNum === rightNum;
+  if (op === "!=") return leftNum !== rightNum;
+  return false;
+}
+
+function resolveEmphasisClass(rules, metrics) {
+  if (!Array.isArray(rules)) return "";
+  for (const rule of rules) {
+    if (evaluateEmphasisRule(rule.when, metrics)) {
+      return rule.emphasis || "";
+    }
+  }
+  return "";
+}
+
+function normalizeBarList(source) {
+  if (Array.isArray(source)) {
+    return source.map((item) => {
+      if (typeof item === "object") {
+        return {
+          label: item.label ?? item.status ?? item.key ?? "Unknown",
+          value: item.value ?? item.count ?? 0,
+        };
+      }
+      return { label: String(item), value: 0 };
+    });
+  }
+  if (source && typeof source === "object") {
+    return Object.entries(source).map(([label, value]) => ({ label, value }));
+  }
+  return [];
+}
+
+function renderIntelligenceDashboard(payload) {
+  if (!payload || !payload.layout_key) return "";
+  const data = payload.data || {};
+  const layout = data.layout || {};
+  const metrics = data.metrics || {};
+  const changedFields = new Set(data.changed_fields || []);
+  const highlightChanges = payload.render_hints && payload.render_hints.highlight_changed_fields;
+
+  const formatValueFromTemplate = (template, formatSpec) => {
+    const tokens = extractTemplateTokens(template);
+    const key = tokens[0];
+    const value = key ? metrics[key] : template;
+    return formatMetricValue(value, formatSpec);
+  };
+
+  const buildCardClasses = (template, emphasisRules) => {
+    const classes = ["intelligence-card"];
+    const emphasis = resolveEmphasisClass(emphasisRules, metrics);
+    if (emphasis === "alert") classes.push("is-alert");
+    if (emphasis === "positive") classes.push("is-positive");
+    if (highlightChanges) {
+      const tokens = extractTemplateTokens(template);
+      if (tokens.some((token) => changedFields.has(token))) {
+        classes.push("is-changed");
+      }
+    }
+    return classes.join(" ");
+  };
+
+  const renderKpiCard = (card) => {
+    const value = formatValueFromTemplate(card.value, card.format?.value);
+    const trend = card.trend ? formatTrendValue(metrics[extractTemplateTokens(card.trend)[0]], card.format?.trend) : null;
+    const trendClass = Number(metrics[extractTemplateTokens(card.trend || "")[0]]) < 0 ? "is-negative" : "is-positive";
+    return `
+      <div class="${buildCardClasses(card.value, card.emphasis_rules)}">
+        <div class="intelligence-card-title">${escapeHtml(card.title)}</div>
+        <div class="intelligence-card-value">${escapeHtml(value)}</div>
+        ${trend ? `<div class="intelligence-card-trend ${trendClass}">${escapeHtml(trend)}</div>` : ""}
+      </div>
+    `;
+  };
+
+  const renderProgressCard = (card) => {
+    const value = Number(metrics[extractTemplateTokens(card.value)[0]] || 0);
+    const target = Number(card.target || 1);
+    const pct = target ? Math.min(Math.max((value / target) * 100, 0), 100) : 0;
+    const formatted = formatMetricValue(value, card.format?.value);
+    return `
+      <div class="${buildCardClasses(card.value, card.emphasis_rules)} intelligence-card--progress">
+        <div class="intelligence-card-title">${escapeHtml(card.title)}</div>
+        <div class="intelligence-progress">
+          <div class="intelligence-progress-bar" style="--progress:${pct.toFixed(1)}%;"></div>
+        </div>
+        <div class="intelligence-progress-meta">${escapeHtml(formatted)}x</div>
+      </div>
+    `;
+  };
+
+  const renderStatusBadge = (card) => {
+    const value = resolveTemplateString(card.value, metrics);
+    return `
+      <div class="${buildCardClasses(card.value, card.emphasis_rules)} intelligence-card--badge">
+        <div class="intelligence-card-title">${escapeHtml(card.title)}</div>
+        <div class="intelligence-status-pill">${escapeHtml(String(value))}</div>
+      </div>
+    `;
+  };
+
+  const renderBarList = (section) => {
+    const sourceKey = extractTemplateTokens(section.source)[0];
+    const items = normalizeBarList(metrics[sourceKey]);
+    const total = items.reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const palette = ["#2563eb", "#22c55e", "#f97316", "#a855f7", "#0ea5e9", "#f43f5e"];
+    return `
+      <div class="intelligence-section">
+        <div class="intelligence-section-title">${escapeHtml(section.title)}</div>
+        <div class="metric-segmented">
+          <div class="metric-segmented-legend">
+            ${items.map((item, idx) => `
+              <div class="metric-legend-item">
+                <span class="metric-legend-dot" style="--segment-color:${palette[idx % palette.length]};"></span>
+                <span class="metric-legend-label">${escapeHtml(String(item.label))}</span>
+                <span class="metric-legend-count">: ${formatMetricValue(item.value, "int")}</span>
+              </div>
+            `).join("")}
+          </div>
+          <div class="metric-segmented-bar">
+            ${items.map((item, idx) => {
+              const pct = total ? (Number(item.value || 0) / total) * 100 : 0;
+              return `<span class="metric-segment" style="--segment-size:${pct.toFixed(2)}%;--segment-color:${palette[idx % palette.length]};"></span>`;
+            }).join("")}
+          </div>
+        </div>
+      </div>
+    `;
+  };
+
+  const renderCallout = (section) => `
+    <div class="intelligence-callout">
+      <div class="intelligence-callout-title">${escapeHtml(section.title)}</div>
+      <div class="intelligence-callout-body">${escapeHtml(resolveTemplateString(section.body, metrics))}</div>
+    </div>
+  `;
+
+  let body = "";
+  if (layout.type === "kpi_grid") {
+    const cards = (layout.cards || []).slice(0, layout.max_cards || 99);
+    body = `
+      <div class="intelligence-kpi-grid">
+        ${cards.map((card) => {
+          if (card.type === "kpi") return renderKpiCard(card);
+          if (card.type === "progress") return renderProgressCard(card);
+          if (card.type === "status_badge") return renderStatusBadge(card);
+          return "";
+        }).join("")}
+      </div>
+    `;
+  } else if (layout.type === "stacked_sections") {
+    body = `
+      <div class="intelligence-sections">
+        ${(layout.sections || []).map((section) => {
+          if (section.type === "kpi_row") {
+            return `
+              <div class="intelligence-kpi-row">
+                ${(section.cards || []).map((card) => renderKpiCard(card)).join("")}
+              </div>
+            `;
+          }
+          if (section.type === "bar_list") return renderBarList(section);
+          if (section.type === "callout") return renderCallout(section);
+          return "";
+        }).join("")}
+      </div>
+    `;
+  } else if (layout.type === "action_panel") {
+    body = `
+      <div class="intelligence-sections">
+        ${(layout.sections || []).map((section) => {
+          if (section.type === "callout") return renderCallout(section);
+          if (section.type === "kpi") return renderKpiCard(section);
+          if (section.type === "bar_list") return renderBarList(section);
+          return "";
+        }).join("")}
+      </div>
+    `;
+  }
+
+  return `
+    <div class="intelligence-dashboard" data-layout="${escapeHtml(layout.layout_key || payload.layout_key || "")}">
+      ${body}
+    </div>
+  `;
 }
 
 // =====================================================

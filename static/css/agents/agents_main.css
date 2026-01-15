@@ -3002,13 +3002,13 @@ textarea.chat-input {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 8px;
-  font-size: 0.82rem;
+  font-size: 0.95rem;
   color: #475569;
 }
 
 .records-metric-definition-label {
   display: block;
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: #94a3b8;
@@ -3054,7 +3054,7 @@ textarea.chat-input {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.85rem;
+  font-size: 0.98rem;
   color: #334155;
 }
 
@@ -3084,12 +3084,170 @@ textarea.chat-input {
 }
 
 .metric-progress-meta {
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   color: #475569;
 }
 
 .records-metric-table {
   margin-top: 8px;
+}
+
+/* Intelligence dashboards */
+.intelligence-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 6px 0;
+}
+
+.intelligence-kpi-grid,
+.intelligence-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.intelligence-card {
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.intelligence-card.is-alert {
+  border-color: rgba(239, 68, 68, 0.5);
+  box-shadow: 0 8px 20px rgba(239, 68, 68, 0.18);
+}
+
+.intelligence-card.is-positive {
+  border-color: rgba(34, 197, 94, 0.45);
+  box-shadow: 0 8px 20px rgba(34, 197, 94, 0.16);
+}
+
+.intelligence-card.is-changed {
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18), 0 10px 22px rgba(15, 23, 42, 0.12);
+}
+
+.intelligence-card-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.intelligence-card-value {
+  font-size: 2.1rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.15;
+}
+
+.intelligence-card-trend {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.intelligence-card-trend.is-positive {
+  color: #16a34a;
+}
+
+.intelligence-card-trend.is-negative {
+  color: #dc2626;
+}
+
+.intelligence-progress {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.intelligence-progress-bar {
+  height: 100%;
+  width: var(--progress);
+  background: linear-gradient(90deg, #2563eb, #0ea5e9);
+}
+
+.intelligence-progress-meta {
+  font-size: 0.95rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+.intelligence-status-pill {
+  align-self: flex-start;
+  background: #f1f5f9;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.intelligence-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.intelligence-section {
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.1);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.intelligence-section-title {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #475569;
+  font-weight: 700;
+}
+
+.metric-segmented {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metric-legend-label {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.intelligence-callout {
+  background: #f8fafc;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.intelligence-callout-title {
+  font-size: 0.88rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #475569;
+  font-weight: 700;
+}
+
+.intelligence-callout-body {
+  font-size: 1.05rem;
+  color: #1f2937;
+  font-weight: 600;
 }
 
 /* ✅ Rule Header */

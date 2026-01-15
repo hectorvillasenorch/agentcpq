@@ -14,6 +14,10 @@ from agents.analytics_agent import analytics_agent
 from agents.record_agent import record_agent
 from agents.knowledge_agent import knowledge_agent
 from agents.action_trigger_agent import action_trigger_agent
+from agentcpq.intelligence.lead_intelligence_agent import (
+    lead_intelligence_agent,
+    matches_lead_intelligence_trigger,
+)
 from agents.standard_record_agent import standard_record_agent
 from dotenv import load_dotenv
 from agents.models import ChatSession, ChatMessage
@@ -156,6 +160,11 @@ def handle_user_request(user,user_message, session_data):
     if normalized_message in {"show details", "show detail", "show quote details", "show quote detail"}:
         logging.info("Do NOT use GPT\n")
         response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowQuoteDetails")
+
+    # 🧠 Shortcut manual: lead intelligence dashboard
+    elif matches_lead_intelligence_trigger(user_message):
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowLeadDashboard")
 
     # 🧠 Shortcut manual: "show quote details for <quote_id>"
     elif user_message.lower().startswith("show quote details for "):
@@ -612,6 +621,14 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
 
     if decision in action_map:
         result = action_map[decision](user, decision, user_message, session_data)
+        if decision == "ShowLeadDashboard":
+            payload = result.get("intelligence_dashboard") if isinstance(result, dict) else None
+            logging.info(
+                "ShowLeadDashboard result keys=%s has_dashboard=%s layout_key=%s",
+                sorted(result.keys()) if isinstance(result, dict) else [],
+                bool(payload),
+                payload.get("layout_key") if isinstance(payload, dict) else None,
+            )
 
         batch_prefix = _build_batch_prefix(session_data)
 
@@ -662,7 +679,8 @@ def orchestrate_request_trigger(user, user_message, session_data, decision):
 
         for key, value in result.items():
             if key not in ("message", "session_id", "hiddenMessage", "original_value", "suppress_chat", "temporaryMessage", "session_summary"):
-                agent_message += f"\n\n📦 {key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
+                prefix = "" if key == "intelligence_dashboard" else "📦 "
+                agent_message += f"\n\n{prefix}{key}:\n{json.dumps(_safe_serialize(value), indent=2, ensure_ascii=False)}"
 
         agent_message = _strip_session_summary_text(_decode_chat_text(agent_message))
 
@@ -1034,6 +1052,8 @@ def get_action_map():
         "KnowledgeLookup": knowledge_agent,
         # Action Trigger Agent
         "CreateActionTrigger": action_trigger_agent,
+        # Intelligence Agent
+        "ShowLeadDashboard": lead_intelligence_agent,
     }
 
 
