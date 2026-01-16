@@ -45,24 +45,22 @@
             <img class="brand-logo-collapsed" src="{% static 'img/agent-white.png' %}" alt="Agent icon">
         </div>
         <a href="{% url 'dashboard' %}?view=agents&new_chat=true" class="new-chat-button">
-            <img src="{% static 'img/agent-white.png' %}" alt="New chat" class="nav-icon-image">
+            <i class="material-icons">chat</i>
             <span class="nav-label">New Chat</span><span class="nav-label" style="margin: 0 4px;">+</span>
         </a>
 
-        <a href="{% url 'dashboard' %}?view=products">
-            <i class="material-icons">inventory_2</i>
+        <a href="{% url 'dashboard' %}?view=products" class="nav-link--no-icon">
             <span class="nav-label">Products</span>
         </a>
 
         <a href="{% url 'dashboard' %}?view=accounts">
-            <i class="material-icons">business</i>
+            <i class="material-icons">account_circle</i>
             <span class="nav-label">Accounts</span>
         </a>
 
         {% if custom_objects %}
             {% for obj in custom_objects %}
-                <a href="{% url 'dashboard' %}?view=custom&object_name={{ obj.name }}">
-                    <i class="material-icons">description</i>
+                <a href="{% url 'dashboard' %}?view=custom&object_name={{ obj.name }}" class="nav-link--no-icon">
                     <span class="nav-label">{{ obj.label }}</span>
                 </a>
             {% endfor %}
@@ -70,7 +68,7 @@
 
         {% if request.user.is_staff %}
             <a href="{% url 'cpq:get_company_information' %}">
-                <i class="material-icons">business</i>
+                <i class="material-icons">settings</i>
                 <span class="nav-label">Admin</span>
             </a>
         {% endif %}
@@ -81,10 +79,9 @@
             <p class="session-list-title">Recent Activity</p>
             {% for chat in chat_sessions %}
                 <a href="{% url 'dashboard' %}?view=agents&session_id={{ chat.session_id }}"
-                   class="chat-history-item"
+                   class="chat-history-item chat-history-item--no-icon"
                    data-session-id="{{ chat.session_id }}"
                    data-session-title="{{ chat.title|default:'Untitled' }}">
-                    <i class="material-icons">chat</i>
                     <span class="nav-label chat-history-title">{{ chat.title|default:"Untitled"|truncatechars:24 }}</span>
                     <span class="material-icons chat-edit-trigger" role="button" aria-label="Rename session" tabindex="0">edit</span>
                 </a>
@@ -98,14 +95,12 @@
     <div class="nav-bottom-fixed" aria-label="Sidebar account actions">
         <div class="nav-footer">
             <button onclick="colapseSidebar()" class="btn-flat nav-collapse-btn">
-                <i id="collapse-icon" class="material-icons">chevron_left</i>
                 <span class="nav-label">Collapse</span>
             </button>
 
             <form method="post" action="{% url 'logout' %}" class="nav-action-form">
                 {% csrf_token %}
                 <button type="submit" class="nav-action-btn">
-                    <i class="material-icons">logout</i>
                     <span class="nav-label">Logout</span>
                 </button>
             </form>

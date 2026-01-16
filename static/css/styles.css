@@ -114,7 +114,7 @@ h4{
 
 .session-list-title {
   color: var(--sidenav-muted, #bdbdbd);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   padding: 0 4px 8px;
   text-transform: uppercase;
@@ -124,14 +124,18 @@ h4{
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  padding: 8px 12px;
   color: var(--sidenav-text, #eeeeee);
-  font-size: 15px !important;
+  font-size: 13px !important;
   text-decoration: none;
   transition: background-color 0.2s ease;
   width: 100%;
   box-sizing: border-box;
   border-radius: 10px;
+}
+
+.chat-history-item.chat-history-item--no-icon {
+  padding-left: 38px;
 }
 
 .chat-history-item i {
@@ -150,7 +154,7 @@ h4{
 
 .chat-edit-trigger {
   flex-shrink: 0;
-  font-size: 18px;
+  font-size: 15px;
   color: #b0b0b0;
   opacity: 0;
   cursor: pointer;
@@ -226,6 +230,10 @@ h4{
 .sidenav-fixed a i {
   font-size: 22px;
   margin-right: 10px;
+}
+
+.sidenav-fixed a.nav-link--no-icon {
+  padding-left: 48px;
 }
 
 .sidenav-fixed a .nav-icon-image {
