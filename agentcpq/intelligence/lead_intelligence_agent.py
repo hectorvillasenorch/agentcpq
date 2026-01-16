@@ -522,7 +522,7 @@ def _build_exec_explanation(metrics: dict) -> str | None:
 
 
 def lead_intelligence_agent(user, action, user_message, session_data):
-    tenant = Tenant.objects.first()
+    tenant = Tenant.safe_first()
     if not tenant or not is_intelligence_enabled(tenant):
         return {"message": ENABLE_DISABLE_MESSAGES["disabled"]}
 

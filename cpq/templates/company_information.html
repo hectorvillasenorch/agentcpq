@@ -104,6 +104,32 @@
     font-size: 0.92rem;
   }
 
+  .sidebar-object-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+  }
+
+  .sidebar-object-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background: rgba(248, 250, 252, 0.7);
+    color: #0f172a;
+    font-weight: 600;
+  }
+
+  .sidebar-object-option input {
+    margin: 0;
+  }
+
+  .sidebar-object-option span {
+    font-size: 0.95rem;
+  }
+
   .section-grid {
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -601,6 +627,24 @@
                 <div class="logo-block__empty">No logo uploaded</div>
               {% endif %}
             </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2 class="panel__title">Sidebar Navigation</h2>
+          <p class="panel__subtitle">Choose which standard objects appear in the sidebar.</p>
+          <div class="sidebar-object-grid">
+            {% for item in standard_sidenav_items %}
+              <label class="sidebar-object-option">
+                <input
+                  type="checkbox"
+                  name="sidebar_standard_objects"
+                  value="{{ item.key }}"
+                  {% if item.key in selected_standard_sidenav_keys %}checked{% endif %}
+                >
+                <span>{{ item.label }}</span>
+              </label>
+            {% endfor %}
           </div>
         </div>
 

@@ -167,6 +167,12 @@ def apply_partner_access_filter(user, object_name: str, queryset, *, custom_obje
         return queryset.filter(Q(account__in=accounts) | Q(opportunity__account__in=accounts))
     if normalized in {"quoteline", "quote_line", "quote lines"} or model_name == "quoteline":
         return queryset.filter(Q(quote__account__in=accounts) | Q(quote__opportunity__account__in=accounts))
+    if normalized in {"activity", "activities"} or model_name == "activity":
+        return queryset.filter(
+            Q(opportunity__account__in=accounts)
+            | Q(contact__account__in=accounts)
+            | Q(lead__contact__account__in=accounts)
+        )
     if normalized in {"product", "products"} or model_name == "product":
         return queryset
 

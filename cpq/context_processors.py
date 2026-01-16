@@ -45,7 +45,7 @@ def tenant_theme(request) -> Dict[str, Dict[str, str]]:  # noqa: ARG001
     }
 
     try:
-        tenant = Tenant.objects.first()
+        tenant = Tenant.safe_first()
     except OperationalError:
         tenant = None
     except Exception:

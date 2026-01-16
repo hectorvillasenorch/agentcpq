@@ -22,9 +22,28 @@ document.addEventListener("DOMContentLoaded", function () {
   setAgentFeedbackVisibility(false);
   initializeRecordListLayouts(document);
   initializeMetricCards(document);
+  handleAutoPrompt();
 
   scrollToBottom("DOMContentLoaded", true);
 });
+
+function handleAutoPrompt() {
+  const params = new URLSearchParams(window.location.search);
+  const autoPrompt = params.get("auto_prompt");
+  if (!autoPrompt) return;
+  const inputField = document.getElementById("user-input");
+  const chatBox = document.getElementById("chat-box");
+  if (!inputField || !chatBox) return;
+  const hasMessages = Boolean(chatBox.querySelector(".chat-message, .chat-text"));
+  if (hasMessages) return;
+
+  inputField.value = autoPrompt;
+  params.delete("auto_prompt");
+  const nextQuery = params.toString();
+  const nextUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+  window.history.replaceState({}, "", nextUrl);
+  sendMessage();
+}
 
 function initializeMaterializeSelects(root) {
   if (!root) {
@@ -4188,6 +4207,21 @@ const RELATED_BUTTON_CONFIG = {
     listObjectLabel: "Quotes",
     listFields: ["name", "status", "net_amount", "expiration_date", "primary_quote", "view_quote"],
   },
+  "related-activities": {
+    label: "Related activities",
+    icon: "event",
+    endpoint: "/cpq/related-activities/",
+    relationKey: "record_id",
+    objectKey: "object",
+    relatedAttr: "data-related-record-id",
+    pluralLabel: "activities",
+    parentLabel: "Record",
+    objectName: "activity",
+    listOnClick: true,
+    listObjectLabel: "Activities",
+    listFields: ["subject", "activity_type", "status", "due_date", "view_record"],
+    viewObjectName: "Activity",
+  },
 };
 
 const RELATED_BUTTONS_BY_OBJECT = {
@@ -4289,6 +4323,8 @@ function renderSingleRecord(record) {
   const relatedAccountAttr = relatedAccountId ? ` data-related-account-id="${escapeHtml(String(relatedAccountId))}"` : '';
   const relatedOpportunityId = record.related_opportunity_id || (record.meta && record.meta.related_opportunity_id) || '';
   const relatedOpportunityAttr = relatedOpportunityId ? ` data-related-opportunity-id="${escapeHtml(String(relatedOpportunityId))}"` : '';
+  const relatedRecordId = record.related_record_id || (record.meta && record.meta.related_record_id) || '';
+  const relatedRecordAttr = relatedRecordId ? ` data-related-record-id="${escapeHtml(String(relatedRecordId))}"` : '';
   const layoutButton = showLayoutButton
     ? `<button type="button" class="single-record-layout-btn single-record-layout-btn--icon" onclick="openSingleRecordCustomizer(this)" aria-label="Edit layout" title="Edit layout">
          <span class="material-icons" aria-hidden="true">tune</span>
@@ -4299,7 +4335,10 @@ function renderSingleRecord(record) {
          <span class="material-icons" aria-hidden="true">delete_forever</span>
        </button>`
     : '';
-  const relatedRoles = RELATED_BUTTONS_BY_OBJECT[objectName] || [];
+  const relatedRoles = [...(RELATED_BUTTONS_BY_OBJECT[objectName] || [])];
+  if (objectName && objectName !== "activity" && !relatedRoles.includes("related-activities")) {
+    relatedRoles.push("related-activities");
+  }
   const relatedButtons = relatedRoles.map(renderRelatedButton).filter(Boolean).join('');
   const relatedButtonsRow = relatedButtons ? `<div class="single-record-related-actions">${relatedButtons}</div>` : '';
   const headerControls = (layoutButton || deleteButton)
@@ -4321,7 +4360,7 @@ function renderSingleRecord(record) {
   const gridContent = sectionsHtml || '<div class="single-record-empty">No additional details were provided for this record.</div>';
 
   return `
-    <div class="single-record-card" data-record-object="${escapeHtml(record.object || '')}" data-record-id="${record.record_id ?? ''}" data-record-name="${escapeHtml(String(record.record_value ?? ''))}"${relatedAccountAttr}${relatedOpportunityAttr}${layoutAttr}>
+    <div class="single-record-card" data-record-object="${escapeHtml(record.object || '')}" data-record-id="${record.record_id ?? ''}" data-record-name="${escapeHtml(String(record.record_value ?? ''))}"${relatedAccountAttr}${relatedOpportunityAttr}${relatedRecordAttr}${layoutAttr}>
       <div class="single-record-header">
         <div class="single-record-header-text">
           <div class="single-record-subtitle" style="display:flex;align-items:center;gap:6px;">
@@ -4362,9 +4401,10 @@ function initializeSingleRecordRelatedButtons(root = document) {
     const card = button.closest('.single-record-card');
     if (!card) return;
     const relationId = card.dataset.recordId;
+    const objectName = card.dataset.recordObject || "";
 
     if (relationId) {
-      loadRelatedRecordsCount(button, config, relationId);
+      loadRelatedRecordsCount(button, config, relationId, objectName);
     } else {
       const badge = button.querySelector('[data-role="related-count"]');
       if (badge) badge.textContent = "0";
@@ -4490,6 +4530,9 @@ async function purgeSingleRecordChatLog({ sessionId, objectName, recordId }) {
 function buildRelatedRecordsUrl(config, relationId, options = {}) {
   const params = new URLSearchParams();
   params.set(config.relationKey, relationId);
+  if (config.objectKey && options.objectName) {
+    params.set(config.objectKey, options.objectName);
+  }
   if (options.summaryOnly) {
     params.set("summary", "1");
   }
@@ -4514,7 +4557,7 @@ function buildRelatedRecordsUrl(config, relationId, options = {}) {
   return `${config.endpoint}?${params.toString()}`;
 }
 
-async function loadRelatedRecordsCount(button, config, relationId) {
+async function loadRelatedRecordsCount(button, config, relationId, objectName) {
   const badge = button.querySelector('[data-role="related-count"]');
   if (!badge) return;
 
@@ -4522,7 +4565,10 @@ async function loadRelatedRecordsCount(button, config, relationId) {
   badge.textContent = "...";
 
   try {
-    const response = await fetch(buildRelatedRecordsUrl(config, relationId, { summaryOnly: true }));
+    const response = await fetch(buildRelatedRecordsUrl(config, relationId, {
+      summaryOnly: true,
+      objectName,
+    }));
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -4602,6 +4648,7 @@ function ensureRelatedPopover(button, config) {
 async function loadRelatedPreview(button, card, config, popover) {
   const relationId = card.dataset.recordId;
   if (!relationId) return;
+  const objectName = card.dataset.recordObject || "";
 
   popover._card = card;
   popover.dataset.relationId = String(relationId);
@@ -4616,7 +4663,11 @@ async function loadRelatedPreview(button, card, config, popover) {
   popover.classList.add("is-visible");
 
   try {
-    const response = await fetch(buildRelatedRecordsUrl(config, relationId, { preview: true, limit: 8 }));
+    const response = await fetch(buildRelatedRecordsUrl(config, relationId, {
+      preview: true,
+      limit: 8,
+      objectName,
+    }));
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -4659,6 +4710,7 @@ function handleRelatedRecordSelection(popover, recordId) {
 
   const sessionId = getCurrentSessionId();
   const parentName = card.dataset.recordName || config.parentLabel || "Record";
+  const objectName = card.dataset.recordObject || "";
   fetchRelatedRecordCards({
     relationId: card.dataset.recordId,
     sessionId,
@@ -4667,6 +4719,7 @@ function handleRelatedRecordSelection(popover, recordId) {
     config,
     recordId,
     countHint: Number(button.dataset.relatedCount || 0),
+    objectName,
   });
   popover.classList.remove("is-visible");
 }
@@ -4674,6 +4727,7 @@ function handleRelatedRecordSelection(popover, recordId) {
 function handleRelatedRecordsClick(card, button, config) {
   const relationId = card.dataset.recordId;
   if (!relationId) return;
+  const objectName = card.dataset.recordObject || "";
 
   if (config.listOnClick) {
     const chatMessage = card.closest(".chat-message");
@@ -4686,6 +4740,7 @@ function handleRelatedRecordsClick(card, button, config) {
       parentName,
       config,
       role,
+      objectName,
     });
     return;
   }
@@ -4709,6 +4764,7 @@ function handleRelatedRecordsClick(card, button, config) {
     parentName,
     config,
     countHint: Number(button.dataset.relatedCount || 0),
+    objectName,
   });
 }
 
@@ -5038,7 +5094,7 @@ function buildRelatedListLabel(labelPrefix, parentName, parentLabel) {
   return `${prefix} for ${fullName}`;
 }
 
-async function showRelatedRecordsList({ relationId, anchorMessage, parentName, config, role }) {
+async function showRelatedRecordsList({ relationId, anchorMessage, parentName, config, role, objectName }) {
   const existing = findRelatedListMessage(config, relationId, role);
   if (existing) {
     existing.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -5050,6 +5106,7 @@ async function showRelatedRecordsList({ relationId, anchorMessage, parentName, c
     preview: true,
     sessionId,
     persistList: Boolean(sessionId),
+    objectName,
   });
   try {
     const response = await fetch(url);
@@ -5113,13 +5170,14 @@ async function showRelatedRecordsList({ relationId, anchorMessage, parentName, c
   }
 }
 
-async function fetchRelatedRecordCards({ relationId, sessionId, anchorMessage, parentName, config, countHint, recordId }) {
+async function fetchRelatedRecordCards({ relationId, sessionId, anchorMessage, parentName, config, countHint, recordId, objectName }) {
   const limit = 6;
   const url = buildRelatedRecordsUrl(config, relationId, {
     sessionId,
     persist: Boolean(sessionId),
     limit,
     recordId,
+    objectName,
   });
 
   try {

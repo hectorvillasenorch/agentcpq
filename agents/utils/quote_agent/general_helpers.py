@@ -476,7 +476,7 @@ def get_document_pdf(quote, session_data=None, user=None):
         quote_lines = QuoteLine.objects.filter(quote=quote)
 
         # ✅ Fetch related company
-        company = Tenant.objects.first()
+        company = Tenant.safe_first()
 
         # ✅ Fetch related quote document settings (template)
         template = QuoteDocumentSettings.objects.first()

@@ -56,7 +56,7 @@ BASE_MODEL_MAP = {
 
 TEXT_LIKE_TYPES = {"text", "textarea", "dropdown", "lookup"}
 NUMERIC_TYPES = {"number", "currency", "percent"}
-DATE_TYPES = {"date"}
+DATE_TYPES = {"date", "datetime", "date_time"}
 BOOLEAN_TYPES = {"boolean"}
 
 
@@ -400,6 +400,29 @@ def _apply_date_range(qs, date_field, range_key):
     start = None
     end = now_dt
 
+    def _quarter_bounds(reference_date, quarter_offset=0):
+        fiscal_start_month = 1
+        try:
+            tenant = Tenant.safe_first()
+            raw_start = getattr(tenant, "fiscal_year_start_month", None)
+            fiscal_start_month = int(raw_start) if raw_start else 1
+        except Exception:
+            fiscal_start_month = 1
+        if fiscal_start_month < 1 or fiscal_start_month > 12:
+            fiscal_start_month = 1
+
+        month = reference_date.month
+        year = reference_date.year
+        fiscal_year = year if month >= fiscal_start_month else year - 1
+        offset = (month - fiscal_start_month) % 12
+        quarter_index = offset // 3
+        start_month = ((fiscal_start_month - 1) + quarter_index * 3) % 12 + 1
+        start_year = fiscal_year if start_month >= fiscal_start_month else fiscal_year + 1
+
+        quarter_start = date(start_year, start_month, 1) + relativedelta(months=quarter_offset * 3)
+        quarter_end = (quarter_start + relativedelta(months=3)) - timedelta(days=1)
+        return quarter_start, quarter_end
+
     # Explicit start/end tuple
     if isinstance(range_key, (list, tuple)) and len(range_key) == 2:
         start, end = range_key
@@ -424,6 +447,10 @@ def _apply_date_range(qs, date_field, range_key):
     elif range_key == "this_month":
         start = now_dt.replace(day=1)
         end = (start + relativedelta(months=1)) - timedelta(days=1)
+    elif range_key in {"this_quarter", "current_quarter"}:
+        start, end = _quarter_bounds(now_dt.date(), quarter_offset=0)
+    elif range_key in {"last_quarter", "previous_quarter"}:
+        start, end = _quarter_bounds(now_dt.date(), quarter_offset=-1)
     elif range_key in {"three_months", "3_months"}:
         start = (now_dt - relativedelta(months=3)).replace(day=1)
     elif range_key in {"six_months", "6_months"}:
@@ -485,19 +512,99 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
     if not agg_fn:
         return None, f"unsupported aggregate function '{func_name}'"
 
-    if range_key and date_field:
-        qs = _apply_date_range(qs, date_field, range_key)
-
     # Detect if the target field is a custom field
     custom_field_lookup = {}
     for cf in custom_fields or []:
-        custom_field_lookup[cf.name.lower()] = cf
+        if cf.name:
+            custom_field_lookup[cf.name.lower()] = cf
+            custom_field_lookup[_normalize_lookup_text(cf.name)] = cf
         if cf.label:
             custom_field_lookup[cf.label.lower()] = cf
+            custom_field_lookup[_normalize_lookup_text(cf.label)] = cf
+
+    def _resolve_custom_field(key):
+        if not key:
+            return None
+        raw = str(key).strip()
+        return (
+            custom_field_lookup.get(raw.lower())
+            or custom_field_lookup.get(_normalize_lookup_text(raw))
+        )
+
+    date_custom_field = None
+    if date_field:
+        try:
+            model._meta.get_field(date_field)
+        except Exception:
+            date_custom_field = _resolve_custom_field(date_field)
+            if date_custom_field:
+                date_data_type = (date_custom_field.data_type or "").lower()
+                if date_data_type not in DATE_TYPES:
+                    return None, f"date_field '{date_field}' is not a date field"
+            else:
+                return None, f"date_field '{date_field}' does not exist"
 
     custom_field = None
     if isinstance(field, str):
-        custom_field = custom_field_lookup.get(field.lower())
+        custom_field = _resolve_custom_field(field)
+
+    def _annotate_custom_date_on_records(base_qs, date_field_obj):
+        if not date_field_obj:
+            return base_qs, None
+        if custom_object:
+            date_values = CustomFieldValue.objects.filter(
+                field=date_field_obj,
+                record_id=OuterRef("pk"),
+            )
+        else:
+            try:
+                ct = ContentType.objects.get_for_model(model)
+            except Exception:
+                return base_qs, "unable to resolve content type for date field"
+            date_values = CustomFieldValue.objects.filter(
+                field=date_field_obj,
+                content_type=ct,
+                object_id=OuterRef("pk"),
+            )
+        annotated = base_qs.annotate(
+            _date_value=Subquery(date_values.values("value")[:1])
+        ).annotate(
+            _date_cast=Cast("_date_value", output_field=DateField())
+        )
+        return annotated, None
+
+    def _annotate_custom_date_on_values(values_qs, date_field_obj):
+        if not date_field_obj:
+            return values_qs, None
+        if custom_object:
+            date_values = CustomFieldValue.objects.filter(
+                field=date_field_obj,
+                record_id=OuterRef("record_id"),
+            )
+        else:
+            try:
+                ct = ContentType.objects.get_for_model(model)
+            except Exception:
+                return values_qs, "unable to resolve content type for date field"
+            date_values = CustomFieldValue.objects.filter(
+                field=date_field_obj,
+                content_type=ct,
+                object_id=OuterRef("object_id"),
+            )
+        annotated = values_qs.annotate(
+            _date_value=Subquery(date_values.values("value")[:1])
+        ).annotate(
+            _date_cast=Cast("_date_value", output_field=DateField())
+        )
+        return annotated, None
+
+    if range_key and date_field and date_custom_field:
+        qs, date_error = _annotate_custom_date_on_records(qs, date_custom_field)
+        if date_error:
+            return None, date_error
+        qs = _apply_date_range(qs, "_date_cast", range_key)
+    elif range_key and date_field:
+        qs = _apply_date_range(qs, date_field, range_key)
 
     # Time bucketed series
     if group_by == "quarter" and not date_field:
@@ -510,7 +617,7 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
         fiscal_start_month = 1
         fiscal_label_mode = "start"
         try:
-            tenant = Tenant.objects.first()
+            tenant = Tenant.safe_first()
             raw_start = getattr(tenant, "fiscal_year_start_month", None)
             fiscal_start_month = int(raw_start) if raw_start else 1
             raw_label_mode = getattr(tenant, "fiscal_year_label_mode", None)
@@ -554,12 +661,19 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
                 except Exception:
                     return None, "unable to resolve content type for custom field aggregation"
 
-            if range_key and date_field:
-                date_field_path = f"{date_prefix}{date_field}"
-                values_qs = _apply_date_range(values_qs, date_field_path, range_key)
-
             values_qs = values_qs.annotate(value_cast=Cast("value", output_field=DecimalField(max_digits=30, decimal_places=10)))
-            values_qs = values_qs.annotate(period=TruncMonth(date_prefix + date_field))
+            if date_custom_field:
+                values_qs, date_error = _annotate_custom_date_on_values(values_qs, date_custom_field)
+                if date_error:
+                    return None, date_error
+                if range_key and date_field:
+                    values_qs = _apply_date_range(values_qs, "_date_cast", range_key)
+                values_qs = values_qs.annotate(period=TruncMonth("_date_cast"))
+            else:
+                if range_key and date_field:
+                    date_field_path = f"{date_prefix}{date_field}"
+                    values_qs = _apply_date_range(values_qs, date_field_path, range_key)
+                values_qs = values_qs.annotate(period=TruncMonth(date_prefix + date_field))
             if func_name in {"avg", "average"}:
                 aggregated = values_qs.values("period").annotate(
                     sum_val=Sum("value_cast"),
@@ -574,7 +688,13 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
             else:
                 aggregated = values_qs.values("period").annotate(value=Sum("value_cast")).order_by("period")
         else:
-            qs = qs.annotate(period=TruncMonth(date_field))
+            if date_custom_field:
+                qs, date_error = _annotate_custom_date_on_records(qs, date_custom_field)
+                if date_error:
+                    return None, date_error
+                qs = qs.annotate(period=TruncMonth("_date_cast"))
+            else:
+                qs = qs.annotate(period=TruncMonth(date_field))
             if func_name in {"avg", "average"}:
                 aggregated = qs.values("period").annotate(
                     sum_val=Sum(field),
@@ -669,16 +789,28 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
                 except Exception:
                     return None, "unable to resolve content type for custom field aggregation"
 
-            # Apply date range on the related object if provided
-            if range_key and date_field:
-                date_field_path = f"{date_prefix}{date_field}"
-                values_qs = _apply_date_range(values_qs, date_field_path, range_key)
-
             values_qs = values_qs.annotate(value_cast=Cast("value", output_field=DecimalField(max_digits=30, decimal_places=10)))
-            values_qs = values_qs.annotate(period=trunc_fn(date_prefix + date_field))
+            if date_custom_field:
+                values_qs, date_error = _annotate_custom_date_on_values(values_qs, date_custom_field)
+                if date_error:
+                    return None, date_error
+                if range_key and date_field:
+                    values_qs = _apply_date_range(values_qs, "_date_cast", range_key)
+                values_qs = values_qs.annotate(period=trunc_fn("_date_cast"))
+            else:
+                if range_key and date_field:
+                    date_field_path = f"{date_prefix}{date_field}"
+                    values_qs = _apply_date_range(values_qs, date_field_path, range_key)
+                values_qs = values_qs.annotate(period=trunc_fn(date_prefix + date_field))
             aggregated = values_qs.values("period").annotate(value=agg_fn("value_cast")).order_by("period")
         else:
-            qs = qs.annotate(period=trunc_fn(date_field))
+            if date_custom_field:
+                qs, date_error = _annotate_custom_date_on_records(qs, date_custom_field)
+                if date_error:
+                    return None, date_error
+                qs = qs.annotate(period=trunc_fn("_date_cast"))
+            else:
+                qs = qs.annotate(period=trunc_fn(date_field))
             aggregated = qs.values("period").annotate(value=agg_fn(field)).order_by("period")
 
         series = []
@@ -860,11 +992,17 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
                 return None, "unable to resolve content type for custom field aggregation"
             date_prefix = "content_object__"
 
-        if range_key and date_field:
-            date_field_path = f"{date_prefix}{date_field}"
-            values_qs = _apply_date_range(values_qs, date_field_path, range_key)
-
         values_qs = values_qs.annotate(value_cast=Cast("value", output_field=DecimalField(max_digits=30, decimal_places=10)))
+        if date_custom_field:
+            values_qs, date_error = _annotate_custom_date_on_values(values_qs, date_custom_field)
+            if date_error:
+                return None, date_error
+            if range_key and date_field:
+                values_qs = _apply_date_range(values_qs, "_date_cast", range_key)
+        else:
+            if range_key and date_field:
+                date_field_path = f"{date_prefix}{date_field}"
+                values_qs = _apply_date_range(values_qs, date_field_path, range_key)
         agg_value = values_qs.aggregate(value=agg_fn("value_cast")).get("value")
     else:
         agg_value = qs.aggregate(value=agg_fn(field)).get("value")

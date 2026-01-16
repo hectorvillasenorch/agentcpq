@@ -49,14 +49,14 @@
             <span class="nav-label">New Chat</span><span class="nav-label" style="margin: 0 4px;">+</span>
         </a>
 
-        <a href="{% url 'dashboard' %}?view=products" class="nav-link--no-icon">
-            <span class="nav-label">Products</span>
-        </a>
-
-        <a href="{% url 'dashboard' %}?view=accounts">
-            <i class="material-icons">account_circle</i>
-            <span class="nav-label">Accounts</span>
-        </a>
+        {% for item in standard_nav_items %}
+            <a href="{% url 'dashboard' %}?view={{ item.view }}{% if item.auto_prompt %}&new_chat=true&auto_prompt={{ item.auto_prompt|urlencode }}{% endif %}"{% if item.css_class %} class="{{ item.css_class }}"{% endif %}>
+                {% if item.icon %}
+                    <i class="material-icons">{{ item.icon }}</i>
+                {% endif %}
+                <span class="nav-label">{{ item.label }}</span>
+            </a>
+        {% endfor %}
 
         {% if custom_objects %}
             {% for obj in custom_objects %}

@@ -199,7 +199,7 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
               "group_by": "month|week|day|quarter|field|null",
               "group_field": <field_name_or_null>,
               "date_field": <date_field_name_or_null>,
-              "range": "last_3_months|last_month|last_90_days|three_months|six_months|nine_months|twelve_months|this_month|this_year|next_year|custom|null"
+              "range": "last_3_months|last_month|last_90_days|three_months|six_months|nine_months|twelve_months|this_month|this_year|next_year|this_quarter|last_quarter|custom|null"
             },
             "conditions": [
               { "field": <field_name>, "operator": <operator>, "value": <value> }
@@ -235,6 +235,8 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
     - If the user does not mention a date range, leave aggregate.range=null.
     - If the user says "all time", leave aggregate.range=null.
     - If the user asks for "quarter" or "quarterly", use group_by="quarter".
+    - If the user asks for "this quarter", set aggregate.range="this_quarter".
+    - If the user asks for "last quarter" or "previous quarter", set aggregate.range="last_quarter".
     - If the user asks for "revenue to date" or "year-to-date revenue", interpret as:
       object="Opportunity", aggregate sum(field="amount"), conditions stage equals "closedwon",
       aggregate.range="this_year", aggregate.date_field="created_at".

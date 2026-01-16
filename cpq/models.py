@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, connection
 from django.db.models import Sum
 from datetime import datetime
 from django.utils import timezone
@@ -24,6 +24,7 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils.translation import gettext_lazy as _
 from django.core.validators import MinLengthValidator
+from django.db.utils import OperationalError, ProgrammingError
 
 User = get_user_model()
 
@@ -1223,10 +1224,44 @@ class Tenant(models.Model):
     sidebar_bg_color_1 = models.CharField(max_length=7, blank=True, null=True, default="#041530")
     sidebar_bg_color_2 = models.CharField(max_length=7, blank=True, null=True, default="#233049")
     sidebar_text_color = models.CharField(max_length=7, blank=True, null=True, default="#ffffff")
+    sidebar_standard_objects = models.JSONField(
+        blank=True,
+        null=True,
+        default=None,
+        help_text="Standard object keys to show in the dashboard sidebar.",
+    )
     fiscal_year_start_month = models.PositiveSmallIntegerField(default=1)
     fiscal_year_label_mode = models.CharField(max_length=5, choices=FISCAL_YEAR_LABEL_CHOICES, default="start")
     api_key = models.CharField(max_length=43,null=True,editable=False,default=gen_api_key,help_text="Public API key, auto-generated")
     api_secret = models.CharField(max_length=43,null=True,editable=False,default=gen_api_key,help_text="Private key used for request signing")
+
+    @classmethod
+    def safe_first(cls):
+        try:
+            return cls.objects.first()
+        except (OperationalError, ProgrammingError) as exc:
+            message = str(exc)
+            if "Unknown column" not in message and "doesn't exist" not in message:
+                raise
+            try:
+                with connection.cursor() as cursor:
+                    columns = {
+                        col.name
+                        for col in connection.introspection.get_table_description(
+                            cursor, cls._meta.db_table
+                        )
+                    }
+                safe_fields = [
+                    field.name for field in cls._meta.fields if field.column in columns
+                ]
+                if not safe_fields:
+                    return None
+                tenant = cls.objects.only(*safe_fields).first()
+                if tenant and "sidebar_standard_objects" not in columns:
+                    tenant.sidebar_standard_objects = None
+                return tenant
+            except Exception:
+                return None
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None

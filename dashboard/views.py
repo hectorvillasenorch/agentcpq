@@ -44,6 +44,12 @@ import re, string
 from .forms import SignupForm
 from django.contrib.auth.views import LogoutView
 from cpq.permissions import get_custom_object_perms, perms_to_template_dict, user_can_access_custom_object, visible_custom_objects_for_user
+from cpq.sidebar import (
+    STANDARD_SIDENAV_ITEMS,
+    SIDEBAR_STANDARD_COOKIE,
+    default_standard_sidebar_keys,
+    parse_standard_sidebar_cookie,
+)
 
 
 def _decode_message_content(raw: str) -> str:
@@ -172,8 +178,19 @@ def dashboard(request):
 
     quickbooks_connected = QuickbooksToken.objects.exists()
 
-    tenant = Tenant.objects.first()
+    tenant = Tenant.safe_first()
     tenant_version = tenant.version if tenant and tenant.version else ""
+    standard_keys = tenant.sidebar_standard_objects if tenant else None
+    if standard_keys is None or not isinstance(standard_keys, list):
+        cookie_keys = parse_standard_sidebar_cookie(
+            request.COOKIES.get(SIDEBAR_STANDARD_COOKIE, "")
+        )
+        standard_keys = cookie_keys or default_standard_sidebar_keys()
+    allowed_standard_keys = {item["key"] for item in STANDARD_SIDENAV_ITEMS}
+    standard_keys = [key for key in standard_keys if key in allowed_standard_keys]
+    standard_nav_items = [
+        item for item in STANDARD_SIDENAV_ITEMS if item["key"] in standard_keys
+    ]
 
     records_custom_object, field_values_by_record = get_values_by_record(custom_object, user)
     lookup_options = get_lookup_data_for_form(custom_object, user)
@@ -200,6 +217,7 @@ def dashboard(request):
         'field_values_by_record': field_values_by_record,
         'lookup_options': lookup_options,
         'tenant_version': tenant_version,
+        "standard_nav_items": standard_nav_items,
         "is_partner_user": is_partner_user(user),
 })
 

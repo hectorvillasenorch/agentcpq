@@ -1,6 +1,12 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.urls import reverse
 from django.core.files.storage import default_storage
+from .sidebar import (
+    STANDARD_SIDENAV_ITEMS,
+    SIDEBAR_STANDARD_COOKIE,
+    default_standard_sidebar_keys,
+    parse_standard_sidebar_cookie,
+)
 from .models import (
     Product,
     SystemFieldMapping,
@@ -19,6 +25,8 @@ from .models import (
     TenantUsageReport,
     Account,
     Opportunity,
+    Contract,
+    Subscription,
     QuoteDocument,
     QuotePendingAttachment,
     Contact,
@@ -41,7 +49,9 @@ from django.contrib.auth import update_session_auth_hash
 from django.contrib.contenttypes.models import ContentType
 from django.contrib import messages
 import logging
-from django.db.models import Count, Prefetch
+from django.db import connection
+from django.db.utils import OperationalError, ProgrammingError
+from django.db.models import Count, Prefetch, Q
 from django.utils.timezone import now
 from django.utils.text import slugify
 from django.db.models.functions import TruncMonth
@@ -1166,6 +1176,253 @@ def related_contract_lines_api(request):
 
 
 @login_required
+def related_activities_api(request):
+    record_id = request.GET.get("record_id")
+    object_name = request.GET.get("object")
+    if not record_id or not object_name:
+        return JsonResponse({"error": "Missing record_id or object"}, status=400)
+
+    try:
+        record_id_int = int(record_id)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "record_id must be an integer"}, status=400)
+
+    object_key = str(object_name or "").strip().lower()
+    activities = Activity.objects.none()
+    parent_label = "Record"
+    parent_name = ""
+
+    if object_key in {"lead", "leads"}:
+        lead = get_object_or_404(Lead, pk=record_id_int)
+        if not partner_can_access_record(request.user, "Lead", lead):
+            return HttpResponseForbidden("You do not have access to this lead.")
+        activities = Activity.objects.filter(lead=lead)
+        parent_label = "Lead"
+        parent_name = f"{lead.first_name} {lead.last_name}".strip() or str(lead)
+    elif object_key in {"contact", "contacts"}:
+        contact = get_object_or_404(Contact, pk=record_id_int)
+        if not partner_can_access_record(request.user, "Contact", contact):
+            return HttpResponseForbidden("You do not have access to this contact.")
+        activities = Activity.objects.filter(contact=contact)
+        parent_label = "Contact"
+        parent_name = str(contact)
+    elif object_key in {"opportunity", "opportunities"}:
+        opportunity = get_object_or_404(Opportunity, pk=record_id_int)
+        if not partner_can_access_record(request.user, "Opportunity", opportunity):
+            return HttpResponseForbidden("You do not have access to this opportunity.")
+        activities = Activity.objects.filter(opportunity=opportunity)
+        parent_label = "Opportunity"
+        parent_name = opportunity.name
+    elif object_key in {"account", "accounts"}:
+        account = get_object_or_404(Account, pk=record_id_int)
+        if not partner_can_access_record(request.user, "Account", account):
+            return HttpResponseForbidden("You do not have access to this account.")
+        activities = Activity.objects.filter(
+            Q(opportunity__account=account)
+            | Q(contact__account=account)
+            | Q(lead__contact__account=account)
+        )
+        parent_label = "Account"
+        parent_name = account.name
+    elif object_key in {"quote", "quotes"}:
+        quote = get_object_or_404(Quote, pk=record_id_int)
+        if not partner_can_access_record(request.user, "Quote", quote):
+            return HttpResponseForbidden("You do not have access to this quote.")
+        filters = Q()
+        has_filter = False
+        if quote.opportunity_id:
+            filters |= Q(opportunity_id=quote.opportunity_id)
+            has_filter = True
+        if quote.account_id:
+            filters |= Q(contact__account_id=quote.account_id)
+            filters |= Q(lead__contact__account_id=quote.account_id)
+            has_filter = True
+        activities = Activity.objects.filter(filters) if has_filter else Activity.objects.none()
+        parent_label = "Quote"
+        parent_name = quote.name
+    elif object_key in {"quoteline", "quote_line", "quote lines"}:
+        quote_line = get_object_or_404(QuoteLine, pk=record_id_int)
+        if not partner_can_access_record(request.user, "QuoteLine", quote_line):
+            return HttpResponseForbidden("You do not have access to this quote line.")
+        quote = quote_line.quote
+        filters = Q()
+        has_filter = False
+        if quote and quote.opportunity_id:
+            filters |= Q(opportunity_id=quote.opportunity_id)
+            has_filter = True
+        if quote and quote.account_id:
+            filters |= Q(contact__account_id=quote.account_id)
+            filters |= Q(lead__contact__account_id=quote.account_id)
+            has_filter = True
+        activities = Activity.objects.filter(filters) if has_filter else Activity.objects.none()
+        parent_label = "Quote Line"
+        parent_name = str(quote_line)
+    elif object_key in {"contract", "contracts"}:
+        contract = get_object_or_404(Contract, pk=record_id_int)
+        if not partner_can_access_record(request.user, "Contract", contract):
+            return HttpResponseForbidden("You do not have access to this contract.")
+        activities = Activity.objects.filter(opportunity_id=contract.opportunity_id)
+        parent_label = "Contract"
+        parent_name = str(contract)
+    elif object_key in {"subscription", "subscriptions"}:
+        subscription = get_object_or_404(Subscription, pk=record_id_int)
+        if not partner_can_access_record(request.user, "Subscription", subscription):
+            return HttpResponseForbidden("You do not have access to this subscription.")
+        opp_id = None
+        account_id = None
+        if subscription.contract_id:
+            opp_id = subscription.contract.opportunity_id
+        if subscription.quote_id:
+            opp_id = opp_id or subscription.quote.opportunity_id
+            account_id = subscription.quote.account_id
+        filters = Q()
+        has_filter = False
+        if opp_id:
+            filters |= Q(opportunity_id=opp_id)
+            has_filter = True
+        if account_id:
+            filters |= Q(contact__account_id=account_id)
+            filters |= Q(lead__contact__account_id=account_id)
+            has_filter = True
+        activities = Activity.objects.filter(filters) if has_filter else Activity.objects.none()
+        parent_label = "Subscription"
+        parent_name = str(subscription)
+
+    activities = apply_partner_access_filter(request.user, "Activity", activities).order_by("-created_at")
+
+    summary_only = str(request.GET.get("summary") or "").lower() in ("1", "true", "yes")
+    preview_only = str(request.GET.get("preview") or "").lower() in ("1", "true", "yes")
+    persist_list = str(request.GET.get("persist_list") or "").lower() in ("1", "true", "yes")
+    limit_param = request.GET.get("limit")
+    limit = None
+    if limit_param:
+        try:
+            limit = max(1, min(int(limit_param), 100))
+        except (TypeError, ValueError):
+            limit = None
+
+    total = activities.count()
+
+    if limit:
+        activities = activities[:limit]
+
+    stored = False
+    if preview_only:
+        preview = []
+        for activity in activities:
+            preview.append({
+                "record_id": activity.id,
+                "record_value": activity.subject,
+                "subject": activity.subject,
+                "activity_type": activity.get_activity_type_display() or activity.activity_type,
+                "status": activity.get_status_display() or activity.status,
+                "due_date": activity.due_date.isoformat() if activity.due_date else None,
+            })
+        session_id = request.GET.get("session_id")
+        if persist_list and session_id:
+            session = ChatSession.objects.filter(session_id=session_id, user=request.user).first()
+            if session:
+                name_text = parent_name or parent_label
+                list_label = f"Activities for {name_text}".strip()
+                rows = [
+                    {
+                        "subject": entry.get("subject") or entry.get("record_value") or "Activity",
+                        "activity_type": entry.get("activity_type"),
+                        "status": entry.get("status"),
+                        "due_date": entry.get("due_date"),
+                    }
+                    for entry in preview
+                ]
+                payload = {
+                    "_meta": {
+                        "related_list_role": "related-activities",
+                        "related_record_id": record_id_int,
+                        "related_object": object_key,
+                    },
+                    list_label: rows,
+                }
+                list_marker = "\"related_list_role\":\"related-activities\""
+                record_marker = f"\"related_record_id\":{record_id_int}"
+                object_marker = f"\"related_object\":\"{object_key}\""
+                exists = (
+                    ChatMessage.objects.filter(session=session, sender="agent")
+                    .filter(content__contains=list_marker)
+                    .filter(content__contains=record_marker)
+                    .filter(content__contains=object_marker)
+                    .exists()
+                )
+                if not exists:
+                    content = f"retrieved_records: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
+                    ChatMessage.objects.create(
+                        session=session,
+                        sender="agent",
+                        content=content,
+                        hiddenMessage=True,
+                    )
+                    stored = True
+        return JsonResponse({
+            "record_id": record_id_int,
+            "count": total,
+            "records": preview,
+            "stored": stored,
+            "truncated": bool(limit and total > limit),
+        })
+
+    records = []
+    if not summary_only:
+        metadata = get_object_metadata("Activity")
+        if not metadata:
+            return JsonResponse({"error": "Activity metadata not found"}, status=400)
+
+        for activity in activities:
+            payload = serialize_record(
+                activity,
+                "Activity",
+                metadata["custom_object"],
+                metadata["custom_fields"],
+                user=request.user,
+            )
+            payload["related_record_id"] = record_id_int
+            records.append(payload)
+
+        persist = str(request.GET.get("persist") or "").lower() in ("1", "true", "yes")
+        session_id = request.GET.get("session_id")
+        if persist and session_id:
+            session = ChatSession.objects.filter(session_id=session_id, user=request.user).first()
+            if session:
+                record_marker = f"\"related_record_id\":{record_id_int}"
+                for payload in records:
+                    activity_id = payload.get("record_id")
+                    if activity_id is None:
+                        continue
+                    activity_marker = f"\"record_id\":{activity_id}"
+                    exists = (
+                        ChatMessage.objects.filter(session=session, sender="agent")
+                        .filter(content__contains=record_marker)
+                        .filter(content__contains=activity_marker)
+                        .exists()
+                    )
+                    if exists:
+                        continue
+                    content = f"single_record: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
+                    ChatMessage.objects.create(
+                        session=session,
+                        sender="agent",
+                        content=content,
+                        hiddenMessage=True,
+                    )
+                    stored = True
+
+    return JsonResponse({
+        "record_id": record_id_int,
+        "count": total,
+        "records": records,
+        "stored": stored,
+        "truncated": bool(limit and total > limit),
+    })
+
+
+@login_required
 def quote_details_api(request):
     quote_id = request.GET.get("quote_id")
     if not quote_id:
@@ -1797,7 +2054,7 @@ def delete_custom_field(request, field_id):
 
 @login_required
 def get_company_information(request):
-    company = Tenant.objects.first()  # Always work with the first (or only) tenant
+    company = Tenant.safe_first()  # Always work with the first (or only) tenant
 
     if request.method == 'POST':
         if not company:
@@ -1811,6 +2068,13 @@ def get_company_information(request):
         company.sidebar_bg_color_1 = request.POST.get('sidebar_bg_color_1', '') or company.sidebar_bg_color_1
         company.sidebar_bg_color_2 = request.POST.get('sidebar_bg_color_2', '') or company.sidebar_bg_color_2
         company.sidebar_text_color = request.POST.get('sidebar_text_color', '') or company.sidebar_text_color
+        allowed_standard_keys = {item["key"] for item in STANDARD_SIDENAV_ITEMS}
+        selected_standard_keys = [
+            key
+            for key in request.POST.getlist("sidebar_standard_objects")
+            if key in allowed_standard_keys
+        ]
+        company.sidebar_standard_objects = selected_standard_keys
         company.street_address = request.POST.get('street_address', '')
         company.city = request.POST.get('city', '')
         company.state = request.POST.get('state', '')
@@ -1837,8 +2101,53 @@ def get_company_information(request):
         if 'logo' in request.FILES:
             company.logo = request.FILES['logo']
 
-        company.save()
-        return redirect('cpq:get_company_information')
+        update_fields = [
+            "name",
+            "contact_email",
+            "phone_number",
+            "primary_color",
+            "secondary_color",
+            "sidebar_bg_color_1",
+            "sidebar_bg_color_2",
+            "sidebar_text_color",
+            "sidebar_standard_objects",
+            "street_address",
+            "city",
+            "state",
+            "fiscal_year_start_month",
+            "fiscal_year_label_mode",
+        ]
+        if "logo" in request.FILES:
+            update_fields.append("logo")
+
+        table_columns = None
+        if company.pk:
+            try:
+                with connection.cursor() as cursor:
+                    table_columns = {
+                        col.name
+                        for col in connection.introspection.get_table_description(
+                            cursor, company._meta.db_table
+                        )
+                    }
+                update_fields = [
+                    field
+                    for field in update_fields
+                    if company._meta.get_field(field).column in table_columns
+                ]
+            except (OperationalError, ProgrammingError):
+                update_fields = []
+
+            if update_fields:
+                company.save(update_fields=update_fields)
+            else:
+                company.save()
+        else:
+            company.save()
+        response = redirect('cpq:get_company_information')
+        cookie_value = ",".join(selected_standard_keys)
+        response.set_cookie(SIDEBAR_STANDARD_COOKIE, cookie_value, max_age=60 * 60 * 24 * 90, samesite="Lax")
+        return response
 
     # Determine logo URL (public link)
     logo_url = ''
@@ -1864,10 +2173,21 @@ def get_company_information(request):
         except Exception:
             current_fiscal_quarter = None
 
+    allowed_standard_keys = {item["key"] for item in STANDARD_SIDENAV_ITEMS}
+    selected_standard_keys = None
+    if company:
+        selected_standard_keys = company.sidebar_standard_objects
+    if selected_standard_keys is None or not isinstance(selected_standard_keys, list):
+        cookie_keys = parse_standard_sidebar_cookie(request.COOKIES.get(SIDEBAR_STANDARD_COOKIE, ""))
+        selected_standard_keys = cookie_keys or default_standard_sidebar_keys()
+    selected_standard_keys = [key for key in selected_standard_keys if key in allowed_standard_keys]
+
     return render(request, 'company_information.html', {
         'company': company or Tenant(),
         'logo_url': logo_url,
         'current_fiscal_quarter': current_fiscal_quarter,
+        "standard_sidenav_items": STANDARD_SIDENAV_ITEMS,
+        "selected_standard_sidenav_keys": selected_standard_keys,
     })
 
 
@@ -1899,7 +2219,7 @@ def admin_integrations(request):
     quickbooks_connected = QuickbooksToken.objects.exists()
     docusign_connected = False
 
-    company = Tenant.objects.first()
+    company = Tenant.safe_first()
 
     return render(request, "admin_integrations.html", {
         "company": company or Tenant(),
@@ -2042,7 +2362,7 @@ def delete_custom_record(request, record_id):
 def get_document_template(request):
 
     try:
-        company = Tenant.objects.first()
+        company = Tenant.safe_first()
     except ObjectDoesNotExist:
         company = None
 
@@ -2134,7 +2454,7 @@ def get_document_template(request):
 def business_rules_view(request):
 
     try:
-        company = Tenant.objects.first()
+        company = Tenant.safe_first()
     except ObjectDoesNotExist:
         company = None
 
@@ -2482,7 +2802,7 @@ def search_accounts(request):
 
 @login_required
 def usage_dashboard(request):
-    current_tenant = Tenant.objects.first()
+    current_tenant = Tenant.safe_first()
     usage_logs = ActionUsage.objects.all()
 
     tenants_usage = TenantUsageReport.objects.select_related('tenant')
@@ -2559,7 +2879,7 @@ def usage_dashboard(request):
 
 @login_required
 def usage_documents(request):
-    current_tenant = Tenant.objects.first()
+    current_tenant = Tenant.safe_first()
     documents = []
     total_size = 0
 
@@ -2609,7 +2929,7 @@ def usage_documents(request):
 
 @login_required
 def billing_view(request):
-    current_tenant = Tenant.objects.first()
+    current_tenant = Tenant.safe_first()
     publishable_key = settings.STRIPE_PUBLISHABLE_KEY or ""
 
     context = {
@@ -2718,7 +3038,7 @@ def billing_create_setup_intent(request):
 
     stripe.api_key = settings.STRIPE_SECRET_KEY
 
-    tenant = Tenant.objects.first()
+    tenant = Tenant.safe_first()
     metadata = {}
     if tenant:
         if tenant.tenant_id:
