@@ -391,7 +391,7 @@ class CustomFieldForm(forms.ModelForm):
 class CustomObjectForm(forms.ModelForm):
     class Meta:
         model = CustomObject
-        fields = ['label', 'name', 'description']
+        fields = ['label', 'name', 'description', 'show_in_sidebar']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3}),
             'class': 'materialize-textarea'

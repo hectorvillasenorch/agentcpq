@@ -70,14 +70,17 @@ def user_can_access_custom_object(user, custom_object: CustomObject, action: str
 
 
 def visible_custom_objects_for_user(user):
+    base_qs = CustomObject.objects.filter(show_in_sidebar=True)
     if getattr(user, "is_superuser", False) or getattr(user, "is_staff", False):
-        return CustomObject.objects.all()
+        return base_qs
 
     enforced_ids = list(
-        CustomObjectPermission.objects.values_list("custom_object_id", flat=True).distinct()
+        CustomObjectPermission.objects.filter(custom_object__in=base_qs)
+        .values_list("custom_object_id", flat=True)
+        .distinct()
     )
     if not enforced_ids:
-        return CustomObject.objects.all()
+        return base_qs
 
     allowed_ids = list(
         CustomObjectPermission.objects.filter(group__in=user.groups.all())
@@ -86,7 +89,7 @@ def visible_custom_objects_for_user(user):
         .distinct()
     )
 
-    return CustomObject.objects.filter(Q(id__in=allowed_ids) | ~Q(id__in=enforced_ids))
+    return base_qs.filter(Q(id__in=allowed_ids) | ~Q(id__in=enforced_ids))
 
 
 def perms_to_template_dict(perms: CustomObjectPerms) -> Dict[str, bool]:
