@@ -1681,6 +1681,20 @@ def create_activity_api(request):
                 return HttpResponseForbidden("You do not have access to this lead.")
         elif relation_object == "contact":
             contact_ref = _find_contact(relation_identifier)
+            # If contact not found and parent is account, try to find contact from account
+            if not contact_ref and parent_object == "account" and parent_record_id:
+                try:
+                    account_id = int(parent_record_id)
+                    account = Account.objects.filter(pk=account_id).first()
+                    if account and partner_can_access_record(request.user, "Account", account):
+                        # Try primary contact first, then first contact
+                        contact_ref = Contact.objects.filter(account=account, is_primary=True).first()
+                        if not contact_ref:
+                            contact_ref = Contact.objects.filter(account=account).order_by("-id").first()
+                        if contact_ref and not partner_can_access_record(request.user, "Contact", contact_ref):
+                            contact_ref = None
+                except (TypeError, ValueError):
+                    pass
             if not contact_ref:
                 return JsonResponse({"error": "Contact not found for this activity."}, status=404)
             if not partner_can_access_record(request.user, "Contact", contact_ref):

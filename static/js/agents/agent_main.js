@@ -5311,28 +5311,228 @@ function openActivityCreateModal({ parentObject, parentRecordId, parentName, lis
   const directRelation = ["lead", "contact", "opportunity"].includes(normalizedObject);
   const autoRelation = normalizedObject.includes("payment");
   const requiresRelationSelection = !directRelation && !autoRelation;
+  const isAccount = normalizedObject === "account";
+  const isQuote = normalizedObject === "quote";
+  const isCustomObject = normalizedObject.endsWith("__c");
+  
   if (requiresRelationSelection) {
+    // Smart defaults based on object type
+    let defaultRelationType = "contact";
+    let relatedNote = "Select the record this activity should relate to.";
+    
+    if (isAccount) {
+      defaultRelationType = "contact";
+      relatedNote = `Select a contact or opportunity from ${safeParent} to link this activity.`;
+    } else if (isQuote) {
+      defaultRelationType = "opportunity";
+      relatedNote = `Select the opportunity or contact to link this activity from ${safeParent}.`;
+    } else if (isCustomObject) {
+      defaultRelationType = "contact";
+      relatedNote = `Select a Lead, Contact, or Opportunity to link this activity from ${safeParent}.`;
+    }
+    
+    // Pre-fill with account name/ID immediately for accounts (before async lookup)
+    const initialRelationValue = (isAccount && parentRecordId) ? (parentName || parentRecordId) : "";
+    
     relatedContainer.innerHTML = `
-      <div class="activity-modal-related-note">Select the record this activity should relate to.</div>
+      <div class="activity-modal-related-note">${relatedNote}</div>
       <div class="activity-modal-grid">
         <div class="activity-modal-field single-record-field">
           <div class="single-record-field-label">Related type</div>
           <div class="single-record-field-control">
             <select name="relation_object" class="single-record-input">
-              <option value="lead">Lead</option>
-              <option value="contact">Contact</option>
-              <option value="opportunity">Opportunity</option>
+              <option value="lead" ${defaultRelationType === "lead" ? "selected" : ""}>Lead</option>
+              <option value="contact" ${defaultRelationType === "contact" ? "selected" : ""}>Contact</option>
+              <option value="opportunity" ${defaultRelationType === "opportunity" ? "selected" : ""}>Opportunity</option>
             </select>
           </div>
         </div>
         <div class="activity-modal-field single-record-field">
           <div class="single-record-field-label">Record name or ID</div>
           <div class="single-record-field-control">
-            <input type="text" name="relation_identifier" placeholder="Search by name or id" class="single-record-input" />
+            <input type="text" name="relation_identifier" value="${initialRelationValue}" placeholder="Search by name or id" class="single-record-input" />
           </div>
         </div>
       </div>
     `;
+    
+    // Pre-populate related records for all standard objects
+    if (parentRecordId && requiresRelationSelection) {
+      (async () => {
+        try {
+          let relationType = null;
+          let relationValue = null;
+          
+          // For Quote: Use the quote's opportunity (direct relationship)
+          if (isQuote) {
+            const quoteResponse = await fetch(`/cpq/single-record/?object=quote&record_id=${parentRecordId}`, {
+              headers: { "X-CSRFToken": getCSRFToken() },
+            });
+            if (quoteResponse.ok) {
+              const quoteData = await quoteResponse.json();
+              // Check for related opportunity ID in the record data
+              const relatedOppId = quoteData.related_opportunity_id || 
+                                   quoteData.meta?.related_opportunity_id ||
+                                   quoteData.fields?.find(f => f.name === "opportunity")?.value;
+              
+              if (relatedOppId) {
+                // Get opportunity name
+                const oppResponse = await fetch(`/cpq/single-record/?object=opportunity&record_id=${relatedOppId}`, {
+                  headers: { "X-CSRFToken": getCSRFToken() },
+                });
+                if (oppResponse.ok) {
+                  const oppData = await oppResponse.json();
+                  const oppName = oppData.record_value || oppData.fields?.find(f => f.name === "name")?.value || "";
+                  const oppId = oppData.oppid || oppData.record_id || relatedOppId;
+                  if (oppId || oppName) {
+                    relationType = "opportunity";
+                    relationValue = oppId || oppName;
+                  }
+                }
+              }
+              
+              // Fallback: Try account's opportunities if no direct opportunity
+              if (!relationValue) {
+                const relatedAccountId = quoteData.related_account_id || 
+                                         quoteData.meta?.related_account_id ||
+                                         quoteData.fields?.find(f => f.name === "account")?.value;
+                if (relatedAccountId) {
+                  const oppsResponse = await fetch(`/cpq/related-opportunities/?account_id=${relatedAccountId}&limit=1&preview=1`, {
+                    headers: { "X-CSRFToken": getCSRFToken() },
+                  });
+                  if (oppsResponse.ok) {
+                    const oppsData = await oppsResponse.json();
+                    if (oppsData.records && oppsData.records.length > 0) {
+                      const opp = oppsData.records[0];
+                      const oppName = opp.record_value || (opp.fields || []).find(f => f.name === "name")?.value || "";
+                      const oppId = opp.oppid || opp.record_id || "";
+                      if (oppId || oppName) {
+                        relationType = "opportunity";
+                        relationValue = oppId || oppName;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          // For Account: Try opportunities first, then fall back to account name
+          else if (isAccount) {
+            // First try to get opportunities from the account
+            const oppsResponse = await fetch(`/cpq/related-opportunities/?account_id=${parentRecordId}&limit=1&preview=1`, {
+              headers: { "X-CSRFToken": getCSRFToken() },
+            });
+            if (oppsResponse.ok) {
+              const oppsData = await oppsResponse.json();
+              if (oppsData.records && oppsData.records.length > 0) {
+                const opp = oppsData.records[0];
+                const oppName = opp.record_value || (opp.fields || []).find(f => f.name === "name")?.value || "";
+                const oppId = opp.oppid || opp.record_id || "";
+                if (oppId || oppName) {
+                  relationType = "opportunity";
+                  relationValue = oppId || oppName;
+                }
+              }
+            }
+            
+            // If no opportunity, pre-fill with account name (default to contact, user can change type)
+            // This helps users see the account name pre-filled
+            if (!relationValue) {
+              const accountResponse = await fetch(`/cpq/single-record/?object=account&record_id=${parentRecordId}`, {
+                headers: { "X-CSRFToken": getCSRFToken() },
+              });
+              if (accountResponse.ok) {
+                const accountData = await accountResponse.json();
+                const accountName = accountData.record_value || accountData.fields?.find(f => f.name === "name")?.value || parentName || "";
+                const accountId = accountData.accid || accountData.record_id || parentRecordId || "";
+                if (accountName || accountId) {
+                  relationType = "contact"; // Default to contact for accounts
+                  // Use account ID or name - user can manually find contact if needed
+                  // But at least the field is pre-filled so they know which account
+                  relationValue = accountId || accountName;
+                }
+              } else {
+                // Fallback: use parentName or account ID if API fails
+                relationType = "contact";
+                relationValue = parentName || parentRecordId;
+              }
+            }
+          }
+          // For Custom Objects: Try to get related records from lookup fields via single-record API
+          else if (isCustomObject) {
+            const recordResponse = await fetch(`/cpq/single-record/?object=${parentObject}&record_id=${parentRecordId}`, {
+              headers: { "X-CSRFToken": getCSRFToken() },
+            });
+            if (recordResponse.ok) {
+              const recordData = await recordResponse.json();
+              // Check for related IDs in metadata or fields
+              const relatedOppId = recordData.related_opportunity_id || recordData.meta?.related_opportunity_id;
+              const relatedAccountId = recordData.related_account_id || recordData.meta?.related_account_id;
+              const relatedContactId = recordData.related_contact_id || recordData.meta?.related_contact_id;
+              
+              // Priority: Opportunity > Contact > Account's contacts/opportunities
+              if (relatedOppId) {
+                const oppResponse = await fetch(`/cpq/single-record/?object=opportunity&record_id=${relatedOppId}`, {
+                  headers: { "X-CSRFToken": getCSRFToken() },
+                });
+                if (oppResponse.ok) {
+                  const oppData = await oppResponse.json();
+                  const oppName = oppData.record_value || oppData.fields?.find(f => f.name === "name")?.value || "";
+                  const oppId = oppData.oppid || oppData.record_id || relatedOppId;
+                  if (oppId || oppName) {
+                    relationType = "opportunity";
+                    relationValue = oppId || oppName;
+                  }
+                }
+              } else if (relatedContactId) {
+                const contactResponse = await fetch(`/cpq/single-record/?object=contact&record_id=${relatedContactId}`, {
+                  headers: { "X-CSRFToken": getCSRFToken() },
+                });
+                if (contactResponse.ok) {
+                  const contactData = await contactResponse.json();
+                  const contactName = contactData.record_value || contactData.fields?.find(f => f.name === "first_name" || f.name === "last_name")?.value || "";
+                  const contactId = contactData.contactId || contactData.record_id || relatedContactId;
+                  if (contactId || contactName) {
+                    relationType = "contact";
+                    relationValue = contactId || contactName;
+                  }
+                }
+              } else if (relatedAccountId) {
+                // Try account's opportunities
+                const oppsResponse = await fetch(`/cpq/related-opportunities/?account_id=${relatedAccountId}&limit=1&preview=1`, {
+                  headers: { "X-CSRFToken": getCSRFToken() },
+                });
+                if (oppsResponse.ok) {
+                  const oppsData = await oppsResponse.json();
+                  if (oppsData.records && oppsData.records.length > 0) {
+                    const opp = oppsData.records[0];
+                    const oppName = opp.record_value || (opp.fields || []).find(f => f.name === "name")?.value || "";
+                    const oppId = opp.oppid || opp.record_id || "";
+                    if (oppId || oppName) {
+                      relationType = "opportunity";
+                      relationValue = oppId || oppName;
+                    }
+                  }
+                }
+              }
+            }
+          }
+          
+          // Apply pre-populated values if found
+          if (relationType && relationValue) {
+            const relationSelect = relatedContainer.querySelector('select[name="relation_object"]');
+            const relationInput = relatedContainer.querySelector('input[name="relation_identifier"]');
+            if (relationSelect && relationInput) {
+              relationSelect.value = relationType;
+              relationInput.value = relationValue;
+            }
+          }
+        } catch (error) {
+          // Silently fail - user can still manually select
+          console.debug("Could not pre-populate activity relation:", error);
+        }
+      })();
+    }
   } else if (autoRelation) {
     relatedContainer.innerHTML = `
       <div class="activity-modal-related-note">This activity will be linked to the account on this payment.</div>
