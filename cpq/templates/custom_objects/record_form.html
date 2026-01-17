@@ -109,6 +109,50 @@
     background: rgba(248, 250, 252, 0.75);
   }
 
+  .records-table tbody tr {
+    height: 56px;
+  }
+
+  .records-skeleton {
+    height: 12px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(226, 232, 240, 0.6), rgba(226, 232, 240, 0.9), rgba(226, 232, 240, 0.6));
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
+
+  .records-skeleton-row td {
+    color: transparent;
+  }
+
+  .records-load-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    font-size: 0.9rem;
+    color: #64748b;
+  }
+
+  .records-load-state[aria-hidden="true"] {
+    display: none;
+  }
+
+  .records-scroll-sentinel {
+    height: 1px;
+  }
+
+  @keyframes skeleton-pulse {
+    0% {
+      opacity: 0.5;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.5;
+    }
+  }
+
   .records-table td .datetime {
     display: block;
     margin-top: 4px;
@@ -396,9 +440,8 @@
     </div>
   </div>
 
-  {% if records_custom_object %}
-    {% with records_custom_object.0.object_type.custom_fields.all as custom_fields %}
-    <div class="records-table-wrapper">
+  {% with custom_fields=custom_fields|default:custom_object.custom_fields.all %}
+    <div class="records-table-wrapper" id="records-table-wrapper" data-object-name="{{ custom_object.name }}">
       <div class="records-table-container">
         <table class="records-table">
           <thead>
@@ -415,9 +458,24 @@
             </tr>
           </thead>
 
-          <tbody>
-	            {% for record in records_custom_object %}
-	              <tr>
+          <tbody id="custom-records-body">
+            {% if custom_record_list_config_json %}
+              {% for _ in "1234567890"|slice:":10" %}
+                <tr class="records-skeleton-row">
+                  {% if custom_object_perms.can_change or custom_object_perms.can_delete %}
+                    <td data-col-key="actions"><div class="records-skeleton"></div></td>
+                  {% endif %}
+                  <td data-col-key="custom_id"><div class="records-skeleton"></div></td>
+                  {% for field in custom_fields %}
+                    <td data-col-key="field-{{ field.id }}"><div class="records-skeleton"></div></td>
+                  {% endfor %}
+                  <td data-col-key="last_modified"><div class="records-skeleton"></div></td>
+                  <td data-col-key="created"><div class="records-skeleton"></div></td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              {% for record in records_custom_object %}
+                <tr>
                   {% if custom_object_perms.can_change or custom_object_perms.can_delete %}
                     <td class="align-right" data-col-key="actions">
                       <button class="btn-flat edit-btn" data-record-id="{{ record.id }}">
@@ -425,39 +483,44 @@
                       </button>
                     </td>
                   {% endif %}
-	                <td data-col-key="custom_id">{{ record.custom_identifier }}</td>
-	                {% with field_values_by_record|get_item:record.id as record_values %}
-	                  {% for field in custom_fields %}
-	                    {% with v=record_values|get_item:field.id %}
-	                      {% if field.data_type|lower == 'lookup' %}
-	                        {% with options=lookup_options|get_item:field.name %}
-	                          <td data-col-key="field-{{ field.id }}">{{ options|label_from_options:v|default:"—" }}</td>
-	                        {% endwith %}
-	                      {% else %}
-	                        <td data-col-key="field-{{ field.id }}">{{ v|format_custom_value:field.data_type|default:"—" }}</td>
-	                      {% endif %}
-	                    {% endwith %}
-	                  {% endfor %}
-	                {% endwith %}
+                  <td data-col-key="custom_id">{{ record.custom_identifier }}</td>
+                  {% with field_values_by_record|get_item:record.id as record_values %}
+                    {% for field in custom_fields %}
+                      {% with v=record_values|get_item:field.id %}
+                        {% if field.data_type|lower == 'lookup' %}
+                          {% with options=lookup_options|get_item:field.name %}
+                            <td data-col-key="field-{{ field.id }}">{{ options|label_from_options:v|default:"—" }}</td>
+                          {% endwith %}
+                        {% else %}
+                          <td data-col-key="field-{{ field.id }}">{{ v|format_custom_value:field.data_type|default:"—" }}</td>
+                        {% endif %}
+                      {% endwith %}
+                    {% endfor %}
+                  {% endwith %}
 
-	                <td data-col-key="last_modified">
-	                  <span class="muted">{{ record.updated_by|default:"—" }}</span>
-	                  <span class="datetime">{{ record.updated_at|date:"c" }}</span>
-	                </td>
+                  <td data-col-key="last_modified">
+                    <span class="muted">{{ record.updated_by|default:"—" }}</span>
+                    <span class="datetime">{{ record.updated_at|date:"c" }}</span>
+                  </td>
 
-                <td data-col-key="created">
-                  <span class="muted">{{ record.created_by|default:"—" }}</span>
-                  <span class="datetime">{{ record.created_at|date:"c" }}</span>
-                </td>
-              </tr>
-            {% endfor %}
+                  <td data-col-key="created">
+                    <span class="muted">{{ record.created_by|default:"—" }}</span>
+                    <span class="datetime">{{ record.created_at|date:"c" }}</span>
+                  </td>
+                </tr>
+              {% endfor %}
+            {% endif %}
           </tbody>
         </table>
       </div>
+      <div class="records-load-state" id="records-loading" aria-hidden="true">Loading more records...</div>
+      <div class="records-load-state" id="records-end" aria-hidden="true">End of results</div>
+      <div id="records-scroll-sentinel" class="records-scroll-sentinel" aria-hidden="true"></div>
     </div>
-    {% endwith %}
-  {% else %}
-    <div class="records-empty">
+  {% endwith %}
+
+  {% if custom_record_list_config_json %}
+    <div class="records-empty" id="records-empty-state" style="display: none;">
       <i class="material-icons">inbox</i>
       <h4>No records yet</h4>
       <p>Create your first {{ custom_object.label }} entry to populate this view.</p>
@@ -467,6 +530,19 @@
         </button>
       {% endif %}
     </div>
+  {% else %}
+    {% if not records_custom_object %}
+      <div class="records-empty">
+        <i class="material-icons">inbox</i>
+        <h4>No records yet</h4>
+        <p>Create your first {{ custom_object.label }} entry to populate this view.</p>
+        {% if custom_object_perms.can_add %}
+          <button type="button" class="btn waves-effect waves-light" onclick="toggleModal()">
+            <i class="material-icons left">add</i>New {{ custom_object.label }}
+          </button>
+        {% endif %}
+      </div>
+    {% endif %}
   {% endif %}
 </div>
 
@@ -772,70 +848,81 @@
 
   let currentRecordId = null;
 
-  document.querySelectorAll('.edit-btn').forEach(btn => {
-    btn.addEventListener('click', async function() {
-      currentRecordId = this.dataset.recordId;
-      toggleEditModal();
+  async function openEditRecord(recordId) {
+    if (!recordId) return;
+    currentRecordId = recordId;
+    toggleEditModal();
 
-      const url = `/cpq/records/${currentRecordId}/form/`;
-      try {
-        const response = await fetch(url);
-        const html = await response.text();
-        const editFormFields = document.getElementById('edit-form-fields');
-        editFormFields.innerHTML = html;
+    const url = `/cpq/records/${currentRecordId}/form/`;
+    try {
+      const response = await fetch(url);
+      const html = await response.text();
+      const editFormFields = document.getElementById('edit-form-fields');
+      editFormFields.innerHTML = html;
 
-        convertDateTimeElements(editFormFields);
-        initializeLookupSearch(editFormFields);
+      convertDateTimeElements(editFormFields);
+      initializeLookupSearch(editFormFields);
 
-        if (window.M) {
-          const selects = editFormFields.querySelectorAll('select:not([data-lookup-field=\"true\"])');
-          if (selects.length) M.FormSelect.init(selects);
-        }
-
-        const editForm = document.getElementById('editRecordForm');
-        editForm.action = `/cpq/records/${currentRecordId}/edit/`;
-
-        const deleteBtn = document.getElementById('deleteRecordBtn');
-        if (deleteBtn) {
-          deleteBtn.onclick = toggleDeleteModal;
-        }
-
-        const confirmBtn = document.getElementById('confirmDeleteBtn');
-        if (confirmBtn) {
-          confirmBtn.onclick = async function() {
-            if (!currentRecordId) return;
-
-            const url = `/cpq/records/${currentRecordId}/delete/`;
-            const csrfToken = document.querySelector('#editRecordForm input[name="csrfmiddlewaretoken"]').value;
-
-            try {
-              const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'X-CSRFToken': csrfToken },
-              });
-              if (!response.ok) throw new Error('HTTP error ' + response.status);
-
-              toggleDeleteModal();
-              toggleEditModal();
-
-              const row = document.querySelector(`.edit-btn[data-record-id="${currentRecordId}"]`)?.closest('tr');
-              if (row) row.remove();
-
-              currentRecordId = null;
-            } catch (e) {
-              alert('Error deleting record.');
-              console.error(e);
-            }
-          };
-        }
-
-      } catch (e) {
-        const editFormFields = document.getElementById('edit-form-fields');
-        if (editFormFields) editFormFields.innerHTML = '<p>Error loading form.</p>';
-        console.error(e);
+      if (window.M) {
+        const selects = editFormFields.querySelectorAll('select:not([data-lookup-field=\"true\"])');
+        if (selects.length) M.FormSelect.init(selects);
       }
+
+      const editForm = document.getElementById('editRecordForm');
+      editForm.action = `/cpq/records/${currentRecordId}/edit/`;
+
+      const deleteBtn = document.getElementById('deleteRecordBtn');
+      if (deleteBtn) {
+        deleteBtn.onclick = toggleDeleteModal;
+      }
+
+      const confirmBtn = document.getElementById('confirmDeleteBtn');
+      if (confirmBtn) {
+        confirmBtn.onclick = async function() {
+          if (!currentRecordId) return;
+
+          const url = `/cpq/records/${currentRecordId}/delete/`;
+          const csrfToken = document.querySelector('#editRecordForm input[name="csrfmiddlewaretoken"]').value;
+
+          try {
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: { 'X-CSRFToken': csrfToken },
+            });
+            if (!response.ok) throw new Error('HTTP error ' + response.status);
+
+            toggleDeleteModal();
+            toggleEditModal();
+
+            const row = document.querySelector(`.edit-btn[data-record-id="${currentRecordId}"]`)?.closest('tr');
+            if (row) row.remove();
+
+            currentRecordId = null;
+          } catch (e) {
+            alert('Error deleting record.');
+            console.error(e);
+          }
+        };
+      }
+
+    } catch (e) {
+      const editFormFields = document.getElementById('edit-form-fields');
+      if (editFormFields) editFormFields.innerHTML = '<p>Error loading form.</p>';
+      console.error(e);
+    }
+  }
+
+  const recordsBody = document.getElementById('custom-records-body');
+  if (recordsBody) {
+    recordsBody.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const button = target.closest('.edit-btn');
+      if (!button) return;
+      event.preventDefault();
+      openEditRecord(button.dataset.recordId);
     });
-  });
+  }
 
   function initializeLookupSearch(scope) {
     const container = scope || document;
@@ -872,11 +959,267 @@
     });
   }
 
+  function parseJsonConfig(rawText) {
+    if (!rawText) return null;
+    try {
+      return JSON.parse(rawText);
+    } catch (err) {
+      console.error('Failed to parse record list config.', err);
+      return null;
+    }
+  }
+
+  function buildRecordRow(record, fields, config) {
+    const row = document.createElement('tr');
+
+    if (config.canEdit) {
+      const actionsCell = document.createElement('td');
+      actionsCell.className = 'align-right';
+      actionsCell.dataset.colKey = 'actions';
+      const button = document.createElement('button');
+      button.className = 'btn-flat edit-btn';
+      button.dataset.recordId = record.id;
+      const icon = document.createElement('i');
+      icon.className = 'material-icons';
+      icon.textContent = 'edit';
+      button.appendChild(icon);
+      actionsCell.appendChild(button);
+      row.appendChild(actionsCell);
+    }
+
+    const idCell = document.createElement('td');
+    idCell.dataset.colKey = 'custom_id';
+    idCell.textContent = record.custom_identifier || '—';
+    row.appendChild(idCell);
+
+    fields.forEach(field => {
+      const cell = document.createElement('td');
+      cell.dataset.colKey = `field-${field.id}`;
+      const value = record.fields && record.fields[String(field.id)];
+      cell.textContent = value || '—';
+      row.appendChild(cell);
+    });
+
+    const updatedCell = document.createElement('td');
+    updatedCell.dataset.colKey = 'last_modified';
+    const updatedBy = document.createElement('span');
+    updatedBy.className = 'muted';
+    updatedBy.textContent = record.updated_by || '—';
+    const updatedAt = document.createElement('span');
+    updatedAt.className = 'datetime';
+    updatedAt.textContent = record.updated_at || '';
+    updatedCell.appendChild(updatedBy);
+    updatedCell.appendChild(updatedAt);
+    row.appendChild(updatedCell);
+
+    const createdCell = document.createElement('td');
+    createdCell.dataset.colKey = 'created';
+    const createdBy = document.createElement('span');
+    createdBy.className = 'muted';
+    createdBy.textContent = record.created_by || '—';
+    const createdAt = document.createElement('span');
+    createdAt.className = 'datetime';
+    createdAt.textContent = record.created_at || '';
+    createdCell.appendChild(createdBy);
+    createdCell.appendChild(createdAt);
+    row.appendChild(createdCell);
+
+    return row;
+  }
+
+  function setupCustomRecordLoader() {
+    const configText = '{{ custom_record_list_config_json|escapejs }}';
+    const fieldsText = '{{ custom_fields_meta_json|escapejs }}';
+    const config = parseJsonConfig(configText);
+    const fields = parseJsonConfig(fieldsText);
+    if (!config || !fields) return;
+
+    const table = document.querySelector('.records-table');
+    const tbody = document.getElementById('custom-records-body');
+    const loadingState = document.getElementById('records-loading');
+    const endState = document.getElementById('records-end');
+    const emptyState = document.getElementById('records-empty-state');
+    if (!tbody) return;
+
+    let nextCursor = '';
+    let hasMore = true;
+    let isLoading = false;
+    let batchesLoaded = 0;
+    let prefetched = null;
+    let offset = 0;
+
+    const lazyConfig = config.lazyLoading || {};
+    const asyncConfig = config.async || {};
+    const initialLimit = lazyConfig.initial_fetch || config.defaultLimit;
+    const batchSize = lazyConfig.batch_size || config.defaultLimit;
+    const maxBatches = lazyConfig.max_batches || 0;
+    const scrollTrigger = lazyConfig.scroll_trigger_percent || 75;
+    const fetchOnScroll = lazyConfig.fetch_on_scroll !== false;
+
+    const setLoadState = (isActive) => {
+      if (loadingState) loadingState.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+    };
+
+    const setEndState = (isActive) => {
+      if (endState) endState.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+    };
+
+    const clearSkeletons = () => {
+      tbody.querySelectorAll('.records-skeleton-row').forEach(row => row.remove());
+    };
+
+    const showEmpty = (show) => {
+      if (emptyState) emptyState.style.display = show ? 'block' : 'none';
+      if (table) table.style.display = show ? 'none' : '';
+    };
+
+    const buildUrl = (cursor, limit, offsetValue) => {
+      const params = new URLSearchParams();
+      params.set('object_name', config.objectName);
+      params.set('limit', String(limit));
+      if (config.ordering && config.ordering.field) {
+        params.set('order_field', config.ordering.field);
+      }
+      if (config.ordering && config.ordering.direction) {
+        params.set('order_dir', config.ordering.direction);
+      }
+      if (cursor) {
+        params.set('cursor', cursor);
+      } else if (offsetValue) {
+        params.set('offset', String(offsetValue));
+      }
+      return `${config.apiEndpoint}?${params.toString()}`;
+    };
+
+    const fetchPage = async (cursor, limit, offsetValue) => {
+      const url = buildUrl(cursor, limit, offsetValue);
+      const response = await fetch(url, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return response.json();
+    };
+
+    const schedulePrefetch = () => {
+      if (!asyncConfig.prefetch_next_page || !hasMore || prefetched || isLoading) return;
+      const idleCallback = window.requestIdleCallback || function(cb) {
+        return setTimeout(() => cb({ timeRemaining: () => 0 }), 1000);
+      };
+      idleCallback(async () => {
+        if (prefetched || !hasMore || isLoading) return;
+        try {
+          const data = await fetchPage(nextCursor, batchSize, nextCursor ? 0 : offset);
+          prefetched = { cursor: nextCursor, offset, data };
+        } catch (_err) {
+          prefetched = null;
+        }
+      });
+    };
+
+    const appendRecords = (records) => {
+      const renderStart = performance.now();
+      records.forEach(record => {
+        tbody.appendChild(buildRecordRow(record, fields, config));
+      });
+      convertDateTimeElements(tbody);
+      if (table) {
+        applyColumnLayout(table, getColumnLayout());
+      }
+      const renderTime = performance.now() - renderStart;
+      if (renderTime > 120) {
+        console.warn('Custom records render time exceeded threshold.', Math.round(renderTime));
+      }
+    };
+
+    const loadPage = async ({ initial = false } = {}) => {
+      if (isLoading || !hasMore) return;
+      if (maxBatches && batchesLoaded >= maxBatches) {
+        hasMore = false;
+        setEndState(true);
+        return;
+      }
+      isLoading = true;
+      setLoadState(true);
+
+      try {
+        let data = null;
+        if (!initial && prefetched && prefetched.cursor === nextCursor && prefetched.offset === offset) {
+          data = prefetched.data;
+          prefetched = null;
+        } else {
+          const limit = initial ? initialLimit : batchSize;
+          data = await fetchPage(nextCursor, limit, nextCursor ? 0 : offset);
+        }
+
+        if (initial) {
+          clearSkeletons();
+          tbody.innerHTML = '';
+        }
+
+        const records = data.records || [];
+        appendRecords(records);
+        batchesLoaded += 1;
+        hasMore = Boolean(data.has_more);
+        nextCursor = data.next_cursor || '';
+        if (!nextCursor && hasMore) {
+          offset += records.length;
+        }
+
+        if (records.length === 0 && batchesLoaded === 1) {
+          showEmpty(true);
+        } else {
+          showEmpty(false);
+        }
+
+        if (!hasMore || (maxBatches && batchesLoaded >= maxBatches)) {
+          setEndState(true);
+        } else {
+          setEndState(false);
+        }
+
+        if (data.telemetry && data.telemetry.query_time_ms > 800) {
+          console.warn('Custom records query time exceeded threshold.', data.telemetry);
+        }
+
+        if (asyncConfig.background_prefetch) {
+          schedulePrefetch();
+        }
+      } catch (err) {
+        console.error('Failed to load custom records.', err);
+      } finally {
+        isLoading = false;
+        setLoadState(false);
+      }
+    };
+
+    loadPage({ initial: true });
+
+    if (fetchOnScroll) {
+      let scrollPending = false;
+      window.addEventListener('scroll', () => {
+        if (scrollPending) return;
+        scrollPending = true;
+        requestAnimationFrame(() => {
+          scrollPending = false;
+          const scrollBottom = window.scrollY + window.innerHeight;
+          const docHeight = document.documentElement.scrollHeight || 1;
+          const percent = (scrollBottom / docHeight) * 100;
+          if (percent >= scrollTrigger) {
+            loadPage();
+          }
+        });
+      }, { passive: true });
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     initializeLookupSearch(document);
     const table = document.querySelector('.records-table');
     if (table) {
       applyColumnLayout(table, getColumnLayout());
     }
+    setupCustomRecordLoader();
   });
 </script>

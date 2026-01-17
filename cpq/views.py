@@ -77,6 +77,7 @@ from botocore.config import Config
 import stripe
 import requests
 from django.db import transaction
+from cpq.cache_utils import bump_custom_record_list_version
 from cpq.permissions import (
     apply_partner_access_filter,
     get_custom_object_perms,
@@ -2656,6 +2657,8 @@ def edit_custom_record(request, record_id):
             record.updated_by = request.user
             record.updated_at = timezone.now()
             record.save()
+            if request.user.is_authenticated:
+                bump_custom_record_list_version(request.user.id, record.object_type.name)
 
             # Redirigir o retornar JSON
             return redirect(request.META.get('HTTP_REFERER', '/dashboard/'))
@@ -2672,6 +2675,8 @@ def delete_custom_record(request, record_id):
         if not partner_can_access_record(request.user, record.object_type.name, record, custom_object=record.object_type):
             return JsonResponse({"status": "error", "error": "You do not have access to this record."}, status=403)
         record.delete()
+        if request.user.is_authenticated:
+            bump_custom_record_list_version(request.user.id, record.object_type.name)
         return JsonResponse({'status': 'success'})
     return JsonResponse({'status': 'error'}, status=400)
 
@@ -3056,6 +3061,8 @@ def create_custom_record(request, object_name, user_id):
                 request,
                 f"{custom_object.label} record created successfully."
             )
+            if request.user.is_authenticated:
+                bump_custom_record_list_version(request.user.id, custom_object.name)
             return redirect(request.META.get('HTTP_REFERER', '/dashboard/'))
 
     else:
