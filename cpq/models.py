@@ -1432,14 +1432,9 @@ class CustomRecord(models.Model):
             label = self.object_type.label or self.object_type.name
             base_prefix = label[:3].upper()
 
-            alpha = get_alpha_prefix_for_custom_object(
-                self.object_type,
-                base_prefix
-            )
-
             padded_id = str(self.id).zfill(5)
 
-            self.custom_identifier = f"{base_prefix}-{alpha}-{padded_id}"
+            self.custom_identifier = f"{base_prefix}-{padded_id}"
             super().save(update_fields=["custom_identifier"])
 
     def __str__(self):

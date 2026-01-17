@@ -57,6 +57,7 @@ from django.utils.text import slugify
 from django.db.models.functions import TruncMonth
 from datetime import datetime
 from django.utils.timezone import make_aware
+from django.utils.dateparse import parse_date
 from .forms import BusinessRuleForm, get_rule_condition_formset
 from .forms import QUOTE_FIELDS, QUOTE_LINE_FIELDS, PRODUCT_FIELDS
 from django.utils.safestring import mark_safe
@@ -1287,6 +1288,36 @@ def related_activities_api(request):
         activities = Activity.objects.filter(filters) if has_filter else Activity.objects.none()
         parent_label = "Subscription"
         parent_name = str(subscription)
+    elif object_key.endswith("__c"):
+        custom_object = CustomObject.objects.filter(name=object_key).first()
+        if not custom_object:
+            return JsonResponse({"error": "Custom object not found."}, status=404)
+        custom_record = get_object_or_404(CustomRecord, pk=record_id_int, object_type=custom_object)
+        if not partner_can_access_record(request.user, custom_object.name, custom_record, custom_object=custom_object):
+            return HttpResponseForbidden("You do not have access to this record.")
+
+        relation = _resolve_activity_relation_from_custom_record(custom_record, request.user)
+        filters = Q()
+        has_filter = False
+
+        if relation.get("opportunity"):
+            filters |= Q(opportunity=relation["opportunity"])
+            has_filter = True
+        if relation.get("contact"):
+            filters |= Q(contact=relation["contact"])
+            has_filter = True
+        if relation.get("lead"):
+            filters |= Q(lead=relation["lead"])
+            has_filter = True
+        if relation.get("account"):
+            filters |= Q(opportunity__account=relation["account"])
+            filters |= Q(contact__account=relation["account"])
+            filters |= Q(lead__contact__account=relation["account"])
+            has_filter = True
+
+        activities = Activity.objects.filter(filters) if has_filter else Activity.objects.none()
+        parent_label = custom_object.label or custom_object.name
+        parent_name = custom_record.custom_identifier or str(custom_record)
 
     activities = apply_partner_access_filter(request.user, "Activity", activities).order_by("-created_at")
 
@@ -1419,6 +1450,277 @@ def related_activities_api(request):
         "records": records,
         "stored": stored,
         "truncated": bool(limit and total > limit),
+    })
+
+
+def _resolve_activity_relation_from_custom_record(custom_record, user):
+    relation = {
+        "account": None,
+        "opportunity": None,
+        "contact": None,
+        "lead": None,
+    }
+
+    def _resolve_lookup_instance(model_class, raw_value):
+        if raw_value is None:
+            return None
+        raw = str(raw_value).strip()
+        if not raw:
+            return None
+        if raw.isdigit():
+            try:
+                return model_class.objects.filter(pk=int(raw)).first()
+            except (TypeError, ValueError):
+                pass
+
+        if model_class is Account:
+            return (
+                Account.objects.filter(
+                    Q(accid__iexact=raw)
+                    | Q(external_id__iexact=raw)
+                    | Q(name__iexact=raw)
+                    | Q(name__icontains=raw)
+                )
+                .order_by("-id")
+                .first()
+            )
+        if model_class is Opportunity:
+            return (
+                Opportunity.objects.filter(
+                    Q(oppid__iexact=raw)
+                    | Q(name__iexact=raw)
+                    | Q(name__icontains=raw)
+                )
+                .order_by("-id")
+                .first()
+            )
+        if model_class is Contact:
+            contact_q = Q(contactId__iexact=raw) | Q(email__iexact=raw)
+            if " " in raw:
+                parts = [part for part in raw.split(" ") if part]
+                if len(parts) >= 2:
+                    contact_q |= Q(first_name__iexact=parts[0], last_name__iexact=" ".join(parts[1:]))
+            contact_q |= Q(first_name__iexact=raw) | Q(last_name__iexact=raw)
+            return Contact.objects.filter(contact_q).order_by("-id").first()
+        if model_class is Lead:
+            lead_q = Q(leadId__iexact=raw) | Q(email__iexact=raw)
+            if " " in raw:
+                parts = [part for part in raw.split(" ") if part]
+                if len(parts) >= 2:
+                    lead_q |= Q(first_name__iexact=parts[0], last_name__iexact=" ".join(parts[1:]))
+            lead_q |= Q(first_name__iexact=raw) | Q(last_name__iexact=raw)
+            return Lead.objects.filter(lead_q).order_by("-id").first()
+        return None
+
+    field_values = custom_record.custom_field_values.select_related("field")
+    for value in field_values:
+        field = value.field
+        if not field or field.data_type != "lookup":
+            continue
+        model_class = resolve_lookup_model(field.lookup_model, field_name=field.name, field_label=field.label)
+        if model_class not in {Account, Opportunity, Contact, Lead}:
+            continue
+        raw_value = value.value
+        if raw_value in (None, ""):
+            continue
+        related_obj = _resolve_lookup_instance(model_class, raw_value)
+        if not related_obj:
+            continue
+        if model_class is Opportunity and not relation["opportunity"]:
+            if partner_can_access_record(user, "Opportunity", related_obj):
+                relation["opportunity"] = related_obj
+        elif model_class is Contact and not relation["contact"]:
+            if partner_can_access_record(user, "Contact", related_obj):
+                relation["contact"] = related_obj
+        elif model_class is Lead and not relation["lead"]:
+            if partner_can_access_record(user, "Lead", related_obj):
+                relation["lead"] = related_obj
+        elif model_class is Account and not relation["account"]:
+            if partner_can_access_record(user, "Account", related_obj):
+                relation["account"] = related_obj
+
+    # Fallback: allow text fields labeled like account/opportunity/contact/lead.
+    if not any(relation.values()):
+        for value in field_values:
+            field = value.field
+            if not field:
+                continue
+            field_name = (field.name or "").lower()
+            field_label = (field.label or "").lower()
+            raw_value = value.value
+            if raw_value in (None, ""):
+                continue
+            if "account" in field_name or "account" in field_label:
+                account = _resolve_lookup_instance(Account, raw_value)
+                if account and partner_can_access_record(user, "Account", account):
+                    relation["account"] = account
+            if "opportunity" in field_name or "opportunity" in field_label:
+                opportunity = _resolve_lookup_instance(Opportunity, raw_value)
+                if opportunity and partner_can_access_record(user, "Opportunity", opportunity):
+                    relation["opportunity"] = opportunity
+            if "contact" in field_name or "contact" in field_label:
+                contact = _resolve_lookup_instance(Contact, raw_value)
+                if contact and partner_can_access_record(user, "Contact", contact):
+                    relation["contact"] = contact
+            if "lead" in field_name or "lead" in field_label:
+                lead = _resolve_lookup_instance(Lead, raw_value)
+                if lead and partner_can_access_record(user, "Lead", lead):
+                    relation["lead"] = lead
+
+    account = relation["account"]
+    if account and not (relation["opportunity"] or relation["contact"] or relation["lead"]):
+        contact = Contact.objects.filter(account=account, is_primary=True).first()
+        if not contact:
+            contact = Contact.objects.filter(account=account).order_by("-id").first()
+        if contact and partner_can_access_record(user, "Contact", contact):
+            relation["contact"] = contact
+        if not relation["contact"]:
+            opportunity = Opportunity.objects.filter(account=account).order_by("-id").first()
+            if opportunity and partner_can_access_record(user, "Opportunity", opportunity):
+                relation["opportunity"] = opportunity
+
+    return relation
+
+
+@login_required
+@require_POST
+def create_activity_api(request):
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON payload."}, status=400)
+
+    subject = str(data.get("subject") or "").strip()
+    if not subject:
+        return JsonResponse({"error": "Subject is required."}, status=400)
+
+    def normalize_choice(value, choices):
+        if not value:
+            return None
+        choice_map = {key: label for key, label in choices}
+        if value in choice_map:
+            return value
+        value_lower = str(value).strip().lower()
+        for key, label in choices:
+            if str(label).strip().lower() == value_lower:
+                return key
+        return None
+
+    activity_type = normalize_choice(
+        data.get("activity_type"),
+        Activity.ACTIVITY_TYPE_CHOICES,
+    ) or Activity.ACTIVITY_TYPE_CHOICES[0][0]
+
+    status = normalize_choice(
+        data.get("status"),
+        Activity.STATUS_CHOICES,
+    ) or Activity.STATUS_CHOICES[0][0]
+
+    due_date_raw = data.get("due_date")
+    due_date = parse_date(due_date_raw) if due_date_raw else None
+    if due_date_raw and due_date is None:
+        return JsonResponse({"error": "Invalid due date."}, status=400)
+
+    parent_object = str(data.get("object") or "").strip().lower()
+    parent_record_id = data.get("record_id")
+    relation_object = str(data.get("relation_object") or "").strip().lower()
+    relation_identifier = str(data.get("relation_identifier") or "").strip()
+
+    lead_ref = None
+    contact_ref = None
+    opportunity_ref = None
+
+    if parent_object in {"lead", "contact", "opportunity"}:
+        try:
+            parent_id = int(parent_record_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid parent record id."}, status=400)
+
+        if parent_object == "lead":
+            lead_ref = get_object_or_404(Lead, pk=parent_id)
+            if not partner_can_access_record(request.user, "Lead", lead_ref):
+                return HttpResponseForbidden("You do not have access to this lead.")
+        elif parent_object == "contact":
+            contact_ref = get_object_or_404(Contact, pk=parent_id)
+            if not partner_can_access_record(request.user, "Contact", contact_ref):
+                return HttpResponseForbidden("You do not have access to this contact.")
+        else:
+            opportunity_ref = get_object_or_404(Opportunity, pk=parent_id)
+            if not partner_can_access_record(request.user, "Opportunity", opportunity_ref):
+                return HttpResponseForbidden("You do not have access to this opportunity.")
+    elif parent_object.endswith("__c"):
+        try:
+            parent_id = int(parent_record_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid parent record id."}, status=400)
+
+        custom_object = CustomObject.objects.filter(name=parent_object).first()
+        if not custom_object:
+            return JsonResponse({"error": "Custom object not found."}, status=404)
+        custom_record = get_object_or_404(CustomRecord, pk=parent_id, object_type=custom_object)
+        if not partner_can_access_record(request.user, custom_object.name, custom_record, custom_object=custom_object):
+            return HttpResponseForbidden("You do not have access to this record.")
+
+        relation = _resolve_activity_relation_from_custom_record(custom_record, request.user)
+        lead_ref = relation.get("lead")
+        contact_ref = relation.get("contact")
+        opportunity_ref = relation.get("opportunity")
+        if not any([lead_ref, contact_ref, opportunity_ref]):
+            return JsonResponse({"error": "No related Lead, Contact, or Opportunity found for this record."}, status=400)
+    else:
+        if relation_object not in {"lead", "contact", "opportunity"} or not relation_identifier:
+            return JsonResponse({"error": "Select a Lead, Contact, or Opportunity to relate this activity."}, status=400)
+
+        from agents.standard_record_agent import _find_lead, _find_contact, _find_opportunity
+
+        if relation_object == "lead":
+            lead_ref = _find_lead(relation_identifier)
+            if not lead_ref:
+                return JsonResponse({"error": "Lead not found for this activity."}, status=404)
+            if not partner_can_access_record(request.user, "Lead", lead_ref):
+                return HttpResponseForbidden("You do not have access to this lead.")
+        elif relation_object == "contact":
+            contact_ref = _find_contact(relation_identifier)
+            if not contact_ref:
+                return JsonResponse({"error": "Contact not found for this activity."}, status=404)
+            if not partner_can_access_record(request.user, "Contact", contact_ref):
+                return HttpResponseForbidden("You do not have access to this contact.")
+        else:
+            opportunity_ref = _find_opportunity(relation_identifier)
+            if not opportunity_ref:
+                return JsonResponse({"error": "Opportunity not found for this activity."}, status=404)
+            if not partner_can_access_record(request.user, "Opportunity", opportunity_ref):
+                return HttpResponseForbidden("You do not have access to this opportunity.")
+
+    activity = Activity.objects.create(
+        subject=subject,
+        activity_type=activity_type,
+        status=status,
+        due_date=due_date,
+        lead=lead_ref,
+        contact=contact_ref,
+        opportunity=opportunity_ref,
+        notes=str(data.get("notes") or ""),
+        created_by=request.user,
+    )
+
+    metadata = get_object_metadata("Activity")
+    payload = serialize_record(
+        activity,
+        "Activity",
+        metadata["custom_object"] if metadata else None,
+        metadata["custom_fields"] if metadata else [],
+        user=request.user,
+    )
+
+    return JsonResponse({
+        "record_id": activity.id,
+        "record_value": activity.subject,
+        "subject": activity.subject,
+        "activity_type": activity.get_activity_type_display() or activity.activity_type,
+        "status": activity.get_status_display() or activity.status,
+        "due_date": activity.due_date.isoformat() if activity.due_date else None,
+        "payload": payload,
     })
 
 

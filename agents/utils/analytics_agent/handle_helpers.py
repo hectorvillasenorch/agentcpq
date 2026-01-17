@@ -86,6 +86,25 @@ def get_object_metadata(object_name):
     except CustomObject.DoesNotExist:
         return None
 
+    try:
+        notes_exists = CustomField.objects.filter(
+            custom_object=custom_object,
+        ).filter(
+            Q(name__iexact="notes") | Q(label__iexact="notes")
+        ).exists()
+        if not notes_exists:
+            CustomField.objects.create(
+                label="Notes",
+                name="notes",
+                crm="AgentCPQ",
+                object_type=custom_object.name,
+                data_type="textarea",
+                required=False,
+                custom_object=custom_object,
+            )
+    except Exception:
+        pass
+
     return {
         "model": CustomRecord,
         "custom_object": custom_object,
@@ -1827,6 +1846,7 @@ ALLOWED_FIELDS = {
     "Option": ["id", "parent_product", "product_option", "quantity", "is_required", "min_quantity", "max_quantity", "default_selected", "group_name"],
     "Tenant": ["id", "tenant_id", "name", "domain", "contact_email", "phone_number", "plan", "version", "created_at"],
     "Knowledge": ["id", "title", "content_text", "video_url", "image_url", "tags", "language", "is_active", "created_at", "updated_at"],
+    "CustomRecord": ["custom_identifier"],
 }
 
 def safe_serialize_queryset(qs, model_name, custom_object=None, custom_fields=None):

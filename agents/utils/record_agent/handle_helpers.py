@@ -74,6 +74,7 @@ PRIMARY_FIELD_MAP = {
     "Option": "product_option",
     "Tenant": "name",
     "Knowledge": "title",
+    "CustomRecord": "custom_identifier",
 }
 
 _NUMERIC_FIELD_TYPES = (
@@ -1039,11 +1040,14 @@ def _update_custom_field_value(record: Model, custom_field, new_value) -> Tuple[
         return True, f"{SUCCESS_ICON} {custom_field.label or custom_field.name} updated successfully."
 
     try:
+        # Always set content_type and object_id (required fields)
+        # record field is optional and used only for CustomRecord instances
+        content_type = ContentType.objects.get_for_model(record.__class__)
         CustomFieldValue.objects.create(
             field=custom_field,
             record=record if values_manager is not None else None,
-            content_type=None if values_manager is not None else ContentType.objects.get_for_model(record.__class__),
-            object_id=None if values_manager is not None else record.pk,
+            content_type=content_type,
+            object_id=record.pk,
             value=coerced_value,
         )
     except Exception as exc:

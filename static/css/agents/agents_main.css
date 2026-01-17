@@ -736,6 +736,15 @@ input[type="number"] {
   cursor: not-allowed;
 }
 
+.single-record-field[data-field*="notes" i] .single-record-input {
+  padding: 1.5rem !important;
+}
+
+.single-record-field[data-field*="notes" i] .single-record-field-value {
+  padding: 1.5rem;
+  display: block;
+}
+
 .single-record-field-control select.single-record-input,
 .single-record-field-control textarea.single-record-input {
   background: #fff;
@@ -1125,6 +1134,183 @@ textarea.bundle-edit-input {
 .records-columns-btn .material-icons {
   font-family: "Material Icons";
   font-size: 18px;
+}
+
+.records-activity-create-btn {
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.records-activity-create-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.records-activity-create-btn .material-icons {
+  font-size: 18px;
+}
+
+.activity-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 18, 32, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 9999;
+  transition: opacity 0.2s ease;
+}
+
+.activity-modal-overlay.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.activity-modal {
+  width: min(620px, calc(100% - 32px));
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 18px 48px rgba(14, 22, 40, 0.2);
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  overflow: hidden;
+}
+
+.activity-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid #eef1f5;
+}
+
+.activity-modal-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #0f1c2e;
+}
+
+.activity-modal-subtitle {
+  font-size: 0.9rem;
+  color: #6b7688;
+  margin-top: 4px;
+}
+
+.activity-modal-close {
+  border: none;
+  background: #f1f3f7;
+  color: #5b6576;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.activity-modal-body {
+  padding: 18px 22px 22px;
+  overflow-y: auto;
+}
+
+.activity-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.activity-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: #2f3b4e;
+}
+
+.activity-modal-field input,
+.activity-modal-field select,
+.activity-modal-field textarea {
+  border: 1px solid #d9dee7;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  background: #fff;
+  color: #1b2433;
+}
+
+.activity-modal-field .single-record-input {
+  border: 1px solid #d1d5db !important;
+  border-radius: 12px !important;
+  padding: 8px 10px !important;
+  font-size: 1.05rem !important;
+  background: #fff !important;
+  color: #111827 !important;
+}
+
+.activity-modal-field input:focus,
+.activity-modal-field select:focus,
+.activity-modal-field textarea:focus {
+  outline: none;
+  border-color: #8db1ff;
+  box-shadow: 0 0 0 3px rgba(141, 177, 255, 0.22);
+}
+
+.activity-modal-notes {
+  grid-column: 1 / -1;
+}
+
+.activity-modal-related {
+  margin-top: 16px;
+}
+
+.activity-modal-related-note {
+  font-size: 0.85rem;
+  color: #6b7688;
+  margin-bottom: 10px;
+}
+
+.activity-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.activity-modal-cancel {
+  border: 1px solid #d9dee7;
+  background: #fff;
+  color: #556074;
+  border-radius: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.activity-modal-submit {
+  border: none;
+  background: #1e63ff;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 18px;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .activity-modal-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .records-columns-panel {

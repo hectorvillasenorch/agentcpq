@@ -4596,7 +4596,7 @@ function setupRelatedPopoverHandlers(button, card, config) {
   let hideTimer = null;
   const showPopover = () => {
     const count = Number(button.dataset.relatedCount || 0);
-    if (count <= 1) return;
+    if (count <= 1 && config.objectName !== "activity") return;
     clearTimeout(hideTimer);
     loadRelatedPreview(button, card, config, popover);
   };
@@ -4632,6 +4632,24 @@ function ensureRelatedPopover(button, config) {
       if (!item) return;
       event.preventDefault();
       if (item.dataset.action === "dismiss") {
+        popover.classList.remove("is-visible");
+        return;
+      }
+      if (item.dataset.action === "create-activity") {
+        const card = popover._card;
+        const cfg = popover._config;
+        const sourceButton = popover._sourceButton;
+        if (card && cfg) {
+          const parentName = card.dataset.recordName || cfg.parentLabel || "Record";
+          openActivityCreateModal({
+            parentObject: card.dataset.recordObject,
+            parentRecordId: card.dataset.recordId,
+            parentName,
+            listBubble: null,
+            config: cfg,
+            relatedButton: sourceButton,
+          });
+        }
         popover.classList.remove("is-visible");
         return;
       }
@@ -4674,7 +4692,13 @@ async function loadRelatedPreview(button, card, config, popover) {
     const data = await response.json();
     const records = Array.isArray(data.records) ? data.records : [];
     if (!records.length) {
-      popover.innerHTML = `<div class="single-record-related-empty">No ${config.pluralLabel} found.</div>`;
+      const action = config.objectName === "activity"
+        ? `<button type="button" class="single-record-related-item" data-action="create-activity">+ Add activity</button>`
+        : "";
+      popover.innerHTML = `
+        <div class="single-record-related-empty">No ${config.pluralLabel} found.</div>
+        ${action}
+      `;
       return;
     }
 
@@ -5094,6 +5118,311 @@ function buildRelatedListLabel(labelPrefix, parentName, parentLabel) {
   return `${prefix} for ${fullName}`;
 }
 
+const ACTIVITY_TYPE_OPTIONS = [
+  { value: "call", label: "Call" },
+  { value: "email", label: "Email" },
+  { value: "meeting", label: "Meeting" },
+  { value: "task", label: "Task" },
+];
+
+const ACTIVITY_STATUS_OPTIONS = [
+  { value: "not_started", label: "Not Started" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "completed", label: "Completed" },
+  { value: "deferred", label: "Deferred" },
+];
+
+function buildRelatedListPayload(records, parentName, config) {
+  const labelPrefix = config.listObjectLabel || config.pluralLabel || "records";
+  const listLabel = buildRelatedListLabel(labelPrefix, parentName, config.parentLabel);
+  const mapped = records.map(record => {
+    if (Array.isArray(config.listFields) && config.listFields.length) {
+      const row = {};
+      config.listFields.forEach(field => {
+        if (field === "name") {
+          row[field] = record[field] || record.record_value || "Record";
+        } else if (field === "view_quote") {
+          row[field] = buildQuoteListViewButton(record.record_id);
+        } else if (field === "view_record") {
+          row[field] = buildRecordListViewButton(
+            record.record_id,
+            config.viewObjectName || config.objectName
+          );
+        } else {
+          const rawValue = record[field];
+          row[field] = typeof rawValue === "boolean" ? (rawValue ? "Yes" : "No") : rawValue;
+        }
+      });
+      return row;
+    }
+    return {
+      Name: record.record_value || "Record",
+      Id: record.record_id,
+    };
+  });
+  return { payload: { [listLabel]: mapped }, listLabel };
+}
+
+function injectActivityCreateAction(bubble, { relationId, parentName, config, objectName }) {
+  if (!bubble || !config || config.objectName !== "activity") return;
+  const headerActions = bubble.querySelector(".records-header-actions");
+  if (!headerActions) return;
+  if (headerActions.querySelector(".records-activity-create-btn")) return;
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "records-activity-create-btn";
+  button.setAttribute("aria-label", "Create activity");
+  button.setAttribute("title", "Create activity");
+  button.innerHTML = `<span class="material-icons" aria-hidden="true">add_task</span>`;
+  button.dataset.parentObject = String(objectName || "");
+  button.dataset.parentRecordId = String(relationId || "");
+  button.dataset.parentName = String(parentName || "");
+  button.dataset.relatedRole = "related-activities";
+
+  button.addEventListener("click", () => {
+    openActivityCreateModal({
+      parentObject: objectName,
+      parentRecordId: relationId,
+      parentName,
+      listBubble: bubble,
+      config,
+    });
+  });
+
+  headerActions.insertBefore(button, headerActions.firstChild);
+}
+
+function ensureActivityCreateModal() {
+  let overlay = document.querySelector(".activity-modal-overlay");
+  if (overlay) return overlay;
+
+  overlay = document.createElement("div");
+  overlay.className = "activity-modal-overlay";
+  overlay.innerHTML = `
+    <div class="activity-modal" role="dialog" aria-modal="true" aria-labelledby="activity-modal-title">
+      <div class="activity-modal-header">
+        <div>
+          <div class="activity-modal-title" id="activity-modal-title">New Activity</div>
+          <div class="activity-modal-subtitle"></div>
+        </div>
+        <button type="button" class="activity-modal-close" aria-label="Close">
+          <span class="material-icons" aria-hidden="true">close</span>
+        </button>
+      </div>
+      <form class="activity-modal-body">
+        <div class="activity-modal-grid">
+          <div class="activity-modal-field single-record-field">
+            <div class="single-record-field-label">Subject</div>
+            <div class="single-record-field-control">
+              <input type="text" name="subject" required placeholder="Follow-up call" class="single-record-input" />
+            </div>
+          </div>
+          <div class="activity-modal-field single-record-field">
+            <div class="single-record-field-label">Type</div>
+            <div class="single-record-field-control">
+              <select name="activity_type" class="single-record-input"></select>
+            </div>
+          </div>
+          <div class="activity-modal-field single-record-field">
+            <div class="single-record-field-label">Status</div>
+            <div class="single-record-field-control">
+              <select name="status" class="single-record-input"></select>
+            </div>
+          </div>
+          <div class="activity-modal-field single-record-field">
+            <div class="single-record-field-label">Due Date</div>
+            <div class="single-record-field-control">
+              <input type="date" name="due_date" class="single-record-input" />
+            </div>
+          </div>
+          <div class="activity-modal-field activity-modal-notes single-record-field">
+            <div class="single-record-field-label">Notes</div>
+            <div class="single-record-field-control">
+              <textarea name="notes" rows="3" placeholder="Add any details..." class="single-record-input"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="activity-modal-related"></div>
+        <div class="activity-modal-actions">
+          <button type="button" class="activity-modal-cancel">Cancel</button>
+          <button type="submit" class="activity-modal-submit">Create activity</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const closeModal = () => {
+    overlay.classList.remove("is-visible");
+    overlay.dataset.busy = "false";
+  };
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) closeModal();
+  });
+  overlay.querySelector(".activity-modal-close").addEventListener("click", closeModal);
+  overlay.querySelector(".activity-modal-cancel").addEventListener("click", closeModal);
+
+  return overlay;
+}
+
+async function refreshRelatedActivitiesList({ bubble, relationId, parentName, config, objectName }) {
+  if (!bubble) return;
+  const message = bubble.querySelector(".message");
+  if (!message) return;
+
+  try {
+    const response = await fetch(buildRelatedRecordsUrl(config, relationId, {
+      preview: true,
+      objectName,
+    }));
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const records = Array.isArray(data.records) ? data.records : [];
+    if (!records.length) return;
+
+    const { payload } = buildRelatedListPayload(records, parentName, config);
+    message.innerHTML = renderRetrievedRecords("", payload);
+    initializeRecordListLayouts(bubble);
+    initializeMetricCards(bubble);
+    injectActivityCreateAction(bubble, { relationId, parentName, config, objectName });
+  } catch (error) {
+    console.warn("Failed to refresh related activities list", error);
+  }
+}
+
+function openActivityCreateModal({ parentObject, parentRecordId, parentName, listBubble, config, relatedButton }) {
+  const overlay = ensureActivityCreateModal();
+  const modal = overlay.querySelector(".activity-modal");
+  const form = overlay.querySelector(".activity-modal-body");
+  const relatedContainer = overlay.querySelector(".activity-modal-related");
+  const subtitle = overlay.querySelector(".activity-modal-subtitle");
+  const submitBtn = overlay.querySelector(".activity-modal-submit");
+  const typeSelect = overlay.querySelector("select[name=\"activity_type\"]");
+  const statusSelect = overlay.querySelector("select[name=\"status\"]");
+
+  const safeParent = (parentName || parentObject || "record").toString().trim();
+  subtitle.textContent = safeParent ? `For ${safeParent}` : "";
+
+  typeSelect.innerHTML = ACTIVITY_TYPE_OPTIONS.map((opt) => `<option value="${opt.value}">${opt.label}</option>`).join("");
+  statusSelect.innerHTML = ACTIVITY_STATUS_OPTIONS.map((opt) => `<option value="${opt.value}">${opt.label}</option>`).join("");
+
+  const normalizedObject = String(parentObject || "").toLowerCase();
+  const directRelation = ["lead", "contact", "opportunity"].includes(normalizedObject);
+  const autoRelation = normalizedObject.includes("payment");
+  const requiresRelationSelection = !directRelation && !autoRelation;
+  if (requiresRelationSelection) {
+    relatedContainer.innerHTML = `
+      <div class="activity-modal-related-note">Select the record this activity should relate to.</div>
+      <div class="activity-modal-grid">
+        <div class="activity-modal-field single-record-field">
+          <div class="single-record-field-label">Related type</div>
+          <div class="single-record-field-control">
+            <select name="relation_object" class="single-record-input">
+              <option value="lead">Lead</option>
+              <option value="contact">Contact</option>
+              <option value="opportunity">Opportunity</option>
+            </select>
+          </div>
+        </div>
+        <div class="activity-modal-field single-record-field">
+          <div class="single-record-field-label">Record name or ID</div>
+          <div class="single-record-field-control">
+            <input type="text" name="relation_identifier" placeholder="Search by name or id" class="single-record-input" />
+          </div>
+        </div>
+      </div>
+    `;
+  } else if (autoRelation) {
+    relatedContainer.innerHTML = `
+      <div class="activity-modal-related-note">This activity will be linked to the account on this payment.</div>
+    `;
+  } else {
+    relatedContainer.innerHTML = "";
+  }
+
+  form.reset();
+  overlay.classList.add("is-visible");
+
+  if (form._activityHandler) {
+    form.removeEventListener("submit", form._activityHandler);
+  }
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (overlay.dataset.busy === "true") return;
+
+    const formData = new FormData(form);
+    const subject = String(formData.get("subject") || "").trim();
+    if (!subject) {
+      showSingleRecordToast("Subject is required.", "error");
+      return;
+    }
+
+    const payload = {
+      subject,
+      activity_type: formData.get("activity_type"),
+      status: formData.get("status"),
+      due_date: formData.get("due_date"),
+      notes: formData.get("notes"),
+      object: parentObject,
+      record_id: parentRecordId,
+    };
+
+    if (requiresRelationSelection) {
+      payload.relation_object = formData.get("relation_object");
+      payload.relation_identifier = String(formData.get("relation_identifier") || "").trim();
+      if (!payload.relation_identifier) {
+        showSingleRecordToast("Add a related record name or id.", "error");
+        return;
+      }
+    }
+
+    overlay.dataset.busy = "true";
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Creating...";
+
+    try {
+      const response = await fetch("/cpq/activities/create/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCSRFToken(),
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to create activity.");
+      }
+
+      overlay.classList.remove("is-visible");
+      showSingleRecordToast("Activity created.", "success");
+
+      if (listBubble && config) {
+        refreshRelatedActivitiesList({
+          bubble: listBubble,
+          relationId: parentRecordId,
+          parentName,
+          config,
+          objectName: parentObject,
+        });
+      } else if (relatedButton && config) {
+        loadRelatedRecordsCount(relatedButton, config, parentRecordId, parentObject);
+      }
+    } catch (error) {
+      showSingleRecordToast(error.message || "Unable to create activity.", "error");
+    } finally {
+      overlay.dataset.busy = "false";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Create activity";
+    }
+  };
+
+  form._activityHandler = handleSubmit;
+  form.addEventListener("submit", handleSubmit);
+}
+
 async function showRelatedRecordsList({ relationId, anchorMessage, parentName, config, role, objectName }) {
   const existing = findRelatedListMessage(config, relationId, role);
   if (existing) {
@@ -5115,39 +5444,12 @@ async function showRelatedRecordsList({ relationId, anchorMessage, parentName, c
     }
     const data = await response.json();
     const records = Array.isArray(data.records) ? data.records : [];
-    if (!records.length) {
+    if (!records.length && config.objectName !== "activity") {
       showSingleRecordToast(`No ${config.pluralLabel} found for ${parentName}.`, "info");
       return;
     }
 
-    const labelPrefix = config.listObjectLabel || config.pluralLabel || "records";
-    const listLabel = buildRelatedListLabel(labelPrefix, parentName, config.parentLabel);
-    const mapped = records.map(record => {
-      if (Array.isArray(config.listFields) && config.listFields.length) {
-        const row = {};
-        config.listFields.forEach(field => {
-          if (field === "name") {
-            row[field] = record[field] || record.record_value || "Record";
-          } else if (field === "view_quote") {
-            row[field] = buildQuoteListViewButton(record.record_id);
-          } else if (field === "view_record") {
-            row[field] = buildRecordListViewButton(
-              record.record_id,
-              config.viewObjectName || config.objectName
-            );
-          } else {
-            const rawValue = record[field];
-            row[field] = typeof rawValue === "boolean" ? (rawValue ? "Yes" : "No") : rawValue;
-          }
-        });
-        return row;
-      }
-      return {
-        Name: record.record_value || "Record",
-        Id: record.record_id,
-      };
-    });
-    const payload = { [listLabel]: mapped };
+    const { payload } = buildRelatedListPayload(records, parentName, config);
     const html = `
       <div class="senderagent">
         <img width="115px" src="/static/img/agentcpq-chat-icon.png" alt="AgentCPQ Logo">
@@ -5160,8 +5462,12 @@ async function showRelatedRecordsList({ relationId, anchorMessage, parentName, c
       if (config.relatedAttr) {
         bubble.setAttribute(config.relatedAttr, String(relationId));
       }
+      bubble.dataset.relatedParentObject = String(objectName || "");
+      bubble.dataset.relatedParentId = String(relationId || "");
+      bubble.dataset.relatedParentName = String(parentName || "");
       initializeRecordListLayouts(bubble);
       initializeMetricCards(bubble);
+      injectActivityCreateAction(bubble, { relationId, parentName, config, objectName });
       bubble.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   } catch (error) {
@@ -5490,6 +5796,13 @@ function orderSingleRecordFields(fields, layout) {
     : fields.map(field => buildFieldKey(field.name, field.is_custom, field.field_id));
   const hidden = new Set((layout && Array.isArray(layout.hidden)) ? layout.hidden : []);
 
+  const isNotesField = (field) => {
+    if (!field) return false;
+    const parts = [field.name, field.label].filter(Boolean).join(" ").toLowerCase();
+    const normalized = parts.replace(/_/g, " ");
+    return /(^|[^a-z])notes?([^a-z]|$)/.test(normalized);
+  };
+
   const byKey = new Map(
     fields.map(field => [buildFieldKey(field.name, field.is_custom, field.field_id), field])
   );
@@ -5498,13 +5811,15 @@ function orderSingleRecordFields(fields, layout) {
   order.forEach(key => {
     const found = byKey.get(key);
     if (!found) return;
-    ordered.push({ field: found, hidden: hidden.has(key) });
+    const forceVisible = isNotesField(found);
+    ordered.push({ field: found, hidden: !forceVisible && hidden.has(key) });
     byKey.delete(key);
   });
 
   // Append any new fields not in the stored layout
   byKey.forEach((field, key) => {
-    ordered.push({ field, hidden: hidden.has(key) });
+    const forceVisible = isNotesField(field);
+    ordered.push({ field, hidden: !forceVisible && hidden.has(key) });
   });
 
   return ordered;
@@ -9608,6 +9923,8 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       ? records
       : (records && Array.isArray(records.records) ? records.records : []);
     const hasListRecords = Array.isArray(listRecords) && listRecords.length > 0;
+    const lowerObjectName = String(objectName || "").toLowerCase();
+    const isActivitiesList = lowerObjectName.includes("activities for");
 
     // Aggregates: render intent-driven metric card
     if (!Array.isArray(records) && records.aggregate) {
@@ -9761,7 +10078,35 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       }
     }
 
-    if (!hasListRecords) continue;
+    if (!hasListRecords) {
+      if (isActivitiesList) {
+        const safeTitle = escapeHtml(String(objectName || "Activities"));
+        html += `
+          <div class="email-alert-container" style="margin-bottom:10px; position:relative;">
+            <div class="email-alert-header" style="
+              display:flex;
+              justify-content:space-between;
+              align-items:center;
+              background: linear-gradient(135deg, #041530, #233049);
+              color:#fff;
+              padding:10px 14px;
+              border-radius:12px 12px 0 0;
+            ">
+              <h4 style="margin:0;">${safeTitle} records (0).</h4>
+              <div class="records-header-actions">
+                <button onclick="makeDraggable(this)" class="record-popout-btn">
+                  <span class="material-icons" aria-hidden="true">open_in_new</span>
+                </button>
+              </div>
+            </div>
+            <div style="padding:16px;border:1px solid #e5e7eb;border-top:0;border-radius:0 0 12px 12px;background:#fff;">
+              <div class="records-card-empty">No activities yet.</div>
+            </div>
+          </div>
+        `;
+      }
+      continue;
+    }
     const recordsList = listRecords;
     const normalizedObject = String(objectName || "").toLowerCase();
     const isLeadObject = normalizedObject === "lead" || normalizedObject === "leads";
@@ -10034,7 +10379,7 @@ function renderRetrievedRecords(userMessage, recordsDetails) {
       const firstInfo = getFieldInfo(["first_name", "firstname", "first", "given_name"]);
       const lastInfo = getFieldInfo(["last_name", "lastname", "last", "surname"]);
       const nameInfo = getFieldInfo(["name", "title", "subject", "full_name", "fullname"]);
-      const recordInfo = getFieldInfo(["record_id", "custom_identifier"]);
+      const recordInfo = getFieldInfo(["custom_identifier", "record_id"]);
       const displayName = [firstInfo.value, lastInfo.value].filter(Boolean).join(" ").trim()
         || nameInfo.value
         || recordInfo.value
