@@ -51,7 +51,7 @@ from django.contrib import messages
 import logging
 from django.db import connection
 from django.db.utils import OperationalError, ProgrammingError
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Count, Prefetch, Q, Subquery
 from django.utils.timezone import now
 from django.utils.text import slugify
 from django.db.models.functions import TruncMonth
@@ -1219,11 +1219,15 @@ def related_activities_api(request):
         account = get_object_or_404(Account, pk=record_id_int)
         if not partner_can_access_record(request.user, "Account", account):
             return HttpResponseForbidden("You do not have access to this account.")
-        activities = Activity.objects.filter(
+        account_filter = _activity_account_lookup_filter(account)
+        activity_filters = (
             Q(opportunity__account=account)
             | Q(contact__account=account)
             | Q(lead__contact__account=account)
         )
+        if account_filter:
+            activity_filters |= account_filter
+        activities = Activity.objects.filter(activity_filters)
         parent_label = "Account"
         parent_name = account.name
     elif object_key in {"quote", "quotes"}:
@@ -1290,14 +1294,40 @@ def related_activities_api(request):
         parent_label = "Subscription"
         parent_name = str(subscription)
     elif object_key.endswith("__c"):
-        custom_object = CustomObject.objects.filter(name=object_key).first()
+        custom_object = CustomObject.objects.filter(name__iexact=object_key).first()
         if not custom_object:
-            return JsonResponse({"error": "Custom object not found."}, status=404)
-        custom_record = get_object_or_404(CustomRecord, pk=record_id_int, object_type=custom_object)
+            logging.getLogger(__name__).warning(
+                "activity unsupported_object_detected object=%s record_id=%s",
+                object_key,
+                record_id_int,
+            )
+            return JsonResponse({
+                "record_id": record_id_int,
+                "count": 0,
+                "records": [],
+                "stored": False,
+                "truncated": False,
+                "message": "Activities unavailable for this record",
+            })
+        custom_record = CustomRecord.objects.filter(pk=record_id_int, object_type=custom_object).first()
+        if not custom_record:
+            logging.getLogger(__name__).warning(
+                "activity parent null object=%s record_id=%s",
+                custom_object.name,
+                record_id_int,
+            )
+            return JsonResponse({
+                "record_id": record_id_int,
+                "count": 0,
+                "records": [],
+                "stored": False,
+                "truncated": False,
+                "message": "Activities unavailable for this record",
+            })
         if not partner_can_access_record(request.user, custom_object.name, custom_record, custom_object=custom_object):
             return HttpResponseForbidden("You do not have access to this record.")
 
-        relation = _resolve_activity_relation_from_custom_record(custom_record, request.user)
+        relation = _resolve_activity_relation_from_custom_record(custom_record, request.user, max_depth=2)
         filters = Q()
         has_filter = False
 
@@ -1311,14 +1341,23 @@ def related_activities_api(request):
             filters |= Q(lead=relation["lead"])
             has_filter = True
         if relation.get("account"):
+            account_filter = _activity_account_lookup_filter(relation["account"])
             filters |= Q(opportunity__account=relation["account"])
             filters |= Q(contact__account=relation["account"])
             filters |= Q(lead__contact__account=relation["account"])
+            if account_filter:
+                filters |= account_filter
             has_filter = True
 
         activities = Activity.objects.filter(filters) if has_filter else Activity.objects.none()
         parent_label = custom_object.label or custom_object.name
         parent_name = custom_record.custom_identifier or str(custom_record)
+        if not has_filter:
+            logging.getLogger(__name__).warning(
+                "activity lookup resolution failed object=%s record_id=%s",
+                custom_object.name,
+                record_id_int,
+            )
 
     activities = apply_partner_access_filter(request.user, "Activity", activities).order_by("-created_at")
 
@@ -1454,13 +1493,15 @@ def related_activities_api(request):
     })
 
 
-def _resolve_activity_relation_from_custom_record(custom_record, user):
+def _resolve_activity_relation_from_custom_record(custom_record, user, max_depth=2):
     relation = {
         "account": None,
         "opportunity": None,
         "contact": None,
         "lead": None,
     }
+    activity_models = {Account, Opportunity, Contact, Lead}
+    visited = set()
 
     def _resolve_lookup_instance(model_class, raw_value):
         if raw_value is None:
@@ -1513,20 +1554,33 @@ def _resolve_activity_relation_from_custom_record(custom_record, user):
             return Lead.objects.filter(lead_q).order_by("-id").first()
         return None
 
-    field_values = custom_record.custom_field_values.select_related("field")
-    for value in field_values:
-        field = value.field
-        if not field or field.data_type != "lookup":
-            continue
-        model_class = resolve_lookup_model(field.lookup_model, field_name=field.name, field_label=field.label)
-        if model_class not in {Account, Opportunity, Contact, Lead}:
-            continue
-        raw_value = value.value
-        if raw_value in (None, ""):
-            continue
-        related_obj = _resolve_lookup_instance(model_class, raw_value)
+    def _resolve_custom_record(target_object, raw_value):
+        if raw_value is None:
+            return None
+        raw = str(raw_value).strip()
+        if not raw:
+            return None
+        if raw.isdigit():
+            try:
+                return CustomRecord.objects.filter(pk=int(raw), object_type=target_object).first()
+            except (TypeError, ValueError):
+                pass
+        try:
+            uuid_value = uuid.UUID(raw)
+        except (TypeError, ValueError):
+            uuid_value = None
+        if uuid_value:
+            record = CustomRecord.objects.filter(record_id=uuid_value, object_type=target_object).first()
+            if record:
+                return record
+        return CustomRecord.objects.filter(
+            custom_identifier__iexact=raw,
+            object_type=target_object,
+        ).first()
+
+    def _apply_relation(model_class, related_obj):
         if not related_obj:
-            continue
+            return
         if model_class is Opportunity and not relation["opportunity"]:
             if partner_can_access_record(user, "Opportunity", related_obj):
                 relation["opportunity"] = related_obj
@@ -1540,33 +1594,64 @@ def _resolve_activity_relation_from_custom_record(custom_record, user):
             if partner_can_access_record(user, "Account", related_obj):
                 relation["account"] = related_obj
 
-    # Fallback: allow text fields labeled like account/opportunity/contact/lead.
-    if not any(relation.values()):
+    def _explore_record(record, depth):
+        if depth > max_depth:
+            return
+        record_key = (record.object_type_id, record.id)
+        if record_key in visited:
+            return
+        visited.add(record_key)
+
+        field_values = record.custom_field_values.select_related("field")
         for value in field_values:
             field = value.field
             if not field:
                 continue
-            field_name = (field.name or "").lower()
-            field_label = (field.label or "").lower()
             raw_value = value.value
-            if raw_value in (None, ""):
+            if raw_value in (None, "", "---"):
                 continue
-            if "account" in field_name or "account" in field_label:
-                account = _resolve_lookup_instance(Account, raw_value)
-                if account and partner_can_access_record(user, "Account", account):
-                    relation["account"] = account
-            if "opportunity" in field_name or "opportunity" in field_label:
-                opportunity = _resolve_lookup_instance(Opportunity, raw_value)
-                if opportunity and partner_can_access_record(user, "Opportunity", opportunity):
-                    relation["opportunity"] = opportunity
-            if "contact" in field_name or "contact" in field_label:
-                contact = _resolve_lookup_instance(Contact, raw_value)
-                if contact and partner_can_access_record(user, "Contact", contact):
-                    relation["contact"] = contact
-            if "lead" in field_name or "lead" in field_label:
-                lead = _resolve_lookup_instance(Lead, raw_value)
-                if lead and partner_can_access_record(user, "Lead", lead):
-                    relation["lead"] = lead
+
+            if field.data_type == "lookup":
+                model_class = resolve_lookup_model(field.lookup_model, field_name=field.name, field_label=field.label)
+                target_custom_object = None
+                if not model_class and field.lookup_model:
+                    target_custom_object = CustomObject.objects.filter(name__iexact=field.lookup_model).first()
+                    if target_custom_object:
+                        model_class = CustomRecord
+
+                if model_class in activity_models:
+                    related_obj = _resolve_lookup_instance(model_class, raw_value)
+                    _apply_relation(model_class, related_obj)
+                elif model_class is CustomRecord and target_custom_object and depth < max_depth:
+                    related_record = _resolve_custom_record(target_custom_object, raw_value)
+                    if related_record and partner_can_access_record(
+                        user,
+                        target_custom_object.name,
+                        related_record,
+                        custom_object=target_custom_object,
+                    ):
+                        _explore_record(related_record, depth + 1)
+
+        if not any(relation.values()):
+            for value in field_values:
+                field = value.field
+                if not field:
+                    continue
+                field_name = (field.name or "").lower()
+                field_label = (field.label or "").lower()
+                raw_value = value.value
+                if raw_value in (None, "", "---"):
+                    continue
+                if "account" in field_name or "account" in field_label:
+                    _apply_relation(Account, _resolve_lookup_instance(Account, raw_value))
+                if "opportunity" in field_name or "opportunity" in field_label:
+                    _apply_relation(Opportunity, _resolve_lookup_instance(Opportunity, raw_value))
+                if "contact" in field_name or "contact" in field_label:
+                    _apply_relation(Contact, _resolve_lookup_instance(Contact, raw_value))
+                if "lead" in field_name or "lead" in field_label:
+                    _apply_relation(Lead, _resolve_lookup_instance(Lead, raw_value))
+
+    _explore_record(custom_record, 0)
 
     account = relation["account"]
     if account and not (relation["opportunity"] or relation["contact"] or relation["lead"]):
@@ -1581,6 +1666,50 @@ def _resolve_activity_relation_from_custom_record(custom_record, user):
                 relation["opportunity"] = opportunity
 
     return relation
+
+
+def _get_activity_account_lookup_field():
+    fields = CustomField.objects.filter(object_type__iexact="Activity", data_type="lookup")
+    for field in fields:
+        lookup_model = (field.lookup_model or "").lower()
+        if lookup_model.endswith(".account") or lookup_model == "account" or lookup_model.endswith("account"):
+            return field
+    for field in fields:
+        name = (field.name or "").lower()
+        label = (field.label or "").lower()
+        if "account" in name or "account" in label:
+            return field
+    return None
+
+
+def _activity_account_lookup_filter(account):
+    field = _get_activity_account_lookup_field()
+    if not field or not account:
+        return None
+    values = [str(account.id)]
+    if getattr(account, "accid", None):
+        values.append(str(account.accid))
+    if getattr(account, "external_id", None):
+        values.append(str(account.external_id))
+    matching_ids = CustomFieldValue.objects.filter(
+        field=field,
+        value__in=values,
+    ).values("object_id")
+    return Q(id__in=Subquery(matching_ids))
+
+
+def _set_activity_account_lookup(activity, account):
+    field = _get_activity_account_lookup_field()
+    if not field or not activity or not account:
+        return False
+    content_type = ContentType.objects.get_for_model(Activity)
+    CustomFieldValue.objects.update_or_create(
+        field=field,
+        content_type=content_type,
+        object_id=activity.id,
+        defaults={"value": str(account.id)},
+    )
+    return True
 
 
 @login_required
@@ -1649,13 +1778,52 @@ def create_activity_api(request):
             opportunity_ref = get_object_or_404(Opportunity, pk=parent_id)
             if not partner_can_access_record(request.user, "Opportunity", opportunity_ref):
                 return HttpResponseForbidden("You do not have access to this opportunity.")
+    elif parent_object == "account":
+        try:
+            parent_id = int(parent_record_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid parent record id."}, status=400)
+
+        account = get_object_or_404(Account, pk=parent_id)
+        if not partner_can_access_record(request.user, "Account", account):
+            return HttpResponseForbidden("You do not have access to this account.")
+
+        if relation_object in {"lead", "contact", "opportunity"} and relation_identifier:
+            from agents.standard_record_agent import _find_lead, _find_contact, _find_opportunity
+
+            if relation_object == "lead":
+                lead_ref = _find_lead(relation_identifier)
+                if not lead_ref:
+                    return JsonResponse({"error": "Lead not found for this activity."}, status=404)
+                if not partner_can_access_record(request.user, "Lead", lead_ref):
+                    return HttpResponseForbidden("You do not have access to this lead.")
+            elif relation_object == "contact":
+                contact_ref = _find_contact(relation_identifier)
+                if not contact_ref:
+                    contact_ref = Contact.objects.filter(account=account, is_primary=True).first()
+                    if not contact_ref:
+                        contact_ref = Contact.objects.filter(account=account).order_by("-id").first()
+                if not contact_ref:
+                    return JsonResponse({"error": "Contact not found for this activity."}, status=404)
+                if not partner_can_access_record(request.user, "Contact", contact_ref):
+                    return HttpResponseForbidden("You do not have access to this contact.")
+            else:
+                opportunity_ref = _find_opportunity(relation_identifier)
+                if not opportunity_ref:
+                    return JsonResponse({"error": "Opportunity not found for this activity."}, status=404)
+                if not partner_can_access_record(request.user, "Opportunity", opportunity_ref):
+                    return HttpResponseForbidden("You do not have access to this opportunity.")
+        else:
+            account_field = _get_activity_account_lookup_field()
+            if not account_field:
+                return JsonResponse({"error": "Account lookup field not configured for activities."}, status=400)
     elif parent_object.endswith("__c"):
         try:
             parent_id = int(parent_record_id)
         except (TypeError, ValueError):
             return JsonResponse({"error": "Invalid parent record id."}, status=400)
 
-        custom_object = CustomObject.objects.filter(name=parent_object).first()
+        custom_object = CustomObject.objects.filter(name__iexact=parent_object).first()
         if not custom_object:
             return JsonResponse({"error": "Custom object not found."}, status=404)
         custom_record = get_object_or_404(CustomRecord, pk=parent_id, object_type=custom_object)
@@ -1666,8 +1834,9 @@ def create_activity_api(request):
         lead_ref = relation.get("lead")
         contact_ref = relation.get("contact")
         opportunity_ref = relation.get("opportunity")
-        if not any([lead_ref, contact_ref, opportunity_ref]):
-            return JsonResponse({"error": "No related Lead, Contact, or Opportunity found for this record."}, status=400)
+        account_ref = relation.get("account")
+        if not any([lead_ref, contact_ref, opportunity_ref, account_ref]):
+            return JsonResponse({"error": "No related Lead, Contact, Opportunity, or Account found for this record."}, status=400)
     else:
         if relation_object not in {"lead", "contact", "opportunity"} or not relation_identifier:
             return JsonResponse({"error": "Select a Lead, Contact, or Opportunity to relate this activity."}, status=400)
@@ -1718,6 +1887,11 @@ def create_activity_api(request):
         notes=str(data.get("notes") or ""),
         created_by=request.user,
     )
+    if parent_object == "account":
+        if not _set_activity_account_lookup(activity, account):
+            return JsonResponse({"error": "Account lookup field not configured for activities."}, status=400)
+    if parent_object.endswith("__c") and account_ref:
+        _set_activity_account_lookup(activity, account_ref)
 
     metadata = get_object_metadata("Activity")
     payload = serialize_record(

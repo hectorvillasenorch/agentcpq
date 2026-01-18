@@ -5308,7 +5308,7 @@ function openActivityCreateModal({ parentObject, parentRecordId, parentName, lis
   statusSelect.innerHTML = ACTIVITY_STATUS_OPTIONS.map((opt) => `<option value="${opt.value}">${opt.label}</option>`).join("");
 
   const normalizedObject = String(parentObject || "").toLowerCase();
-  const directRelation = ["lead", "contact", "opportunity"].includes(normalizedObject);
+  const directRelation = ["lead", "contact", "opportunity", "account"].includes(normalizedObject);
   const autoRelation = normalizedObject.includes("payment");
   const requiresRelationSelection = !directRelation && !autoRelation;
   const isAccount = normalizedObject === "account";
@@ -5536,6 +5536,10 @@ function openActivityCreateModal({ parentObject, parentRecordId, parentName, lis
   } else if (autoRelation) {
     relatedContainer.innerHTML = `
       <div class="activity-modal-related-note">This activity will be linked to the account on this payment.</div>
+    `;
+  } else if (isAccount) {
+    relatedContainer.innerHTML = `
+      <div class="activity-modal-related-note">This activity will be linked to this account.</div>
     `;
   } else {
     relatedContainer.innerHTML = "";
