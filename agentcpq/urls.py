@@ -15,6 +15,7 @@ urlpatterns = [
     path('agents/', include('agents.urls')),
     path('cpq/', include('cpq.urls')),
     path("salesforce/", include("salesforce.urls")),
+    path("app/salesforce/", include("salesforce.urls")),
     path("quickbooks/", include("quickbooks.urls")),
     path('admin/', admin.site.urls),
     path('hubspot/', include('hubspot.urls')),
