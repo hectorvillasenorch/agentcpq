@@ -3,6 +3,7 @@ from django import forms
 import json
 from django.contrib.auth.admin import GroupAdmin as DjangoGroupAdmin
 from django.contrib.auth.models import Group
+from django.db.models import JSONField
 from .models import (
     Quote,
     QuoteLine,
@@ -32,7 +33,8 @@ from .models import (
     ActionTrigger,
     EmailAlert,
     CustomAction,
-    ActionLog
+    ActionLog,
+    DomainEvent
 )
 from .models import PicklistValue
 from .forms import  get_dynamic_form
@@ -1084,6 +1086,35 @@ class ActionLogAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
         fields = [f for f in self.form().fields.keys() if f not in ['executed_at', 'updated_at']]
         return [(None, {'fields': fields})]
 admin.site.register(ActionLog, ActionLogAdmin)
+
+class DomainEventAdmin(UTCDisplayAdmin):
+    list_display = ("event_type", "object_type", "object_id", "source", "created_at_js")
+    list_filter = ("event_type", "object_type", "source", "created_at")
+    search_fields = ("event_type", "object_type", "object_id", "idempotency_key")
+    date_hierarchy = "created_at"
+    readonly_fields = (
+        "event_type",
+        "object_type",
+        "object_id",
+        "payload",
+        "idempotency_key",
+        "source",
+        "created_at",
+    )
+    formfield_overrides = {
+        JSONField: {"widget": JSONPrettyTextarea(rows=12)},
+    }
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_fieldsets(self, request, obj=None):
+        return [(None, {"fields": self.readonly_fields})]
+
+admin.site.register(DomainEvent, DomainEventAdmin)
 
 class CustomActionAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(CustomAction, crm="AgentCPQ", object_type="CustomAction")

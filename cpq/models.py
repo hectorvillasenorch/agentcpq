@@ -1,13 +1,14 @@
 from django.db import models, connection
 from django.db.models import Sum
-from datetime import datetime
+from datetime import datetime, timedelta
 from django.utils import timezone
 from django.core.validators import MinValueValidator
 from django.core.exceptions import ValidationError
 from django.core.files.images import get_image_dimensions
+from django.core.cache import cache
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_UP
 from django.contrib.postgres.fields import JSONField
 from django.db.models import JSONField
 from dateutil.relativedelta import relativedelta # type: ignore
@@ -364,7 +365,6 @@ class Opportunity(models.Model):
     stage = models.CharField(max_length=50, default=default_opportunity_stage)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     expected_close_date = models.DateField(blank=True, null=True)
-    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     primary_quote = models.ForeignKey(
         "Quote",
         on_delete=models.SET_NULL,  # Set to NULL if quote is deleted
@@ -446,6 +446,7 @@ class Product(models.Model):
     fixed_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal("0.00"))])
     family = models.CharField(max_length=50)
     prdid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, null=True, blank=True)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     is_active = models.BooleanField(default=True, help_text="Set to false to soft-hide this product without deleting it.")
 
@@ -496,12 +497,18 @@ class Option(models.Model):
 
 # Default expiration date for Quote model
 def default_expiration_date():
-        return timezone.now().date() + relativedelta(months=1)
+        try:
+            settings_obj = CPQSettings.safe_first() or CPQSettings()
+            days = settings_obj.quote_expiration_default_days or 30
+        except Exception:
+            days = 30
+        return timezone.now().date() + relativedelta(days=days)
 
 class Quote(models.Model):
     """Now linked to an Opportunity instead of a Customer."""
     STATUS_CHOICES = [
         ('Draft', 'Draft'),
+        ('Forecast', 'Forecast'),
         ('Pending Approval', 'Pending Approval'),
         ('Approved', 'Approved'),
         ('Rejected', 'Rejected'),
@@ -535,6 +542,7 @@ class Quote(models.Model):
     expiration_date = models.DateTimeField(default=default_expiration_date, blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
     qteid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, null=True, blank=True)
     hs_deal_id = models.CharField(max_length=64,blank=True,null=True,help_text="The HubSpot Deal ID linked to this quote")
     hs_primary = models.BooleanField(default=False,help_text="Marks this quote as the primary quote for the HubSpot deal")
     synced = models.BooleanField(default=False)
@@ -703,6 +711,7 @@ class QuoteLine(models.Model):
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
     parent_quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="parent_quote_lines", blank=True, null=True)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, null=True, blank=True)
     is_subscription = models.BooleanField(default=False)
     is_bundle_parent = models.BooleanField(default=False)
     is_bundle_child = models.BooleanField(default=False)
@@ -784,6 +793,24 @@ class QuoteLine(models.Model):
         else:
             self.total_price = base_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+    def apply_segment_pricing(self):
+        segments = list(self.segments.all().order_by("start_date", "end_date", "id"))
+        if not segments:
+            return False
+
+        total = Decimal("0.00")
+        for segment in segments:
+            total += Decimal(str(segment.total_price or 0))
+        self.subtotal = total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        self.total_price = self.subtotal
+        return True
+
+    def baseline_acv(self):
+        segments = list(self.segments.all().order_by("start_date", "end_date", "id"))
+        if segments:
+            return Decimal(str(segments[-1].total_price or 0))
+        return Decimal(str(self.total_price or 0))
+
     def check_term_is_not_null_for_subscriptions(self):
         if self.product and self.product.is_subscription:
             # Ensure the line reflects a subscription
@@ -811,6 +838,7 @@ class QuoteLine(models.Model):
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
+        settings_obj = None
 
         if is_new:
             # Auto-calculate price for bundles
@@ -821,7 +849,12 @@ class QuoteLine(models.Model):
                     if option.product_option and option.default_selected
                 ) or Decimal("0.00")
             elif self.unit_price is None:
-                self.unit_price = self.product.price
+                try:
+                    from cpq.pricing_engine import resolve_unit_price
+                    resolved_price = resolve_unit_price(self.product, self.quantity)
+                except Exception:
+                    resolved_price = None
+                self.unit_price = resolved_price if resolved_price is not None else self.product.price
         else:
             if self.product.is_bundle:
                 print(f"{self.product_name} is a bundle")
@@ -851,6 +884,13 @@ class QuoteLine(models.Model):
 
         #Chech term for subscriptions:
         self.check_term_is_not_null_for_subscriptions()
+
+        if self.pk and self.segments.exists():
+            settings_obj = CPQSettings.safe_first() or CPQSettings()
+            if settings_obj.ramp_deals_enabled:
+                self.apply_segment_pricing()
+                super().save(*args, **kwargs)
+                return
 
         # Detectar cambios en discount_* antes de recalcular
         if not is_new:
@@ -928,6 +968,258 @@ class ApprovalRule(models.Model):
             if not condition.matches(quote):
                 return False
         return True
+
+
+class PricingTierTable(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="pricing_tier_tables")
+    currency = models.CharField(max_length=10, blank=True, null=True)
+    uom = models.CharField(max_length=20, blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    effective_start_date = models.DateField(null=True, blank=True)
+    effective_end_date = models.DateField(null=True, blank=True)
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Pricing Tier Table"
+        verbose_name_plural = "Pricing Tier Tables"
+
+    def __str__(self):
+        suffix = f" ({self.currency})" if self.currency else ""
+        return f"{self.product.name} Pricing Table{suffix}"
+
+    def clean(self):
+        if self.effective_start_date and self.effective_end_date:
+            if self.effective_start_date > self.effective_end_date:
+                raise ValidationError("Effective start date cannot be after end date.")
+
+        if self.is_active and self.product_id:
+            qs = PricingTierTable.objects.filter(product=self.product, is_active=True)
+            if self.currency is None:
+                qs = qs.filter(currency__isnull=True)
+            else:
+                qs = qs.filter(currency=self.currency)
+            if self.uom is None:
+                qs = qs.filter(uom__isnull=True)
+            else:
+                qs = qs.filter(uom=self.uom)
+            if self.pk:
+                qs = qs.exclude(pk=self.pk)
+            if qs.exists():
+                raise ValidationError(
+                    "Only one active pricing table is allowed per product/currency/UOM."
+                )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class PricingTierRow(models.Model):
+    pricing_table = models.ForeignKey(
+        PricingTierTable,
+        on_delete=models.CASCADE,
+        related_name="tier_rows",
+    )
+    min_quantity = models.PositiveIntegerField()
+    max_quantity = models.PositiveIntegerField(null=True, blank=True)
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2)
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["min_quantity"]
+
+    def __str__(self):
+        max_label = self.max_quantity if self.max_quantity is not None else "∞"
+        return f"{self.pricing_table.product.name}: {self.min_quantity}-{max_label}"
+
+    @staticmethod
+    def _ranges_overlap(min_a, max_a, min_b, max_b):
+        max_a = max_a if max_a is not None else float("inf")
+        max_b = max_b if max_b is not None else float("inf")
+        return min_a <= max_b and min_b <= max_a
+
+    def clean(self):
+        if self.max_quantity is not None and self.max_quantity < self.min_quantity:
+            raise ValidationError("Max quantity must be greater than or equal to min quantity.")
+
+        if self.pricing_table_id:
+            qs = PricingTierRow.objects.filter(pricing_table=self.pricing_table)
+            if self.pk:
+                qs = qs.exclude(pk=self.pk)
+            for row in qs:
+                if self._ranges_overlap(
+                    self.min_quantity,
+                    self.max_quantity,
+                    row.min_quantity,
+                    row.max_quantity,
+                ):
+                    raise ValidationError(
+                        "Pricing tier ranges cannot overlap within the same table."
+                    )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class QuoteLineSegment(models.Model):
+    quote_line = models.ForeignKey(QuoteLine, on_delete=models.CASCADE, related_name="segments")
+    start_date = models.DateField()
+    end_date = models.DateField()
+    quantity = models.PositiveIntegerField(default=1)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    total_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "start_date"]
+
+    def __str__(self):
+        return f"{self.quote_line_id} segment {self.start_date} - {self.end_date}"
+
+    def _quantize(self, value):
+        settings_obj = CPQSettings.safe_first() or CPQSettings()
+        precision = settings_obj.decimal_precision or 2
+        rounding_mode = (settings_obj.rounding_mode or "HALF_EVEN").upper()
+        rounding_map = {
+            "HALF_EVEN": ROUND_HALF_EVEN,
+            "HALF_UP": ROUND_HALF_UP,
+            "UP": ROUND_UP,
+            "DOWN": ROUND_DOWN,
+        }
+        quant = Decimal("1").scaleb(-int(precision))
+        return value.quantize(quant, rounding=rounding_map.get(rounding_mode, ROUND_HALF_EVEN))
+
+    def _update_pricing(self):
+        unit_price = Decimal(str(self.unit_price or 0))
+        discount_per_unit = Decimal("0.00")
+        if self.discount_amount and Decimal(str(self.discount_amount)) > 0:
+            discount_per_unit = Decimal(str(self.discount_amount))
+        elif self.discount_percentage and Decimal(str(self.discount_percentage)) > 0:
+            discount_per_unit = self._quantize(
+                unit_price * Decimal(str(self.discount_percentage)) / Decimal("100.00")
+            )
+
+        discount_per_unit = min(discount_per_unit, unit_price)
+        self.subtotal = self._quantize(unit_price - discount_per_unit)
+        qty = Decimal(str(self.quantity or 0))
+        self.total_price = self._quantize(self.subtotal * qty)
+
+    def clean(self):
+        settings_obj = CPQSettings.safe_first() or CPQSettings()
+        if not settings_obj.ramp_deals_enabled:
+            raise ValidationError("Ramp deals are disabled.")
+
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValidationError("Segment start date cannot be after end date.")
+
+        if not self.quote_line_id:
+            return
+
+        segments = list(
+            QuoteLineSegment.objects.filter(quote_line=self.quote_line).exclude(pk=self.pk)
+        )
+        segments.append(self)
+        segments.sort(key=lambda seg: (seg.start_date, seg.end_date, seg.pk or 0))
+
+        for idx in range(1, len(segments)):
+            prev = segments[idx - 1]
+            current = segments[idx]
+            if current.start_date <= prev.end_date:
+                raise ValidationError("Quote line segments cannot overlap.")
+            expected_start = prev.end_date + timedelta(days=1)
+            if current.start_date != expected_start:
+                raise ValidationError("Quote line segments must be contiguous with no gaps.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        self._update_pricing()
+        super().save(*args, **kwargs)
+
+        settings_obj = CPQSettings.safe_first() or CPQSettings()
+        if settings_obj.ramp_deals_enabled and self.quote_line_id:
+            quote_line = self.quote_line
+            quote_line.apply_segment_pricing()
+            quote_line.save(update_fields=["subtotal", "total_price"])
+
+        if (self.discount_amount and Decimal(str(self.discount_amount)) > 0) or (
+            self.discount_percentage and Decimal(str(self.discount_percentage)) > 0
+        ):
+            try:
+                from cpq.events import emit_domain_event
+                event_key = f"{self.id}:{self.discount_amount}:{self.discount_percentage}:{self.total_price}"
+                emit_domain_event(
+                    "SEGMENT.DISCOUNT_APPLIED",
+                    payload={
+                        "segment_id": self.id,
+                        "quote_line_id": self.quote_line_id,
+                        "discount_amount": str(self.discount_amount or 0),
+                        "discount_percentage": str(self.discount_percentage or 0),
+                        "total_price": str(self.total_price or 0),
+                    },
+                    object_type="QuoteLineSegment",
+                    object_id=self.id,
+                    source="segment_pricing",
+                    idempotency_key=event_key,
+                )
+            except Exception:
+                pass
+
+
+class Amendment(models.Model):
+    subscription = models.ForeignKey("Subscription", on_delete=models.CASCADE, related_name="amendments")
+    quote = models.ForeignKey(Quote, on_delete=models.SET_NULL, null=True, blank=True, related_name="amendments")
+    amendment_type = models.CharField(max_length=30, blank=True)
+    effective_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=30, blank=True)
+    proration_multiplier = models.DecimalField(max_digits=10, decimal_places=6, null=True, blank=True)
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Amendment {self.public_id}"
+
+
+class AmendmentDelta(models.Model):
+    amendment = models.ForeignKey(Amendment, on_delete=models.CASCADE, related_name="deltas")
+    field_name = models.CharField(max_length=255)
+    old_value = JSONField(null=True, blank=True)
+    new_value = JSONField(null=True, blank=True)
+    delta_value = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    prorated_value = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("amendment", "field_name")
+
+    def __str__(self):
+        return f"{self.amendment_id}::{self.field_name}"
+
+
+class Renewal(models.Model):
+    subscription = models.ForeignKey("Subscription", on_delete=models.CASCADE, related_name="renewals")
+    quote = models.ForeignKey(Quote, on_delete=models.SET_NULL, null=True, blank=True, related_name="renewals")
+    renewal_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=30, blank=True)
+    forecast_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Renewal {self.public_id}"
+
 
 class BusinessRule(models.Model):
     RULE_TYPES = [
@@ -1102,6 +1394,7 @@ class Subscription(models.Model):
     quote_line = models.OneToOneField(QuoteLine, on_delete=models.CASCADE, related_name="subscription")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="subscriptions")
     contract = models.ForeignKey(Contract, on_delete=models.CASCADE, related_name="subscriptions")
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, null=True, blank=True)
     start_date = models.DateField()
     end_date = models.DateField()
     billing_cycle = models.CharField(
@@ -1176,6 +1469,7 @@ class PricebookEntry(models.Model):
     pricebook = models.ForeignKey(Pricebook, on_delete=models.CASCADE, related_name="entries")
     salesforce_id = models.CharField(max_length=18, unique=True, blank=True, null=True)  # ✅ SF PricebookEntry ID
     unit_price = models.DecimalField(max_digits=12, decimal_places=2)
+    currency_iso_code = models.CharField(max_length=3, blank=True, null=True)
 
     def __str__(self):
         return f"{self.product.name} in {self.pricebook.name} - ${self.unit_price}"
@@ -1628,6 +1922,57 @@ class QuoteUIRender(models.Model):
 
     def __str__(self):
         return f"QuoteUI Settings"
+
+
+class CPQSettings(models.Model):
+    CACHE_KEY = "cpq_settings:default"
+    CACHE_TTL_SECONDS = 300
+
+    renewal_forecast_window_days = models.PositiveIntegerField(default=90)
+    quote_expiration_default_days = models.PositiveIntegerField(default=30)
+    decimal_precision = models.PositiveSmallIntegerField(default=2)
+    rounding_mode = models.CharField(max_length=20, default="HALF_EVEN")
+    proration_enabled = models.BooleanField(default=True)
+    proration_method = models.CharField(max_length=30, default="MONTHLY_SIMPLE")
+    day_count_convention = models.CharField(max_length=20, default="ACTUAL")
+    forecast_opportunity_enabled = models.BooleanField(default=True)
+    forecast_opportunity_creation_mode = models.CharField(max_length=30, default="RENEWAL_ONLY")
+    forecast_opportunity_stage = models.CharField(max_length=50, default="Forecast")
+    forecast_opportunity_probability = models.PositiveSmallIntegerField(default=70)
+    forecast_amount_strategy = models.CharField(max_length=40, default="TOTAL_CONTRACT_VALUE")
+    auto_recalculate_renewals_on_amendment = models.BooleanField(default=True)
+    ramp_deals_enabled = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "CPQ Settings"
+        verbose_name_plural = "CPQ Settings"
+
+    @classmethod
+    def safe_first(cls):
+        try:
+            return cls.objects.first()
+        except (OperationalError, ProgrammingError):
+            return None
+
+    @classmethod
+    def load_cached(cls, *, force_refresh=False):
+        if not force_refresh:
+            cached = cache.get(cls.CACHE_KEY)
+            if cached:
+                return cached
+
+        settings_obj = cls.safe_first()
+        if not settings_obj:
+            settings_obj = cls.objects.create()
+
+        cache.set(cls.CACHE_KEY, settings_obj, cls.CACHE_TTL_SECONDS)
+        return settings_obj
+
+    def __str__(self):
+        return "CPQ Settings"
 
 class ActionUsage(models.Model):
     action = models.CharField(max_length=100)  # e.g., "CreateQuote", "UpdateQuoteLine"
@@ -2149,3 +2494,19 @@ class ActionLog(models.Model):
 
     def __str__(self):
         return f"[{self.executed_at.strftime('%Y-%m-%d %H:%M')}] {self.operation} → {self.target_model} ({self.status})"
+
+
+class DomainEvent(models.Model):
+    event_type = models.CharField(max_length=100, db_index=True)
+    object_type = models.CharField(max_length=100, null=True, blank=True)
+    object_id = models.CharField(max_length=100, null=True, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    idempotency_key = models.CharField(max_length=200, unique=True)
+    source = models.CharField(max_length=100, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.event_type} ({self.created_at:%Y-%m-%d %H:%M:%S})"

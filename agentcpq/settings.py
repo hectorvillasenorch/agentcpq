@@ -236,9 +236,13 @@ DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 # Salesforce OAuth settings for your connected app
 SALESFORCE_CLIENT_ID = os.getenv("SF_CID")
 SALESFORCE_CLIENT_SECRET = os.getenv("SF_SECRET")
-SALESFORCE_REDIRECT_URI = "https://b377-2607-fb91-a06-c34d-44ac-db3b-c577-9f3a.ngrok-free.app/salesforce/callback"
+SALESFORCE_REDIRECT_URI = os.getenv(
+    "SALESFORCE_REDIRECT_URI",
+    "https://agentcpq-staging-60c9c1a8f187.herokuapp.com/salesforce/callback",
+)
 SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/authorize"
 SALESFORCE_TOKEN_URL = os.getenv("SALESFORCE_TOKEN_URL", "https://login.salesforce.com/services/oauth2/token")
+SALESFORCE_OAUTH_SCOPES = os.getenv("SALESFORCE_OAUTH_SCOPES", "api refresh_token")
 
 def _clean_mail_credential(value):
     if value is None:

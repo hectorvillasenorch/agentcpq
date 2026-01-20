@@ -28,6 +28,9 @@ def salesforce_login(request):
         "code_challenge": code_challenge,  # ✅ Add PKCE challenge
         "code_challenge_method": "S256",  # ✅ Specify S256 hashing method
     }
+    scopes = (settings.SALESFORCE_OAUTH_SCOPES or "").strip()
+    if scopes:
+        params["scope"] = scopes
 
     auth_url = f"{settings.SALESFORCE_AUTH_URL}?{urllib.parse.urlencode(params)}"
     return redirect(auth_url)

@@ -70,6 +70,10 @@
             border-radius: 8px !important;
             width: 100%;
         }
+        .crm-input.suggested {
+            border-color: #64b5f6 !important;
+            background-color: #e3f2fd !important;
+        }
 
     </style>
 </head>
@@ -195,20 +199,30 @@
         tableBody.innerHTML = "";
 
         let crmFields = [];
+        let suggestions = {};
+        let confidenceThreshold = 0.85;
 
         try {
-            const res = await fetch(`/cpq/hubspot/schema/?object_type=${objectType}`);
+            const crm = document.getElementById("crm").value;
+            const res = await fetch(`/cpq/crm/schema/?crm=${crm}&object_type=${objectType}`);
             const data = await res.json();
 
             if (data.error) {
-                console.warn("⚠️ HubSpot schema fetch failed:", data.error);
+                console.warn("⚠️ CRM schema fetch failed:", data.error);
                 M.toast({ html: "⚠️ CRM fields not available", classes: "orange lighten-1" });
             } else {
-                crmFields = data.fields;
+                suggestions = data.suggestions || {};
+                confidenceThreshold = data.confidence_threshold || confidenceThreshold;
+                crmFields = (data.fields || []).map(field => {
+                    if (typeof field === "string") {
+                        return { name: field, label: field };
+                    }
+                    return field;
+                });
             }
 
         } catch (err) {
-            console.error("HubSpot schema fetch error:", err);
+            console.error("CRM schema fetch error:", err);
             M.toast({ html: "⚠️ Failed to fetch CRM schema", classes: "orange lighten-1" });
         }
 
@@ -230,8 +244,16 @@
 
     // ✅ Pre-fill saved mapping from DB
     const saved = fieldMappings[field];
+    const suggestion = suggestions[field];
     if (saved) {
         input.value = saved;
+    } else if (suggestion && suggestion.auto_apply) {
+        input.value = suggestion.crm_field;
+        input.classList.add("suggested");
+        input.title = `Suggested (${suggestion.source}, ${suggestion.confidence})`;
+    } else if (suggestion && suggestion.crm_field) {
+        input.placeholder = `Suggested: ${suggestion.crm_field}`;
+        input.title = `Suggestion (${suggestion.source}, ${suggestion.confidence})`;
     }
 
     // ✅ Attach datalist for CRM suggestions (if available)
@@ -242,9 +264,12 @@
         const dataList = document.createElement("datalist");
         dataList.id = dataListId;
 
-        crmFields.forEach(fieldName => {
+        crmFields.forEach(fieldData => {
             const option = document.createElement("option");
-            option.value = fieldName;
+            option.value = fieldData.name;
+            if (fieldData.label) {
+                option.label = fieldData.label;
+            }
             dataList.appendChild(option);
         });
 

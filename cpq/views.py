@@ -38,6 +38,7 @@ from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
 from django.apps import apps
 from salesforce.models import SalesforceToken
+from salesforce.utils import fetch_salesforce_object_fields, validate_salesforce_connection
 from hubspot.models import HubspotToken
 from quickbooks.models import QuickbooksToken
 from django.core.serializers.json import DjangoJSONEncoder
@@ -99,6 +100,7 @@ from agents.models import ChatSession, ChatMessage
 from agents.utils.analytics_agent.handle_helpers import get_object_metadata
 from agents.utils.quote_agent.general_helpers import get_quote_details
 from agents.utils.record_agent.handle_helpers import serialize_record
+from cpq.field_mapping_utils import CONFIDENCE_THRESHOLD, suggest_field_mappings
 
 
 @login_required
@@ -2140,6 +2142,80 @@ MODEL_CHOICES = {
     "Contact": "Contact",
 }
 
+HUBSPOT_OBJECT_MAP = {
+    "Opportunity": "deals",
+    "Account": "companies",
+    "Contact": "contacts",
+    "Product": "products",
+    "Quote": "quotes",
+    "QuoteLine": "line_items",
+}
+
+SALESFORCE_OBJECT_MAP = {
+    "Opportunity": "Opportunity",
+    "Account": "Account",
+    "Contact": "Contact",
+    "Product": "Product2",
+    "Quote": "Quote",
+    "QuoteLine": "QuoteLineItem",
+}
+
+
+def _get_local_fields_for_object_type(object_type):
+    if object_type not in MODEL_CHOICES:
+        return None
+    model = apps.get_model("cpq", MODEL_CHOICES[object_type])
+    return [field.name for field in model._meta.fields]
+
+
+@login_required
+def crm_schema_api(request):
+    crm = request.GET.get("crm", "AgentCPQ")
+    object_type = request.GET.get("object_type", "Opportunity")
+    local_fields = _get_local_fields_for_object_type(object_type)
+    if local_fields is None:
+        return JsonResponse({"error": "Invalid object type"}, status=400)
+
+    fields = []
+    if crm == "HubSpot":
+        hs_object = HUBSPOT_OBJECT_MAP.get(object_type)
+        if not hs_object:
+            return JsonResponse({"error": "Unsupported object"}, status=400)
+        try:
+            token = HubspotToken.objects.get(user_id="default")
+            headers = {"Authorization": f"Bearer {token.access_token}"}
+            url = f"https://api.hubapi.com/crm/v3/properties/{hs_object}"
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code != 200:
+                return JsonResponse({"error": "HubSpot schema fetch failed"}, status=502)
+            props = res.json().get("results", [])
+            fields = [
+                {"name": p.get("name"), "label": p.get("label") or p.get("name")}
+                for p in props
+                if p.get("name") and not p.get("hidden")
+            ]
+        except Exception as exc:
+            return JsonResponse({"error": str(exc)}, status=500)
+    elif crm == "Salesforce":
+        sf_object = SALESFORCE_OBJECT_MAP.get(object_type)
+        if not sf_object:
+            return JsonResponse({"error": "Unsupported object"}, status=400)
+        token = SalesforceToken.objects.first()
+        if not token:
+            return JsonResponse({"error": "Salesforce authentication not found"}, status=401)
+        fields, response = fetch_salesforce_object_fields(token, sf_object, timeout=8)
+        if fields is None:
+            return JsonResponse({"error": "Salesforce schema fetch failed"}, status=502)
+    else:
+        fields = []
+
+    suggestions = suggest_field_mappings(local_fields, fields)
+    return JsonResponse({
+        "fields": fields,
+        "suggestions": suggestions,
+        "confidence_threshold": CONFIDENCE_THRESHOLD,
+    })
+
 def field_mapping_view(request):
     """Dynamically fetch schema fields for the selected CRM and object type."""
 
@@ -2706,7 +2782,27 @@ def admin_integrations(request):
     except requests.RequestException:
         hubspot_connected = False
 
-    salesforce_connected = SalesforceToken.objects.exists()
+    salesforce_token = SalesforceToken.objects.first()
+    if salesforce_token:
+        salesforce_status = validate_salesforce_connection(salesforce_token, timeout=6)
+        salesforce_connected = salesforce_status.get("authenticated", False)
+        salesforce_permissions_ok = all(
+            salesforce_status.get("permissions", {}).values()
+        )
+        salesforce_tooling_ok = salesforce_status.get("tooling_api_enabled", False)
+    else:
+        salesforce_status = {
+            "authenticated": False,
+            "permissions": {
+                "CustomizeApplication": False,
+                "ModifyAllData": False,
+            },
+            "tooling_api_enabled": False,
+            "errors": ["missing_token"],
+        }
+        salesforce_connected = False
+        salesforce_permissions_ok = False
+        salesforce_tooling_ok = False
     quickbooks_connected = QuickbooksToken.objects.exists()
     docusign_connected = False
 
@@ -2716,6 +2812,9 @@ def admin_integrations(request):
         "company": company or Tenant(),
         "hubspot_connected": hubspot_connected,
         "salesforce_connected": salesforce_connected,
+        "salesforce_permissions_ok": salesforce_permissions_ok,
+        "salesforce_tooling_ok": salesforce_tooling_ok,
+        "salesforce_status": salesforce_status,
         "quickbooks_connected": quickbooks_connected,
         "docusign_connected": docusign_connected,
     })
