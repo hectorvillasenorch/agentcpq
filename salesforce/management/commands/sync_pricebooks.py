@@ -14,7 +14,11 @@ PRICEBOOK_SOQL = (
 
 PRICEBOOK_ENTRY_SOQL = (
     "SELECT Id, Pricebook2Id, Product2Id, UnitPrice, CurrencyIsoCode, IsActive "
-    "FROM PricebookEntry WHERE IsActive = true"
+    "FROM PricebookEntry WHERE IsActive = true AND Pricebook2Id != null"
+)
+PRICEBOOK_ENTRY_SOQL_FALLBACK = (
+    "SELECT Id, Pricebook2Id, Product2Id, UnitPrice, IsActive "
+    "FROM PricebookEntry WHERE IsActive = true AND Pricebook2Id != null"
 )
 
 
@@ -52,9 +56,22 @@ class Command(BaseCommand):
 
         entries, response = soql_query_all(token, PRICEBOOK_ENTRY_SOQL, timeout=timeout)
         if entries is None:
-            raise CommandError(
-                f"Failed to fetch pricebook entries (HTTP {response.status_code})."
-            )
+            if response is not None and response.status_code == 400:
+                self.stderr.write(
+                    self.style.WARNING(
+                        f"Primary PricebookEntry query failed: {response.text}"
+                    )
+                )
+                entries, response = soql_query_all(
+                    token,
+                    PRICEBOOK_ENTRY_SOQL_FALLBACK,
+                    timeout=timeout,
+                )
+            if entries is None:
+                details = response.text if response is not None else "no response"
+                raise CommandError(
+                    f"Failed to fetch pricebook entries (HTTP {response.status_code}). {details}"
+                )
 
         dry_run = options["dry_run"]
         created_books = 0
