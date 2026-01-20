@@ -240,8 +240,8 @@ SALESFORCE_REDIRECT_URI = os.getenv(
     "SALESFORCE_REDIRECT_URI",
     "https://agentcpq-staging-60c9c1a8f187.herokuapp.com/salesforce/callback",
 )
-SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/authorize"
-SALESFORCE_TOKEN_URL = os.getenv("SALESFORCE_TOKEN_URL", "https://login.salesforce.com/services/oauth2/token")
+SALESFORCE_AUTH_URL = "https://playful-fox-8a6c6r-dev-ed.my.salesforce.com/services/oauth2/authorize"
+SALESFORCE_TOKEN_URL = "https://playful-fox-8a6c6r-dev-ed.my.salesforce.com/services/oauth2/token"
 SALESFORCE_OAUTH_SCOPES = os.getenv("SALESFORCE_OAUTH_SCOPES", "api refresh_token")
 
 def _clean_mail_credential(value):
