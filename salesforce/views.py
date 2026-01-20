@@ -53,6 +53,8 @@ def salesforce_callback(request):
         "code": code,
         "code_verifier": code_verifier,
     }
+    if settings.SALESFORCE_CLIENT_SECRET:
+        payload["client_secret"] = settings.SALESFORCE_CLIENT_SECRET
 
     token_response = requests.post(settings.SALESFORCE_TOKEN_URL, data=payload)
     token_data = token_response.json()
