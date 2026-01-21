@@ -87,6 +87,10 @@ def get_or_create_account_and_opportunity(user, extracted_details, session_data)
     elif not account.created_by:
         account.created_by = user
         account.save(update_fields=["created_by"])
+    sf_account_id = session_data.get("sf_account_id")
+    if sf_account_id and not account.external_id:
+        account.external_id = sf_account_id
+        account.save(update_fields=["external_id"])
 
     if not opportunity_name:
         existing_opps = Opportunity.objects.filter(account=account)

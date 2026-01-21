@@ -6,6 +6,7 @@ from salesforce.views import (
     test_salesforce_api,
     sync_quote_to_salesforce,
     sync_salesforce_products_view,
+    start_quote_from_salesforce,
 )
 
 urlpatterns = [
@@ -16,4 +17,5 @@ urlpatterns = [
     path("test-api/", test_salesforce_api, name="test_salesforce_api"),
     path("sync-quote/<int:quote_id>/", sync_quote_to_salesforce, name="sync_quote_to_salesforce"),
     path("sync-products/", sync_salesforce_products_view, name="sync_salesforce_products"),
+    path("start-quote/", start_quote_from_salesforce, name="start_quote_from_salesforce"),
 ]

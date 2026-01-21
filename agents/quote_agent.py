@@ -202,6 +202,10 @@ def create_quote(user,user_message, session_data):
             owner=user,
             created_by=user
         )
+        sf_opportunity_id = session_data.get("sf_opportunity_id")
+        if sf_opportunity_id and not quote.sf_opportunity_id:
+            quote.sf_opportunity_id = sf_opportunity_id
+            quote.save(update_fields=["sf_opportunity_id"])
     except Exception as exc:
         logging.exception("⚠️ Failed to create quote (possible signal contention)", exc_info=exc)
         return {

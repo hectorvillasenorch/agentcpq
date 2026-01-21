@@ -8,13 +8,15 @@ from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.core.management import call_command
 from io import StringIO
+from django.contrib.auth.decorators import login_required
 import pkce
 import requests
 from cpq.models import Quote, QuoteLine
 import logging
 import datetime
 from datetime import timezone as dt_timezone
-from salesforce.utils import get_valid_salesforce_token
+from salesforce.utils import get_valid_salesforce_token, soql_query_all
+from agents.utils.session_context_helpers.session_context_helpers import get_session_context
 
 def salesforce_login(request):
     """Redirect the user to Salesforce OAuth login using PKCE."""
@@ -245,3 +247,74 @@ def sync_salesforce_products_view(request):
 
     next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or reverse("dashboard")
     return redirect(next_url)
+
+
+@login_required
+def start_quote_from_salesforce(request):
+    sf_opportunity_id = request.GET.get("opportunity_id") or request.GET.get("sf_opportunity_id")
+    sf_account_id = request.GET.get("account_id") or request.GET.get("sf_account_id")
+
+    if not sf_opportunity_id and not sf_account_id:
+        messages.error(request, "Missing Salesforce Account or Opportunity ID.")
+        return redirect("dashboard")
+
+    token = get_valid_salesforce_token(timeout=6)
+    if not token:
+        messages.error(request, "Salesforce connection missing. Please authenticate first.")
+        return redirect("cpq:admin_integrations")
+
+    account_name = None
+    opportunity_name = None
+
+    if sf_opportunity_id:
+        soql = (
+            "SELECT Id, Name, AccountId, Account.Name "
+            f"FROM Opportunity WHERE Id = '{sf_opportunity_id}'"
+        )
+        records, response = soql_query_all(token, soql, timeout=6)
+        if records is None or not records:
+            messages.error(request, "Salesforce opportunity not found.")
+            return redirect("dashboard")
+        record = records[0]
+        opportunity_name = record.get("Name")
+        sf_account_id = record.get("AccountId") or sf_account_id
+        account = record.get("Account") or {}
+        account_name = account.get("Name")
+
+    if sf_account_id and not account_name:
+        soql = (
+            "SELECT Id, Name "
+            f"FROM Account WHERE Id = '{sf_account_id}'"
+        )
+        records, response = soql_query_all(token, soql, timeout=6)
+        if records is None or not records:
+            messages.error(request, "Salesforce account not found.")
+            return redirect("dashboard")
+        account_name = records[0].get("Name")
+
+    if not account_name:
+        messages.error(request, "Could not resolve a Salesforce account name.")
+        return redirect("dashboard")
+
+    session_data = request.session.get("session_data", {})
+    current_state, _ = get_session_context("create_quote", session_data)
+    if isinstance(current_state, dict):
+        data = current_state.setdefault("data", {})
+        data["account"] = account_name
+        if opportunity_name:
+            data["opportunity"] = opportunity_name
+    session_data["account"] = account_name
+    if opportunity_name:
+        session_data["opportunity"] = opportunity_name
+    if sf_account_id:
+        session_data["sf_account_id"] = sf_account_id
+    if sf_opportunity_id:
+        session_data["sf_opportunity_id"] = sf_opportunity_id
+    request.session["session_data"] = session_data
+
+    if opportunity_name:
+        auto_prompt = f"Create a quote for account {account_name} under opportunity {opportunity_name}."
+    else:
+        auto_prompt = f"Create a quote for account {account_name}."
+
+    return redirect(f"{reverse('dashboard')}?view=agents&new_chat=true&auto_prompt={urllib.parse.quote(auto_prompt)}")

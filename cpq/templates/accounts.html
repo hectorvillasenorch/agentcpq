@@ -637,6 +637,13 @@
                                                                 {% endif %}
                                                             </div>
                                                             <div class="quote-actions">
+                                                                <button type="button"
+                                                                        class="quote-action-button"
+                                                                        title="Sync quote to Salesforce"
+                                                                        aria-label="Sync quote to Salesforce"
+                                                                        onclick="syncSalesforceQuote({{ quote.id }}, this)">
+                                                                    <i class="material-icons" style="font-size: 18px;" aria-hidden="true">cloud</i>
+                                                                </button>
                                                                 {% if quote.hs_deal_id %}
                                                                     <button type="button"
                                                                             class="quote-action-button quote-action-button--success"
@@ -644,14 +651,6 @@
                                                                             aria-label="Synced to HubSpot"
                                                                             disabled>
                                                                         <i class="material-icons" aria-hidden="true">check_circle</i>
-                                                                    </button>
-                                                                {% else %}
-                                                                    <button type="button"
-                                                                            class="quote-action-button"
-                                                                            title="Sync quote to HubSpot"
-                                                                            aria-label="Sync quote to HubSpot"
-                                                                            onclick="syncQuote({{ quote.id }}, this)">
-                                                                        <i class="material-icons" aria-hidden="true">sync</i>
                                                                     </button>
                                                                 {% endif %}
                                                                 {% if quote.quickbooks_invoice_id %}
@@ -790,8 +789,8 @@
       performFilter();
     }
 
-    async function syncQuote(quoteId, button = null) {
-        const csrfToken = document.querySelector("input[name='csrfmiddlewaretoken']")?.value;
+    async function syncSalesforceQuote(quoteId, button = null) {
+        const csrfToken = getCookie('csrftoken');
 
         if (button) {
             button.disabled = true;
@@ -816,7 +815,7 @@
                 alert("✅ " + data.message);
                 if (button) {
                     button.classList.remove('quote-action-button--loading');
-                    button.outerHTML = `<button type="button" class="quote-action-button quote-action-button--success" title="Synced to HubSpot" aria-label="Synced to HubSpot" disabled>
+                    button.outerHTML = `<button type="button" class="quote-action-button quote-action-button--success" title="Synced to Salesforce" aria-label="Synced to Salesforce" disabled>
                         <i class=\"material-icons\" aria-hidden=\"true\">check_circle</i>
                     </button>`;
                     replacedWithSuccess = true;
@@ -825,12 +824,12 @@
                 throw new Error(data.message || JSON.stringify(data));
             }
         } catch (error) {
-            alert("❌ Sync Failed: " + error.message);
+            alert("❌ Salesforce sync failed: " + error.message);
         } finally {
             if (button && !replacedWithSuccess) {
                 button.disabled = false;
                 button.classList.remove('quote-action-button--loading');
-                button.innerHTML = '<span class="material-icons" aria-hidden="true">sync</span>';
+                button.innerHTML = '<i class="material-icons" style="font-size: 18px;" aria-hidden="true">cloud</i>';
             }
         }
     }
