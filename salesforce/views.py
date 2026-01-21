@@ -3,6 +3,11 @@ from django.http import JsonResponse, HttpResponseRedirect
 from django.conf import settings
 from salesforce.models import SalesforceToken
 from django.shortcuts import redirect
+from django.urls import reverse
+from django.views.decorators.http import require_POST
+from django.contrib import messages
+from django.core.management import call_command
+from io import StringIO
 import pkce
 import requests
 from cpq.models import Quote, QuoteLine
@@ -223,3 +228,20 @@ def sync_quote_to_salesforce(request, quote_id):
         "synced_opportunity": opportunity_id,
         "failed_line_items": failed_lines
     })
+
+
+@require_POST
+def sync_salesforce_products_view(request):
+    stdout = StringIO()
+    try:
+        call_command("sync_products", stdout=stdout, stderr=stdout)
+        output = stdout.getvalue().strip()
+        if output:
+            messages.success(request, output)
+        else:
+            messages.success(request, "Salesforce product sync complete.")
+    except Exception as exc:
+        messages.error(request, f"Salesforce product sync failed: {exc}")
+
+    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or reverse("dashboard")
+    return redirect(next_url)

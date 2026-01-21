@@ -396,6 +396,14 @@
       </button>
     </form>
 
+    <form action="{% url 'sync_salesforce_products' %}" method="post" style="margin: 0;">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <button type="submit" class="custom-sync-btn" title="Sync Salesforce Products">
+        <i class="material-icons" style="font-size: 20px; margin-right: 1px;">cloud</i>
+      </button>
+    </form>
+
     <form action="{% url 'quickbooks:sync_quickbooks_products' %}" method="post" style="margin: 0;">
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ request.get_full_path }}">
