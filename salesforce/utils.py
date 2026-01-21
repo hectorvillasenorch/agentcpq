@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import datetime
 import requests
+from django.conf import settings
 from django.utils import timezone
+
+from salesforce.models import SalesforceToken
 
 SF_API_VERSION = "v57.0"
 
@@ -11,6 +15,64 @@ def _salesforce_headers(token):
         "Authorization": f"Bearer {token.access_token}",
         "Content-Type": "application/json",
     }
+
+
+def refresh_salesforce_token(token, timeout=6):
+    if not token or not token.refresh_token:
+        return None
+
+    payload = {
+        "grant_type": "refresh_token",
+        "client_id": settings.SALESFORCE_CLIENT_ID,
+        "refresh_token": token.refresh_token,
+    }
+    if settings.SALESFORCE_CLIENT_SECRET:
+        payload["client_secret"] = settings.SALESFORCE_CLIENT_SECRET
+    try:
+        response = requests.post(settings.SALESFORCE_TOKEN_URL, data=payload, timeout=timeout)
+    except requests.RequestException:
+        return None
+
+    if response.status_code != 200:
+        return None
+
+    data = response.json()
+    access_token = data.get("access_token")
+    if not access_token:
+        return None
+
+    issued_at_raw = data.get("issued_at")
+    issued_at = None
+    expires_at = None
+    if issued_at_raw:
+        issued_at_ts = int(issued_at_raw) / 1000
+        issued_at = datetime.datetime.fromtimestamp(issued_at_ts, tz=datetime.timezone.utc)
+        expires_at = issued_at + datetime.timedelta(hours=1)
+
+    token.access_token = access_token
+    token.instance_url = data.get("instance_url", token.instance_url)
+    token.issued_at_raw = issued_at_raw or token.issued_at_raw
+    token.issued_at = issued_at or token.issued_at
+    token.expires_at = expires_at or token.expires_at
+    token.save(
+        update_fields=["access_token", "instance_url", "issued_at_raw", "issued_at", "expires_at", "updated_at"]
+    )
+    return token
+
+
+def get_valid_salesforce_token(timeout=6):
+    token = SalesforceToken.objects.first()
+    if not token:
+        return None
+    if token.expires_at and token.expires_at <= timezone.now():
+        if token.refresh_token:
+            refreshed = refresh_salesforce_token(token, timeout=timeout)
+            return refreshed
+        return None
+    if token.refresh_token and not token.expires_at:
+        refreshed = refresh_salesforce_token(token, timeout=timeout)
+        return refreshed or token
+    return token
 
 
 def _extract_user_id(userinfo):
@@ -41,6 +103,17 @@ def soql_query_all(token, soql, timeout=6, tooling=False):
         timeout=timeout,
         tooling=tooling,
     )
+    if response.status_code == 401:
+        refreshed = refresh_salesforce_token(token, timeout=timeout)
+        if refreshed:
+            headers = _salesforce_headers(refreshed)
+            response = _soql_query(
+                refreshed.instance_url,
+                headers,
+                soql,
+                timeout=timeout,
+                tooling=tooling,
+            )
     if response.status_code != 200:
         return None, response
 
@@ -240,8 +313,10 @@ def validate_salesforce_connection(token, timeout=6):
         return status
 
     if token.expires_at and token.expires_at <= timezone.now():
-        status["errors"].append("token_expired")
-        return status
+        token = refresh_salesforce_token(token, timeout=timeout)
+        if not token:
+            status["errors"].append("token_expired")
+            return status
 
     headers = _salesforce_headers(token)
     try:
@@ -315,6 +390,11 @@ def validate_salesforce_connection(token, timeout=6):
 def fetch_salesforce_object_fields(token, object_name, timeout=6):
     url = f"{token.instance_url}/services/data/{SF_API_VERSION}/sobjects/{object_name}/describe"
     response = requests.get(url, headers=_salesforce_headers(token), timeout=timeout)
+    if response.status_code == 401:
+        refreshed = refresh_salesforce_token(token, timeout=timeout)
+        if refreshed:
+            url = f"{refreshed.instance_url}/services/data/{SF_API_VERSION}/sobjects/{object_name}/describe"
+            response = requests.get(url, headers=_salesforce_headers(refreshed), timeout=timeout)
     if response.status_code != 200:
         return None, response
     payload = response.json()

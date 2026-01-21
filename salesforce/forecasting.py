@@ -2,8 +2,7 @@ import logging
 
 import requests
 
-from salesforce.models import SalesforceToken
-from salesforce.utils import SF_API_VERSION, soql_query_all
+from salesforce.utils import SF_API_VERSION, get_valid_salesforce_token, soql_query_all
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +15,7 @@ def _salesforce_headers(token):
 
 
 def sync_forecast_opportunity(opportunity, quote, account, forecast_amount, settings_obj, timeout=8):
-    token = SalesforceToken.objects.first()
+    token = get_valid_salesforce_token(timeout=timeout)
     if not token:
         return {"status": "skipped", "reason": "missing_token"}
 

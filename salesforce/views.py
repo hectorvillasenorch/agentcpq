@@ -1,5 +1,4 @@
 import urllib.parse
-import requests
 from django.http import JsonResponse, HttpResponseRedirect
 from django.conf import settings
 from salesforce.models import SalesforceToken
@@ -10,6 +9,7 @@ from cpq.models import Quote, QuoteLine
 import logging
 import datetime
 from datetime import timezone as dt_timezone
+from salesforce.utils import get_valid_salesforce_token
 
 def salesforce_login(request):
     """Redirect the user to Salesforce OAuth login using PKCE."""
@@ -72,11 +72,14 @@ def salesforce_callback(request):
             expires_at = issued_at + datetime.timedelta(hours=1)
 
         # ✅ Save to DB
+        existing_token = SalesforceToken.objects.filter(user_id="default").first()
+        refresh_token = token_data.get("refresh_token") or (existing_token.refresh_token if existing_token else None)
+
         SalesforceToken.objects.update_or_create(
             user_id="default",  # adjust if using auth users
             defaults={
                 "access_token": token_data["access_token"],
-                "refresh_token": token_data.get("refresh_token"),
+                "refresh_token": refresh_token,
                 "instance_url": token_data["instance_url"],
                 "issued_at_raw": issued_at_raw,
                 "issued_at": issued_at,
@@ -111,7 +114,7 @@ def test_salesforce_api(request):
     """Calls Salesforce API to fetch basic Account data."""
 
     # ✅ Get stored Salesforce token
-    token_entry = SalesforceToken.objects.first()
+    token_entry = get_valid_salesforce_token(timeout=6)
     if not token_entry:
         return JsonResponse({"error": "No valid Salesforce authentication found"}, status=401)
 
@@ -158,7 +161,7 @@ def sync_quote_to_salesforce(request, quote_id):
     """Syncs a Quote’s value and Line Items to a Salesforce Opportunity."""
 
     # ✅ Retrieve Salesforce authentication token
-    token_entry = SalesforceToken.objects.first()
+    token_entry = get_valid_salesforce_token(timeout=6)
     if not token_entry:
         return JsonResponse({"error": "Salesforce authentication not found"}, status=401)
 

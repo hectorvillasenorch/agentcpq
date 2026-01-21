@@ -37,8 +37,7 @@ from .models import (
 from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
 from django.apps import apps
-from salesforce.models import SalesforceToken
-from salesforce.utils import fetch_salesforce_object_fields, validate_salesforce_connection
+from salesforce.utils import fetch_salesforce_object_fields, get_valid_salesforce_token, validate_salesforce_connection
 from hubspot.models import HubspotToken
 from quickbooks.models import QuickbooksToken
 from django.core.serializers.json import DjangoJSONEncoder
@@ -711,7 +710,7 @@ def accounts_view(request):
     """Render the account-organized hierarchy for the current user."""
 
     account_groups = build_account_quote_hierarchy_for_user(request.user)
-    is_authenticated = SalesforceToken.objects.exists()
+    is_authenticated = bool(get_valid_salesforce_token(timeout=6))
 
     return render(
         request,
@@ -2200,7 +2199,7 @@ def crm_schema_api(request):
         sf_object = SALESFORCE_OBJECT_MAP.get(object_type)
         if not sf_object:
             return JsonResponse({"error": "Unsupported object"}, status=400)
-        token = SalesforceToken.objects.first()
+        token = get_valid_salesforce_token(timeout=8)
         if not token:
             return JsonResponse({"error": "Salesforce authentication not found"}, status=401)
         fields, response = fetch_salesforce_object_fields(token, sf_object, timeout=8)
@@ -2782,7 +2781,7 @@ def admin_integrations(request):
     except requests.RequestException:
         hubspot_connected = False
 
-    salesforce_token = SalesforceToken.objects.first()
+    salesforce_token = get_valid_salesforce_token(timeout=6)
     if salesforce_token:
         salesforce_status = validate_salesforce_connection(salesforce_token, timeout=6)
         salesforce_connected = salesforce_status.get("authenticated", False)

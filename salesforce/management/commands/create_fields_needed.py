@@ -1,7 +1,6 @@
 from django.core.management.base import BaseCommand, CommandError
 
-from salesforce.models import SalesforceToken
-from salesforce.utils import ensure_salesforce_fields, validate_salesforce_connection
+from salesforce.utils import ensure_salesforce_fields, get_valid_salesforce_token, validate_salesforce_connection
 
 
 REQUIRED_FIELDS = [
@@ -64,11 +63,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        token = SalesforceToken.objects.first()
+        timeout = options["timeout"]
+        token = get_valid_salesforce_token(timeout=timeout)
         if not token:
             raise CommandError("No Salesforce token found. Authenticate first.")
 
-        timeout = options["timeout"]
         status = validate_salesforce_connection(token, timeout=timeout)
         if not status.get("authenticated"):
             raise CommandError(f"Salesforce auth invalid: {status.get('errors')}")
