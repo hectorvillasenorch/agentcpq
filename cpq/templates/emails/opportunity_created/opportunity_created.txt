@@ -1,0 +1,13 @@
+New Opportunity Created
+
+{% if user %}Hi {{ user.get_full_name|default:user.username }},{% else %}Hello,{% endif %}
+
+A new opportunity has been created in AgentCPQ.
+
+Name: {{ opportunity.name }}
+Account: {{ opportunity.account.name|default:"-" }}
+Stage: {{ opportunity.stage|default:"-" }}
+Amount: {{ opportunity.amount|default:"-" }}
+Expected Close: {{ opportunity.expected_close_date|date:"M j, Y"|default:"-" }}
+
+This email was sent automatically by AgentCPQ.
