@@ -327,6 +327,12 @@ def start_quote_from_salesforce(request):
         return redirect("dashboard")
 
     session_data = request.session.get("session_data", {})
+    request.session["sf_launch_context"] = {
+        "sf_account_id": sf_account_id,
+        "sf_opportunity_id": sf_opportunity_id,
+        "account_name": account_name,
+        "opportunity_name": opportunity_name,
+    }
     current_state, _ = get_session_context("create_quote", session_data)
     if isinstance(current_state, dict):
         data = current_state.setdefault("data", {})
@@ -347,4 +353,6 @@ def start_quote_from_salesforce(request):
     else:
         auto_prompt = f"Create a quote for account {account_name}."
 
-    return redirect(f"{reverse('dashboard')}?view=agents&new_chat=true&auto_prompt={urllib.parse.quote(auto_prompt)}")
+    return redirect(
+        f"{reverse('dashboard')}?view=agents&new_chat=true&sf_launch=1&auto_prompt={urllib.parse.quote(auto_prompt)}"
+    )

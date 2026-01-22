@@ -371,8 +371,17 @@ def dashboard(request):
 
     new_chat = request.GET.get("new_chat") == "true"
     if new_chat:
+        sf_launch = request.GET.get("sf_launch") == "1"
+        sf_context = request.session.get("sf_launch_context") if sf_launch else None
         request.session.pop("session_data", None)
         session_id = None
+        if sf_context:
+            request.session["session_data"] = {
+                "account": sf_context.get("account_name"),
+                "opportunity": sf_context.get("opportunity_name"),
+                "sf_account_id": sf_context.get("sf_account_id"),
+                "sf_opportunity_id": sf_context.get("sf_opportunity_id"),
+            }
 
     custom_object_perms = {"can_view": True, "can_add": True, "can_change": True, "can_delete": True}
     if object_name:

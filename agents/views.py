@@ -227,6 +227,7 @@ def chat_with_gpt(request):
 
     # --- 4. Load session data ---
     session_data = request.session.get("session_data", {})
+    sf_context = request.session.get("sf_launch_context") or {}
     #logger.info(f"🔹 DEBUG: Session Data: {session_data}")
 
     if isinstance(batch_info, dict):
@@ -247,6 +248,12 @@ def chat_with_gpt(request):
         # If the client didn't send a session_id (new chat screen), start fresh.
         session_data = {}
         request.session["session_data"] = session_data
+
+    if sf_context:
+        session_data.setdefault("sf_account_id", sf_context.get("sf_account_id"))
+        session_data.setdefault("sf_opportunity_id", sf_context.get("sf_opportunity_id"))
+        session_data.setdefault("account", sf_context.get("account_name"))
+        session_data.setdefault("opportunity", sf_context.get("opportunity_name"))
 
     #Debbug the session id if is custom or not
     logger.info(f"🔹 REQUEST: Session Data: {request.session.get('session_data', {})}")
