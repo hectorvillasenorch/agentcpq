@@ -302,6 +302,7 @@ def sync_quote_to_salesforce(request, quote_id):
 
     oli_field_map = {}
     oli_createable = set()
+    oli_updateable = set()
     for field in oli_fields:
         field_name = field.get("name")
         if not field_name:
@@ -309,6 +310,33 @@ def sync_quote_to_salesforce(request, quote_id):
         if field.get("createable"):
             oli_createable.add(field_name)
             oli_field_map[normalize_field_name(field_name)] = field_name
+        if field.get("updateable"):
+            oli_updateable.add(field_name)
+
+    existing_oli_by_pricebook_entry = {}
+    existing_oli_by_product = {}
+    existing_oli_soql = (
+        "SELECT Id, PricebookEntryId, PricebookEntry.Product2Id "
+        f"FROM OpportunityLineItem WHERE OpportunityId = '{opportunity_id}' "
+        "ORDER BY CreatedDate DESC"
+    )
+    existing_oli_records, existing_oli_response = soql_query_all(token_entry, existing_oli_soql, timeout=6)
+    if existing_oli_records is None:
+        return JsonResponse(
+            {"error": "Failed to fetch OpportunityLineItem records.", "details": existing_oli_response.text},
+            status=400,
+        )
+    for record in existing_oli_records:
+        oli_id = record.get("Id")
+        pricebook_entry_id = record.get("PricebookEntryId")
+        product_id = None
+        pricebook_entry = record.get("PricebookEntry") or {}
+        if isinstance(pricebook_entry, dict):
+            product_id = pricebook_entry.get("Product2Id")
+        if pricebook_entry_id and pricebook_entry_id not in existing_oli_by_pricebook_entry:
+            existing_oli_by_pricebook_entry[pricebook_entry_id] = oli_id
+        if product_id and product_id not in existing_oli_by_product:
+            existing_oli_by_product[product_id] = oli_id
 
     mapping_rows = SystemFieldMapping.objects.filter(crm="Salesforce", field_type="QuoteLine")
     mapping_overrides = {row.local_field: row.crm_field for row in mapping_rows}
@@ -332,6 +360,7 @@ def sync_quote_to_salesforce(request, quote_id):
     failed_lines = []
     for line in quote_lines:
         pricebook_entry = None
+        product_external_id = (line.product.external_id or "").strip()
         if pricebook_id:
             pricebook_entry = (
                 PricebookEntry.objects.filter(
@@ -343,8 +372,7 @@ def sync_quote_to_salesforce(request, quote_id):
                 .first()
             )
 
-        if not pricebook_entry and pricebook_id:
-            product_external_id = (line.product.external_id or "").strip()
+            if not pricebook_entry and pricebook_id:
             if not product_external_id:
                 failed_lines.append({"line_id": line.id, "reason": "missing_product_external_id"})
                 continue
@@ -423,14 +451,19 @@ def sync_quote_to_salesforce(request, quote_id):
             failed_lines.append({"line_id": line.id, "reason": "missing_pricebook_entry"})
             continue
 
-        line_item_payload = {
-            "OpportunityId": opportunity_id,  # ✅ Link to Opportunity
-            "PricebookEntryId": pricebook_entry.salesforce_id,
-        }
+        existing_oli_id = existing_oli_by_pricebook_entry.get(pricebook_entry.salesforce_id)
+        if not existing_oli_id and product_external_id:
+            existing_oli_id = existing_oli_by_product.get(product_external_id)
 
-        if "Quantity" in oli_createable:
+        line_item_payload = {}
+        allowed_fields = oli_updateable if existing_oli_id else oli_createable
+        if not existing_oli_id:
+            line_item_payload["OpportunityId"] = opportunity_id
+            line_item_payload["PricebookEntryId"] = pricebook_entry.salesforce_id
+
+        if "Quantity" in allowed_fields:
             line_item_payload["Quantity"] = line.quantity or 1
-        if "UnitPrice" in oli_createable:
+        if "UnitPrice" in allowed_fields:
             line_item_payload["UnitPrice"] = str(line.unit_price)
 
         for field in line._meta.fields:
@@ -442,7 +475,7 @@ def sync_quote_to_salesforce(request, quote_id):
                 sf_field = oli_field_map.get(normalize_field_name(field_name))
             if not sf_field or sf_field in line_item_payload:
                 continue
-            if sf_field not in oli_createable:
+            if sf_field not in allowed_fields:
                 continue
             if sf_field == "TotalPrice" and "UnitPrice" in line_item_payload:
                 continue
@@ -457,11 +490,31 @@ def sync_quote_to_salesforce(request, quote_id):
                 value = str(value)
             line_item_payload[sf_field] = value
 
-        line_item_url = f"{instance_url}/services/data/v57.0/sobjects/OpportunityLineItem/"
-        line_item_response = requests.post(line_item_url, json=line_item_payload, headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json"
-        })
+        if not line_item_payload:
+            continue
+
+        if existing_oli_id:
+            line_item_url = f"{instance_url}/services/data/v57.0/sobjects/OpportunityLineItem/{existing_oli_id}"
+            line_item_response = requests.patch(
+                line_item_url,
+                json=line_item_payload,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                timeout=6,
+            )
+        else:
+            line_item_url = f"{instance_url}/services/data/v57.0/sobjects/OpportunityLineItem/"
+            line_item_response = requests.post(
+                line_item_url,
+                json=line_item_payload,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                timeout=6,
+            )
 
         if line_item_response.status_code >= 400:
             try:
