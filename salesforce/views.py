@@ -219,9 +219,11 @@ def sync_quote_to_salesforce(request, quote_id):
 
     # ✅ Step 1: Update Opportunity with Quote Data
     quote_id_value = str(quote.public_id or quote.qteid or quote.name)
+    quote_number_value = str(quote.name or quote.qteid or quote.public_id)
     opportunity_update_payload = {
         "Amount": str(quote.net_amount),  # ✅ Update Opportunity value
         "AgentCPQ_Quote_Id__c": quote_id_value,
+        "AgentCPQ_Quote_Number__c": quote_number_value,
         "AgentCPQ_NACV__c": str(quote.net_amount),
         "AgentCPQ_ACV__c": str(quote.net_amount),
     }

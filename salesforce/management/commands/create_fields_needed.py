@@ -14,6 +14,13 @@ REQUIRED_FIELDS = [
     },
     {
         "object": "Opportunity",
+        "api_name": "AgentCPQ_Quote_Number__c",
+        "type": "Text",
+        "length": 100,
+        "label": "AgentCPQ Quote Number",
+    },
+    {
+        "object": "Opportunity",
         "api_name": "AgentCPQ_ACV__c",
         "type": "Currency",
         "precision": 18,
