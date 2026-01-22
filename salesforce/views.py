@@ -186,13 +186,43 @@ def sync_quote_to_salesforce(request, quote_id):
     if not quote.opportunity:
         return JsonResponse({"error": "Quote is not linked to an Opportunity"}, status=400)
 
-    opportunity_id = quote.sf_opportunity_id  # Ensure we store the Salesforce ID in AgentCPQ
+    opportunity_id = (quote.sf_opportunity_id or "").strip()
+    if len(opportunity_id) not in {15, 18}:
+        opportunity_id = None
+
+    if not opportunity_id:
+        account_sf_id = (quote.account.external_id or "").strip() if quote.account_id else ""
+        opp_name = (quote.opportunity.name or "").strip() if quote.opportunity_id else ""
+        if account_sf_id and opp_name:
+            soql_name = opp_name.replace("'", "\\'")
+            soql = (
+                "SELECT Id FROM Opportunity "
+                f"WHERE AccountId = '{account_sf_id}' AND Name = '{soql_name}' "
+                "ORDER BY CreatedDate DESC LIMIT 1"
+            )
+            records, response = soql_query_all(token_entry, soql, timeout=6)
+            if records:
+                opportunity_id = records[0].get("Id")
+                if opportunity_id:
+                    quote.sf_opportunity_id = opportunity_id
+                    quote.save(update_fields=["sf_opportunity_id"])
+
+    if not opportunity_id:
+        return JsonResponse({
+            "error": "Missing Salesforce Opportunity ID for this quote.",
+            "details": {
+                "sf_opportunity_id": quote.sf_opportunity_id,
+                "account_external_id": quote.account.external_id if quote.account_id else None,
+            },
+        }, status=400)
 
     # ✅ Step 1: Update Opportunity with Quote Data
+    quote_id_value = str(quote.public_id or quote.qteid or quote.name)
     opportunity_update_payload = {
         "Amount": str(quote.net_amount),  # ✅ Update Opportunity value
-        "AgentCPQ_Quote__c": f"Synced - {quote.name}",  # ✅ Track synced Quote
-        "AgentCPQ_Status__c": "In Sync"
+        "AgentCPQ_Quote_Id__c": quote_id_value,
+        "AgentCPQ_NACV__c": str(quote.net_amount),
+        "AgentCPQ_ACV__c": str(quote.net_amount),
     }
 
     opportunity_url = f"{instance_url}/services/data/v57.0/sobjects/Opportunity/{opportunity_id}"
