@@ -373,53 +373,18 @@ def sync_quote_to_salesforce(request, quote_id):
             )
 
             if not pricebook_entry and pricebook_id:
-            if not product_external_id:
-                failed_lines.append({"line_id": line.id, "reason": "missing_product_external_id"})
-                continue
-            soql = (
-                "SELECT Id, UnitPrice FROM PricebookEntry "
-                f"WHERE Pricebook2Id = '{pricebook_id}' AND Product2Id = '{product_external_id}' "
-                "AND IsActive = true LIMIT 1"
-            )
-            pb_records, pb_response = soql_query_all(token_entry, soql, timeout=6)
-            if pb_records:
-                pb_entry_id = pb_records[0].get("Id")
-                unit_price_value = pb_records[0].get("UnitPrice")
-                if pb_entry_id:
-                    local_pricebook = Pricebook.objects.filter(salesforce_id=pricebook_id).first()
-                    if not local_pricebook:
-                        local_pricebook = Pricebook.objects.create(
-                            name="Salesforce Pricebook",
-                            salesforce_id=pricebook_id,
-                        )
-                    pricebook_entry = PricebookEntry.objects.create(
-                        product=line.product,
-                        pricebook=local_pricebook,
-                        salesforce_id=pb_entry_id,
-                        unit_price=unit_price_value or line.unit_price,
-                    )
-            if not pricebook_entry:
-                payload = {
-                    "Pricebook2Id": pricebook_id,
-                    "Product2Id": product_external_id,
-                    "UnitPrice": str(line.unit_price),
-                    "IsActive": True,
-                }
-                try:
-                    create_response = requests.post(
-                        f"{instance_url}/services/data/v57.0/sobjects/PricebookEntry",
-                        json=payload,
-                        headers={
-                            "Authorization": f"Bearer {access_token}",
-                            "Content-Type": "application/json",
-                        },
-                        timeout=6,
-                    )
-                except requests.RequestException as exc:
-                    failed_lines.append({"line_id": line.id, "reason": str(exc)})
+                if not product_external_id:
+                    failed_lines.append({"line_id": line.id, "reason": "missing_product_external_id"})
                     continue
-                if create_response.status_code in {200, 201}:
-                    pb_entry_id = create_response.json().get("id")
+                soql = (
+                    "SELECT Id, UnitPrice FROM PricebookEntry "
+                    f"WHERE Pricebook2Id = '{pricebook_id}' AND Product2Id = '{product_external_id}' "
+                    "AND IsActive = true LIMIT 1"
+                )
+                pb_records, pb_response = soql_query_all(token_entry, soql, timeout=6)
+                if pb_records:
+                    pb_entry_id = pb_records[0].get("Id")
+                    unit_price_value = pb_records[0].get("UnitPrice")
                     if pb_entry_id:
                         local_pricebook = Pricebook.objects.filter(salesforce_id=pricebook_id).first()
                         if not local_pricebook:
@@ -431,11 +396,46 @@ def sync_quote_to_salesforce(request, quote_id):
                             product=line.product,
                             pricebook=local_pricebook,
                             salesforce_id=pb_entry_id,
-                            unit_price=line.unit_price,
+                            unit_price=unit_price_value or line.unit_price,
                         )
-                else:
-                    failed_lines.append({"line_id": line.id, "reason": create_response.text})
-                    continue
+                if not pricebook_entry:
+                    payload = {
+                        "Pricebook2Id": pricebook_id,
+                        "Product2Id": product_external_id,
+                        "UnitPrice": str(line.unit_price),
+                        "IsActive": True,
+                    }
+                    try:
+                        create_response = requests.post(
+                            f"{instance_url}/services/data/v57.0/sobjects/PricebookEntry",
+                            json=payload,
+                            headers={
+                                "Authorization": f"Bearer {access_token}",
+                                "Content-Type": "application/json",
+                            },
+                            timeout=6,
+                        )
+                    except requests.RequestException as exc:
+                        failed_lines.append({"line_id": line.id, "reason": str(exc)})
+                        continue
+                    if create_response.status_code in {200, 201}:
+                        pb_entry_id = create_response.json().get("id")
+                        if pb_entry_id:
+                            local_pricebook = Pricebook.objects.filter(salesforce_id=pricebook_id).first()
+                            if not local_pricebook:
+                                local_pricebook = Pricebook.objects.create(
+                                    name="Salesforce Pricebook",
+                                    salesforce_id=pricebook_id,
+                                )
+                            pricebook_entry = PricebookEntry.objects.create(
+                                product=line.product,
+                                pricebook=local_pricebook,
+                                salesforce_id=pb_entry_id,
+                                unit_price=line.unit_price,
+                            )
+                    else:
+                        failed_lines.append({"line_id": line.id, "reason": create_response.text})
+                        continue
 
         if not pricebook_entry and not pricebook_id:
             pricebook_entry = (
