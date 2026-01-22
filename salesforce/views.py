@@ -339,15 +339,7 @@ def sync_quote_to_salesforce(request, quote_id):
                 .select_related("pricebook")
                 .first()
             )
-        if not pricebook_entry:
-            pricebook_entry = (
-                PricebookEntry.objects.filter(
-                    product=line.product,
-                    salesforce_id__isnull=False,
-                )
-                .select_related("pricebook")
-                .first()
-            )
+
         if not pricebook_entry and pricebook_id:
             product_external_id = (line.product.external_id or "").strip()
             if not product_external_id:
@@ -414,6 +406,16 @@ def sync_quote_to_salesforce(request, quote_id):
                     failed_lines.append({"line_id": line.id, "reason": create_response.text})
                     continue
 
+        if not pricebook_entry and not pricebook_id:
+            pricebook_entry = (
+                PricebookEntry.objects.filter(
+                    product=line.product,
+                    salesforce_id__isnull=False,
+                )
+                .select_related("pricebook")
+                .first()
+            )
+
         if not pricebook_entry:
             failed_lines.append({"line_id": line.id, "reason": "missing_pricebook_entry"})
             continue
@@ -424,7 +426,7 @@ def sync_quote_to_salesforce(request, quote_id):
         }
 
         if "Quantity" in oli_createable:
-            line_item_payload["Quantity"] = line.quantity
+            line_item_payload["Quantity"] = line.quantity or 1
         if "UnitPrice" in oli_createable:
             line_item_payload["UnitPrice"] = str(line.unit_price)
 
@@ -464,8 +466,11 @@ def sync_quote_to_salesforce(request, quote_id):
             failed_lines.append({"line_id": line.id, "reason": details})
 
     # ✅ Step 3: Return Success Response
+    message = "Quote synced successfully!"
+    if failed_lines:
+        message = f"Quote synced with {len(failed_lines)} line item failures."
     return JsonResponse({
-        "message": "Quote synced successfully!",
+        "message": message,
         "synced_opportunity": opportunity_id,
         "failed_line_items": failed_lines
     })

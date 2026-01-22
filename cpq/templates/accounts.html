@@ -819,13 +819,19 @@
             }
 
             if (response.ok && data.message) {
-                alert("✅ " + data.message);
+                if (Array.isArray(data.failed_line_items) && data.failed_line_items.length) {
+                    alert(`⚠️ ${data.message}\nLine item failures: ${JSON.stringify(data.failed_line_items)}`);
+                } else {
+                    alert("✅ " + data.message);
+                }
                 if (button) {
                     button.classList.remove('quote-action-button--loading');
-                    button.outerHTML = `<button type="button" class="quote-action-button quote-action-button--success" title="Synced to Salesforce" aria-label="Synced to Salesforce" disabled>
-                        <i class=\"material-icons\" aria-hidden=\"true\">check_circle</i>
-                    </button>`;
-                    replacedWithSuccess = true;
+                    if (!Array.isArray(data.failed_line_items) || data.failed_line_items.length === 0) {
+                        button.outerHTML = `<button type="button" class="quote-action-button quote-action-button--success" title="Synced to Salesforce" aria-label="Synced to Salesforce" disabled>
+                            <i class=\"material-icons\" aria-hidden=\"true\">check_circle</i>
+                        </button>`;
+                        replacedWithSuccess = true;
+                    }
                 }
             } else {
                 const message = data && (data.error || data.message) ? (data.error || data.message) : JSON.stringify(data);
