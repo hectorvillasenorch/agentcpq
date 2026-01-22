@@ -11,7 +11,7 @@ from io import StringIO
 from django.contrib.auth.decorators import login_required
 import pkce
 import requests
-from cpq.models import Quote, QuoteLine
+from cpq.models import PricebookEntry, Quote, QuoteLine
 import logging
 import datetime
 from datetime import timezone as dt_timezone
@@ -241,12 +241,78 @@ def sync_quote_to_salesforce(request, quote_id):
             details = opp_response.text
         return JsonResponse({"error": "Failed to update Salesforce Opportunity", "details": details}, status=400)
 
+    # ✅ Ensure Opportunity has a Pricebook2Id
+    pricebook_id = None
+    soql = f"SELECT Pricebook2Id FROM Opportunity WHERE Id = '{opportunity_id}'"
+    opp_records, opp_response = soql_query_all(token_entry, soql, timeout=6)
+    if opp_records is None:
+        return JsonResponse(
+            {"error": "Failed to fetch Salesforce Opportunity pricebook.", "details": opp_response.text},
+            status=400,
+        )
+    if opp_records:
+        pricebook_id = opp_records[0].get("Pricebook2Id")
+
+    if not pricebook_id:
+        standard_soql = "SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1"
+        pb_records, pb_response = soql_query_all(token_entry, standard_soql, timeout=6)
+        if pb_records:
+            pricebook_id = pb_records[0].get("Id")
+            pb_payload = {"Pricebook2Id": pricebook_id}
+            try:
+                pb_update = requests.patch(
+                    opportunity_url,
+                    json=pb_payload,
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json",
+                    },
+                    timeout=6,
+                )
+            except requests.RequestException as exc:
+                return JsonResponse(
+                    {"error": "Failed to set Salesforce Opportunity pricebook.", "details": str(exc)},
+                    status=502,
+                )
+            if pb_update.status_code >= 400:
+                return JsonResponse(
+                    {
+                        "error": "Failed to set Salesforce Opportunity pricebook.",
+                        "details": pb_update.text,
+                    },
+                    status=400,
+                )
+
     # ✅ Step 2: Sync Quote Line Items as Opportunity Line Items
     failed_lines = []
     for line in quote_lines:
+        pricebook_entry = None
+        if pricebook_id:
+            pricebook_entry = (
+                PricebookEntry.objects.filter(
+                    product=line.product,
+                    pricebook__salesforce_id=pricebook_id,
+                    salesforce_id__isnull=False,
+                )
+                .select_related("pricebook")
+                .first()
+            )
+        if not pricebook_entry:
+            pricebook_entry = (
+                PricebookEntry.objects.filter(
+                    product=line.product,
+                    salesforce_id__isnull=False,
+                )
+                .select_related("pricebook")
+                .first()
+            )
+        if not pricebook_entry:
+            failed_lines.append(line.id)
+            continue
+
         line_item_payload = {
             "OpportunityId": opportunity_id,  # ✅ Link to Opportunity
-            "PricebookEntryId": line.product.salesforce_pricebook_entry_id,  # ✅ Must be mapped in SF
+            "PricebookEntryId": pricebook_entry.salesforce_id,
             "Quantity": line.quantity,
             "UnitPrice": str(line.unit_price),
             "TotalPrice": str(line.total_price),
