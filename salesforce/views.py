@@ -226,13 +226,20 @@ def sync_quote_to_salesforce(request, quote_id):
     }
 
     opportunity_url = f"{instance_url}/services/data/v57.0/sobjects/Opportunity/{opportunity_id}"
-    opp_response = requests.patch(opportunity_url, json=opportunity_update_payload, headers={
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
-    })
+    try:
+        opp_response = requests.patch(opportunity_url, json=opportunity_update_payload, headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        })
+    except requests.RequestException as exc:
+        return JsonResponse({"error": "Failed to update Salesforce Opportunity", "details": str(exc)}, status=502)
 
     if opp_response.status_code >= 400:
-        return JsonResponse({"error": "Failed to update Salesforce Opportunity", "details": opp_response.json()}, status=400)
+        try:
+            details = opp_response.json()
+        except ValueError:
+            details = opp_response.text
+        return JsonResponse({"error": "Failed to update Salesforce Opportunity", "details": details}, status=400)
 
     # ✅ Step 2: Sync Quote Line Items as Opportunity Line Items
     failed_lines = []

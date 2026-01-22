@@ -809,7 +809,14 @@
                 }
             });
 
-            const data = await response.json();
+            let data = null;
+            const contentType = response.headers.get("content-type") || "";
+            if (contentType.includes("application/json")) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                data = { message: text || "Unexpected response from server." };
+            }
 
             if (response.ok && data.message) {
                 alert("✅ " + data.message);
@@ -821,7 +828,8 @@
                     replacedWithSuccess = true;
                 }
             } else {
-                throw new Error(data.message || JSON.stringify(data));
+                const message = data && (data.error || data.message) ? (data.error || data.message) : JSON.stringify(data);
+                throw new Error(message);
             }
         } catch (error) {
             alert("❌ Salesforce sync failed: " + error.message);
