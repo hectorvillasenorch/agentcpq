@@ -358,7 +358,7 @@ def _get_saved_layout(user, object_name: str, default_order: List[str]) -> Dict[
 
 
 def _collect_standard_fields(record: Model, model_name: str) -> List[Dict[str, object]]:
-    allowed_fields = ALLOWED_FIELDS.get(model_name, [])
+    allowed_fields = [field.name for field in record._meta.fields]
     rows: List[Dict[str, object]] = []
 
     for field_name in allowed_fields:

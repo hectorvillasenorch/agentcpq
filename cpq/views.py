@@ -2000,13 +2000,15 @@ def single_record_api(request):
             alt_lookup_fields = ["record_id", "custom_identifier"]
         else:
             alt_lookup_fields = {
-                "Lead": ["leadId"],
+                "Lead": ["leadId", "external_id"],
                 "Account": ["accid", "external_id"],
                 "Contact": ["contactId", "external_id"],
-                "Opportunity": ["oppid", "hs_deal_id"],
-                "Quote": ["qteid"],
-                "Product": ["prdid"],
-                "Activity": ["activityid"],
+                "Opportunity": ["oppid", "hs_deal_id", "external_id"],
+                "Quote": ["qteid", "external_id"],
+                "Product": ["prdid", "external_id"],
+                "Activity": ["activityid", "external_id"],
+                "Contract": ["external_id"],
+                "Subscription": ["external_id"],
                 "Tenant": ["tenant_id"],
             }.get(model.__name__, [])
 

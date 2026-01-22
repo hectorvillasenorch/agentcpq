@@ -394,7 +394,10 @@ class OpportunityEditableForm(BaseOpportunityForm): # type: ignore
 
 class OpportunityAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = OpportunityEditableForm
-    list_display = ('name', 'primary_quote', 'amount', 'account', 'stage', 'expected_close_date', 'created_by', 'created_at_js')
+    list_display = ()
+
+    def get_list_display(self, request):
+        return [field.name for field in self.model._meta.fields]
     def get_fieldsets(self, request, obj=None):
         fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
 

@@ -164,6 +164,11 @@ def get_or_create_account_and_opportunity(user, extracted_details, session_data)
         opportunity.created_by = user
         opportunity.save()
 
+    sf_opportunity_id = session_data.get("sf_opportunity_id")
+    if sf_opportunity_id and not opportunity.external_id:
+        opportunity.external_id = sf_opportunity_id
+        opportunity.save(update_fields=["external_id"])
+
     return account, opportunity, None
 
 def update_opportunity_net_amount(opportunity):

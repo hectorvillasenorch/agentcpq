@@ -1833,16 +1833,16 @@ from django.db.models import ForeignKey
 
 # Allowed fields per model
 ALLOWED_FIELDS = {
-    "Lead": ["id", "leadId", "first_name", "last_name", "phone", "email", "source", "contact", "status", "notes", "assigned_to", "created_at", "activities"],
-    "Product": ["id", "prdid", "name", "sku", "price", "fixed_price", "price_mode", "is_subscription", "term", "is_bundle", "family", "is_active", "created_at", "description"],
+    "Lead": ["id", "leadId", "external_id", "first_name", "last_name", "phone", "email", "source", "contact", "status", "notes", "assigned_to", "created_at", "activities"],
+    "Product": ["id", "prdid", "external_id", "name", "sku", "price", "fixed_price", "price_mode", "is_subscription", "term", "is_bundle", "family", "is_active", "created_at", "description"],
     "Account": ["id", "accid", "external_id", "name", "industry", "website", "phone", "street", "city", "state", "zip_code"],
     "Contact": ["id", "contactId", "external_id", "first_name", "last_name", "email", "phone", "company", "job_title", "notes", "account", "is_primary"],
-    "Opportunity": ["id", "oppid", "hs_deal_id", "name", "account", "amount", "stage", "expected_close_date", "primary_quote", "owner", "created_by"],
-    "Quote": ["id", "qteid", "name", "account", "opportunity", "subtotal", "net_amount", "tax_percentage", "tax_amount", "status",
+    "Opportunity": ["id", "oppid", "external_id", "hs_deal_id", "name", "account", "amount", "stage", "expected_close_date", "primary_quote", "owner", "created_by"],
+    "Quote": ["id", "qteid", "external_id", "name", "account", "opportunity", "subtotal", "net_amount", "tax_percentage", "tax_amount", "status",
               "discount_percentage", "discount_amount", "expiration_date", "notes", "created_at"],
-    "Activity": ["id", "activityid", "subject", "activity_type", "status", "due_date", "lead", "opportunity", "contact", "notes", "created_at"],
-    "Contract": ["id", "opportunity", "start_date", "end_date", "contract_status"],
-    "Subscription": ["id", "quote", "quote_line", "product", "contract", "start_date", "end_date", "billing_cycle", "price_per_cycle", "term"],
+    "Activity": ["id", "activityid", "external_id", "subject", "activity_type", "status", "due_date", "lead", "opportunity", "contact", "notes", "created_at"],
+    "Contract": ["id", "external_id", "opportunity", "start_date", "end_date", "contract_status"],
+    "Subscription": ["id", "external_id", "quote", "quote_line", "product", "contract", "start_date", "end_date", "billing_cycle", "price_per_cycle", "term"],
     "Option": ["id", "parent_product", "product_option", "quantity", "is_required", "min_quantity", "max_quantity", "default_selected", "group_name"],
     "Tenant": ["id", "tenant_id", "name", "domain", "contact_email", "phone_number", "plan", "version", "created_at"],
     "Knowledge": ["id", "title", "content_text", "video_url", "image_url", "tags", "language", "is_active", "created_at", "updated_at"],

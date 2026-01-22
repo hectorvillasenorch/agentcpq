@@ -239,6 +239,7 @@ class Lead(models.Model):
     notes = models.TextField(blank=True)
     assigned_to = models.CharField(max_length=100, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_leads')
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -363,6 +364,7 @@ class Opportunity(models.Model):
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="opportunities")
     amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
     stage = models.CharField(max_length=50, default=default_opportunity_stage)
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     expected_close_date = models.DateField(blank=True, null=True)
     primary_quote = models.ForeignKey(
@@ -413,6 +415,7 @@ class Activity(models.Model):
     contact = models.ForeignKey('Contact', on_delete=models.SET_NULL, null=True, blank=True, related_name='activities')
     notes = models.TextField(blank=True)
     activityid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
 
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_activities')
@@ -554,6 +557,7 @@ class Quote(models.Model):
     hs_primary = models.BooleanField(default=False,help_text="Marks this quote as the primary quote for the HubSpot deal")
     synced = models.BooleanField(default=False)
     last_synced_at = models.DateTimeField(null=True, blank=True)
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_quotes')
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1392,6 +1396,7 @@ class Contract(models.Model):
         ('Expired', 'Expired'),
         ('Renewed', 'Renewed'),
     ])
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
 
     def __str__(self):
         return f"Contract for {self.opportunity} ({self.contract_status})"
@@ -1416,6 +1421,7 @@ class Subscription(models.Model):
     )
     price_per_cycle = models.DecimalField(max_digits=10, decimal_places=2)
     term = models.IntegerField()
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
 
     def __str__(self):
         return f"{self.product.name} Subscription ({self.term} months)"
