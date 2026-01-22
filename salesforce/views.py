@@ -323,6 +323,7 @@ def sync_quote_to_salesforce(request, quote_id):
         "updated_at",
         "synced_to_crm",
         "public_id",
+        "total_price",
     }
 
     # ✅ Step 2: Sync Quote Line Items as Opportunity Line Items
@@ -440,6 +441,8 @@ def sync_quote_to_salesforce(request, quote_id):
             if not sf_field or sf_field in line_item_payload:
                 continue
             if sf_field not in oli_createable:
+                continue
+            if sf_field == "TotalPrice" and "UnitPrice" in line_item_payload:
                 continue
             value = getattr(line, field_name, None)
             if value is None:
