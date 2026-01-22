@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 
 from django.core.management.base import BaseCommand, CommandError
+from django.utils import timezone
 
 from cpq.models import Product
 from salesforce.utils import get_valid_salesforce_token, soql_query_all, validate_salesforce_connection
@@ -81,6 +82,7 @@ class Command(BaseCommand):
         skipped = 0
         dry_run = options["dry_run"]
 
+        now = timezone.now()
         for record in product_records:
             sf_id = record.get("Id")
             if not sf_id:
@@ -109,9 +111,12 @@ class Command(BaseCommand):
 
             if product:
                 if not options["update_existing"]:
+                    if not dry_run:
+                        Product.objects.filter(pk=product.pk).update(last_synced_at=now)
                     skipped += 1
                     continue
                 updates = {}
+                price = price_map.get(sf_id)
                 if name and product.name != name:
                     updates["name"] = name
                 if family and product.family != family:
@@ -122,8 +127,11 @@ class Command(BaseCommand):
                     updates["is_active"] = is_active
                 if product.sku != sku:
                     updates["sku"] = self._ensure_unique_sku(sku, sf_id, product.id)
+                if price is not None and product.price != price:
+                    updates["price"] = price
                 if not product.external_id:
                     updates["external_id"] = sf_id
+                updates["last_synced_at"] = now
                 if updates and not dry_run:
                     Product.objects.filter(pk=product.pk).update(**updates)
                 if updates:
@@ -142,6 +150,7 @@ class Command(BaseCommand):
                     external_id=sf_id,
                     is_active=is_active,
                     description=description,
+                    last_synced_at=now,
                 )
             created += 1
 

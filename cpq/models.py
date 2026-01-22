@@ -454,6 +454,7 @@ class Product(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_products')
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_products')
+    last_synced_at = models.DateTimeField(null=True, blank=True)
 
     description = models.TextField(blank=True)
 
@@ -481,6 +482,12 @@ class Product(models.Model):
     def __str__(self):
         bundle_tag = " - BUNDLE" if self.is_bundle else ""
         return f"{self.name} ({self.sku}){bundle_tag}"
+
+    @property
+    def is_new(self):
+        if not self.created_at:
+            return False
+        return self.created_at >= timezone.now() - timedelta(days=1)
 
 class Option(models.Model):
     parent_product = models.ForeignKey(Product, related_name="options", on_delete=models.CASCADE)  # 🔗 Parent Bundle

@@ -93,6 +93,37 @@
     <p class="grey-text" style="margin-bottom: 24px;">
     Match your internal fields with CRM data for smooth syncing and reporting.
     </p>
+    <div class="row" style="margin-bottom: 24px;">
+      <div class="col s12">
+        <div style="border: 1px solid #e0e0e0; border-radius: 12px; padding: 18px 20px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <div style="font-weight: 600; font-size: 16px; margin-bottom: 4px;">Salesforce Setup</div>
+              <div class="grey-text" style="font-size: 13px;">
+                Creates required Salesforce fields, generates the launch buttons, and pulls Product2 list prices into AgentCPQ.
+              </div>
+            </div>
+            <button class="btn btn-standard blue darken-2 white-text" id="run-sf-setup-btn" onclick="runSalesforceSetup()">
+              <i class="material-icons left">build</i>
+              Run setup
+            </button>
+          </div>
+
+          <div style="margin-top: 16px;">
+            <label style="font-size: 12px; color: #6b7280;">Opportunity button URL</label>
+            <input id="sf-opportunity-url" type="text" class="crm-input" readonly value="{{ salesforce_button_urls.opportunity }}">
+          </div>
+          <div style="margin-top: 12px;">
+            <label style="font-size: 12px; color: #6b7280;">Account button URL</label>
+            <input id="sf-account-url" type="text" class="crm-input" readonly value="{{ salesforce_button_urls.account }}">
+          </div>
+          <div id="sf-setup-results" style="margin-top: 14px; font-size: 13px; color: #475569;"></div>
+          <div class="grey-text" style="margin-top: 10px; font-size: 12px;">
+            Salesforce is the system of record for Products. Update products in Salesforce, then run setup to sync.
+          </div>
+        </div>
+      </div>
+    </div>
     <!-- Top Row: CRM + Object Selectors -->
     <div class="row filters">
       <div class="input-field col s12 m6">
@@ -190,6 +221,84 @@
               console.error("Error saving mappings:", error);
               M.toast({html: "❌ Server error. Try again later.", classes: "red lighten-1"});
           }
+      }
+
+      function getCookie(name) {
+        const cookies = document.cookie.split(';');
+        for (let cookie of cookies) {
+          let [key, value] = cookie.trim().split('=');
+          if (key === name) return decodeURIComponent(value);
+        }
+        return null;
+      }
+
+      async function runSalesforceSetup() {
+        const button = document.getElementById("run-sf-setup-btn");
+        const resultsEl = document.getElementById("sf-setup-results");
+        if (button) {
+          button.disabled = true;
+          button.innerHTML = '<i class="material-icons left">autorenew</i>Running...';
+        }
+        resultsEl.textContent = "";
+
+        try {
+          const response = await fetch("/cpq/field-mapping/setup/", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": getCookie("csrftoken"),
+            },
+            body: JSON.stringify({}),
+          });
+
+          const data = await response.json();
+          if (!response.ok || !data.success) {
+            const message = data.error || "Salesforce setup failed.";
+            M.toast({ html: message, classes: "red lighten-1" });
+            if (resultsEl) {
+              resultsEl.textContent = message;
+            }
+            return;
+          }
+
+          if (data.button_urls) {
+            const oppUrl = document.getElementById("sf-opportunity-url");
+            const accUrl = document.getElementById("sf-account-url");
+            if (oppUrl && data.button_urls.opportunity) {
+              oppUrl.value = data.button_urls.opportunity;
+            }
+            if (accUrl && data.button_urls.account) {
+              accUrl.value = data.button_urls.account;
+            }
+          }
+
+          if (resultsEl && Array.isArray(data.results)) {
+            const lines = data.results.map(result => {
+              const status = result.status || "unknown";
+              const details = result.details ? ` (${result.details})` : "";
+              return `${result.object}.${result.api_name}: ${status}${details}`;
+            });
+            if (data.product_sync) {
+              lines.push(data.product_sync);
+            }
+            resultsEl.textContent = lines.join(" | ");
+          } else if (resultsEl && data.product_sync) {
+            resultsEl.textContent = data.product_sync;
+          }
+
+          M.toast({ html: "Salesforce setup completed.", classes: "green lighten-1" });
+        } catch (error) {
+          console.error("Salesforce setup error:", error);
+          M.toast({ html: "Server error running setup.", classes: "red lighten-1" });
+          if (resultsEl) {
+            resultsEl.textContent = "Server error running setup.";
+          }
+        } finally {
+          if (button) {
+            button.disabled = false;
+            button.innerHTML = '<i class="material-icons left">build</i>Run setup';
+          }
+        }
       }
 
       async function updateFields() {

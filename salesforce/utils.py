@@ -183,6 +183,116 @@ def _custom_field_metadata(field_spec):
     return metadata
 
 
+def _custom_button_full_name(object_name, api_name):
+    return f"{object_name}.{api_name}"
+
+
+def _custom_button_metadata(button_spec):
+    label = button_spec.get("label") or button_spec["api_name"].replace("_", " ")
+    return {
+        "masterLabel": label,
+        "linkType": "url",
+        "displayType": button_spec.get("display_type", "detailPageButton"),
+        "openType": button_spec.get("open_type", "newWindow"),
+        "url": button_spec["url"],
+        "availability": "online",
+    }
+
+
+def get_custom_button(token, object_name, api_name, timeout=6):
+    soql = (
+        "SELECT Id, DeveloperName, TableEnumOrId, FullName "
+        f"FROM WebLink WHERE TableEnumOrId = '{object_name}' "
+        f"AND DeveloperName = '{api_name}'"
+    )
+    response = _soql_query(
+        token.instance_url,
+        _salesforce_headers(token),
+        soql,
+        timeout=timeout,
+        tooling=True,
+    )
+    if response.status_code != 200:
+        return None, response
+    records = response.json().get("records", [])
+    return (records[0] if records else None), response
+
+
+def create_custom_button(token, button_spec, timeout=6):
+    payload = {
+        "FullName": _custom_button_full_name(button_spec["object"], button_spec["api_name"]),
+        "Metadata": _custom_button_metadata(button_spec),
+    }
+    url = f"{token.instance_url}/services/data/{SF_API_VERSION}/tooling/sobjects/WebLink"
+    return requests.post(
+        url,
+        headers=_salesforce_headers(token),
+        json=payload,
+        timeout=timeout,
+    )
+
+
+def ensure_salesforce_buttons(token, button_specs, timeout=6, dry_run=False):
+    results = []
+    for button_spec in button_specs:
+        object_name = button_spec["object"]
+        api_name = button_spec["api_name"]
+        existing_button, response = get_custom_button(
+            token,
+            object_name,
+            api_name,
+            timeout=timeout,
+        )
+        if response.status_code != 200:
+            results.append({
+                "object": object_name,
+                "api_name": api_name,
+                "status": "error",
+                "details": f"query_http_{response.status_code}",
+            })
+            continue
+
+        if existing_button:
+            results.append({
+                "object": object_name,
+                "api_name": api_name,
+                "status": "exists",
+                "details": existing_button.get("Id"),
+            })
+            continue
+
+        if dry_run:
+            results.append({
+                "object": object_name,
+                "api_name": api_name,
+                "status": "missing",
+                "details": "dry_run",
+            })
+            continue
+
+        create_response = create_custom_button(
+            token,
+            button_spec,
+            timeout=timeout,
+        )
+        if create_response.status_code in {200, 201}:
+            results.append({
+                "object": object_name,
+                "api_name": api_name,
+                "status": "created",
+                "details": create_response.json().get("id"),
+            })
+        else:
+            results.append({
+                "object": object_name,
+                "api_name": api_name,
+                "status": "error",
+                "details": f"create_http_{create_response.status_code}",
+            })
+
+    return results
+
+
 def get_custom_field(token, object_name, api_name, timeout=6):
     developer_name = api_name[:-3] if api_name.endswith("__c") else api_name
     soql = (

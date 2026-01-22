@@ -37,7 +37,13 @@ from .models import (
 from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
 from django.apps import apps
-from salesforce.utils import fetch_salesforce_object_fields, get_valid_salesforce_token, validate_salesforce_connection
+from salesforce.utils import (
+    ensure_salesforce_buttons,
+    ensure_salesforce_fields,
+    fetch_salesforce_object_fields,
+    get_valid_salesforce_token,
+    validate_salesforce_connection,
+)
 from hubspot.models import HubspotToken
 from quickbooks.models import QuickbooksToken
 from django.core.serializers.json import DjangoJSONEncoder
@@ -72,6 +78,8 @@ from .models import EmailAlert
 from cpq.models import default_rendered_fields_for_quote_document_settings, default_omitted_fields_for_quote_document_settings
 from django.utils.html import escape
 from django.utils.http import urlencode
+from django.core.management import call_command
+from io import StringIO
 import boto3
 from botocore.config import Config
 import stripe
@@ -2248,6 +2256,12 @@ def field_mapping_view(request):
     selected_model_raw = request.GET.get("object_type", "Opportunity")
     selected_model = alias_map.get(selected_model_raw, selected_model_raw)
 
+    button_base_url = request.build_absolute_uri(reverse("start_quote_from_salesforce"))
+    salesforce_button_urls = {
+        "opportunity": f"{button_base_url}?opportunity_id={{!Opportunity.Id}}",
+        "account": f"{button_base_url}?account_id={{!Account.Id}}",
+    }
+
     return render(request, "field_mapping.html", {
         "local_fields": json.dumps(local_fields, cls=DjangoJSONEncoder),
         "mappings": mappings,  # ✅ Raw dict for get_item filter
@@ -2255,6 +2269,75 @@ def field_mapping_view(request):
         "selected_crm": selected_crm,
         "selected_model": selected_model,
         "available_models": MODEL_CHOICES.keys(),
+        "salesforce_button_urls": salesforce_button_urls,
+    })
+
+
+@login_required
+@require_POST
+def run_salesforce_setup(request):
+    if not request.user.is_staff:
+        return HttpResponseForbidden("You do not have access to this action.")
+
+    token = get_valid_salesforce_token(timeout=8)
+    if not token:
+        return JsonResponse({"success": False, "error": "Salesforce not authenticated."}, status=401)
+
+    status = validate_salesforce_connection(token, timeout=8)
+    if not status.get("authenticated"):
+        return JsonResponse({"success": False, "error": "Salesforce authentication failed."}, status=401)
+
+    try:
+        from salesforce.management.commands.create_fields_needed import REQUIRED_FIELDS
+    except Exception as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=500)
+
+    results = ensure_salesforce_fields(token, REQUIRED_FIELDS, timeout=8, dry_run=False)
+
+    button_base_url = request.build_absolute_uri(reverse("start_quote_from_salesforce"))
+    button_urls = {
+        "opportunity": f"{button_base_url}?opportunity_id={{!Opportunity.Id}}",
+        "account": f"{button_base_url}?account_id={{!Account.Id}}",
+    }
+    button_specs = [
+        {
+            "object": "Opportunity",
+            "api_name": "AgentCPQ_Start_Quote",
+            "label": "Start Quote",
+            "url": button_urls["opportunity"],
+            "display_type": "detailPageButton",
+            "open_type": "newWindow",
+        },
+        {
+            "object": "Account",
+            "api_name": "AgentCPQ_Start_Quote",
+            "label": "Start Quote",
+            "url": button_urls["account"],
+            "display_type": "detailPageButton",
+            "open_type": "newWindow",
+        },
+    ]
+    button_results = ensure_salesforce_buttons(token, button_specs, timeout=8, dry_run=False)
+
+    product_sync_summary = None
+    try:
+        stdout = StringIO()
+        call_command(
+            "sync_products",
+            use_standard_pricebook=True,
+            update_existing=True,
+            stdout=stdout,
+            stderr=stdout,
+        )
+        product_sync_summary = stdout.getvalue().strip() or "Product sync complete."
+    except Exception as exc:
+        product_sync_summary = f"Product sync failed: {exc}"
+
+    return JsonResponse({
+        "success": True,
+        "results": results + button_results,
+        "button_urls": button_urls,
+        "product_sync": product_sync_summary,
     })
 
 

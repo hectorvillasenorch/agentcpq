@@ -35,6 +35,7 @@ urlpatterns = [
     path("save-field-mappings/", save_field_mappings, name="save_field_mappings"),  # ✅ Add this line
     path("hubspot/schema/", get_hubspot_schema, name="get_hubspot_schema"),
     path("crm/schema/", views.crm_schema_api, name="crm_schema_api"),
+    path("field-mapping/setup/", views.run_salesforce_setup, name="run_salesforce_setup"),
     path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote'),
     path('records/create/<str:object_name>/<str:user_id>', create_custom_record, name='create_custom_record'),
     path('records/success/', lambda r: HttpResponse("Record created."), name='custom_record_success'),

@@ -366,6 +366,22 @@
     display: none;
   }
 }
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #eef2ff;
+  color: #3730a3;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.sync-badge--new {
+  background: #e6f4ea;
+  color: #1b5e20;
+}
 </style>
 
 <div class="container">
@@ -432,7 +448,16 @@
         <tr>
           <td>{{ product.sku }}</td>
 
-          <td>{{ product.name }}</td>
+          <td>
+            <div style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span>{{ product.name }}</span>
+              {% if product.is_new %}
+                <span class="sync-badge sync-badge--new">New</span>
+              {% elif product.last_synced_at %}
+                <span class="sync-badge">Synced {{ product.last_synced_at|timesince }} ago</span>
+              {% endif %}
+            </div>
+          </td>
 
           <td>${{ product.price|floatformat:2|intcomma }}</td>
 
