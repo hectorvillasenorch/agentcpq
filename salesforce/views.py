@@ -9,13 +9,14 @@ from django.contrib import messages
 from django.core.management import call_command
 from io import StringIO
 from django.contrib.auth.decorators import login_required
+from decimal import Decimal
 import pkce
 import requests
-from cpq.models import Pricebook, PricebookEntry, Quote, QuoteLine
+from cpq.models import Pricebook, PricebookEntry, Quote, QuoteLine, SystemFieldMapping
 import logging
 import datetime
 from datetime import timezone as dt_timezone
-from salesforce.utils import get_valid_salesforce_token, soql_query_all
+from salesforce.utils import fetch_salesforce_object_field_metadata, get_valid_salesforce_token, soql_query_all
 from agents.utils.session_context_helpers.session_context_helpers import get_session_context
 
 def salesforce_login(request):
@@ -283,6 +284,47 @@ def sync_quote_to_salesforce(request, quote_id):
                     status=400,
                 )
 
+    oli_fields, oli_response = fetch_salesforce_object_field_metadata(
+        token_entry,
+        "OpportunityLineItem",
+        timeout=6,
+    )
+    if oli_fields is None:
+        return JsonResponse(
+            {"error": "Failed to fetch OpportunityLineItem fields.", "details": oli_response.text},
+            status=400,
+        )
+
+    def normalize_field_name(value):
+        return "".join(ch.lower() for ch in value if ch.isalnum())
+
+    oli_field_map = {}
+    oli_createable = set()
+    for field in oli_fields:
+        field_name = field.get("name")
+        if not field_name:
+            continue
+        if field.get("createable"):
+            oli_createable.add(field_name)
+            oli_field_map[normalize_field_name(field_name)] = field_name
+
+    mapping_rows = SystemFieldMapping.objects.filter(crm="Salesforce", field_type="QuoteLine")
+    mapping_overrides = {row.local_field: row.crm_field for row in mapping_rows}
+
+    skip_fields = {
+        "id",
+        "quote",
+        "product",
+        "parent_quote",
+        "parent_line",
+        "product_option",
+        "created_by",
+        "created_at",
+        "updated_at",
+        "synced_to_crm",
+        "public_id",
+    }
+
     # ✅ Step 2: Sync Quote Line Items as Opportunity Line Items
     failed_lines = []
     for line in quote_lines:
@@ -379,10 +421,34 @@ def sync_quote_to_salesforce(request, quote_id):
         line_item_payload = {
             "OpportunityId": opportunity_id,  # ✅ Link to Opportunity
             "PricebookEntryId": pricebook_entry.salesforce_id,
-            "Quantity": line.quantity,
-            "UnitPrice": str(line.unit_price),
-            "TotalPrice": str(line.total_price),
         }
+
+        if "Quantity" in oli_createable:
+            line_item_payload["Quantity"] = line.quantity
+        if "UnitPrice" in oli_createable:
+            line_item_payload["UnitPrice"] = str(line.unit_price)
+
+        for field in line._meta.fields:
+            field_name = field.name
+            if field_name in skip_fields or field.is_relation:
+                continue
+            sf_field = mapping_overrides.get(field_name)
+            if not sf_field:
+                sf_field = oli_field_map.get(normalize_field_name(field_name))
+            if not sf_field or sf_field in line_item_payload:
+                continue
+            if sf_field not in oli_createable:
+                continue
+            value = getattr(line, field_name, None)
+            if value is None:
+                continue
+            if isinstance(value, datetime.datetime):
+                value = value.isoformat(timespec="seconds")
+            elif isinstance(value, datetime.date):
+                value = value.isoformat()
+            elif isinstance(value, Decimal):
+                value = str(value)
+            line_item_payload[sf_field] = value
 
         line_item_url = f"{instance_url}/services/data/v57.0/sobjects/OpportunityLineItem/"
         line_item_response = requests.post(line_item_url, json=line_item_payload, headers={

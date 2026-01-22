@@ -126,7 +126,7 @@
     </div>
     <!-- Top Row: CRM + Object Selectors -->
     <div class="row filters">
-      <div class="input-field col s12 m6">
+      <div class="input-field col s12 {% if selected_crm == "Salesforce" %}m4{% else %}m6{% endif %}">
         <select id="crm" onchange="onAnyDropdownChange()">
           <option value="AgentCPQ" {% if selected_crm == "AgentCPQ" %}selected{% endif %}>AgentCPQ</option>
           <option value="HubSpot" {% if selected_crm == "HubSpot" %}selected{% endif %}>HubSpot</option>
@@ -135,7 +135,7 @@
         <label>Select CRM</label>
       </div>
 
-      <div class="input-field col s12 m6">
+      <div class="input-field col s12 {% if selected_crm == "Salesforce" %}m4{% else %}m6{% endif %}">
         <select id="object_type" onchange="onAnyDropdownChange()">
           {% for model in available_models %}
             <option value="{{ model }}" {% if selected_model == model %}selected{% endif %}>{{ model }}</option>
@@ -143,6 +143,17 @@
         </select>
         <label>Select Object Type</label>
       </div>
+
+      {% if selected_crm == "Salesforce" %}
+      <div class="input-field col s12 m4">
+        <select id="crm_object" onchange="onAnyDropdownChange()">
+          {% for obj in crm_object_choices %}
+            <option value="{{ obj }}" {% if selected_crm_object == obj %}selected{% endif %}>{{ obj }}</option>
+          {% endfor %}
+        </select>
+        <label>Salesforce Object</label>
+      </div>
+      {% endif %}
     </div>
     <!-- Field Mapping Table -->
     <div class="table-container">
@@ -186,7 +197,12 @@
       function onAnyDropdownChange() {
         const crm = document.getElementById("crm").value;
         const objectType = document.getElementById("object_type").value;
-        window.location.href = `/cpq/field-mapping/?crm=${crm}&object_type=${objectType}`;
+        const crmObjectEl = document.getElementById("crm_object");
+        const params = [`crm=${encodeURIComponent(crm)}`, `object_type=${encodeURIComponent(objectType)}`];
+        if (crm === "Salesforce" && crmObjectEl && crmObjectEl.value) {
+          params.push(`crm_object=${encodeURIComponent(crmObjectEl.value)}`);
+        }
+        window.location.href = `/cpq/field-mapping/?${params.join("&")}`;
         console.log("🧠 localFields is:", localFields);
       }
 
@@ -313,7 +329,10 @@
 
         try {
             const crm = document.getElementById("crm").value;
-            const res = await fetch(`/cpq/crm/schema/?crm=${crm}&object_type=${objectType}`);
+            const crmObjectEl = document.getElementById("crm_object");
+            const crmObject = crmObjectEl ? crmObjectEl.value : "";
+            const crmObjectParam = crmObject ? `&crm_object=${encodeURIComponent(crmObject)}` : "";
+            const res = await fetch(`/cpq/crm/schema/?crm=${crm}&object_type=${objectType}${crmObjectParam}`);
             const data = await res.json();
 
             if (data.error) {

@@ -2181,6 +2181,7 @@ def _get_local_fields_for_object_type(object_type):
 def crm_schema_api(request):
     crm = request.GET.get("crm", "AgentCPQ")
     object_type = request.GET.get("object_type", "Opportunity")
+    crm_object = request.GET.get("crm_object")
     local_fields = _get_local_fields_for_object_type(object_type)
     if local_fields is None:
         return JsonResponse({"error": "Invalid object type"}, status=400)
@@ -2206,7 +2207,7 @@ def crm_schema_api(request):
         except Exception as exc:
             return JsonResponse({"error": str(exc)}, status=500)
     elif crm == "Salesforce":
-        sf_object = SALESFORCE_OBJECT_MAP.get(object_type)
+        sf_object = crm_object or SALESFORCE_OBJECT_MAP.get(object_type)
         if not sf_object:
             return JsonResponse({"error": "Unsupported object"}, status=400)
         token = get_valid_salesforce_token(timeout=8)
@@ -2231,6 +2232,7 @@ def field_mapping_view(request):
     # ✅ Get the selected CRM and Object Type from request
     selected_crm = request.GET.get("crm", "AgentCPQ")
     selected_model = request.GET.get("object_type", "Opportunity")
+    selected_crm_object = request.GET.get("crm_object") or None
 
     if selected_model not in MODEL_CHOICES:
         return JsonResponse({"error": "Invalid object type"}, status=400)
@@ -2258,6 +2260,24 @@ def field_mapping_view(request):
     selected_model_raw = request.GET.get("object_type", "Opportunity")
     selected_model = alias_map.get(selected_model_raw, selected_model_raw)
 
+    crm_object_choices = []
+    if selected_crm == "Salesforce":
+        crm_object_choices = [
+            "Account",
+            "Contact",
+            "Opportunity",
+            "OpportunityLineItem",
+            "PricebookEntry",
+            "Product2",
+            "Quote",
+            "QuoteLineItem",
+        ]
+        if not selected_crm_object:
+            default_crm_object = SALESFORCE_OBJECT_MAP.get(selected_model, "Opportunity")
+            if selected_model == "QuoteLine":
+                default_crm_object = "OpportunityLineItem"
+            selected_crm_object = default_crm_object
+
     button_base_url = request.build_absolute_uri(reverse("start_quote_from_salesforce"))
     salesforce_button_urls = {
         "opportunity": f"{button_base_url}?opportunity_id={{!Opportunity.Id}}",
@@ -2271,6 +2291,8 @@ def field_mapping_view(request):
         "selected_crm": selected_crm,
         "selected_model": selected_model,
         "available_models": MODEL_CHOICES.keys(),
+        "crm_object_choices": crm_object_choices,
+        "selected_crm_object": selected_crm_object,
         "salesforce_button_urls": salesforce_button_urls,
     })
 

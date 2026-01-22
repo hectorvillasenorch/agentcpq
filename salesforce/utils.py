@@ -514,3 +514,17 @@ def fetch_salesforce_object_fields(token, object_name, timeout=6):
         if field.get("name")
     ]
     return fields, response
+
+
+def fetch_salesforce_object_field_metadata(token, object_name, timeout=6):
+    url = f"{token.instance_url}/services/data/{SF_API_VERSION}/sobjects/{object_name}/describe"
+    response = requests.get(url, headers=_salesforce_headers(token), timeout=timeout)
+    if response.status_code == 401:
+        refreshed = refresh_salesforce_token(token, timeout=timeout)
+        if refreshed:
+            url = f"{refreshed.instance_url}/services/data/{SF_API_VERSION}/sobjects/{object_name}/describe"
+            response = requests.get(url, headers=_salesforce_headers(refreshed), timeout=timeout)
+    if response.status_code != 200:
+        return None, response
+    payload = response.json()
+    return payload.get("fields", []), response
