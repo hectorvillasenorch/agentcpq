@@ -1,17 +1,8 @@
 import logging
 
-import requests
-
-from salesforce.utils import SF_API_VERSION, get_valid_salesforce_token, soql_query_all
+from salesforce.utils import SF_API_VERSION, get_valid_salesforce_token, salesforce_request, soql_query_all
 
 logger = logging.getLogger(__name__)
-
-
-def _salesforce_headers(token):
-    return {
-        "Authorization": f"Bearer {token.access_token}",
-        "Content-Type": "application/json",
-    }
 
 
 def sync_forecast_opportunity(opportunity, quote, account, forecast_amount, settings_obj, timeout=8):
@@ -51,16 +42,16 @@ def sync_forecast_opportunity(opportunity, quote, account, forecast_amount, sett
     if records:
         sf_id = records[0].get("Id")
         url = f"{token.instance_url}/services/data/{SF_API_VERSION}/sobjects/Opportunity/{sf_id}"
-        res = requests.patch(url, headers=_salesforce_headers(token), json=payload, timeout=timeout)
-        if res.status_code in {204, 200}:
+        res = salesforce_request(token, "PATCH", url, json=payload, timeout=timeout)
+        if res and res.status_code in {204, 200}:
             return {"status": "updated", "salesforce_id": sf_id}
-        logger.warning("Salesforce Opportunity update failed (HTTP %s).", res.status_code)
+        logger.warning("Salesforce Opportunity update failed (HTTP %s).", getattr(res, "status_code", "n/a"))
         return {"status": "error", "reason": "update_failed"}
 
     url = f"{token.instance_url}/services/data/{SF_API_VERSION}/sobjects/Opportunity"
-    res = requests.post(url, headers=_salesforce_headers(token), json=payload, timeout=timeout)
-    if res.status_code in {200, 201}:
+    res = salesforce_request(token, "POST", url, json=payload, timeout=timeout)
+    if res and res.status_code in {200, 201}:
         return {"status": "created", "salesforce_id": res.json().get("id")}
 
-    logger.warning("Salesforce Opportunity create failed (HTTP %s).", res.status_code)
+    logger.warning("Salesforce Opportunity create failed (HTTP %s).", getattr(res, "status_code", "n/a"))
     return {"status": "error", "reason": "create_failed"}

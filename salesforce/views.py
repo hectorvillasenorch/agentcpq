@@ -16,7 +16,12 @@ from cpq.models import Pricebook, PricebookEntry, Quote, QuoteLine, SystemFieldM
 import logging
 import datetime
 from datetime import timezone as dt_timezone
-from salesforce.utils import fetch_salesforce_object_field_metadata, get_valid_salesforce_token, soql_query_all
+from salesforce.utils import (
+    fetch_salesforce_object_field_metadata,
+    get_valid_salesforce_token,
+    salesforce_request,
+    soql_query_all,
+)
 from agents.utils.session_context_helpers.session_context_helpers import get_session_context
 
 def salesforce_login(request):
@@ -38,7 +43,10 @@ def salesforce_login(request):
     }
     scopes = (settings.SALESFORCE_OAUTH_SCOPES or "").strip()
     if scopes:
-        params["scope"] = scopes
+        scope_parts = set(scopes.split())
+        if "refresh_token" not in scope_parts and "offline_access" not in scope_parts:
+            scope_parts.add("refresh_token")
+        params["scope"] = " ".join(sorted(scope_parts))
 
     auth_url = f"{settings.SALESFORCE_AUTH_URL}?{urllib.parse.urlencode(params)}"
     return redirect(auth_url)
@@ -126,20 +134,14 @@ def test_salesforce_api(request):
     if not token_entry:
         return JsonResponse({"error": "No valid Salesforce authentication found"}, status=401)
 
-    access_token = token_entry.access_token
     instance_url = token_entry.instance_url
 
     # ✅ Construct the request URL
     url = f"{instance_url}/services/data/v57.0/sobjects/Account/"  # Example: Fetch Account data
 
-    # ✅ Set the authorization headers
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
-    }
-
-    # ✅ Make the GET request
-    response = requests.get(url, headers=headers)
+    response = salesforce_request(token_entry, "GET", url, timeout=6)
+    if response is None:
+        return JsonResponse({"error": "Salesforce request failed"}, status=502)
 
     # ✅ Return the response JSON
     try:
@@ -173,7 +175,6 @@ def sync_quote_to_salesforce(request, quote_id):
     if not token_entry:
         return JsonResponse({"error": "Salesforce authentication not found"}, status=401)
 
-    access_token = token_entry.access_token
     instance_url = token_entry.instance_url
 
     # ✅ Fetch the Quote and related Line Items
@@ -229,13 +230,15 @@ def sync_quote_to_salesforce(request, quote_id):
     }
 
     opportunity_url = f"{instance_url}/services/data/v57.0/sobjects/Opportunity/{opportunity_id}"
-    try:
-        opp_response = requests.patch(opportunity_url, json=opportunity_update_payload, headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json"
-        })
-    except requests.RequestException as exc:
-        return JsonResponse({"error": "Failed to update Salesforce Opportunity", "details": str(exc)}, status=502)
+    opp_response = salesforce_request(
+        token_entry,
+        "PATCH",
+        opportunity_url,
+        json=opportunity_update_payload,
+        timeout=6,
+    )
+    if opp_response is None:
+        return JsonResponse({"error": "Failed to update Salesforce Opportunity"}, status=502)
 
     if opp_response.status_code >= 400:
         try:
@@ -262,19 +265,16 @@ def sync_quote_to_salesforce(request, quote_id):
         if pb_records:
             pricebook_id = pb_records[0].get("Id")
             pb_payload = {"Pricebook2Id": pricebook_id}
-            try:
-                pb_update = requests.patch(
-                    opportunity_url,
-                    json=pb_payload,
-                    headers={
-                        "Authorization": f"Bearer {access_token}",
-                        "Content-Type": "application/json",
-                    },
-                    timeout=6,
-                )
-            except requests.RequestException as exc:
+            pb_update = salesforce_request(
+                token_entry,
+                "PATCH",
+                opportunity_url,
+                json=pb_payload,
+                timeout=6,
+            )
+            if pb_update is None:
                 return JsonResponse(
-                    {"error": "Failed to set Salesforce Opportunity pricebook.", "details": str(exc)},
+                    {"error": "Failed to set Salesforce Opportunity pricebook."},
                     status=502,
                 )
             if pb_update.status_code >= 400:
@@ -405,18 +405,15 @@ def sync_quote_to_salesforce(request, quote_id):
                         "UnitPrice": str(line.unit_price),
                         "IsActive": True,
                     }
-                    try:
-                        create_response = requests.post(
-                            f"{instance_url}/services/data/v57.0/sobjects/PricebookEntry",
-                            json=payload,
-                            headers={
-                                "Authorization": f"Bearer {access_token}",
-                                "Content-Type": "application/json",
-                            },
-                            timeout=6,
-                        )
-                    except requests.RequestException as exc:
-                        failed_lines.append({"line_id": line.id, "reason": str(exc)})
+                    create_response = salesforce_request(
+                        token_entry,
+                        "POST",
+                        f"{instance_url}/services/data/v57.0/sobjects/PricebookEntry",
+                        json=payload,
+                        timeout=6,
+                    )
+                    if create_response is None:
+                        failed_lines.append({"line_id": line.id, "reason": "pricebook_entry_create_failed"})
                         continue
                     if create_response.status_code in {200, 201}:
                         pb_entry_id = create_response.json().get("id")
@@ -495,27 +492,26 @@ def sync_quote_to_salesforce(request, quote_id):
 
         if existing_oli_id:
             line_item_url = f"{instance_url}/services/data/v57.0/sobjects/OpportunityLineItem/{existing_oli_id}"
-            line_item_response = requests.patch(
+            line_item_response = salesforce_request(
+                token_entry,
+                "PATCH",
                 line_item_url,
                 json=line_item_payload,
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json",
-                },
                 timeout=6,
             )
         else:
             line_item_url = f"{instance_url}/services/data/v57.0/sobjects/OpportunityLineItem/"
-            line_item_response = requests.post(
+            line_item_response = salesforce_request(
+                token_entry,
+                "POST",
                 line_item_url,
                 json=line_item_payload,
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json",
-                },
                 timeout=6,
             )
 
+        if line_item_response is None:
+            failed_lines.append({"line_id": line.id, "reason": "line_item_request_failed"})
+            continue
         if line_item_response.status_code >= 400:
             try:
                 details = line_item_response.json()

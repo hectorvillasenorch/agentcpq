@@ -75,6 +75,54 @@ def get_valid_salesforce_token(timeout=6):
     return token
 
 
+def salesforce_request(token, method, url, *, params=None, data=None, json=None, headers=None, timeout=6):
+    if not token:
+        return None
+
+    request_headers = {"Content-Type": "application/json"}
+    if headers:
+        request_headers.update(headers)
+    request_headers["Authorization"] = f"Bearer {token.access_token}"
+
+    try:
+        response = requests.request(
+            method,
+            url,
+            headers=request_headers,
+            params=params,
+            data=data,
+            json=json,
+            timeout=timeout,
+        )
+    except requests.RequestException:
+        return None
+
+    if response.status_code != 401:
+        return response
+
+    refreshed = refresh_salesforce_token(token, timeout=timeout)
+    if not refreshed:
+        return response
+
+    refreshed_url = url
+    if token.instance_url and refreshed.instance_url and url.startswith(token.instance_url):
+        refreshed_url = f"{refreshed.instance_url}{url[len(token.instance_url):]}"
+
+    request_headers["Authorization"] = f"Bearer {refreshed.access_token}"
+    try:
+        return requests.request(
+            method,
+            refreshed_url,
+            headers=request_headers,
+            params=params,
+            data=data,
+            json=json,
+            timeout=timeout,
+        )
+    except requests.RequestException:
+        return response
+
+
 def _extract_user_id(userinfo):
     user_id = userinfo.get("user_id")
     if user_id:

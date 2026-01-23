@@ -47,7 +47,12 @@ def update_quote_line_record(user, update_payload, line_item, quote):
         if term is not None:
             line_item.term = term
         line_item.save()
-        print("DEBUG: Line item updated:", line_item)  # Debugging step
+        try:
+            quote.refresh_from_db()
+            quote.save()
+            update_opportunity_net_amount(quote.opportunity)
+        except Exception as exc:
+            logging.warning("⚠️ Quote recalculation failed after quote line update: %s", exc)
 
         return {
             "success": True

@@ -217,6 +217,36 @@ agent_map = {
 🔜 **Integrations**: Support for Salesforce, HubSpot, and more
 🔜 **Advanced AI**: Adaptive learning for better quote recommendations
 
+---
+
+## Salesforce -> AgentCPQ: Opportunity Stage Sync (Flow Webhook)
+Use this when Salesforce is the source of truth for Opportunity stage (e.g., Closed Won).
+
+**Prereqs**
+- AgentCPQ is connected to Salesforce and local `Opportunity.external_id` stores the SF Opportunity Id.
+- You have an AgentCPQ webhook endpoint URL ready (example: `https://<agentcpq-host>/api/v1/salesforce/opportunity-stage/`).
+
+**Flow setup (Salesforce Admin)**
+1. Go to Setup -> Flows -> New Flow -> Record-Triggered Flow.
+2. Object: Opportunity. Trigger: A record is updated. Condition: `StageName` is changed AND `IsClosed = TRUE` (or `StageName = "Closed Won"`).
+3. Add Action -> HTTP Callout.
+4. Configure the endpoint using a Named Credential (recommended) or a Remote Site Setting.
+5. Request body (JSON):
+   - `opportunity_id`: `Opportunity.Id`
+   - `stage`: `Opportunity.StageName`
+   - `last_modified`: `Opportunity.LastModifiedDate`
+   - optional `account_id`: `Opportunity.AccountId`
+6. Activate the Flow.
+
+**AgentCPQ expected behavior**
+- Find the local Opportunity where `external_id == opportunity_id`.
+- Update the local stage to match Salesforce.
+- Ignore duplicates (idempotent updates).
+
+**Test**
+- Change an Opportunity to Closed Won in Salesforce.
+- Confirm the matching AgentCPQ Opportunity stage updates.
+
 
 ✅ **Go to Market Strategy**:
 - Focus on big guys
