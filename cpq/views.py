@@ -2409,6 +2409,16 @@ def set_primary_quote(request, quote_id):
             # Set this quote as primary
             quote.hs_primary = True
             quote.save()
+            if quote.opportunity_id:
+                quote.opportunity.primary_quote = quote
+                quote.opportunity.save(update_fields=["primary_quote"])
+                try:
+                    from agents.utils.quote_agent.db_helpers import update_opportunity_net_amount
+                    update_opportunity_net_amount(quote.opportunity)
+                except Exception as exc:
+                    logging.getLogger(__name__).warning(
+                        "⚠️ Opportunity amount refresh failed after set-primary: %s", exc
+                    )
 
             # Trigger HubSpot sync when a primary quote is set
             try:

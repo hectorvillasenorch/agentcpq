@@ -1,6 +1,6 @@
 import logging
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
-from cpq.models import Product, Opportunity, Account, QuoteLine, ActionUsage, QuoteUIRender, CustomField, QuoteDocumentSettings
+from cpq.models import Product, Opportunity, Account, Quote, QuoteLine, ActionUsage, QuoteUIRender, CustomField, QuoteDocumentSettings
 from django.db.models import Q, Sum
 from django.db import transaction
 
@@ -172,15 +172,25 @@ def get_or_create_account_and_opportunity(user, extracted_details, session_data)
     return account, opportunity, None
 
 def update_opportunity_net_amount(opportunity):
-    """Recalculate and update the opportunity's total amount from all related quotes."""
+    """Recalculate and update the opportunity's total amount from the primary quote."""
     try:
-        # ✅ Add all the net_amounts of the quotes associated with the opportunity
-        total_amount = opportunity.quotes.aggregate(
-            total=Sum('net_amount')
-        )['total']
+        if not opportunity:
+            return
+
+        primary_quote = getattr(opportunity, "primary_quote", None)
+        if not primary_quote:
+            primary_quote = Quote.objects.filter(
+                opportunity=opportunity,
+                hs_primary=True,
+            ).order_by("-id").first()
+
+        total_amount = getattr(primary_quote, "net_amount", None) if primary_quote else None
 
         # ✅ Ensure we round to 2 decimal places
-        opportunity.amount = Decimal(total_amount or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        opportunity.amount = Decimal(total_amount or 0).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
 
         # ✅ Guardar la oportunidad actualizada
         opportunity.save()
