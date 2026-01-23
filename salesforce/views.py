@@ -9,7 +9,7 @@ from django.contrib import messages
 from django.core.management import call_command
 from io import StringIO
 from django.contrib.auth.decorators import login_required
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import pkce
 import requests
 from cpq.models import Pricebook, PricebookEntry, Quote, QuoteLine, SystemFieldMapping
