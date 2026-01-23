@@ -339,7 +339,12 @@ def sync_quote_to_salesforce(request, quote_id):
             existing_oli_by_product[product_id] = oli_id
 
     mapping_rows = SystemFieldMapping.objects.filter(crm="Salesforce", field_type="QuoteLine")
-    mapping_overrides = {row.local_field: row.crm_field for row in mapping_rows}
+    mapping_overrides = {row.local_field: row.crm_field for row in mapping_rows if row.crm_field}
+    mapping_by_crm = {}
+    for local_field, crm_field in mapping_overrides.items():
+        normalized_crm = normalize_field_name(crm_field)
+        if normalized_crm:
+            mapping_by_crm.setdefault(normalized_crm, local_field)
 
     skip_fields = {
         "id",
@@ -461,7 +466,21 @@ def sync_quote_to_salesforce(request, quote_id):
         if "Quantity" in allowed_fields:
             line_item_payload["Quantity"] = line.quantity or 1
         if "UnitPrice" in allowed_fields:
-            line_item_payload["UnitPrice"] = str(line.unit_price)
+            unit_price_value = None
+            unit_price_field = mapping_by_crm.get(normalize_field_name("UnitPrice"))
+            if unit_price_field:
+                unit_price_value = getattr(line, unit_price_field, None)
+                if unit_price_field == "total_price" and line.quantity:
+                    try:
+                        unit_price_value = (
+                            Decimal(str(unit_price_value)) / Decimal(str(line.quantity))
+                        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                    except (ArithmeticError, ValueError):
+                        unit_price_value = None
+            if unit_price_value is None:
+                unit_price_value = line.subtotal if line.subtotal is not None else line.unit_price
+            if unit_price_value is not None:
+                line_item_payload["UnitPrice"] = str(unit_price_value)
 
         for field in line._meta.fields:
             field_name = field.name
