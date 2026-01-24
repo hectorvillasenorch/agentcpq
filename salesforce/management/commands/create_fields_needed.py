@@ -50,6 +50,21 @@ REQUIRED_FIELDS = [
         "values": ["TOTAL_CONTRACT_VALUE", "BASELINE_ACV_ONLY"],
         "label": "AgentCPQ Forecast Strategy",
     },
+    {
+        "object": "Product2",
+        "api_name": "AgentCPQ_Subscription__c",
+        "type": "Checkbox",
+        "label": "AgentCPQ Subscription",
+        "default_value": False,
+    },
+    {
+        "object": "Product2",
+        "api_name": "AgentCPQ_Default_Term__c",
+        "type": "Number",
+        "precision": 18,
+        "scale": 0,
+        "label": "AgentCPQ Default Term",
+    },
 ]
 
 

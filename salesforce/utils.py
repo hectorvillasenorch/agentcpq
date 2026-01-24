@@ -210,6 +210,11 @@ def _custom_field_metadata(field_spec):
     elif field_type == "Currency":
         metadata["precision"] = int(field_spec.get("precision", 18))
         metadata["scale"] = int(field_spec.get("scale", 2))
+    elif field_type == "Number":
+        metadata["precision"] = int(field_spec.get("precision", 18))
+        metadata["scale"] = int(field_spec.get("scale", 0))
+    elif field_type == "Checkbox":
+        metadata["defaultValue"] = bool(field_spec.get("default_value", False))
     elif field_type == "Picklist":
         values = field_spec.get("values") or []
         metadata["valueSet"] = {
