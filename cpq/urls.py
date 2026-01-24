@@ -1,6 +1,6 @@
 from django.http import HttpResponse
 from django.urls import path
-from .views import accounts_view, settings_view, product_list, product_detail, field_mapping_view, save_field_mappings, set_primary_quote, custom_fields_view, create_custom_field, get_company_information, create_custom_object, get_document_template, business_rules_view, create_business_rule, manage_users, admin_integrations
+from .views import accounts_view, settings_view, cpq_settings_admin, product_list, product_detail, field_mapping_view, save_field_mappings, set_primary_quote, custom_fields_view, create_custom_field, get_company_information, create_custom_object, get_document_template, business_rules_view, create_business_rule, manage_users, admin_integrations
 from .views import (
     create_notification,
     create_custom_record,
@@ -57,6 +57,7 @@ urlpatterns = [
 
     # ADMIN URLS
     path("admin/custom-fields/", custom_fields_view, name="custom_fields"),
+    path("admin/cpq-settings/", cpq_settings_admin, name="cpq_settings"),
     path('admin/custom-fields/create/<str:object_name>/', create_custom_field, name='create_custom_field'),
     path('admin/custom-fields/edit/<str:field_id>/', edit_custom_field, name='edit_custom_field'),
     path('admin/custom-fields/delete/<str:field_id>/', delete_custom_field, name='delete_custom_field'),

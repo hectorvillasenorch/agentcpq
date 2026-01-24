@@ -1,5 +1,15 @@
 from django import forms
-from .models import CustomField, BusinessRule, RuleCondition, CustomObject, QuoteLine, CustomFieldValue, ContentType, CustomRecord
+from .models import (
+    CPQSettings,
+    CustomField,
+    BusinessRule,
+    RuleCondition,
+    CustomObject,
+    QuoteLine,
+    CustomFieldValue,
+    ContentType,
+    CustomRecord,
+)
 from django.forms import modelformset_factory
 from django.apps import apps
 from django.contrib.auth import get_user_model
@@ -128,6 +138,43 @@ class PercentField(forms.DecimalField):
         if decimal_value is None:
             return None
         return decimal_value.quantize(Decimal("0.01"))
+
+
+class CPQSettingsForm(forms.ModelForm):
+    class Meta:
+        model = CPQSettings
+        fields = [
+            "renewal_forecast_window_days",
+            "quote_expiration_default_days",
+            "decimal_precision",
+            "rounding_mode",
+            "proration_enabled",
+            "proration_method",
+            "day_count_convention",
+            "forecast_opportunity_enabled",
+            "forecast_opportunity_creation_mode",
+            "forecast_opportunity_stage",
+            "forecast_opportunity_probability",
+            "forecast_amount_strategy",
+            "auto_recalculate_renewals_on_amendment",
+            "ramp_deals_enabled",
+        ]
+        labels = {
+            "renewal_forecast_window_days": "Renewal forecast window (days)",
+            "quote_expiration_default_days": "Quote expiration default (days)",
+            "decimal_precision": "Decimal precision",
+            "rounding_mode": "Rounding mode",
+            "proration_enabled": "Proration enabled",
+            "proration_method": "Proration method",
+            "day_count_convention": "Day count convention",
+            "forecast_opportunity_enabled": "Forecast opportunity enabled",
+            "forecast_opportunity_creation_mode": "Forecast opportunity creation mode",
+            "forecast_opportunity_stage": "Forecast opportunity stage",
+            "forecast_opportunity_probability": "Forecast opportunity probability",
+            "forecast_amount_strategy": "Forecast amount strategy",
+            "auto_recalculate_renewals_on_amendment": "Auto-recalculate renewals on amendment",
+            "ramp_deals_enabled": "Ramp deals enabled",
+        }
 
 
 DATA_TYPE_MAPPING = {

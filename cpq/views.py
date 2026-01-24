@@ -33,6 +33,7 @@ from .models import (
     Lead,
     Activity,
     PicklistValue,
+    CPQSettings,
 )
 from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
@@ -49,7 +50,14 @@ from quickbooks.models import QuickbooksToken
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.exceptions import ObjectDoesNotExist
 import json
-from .forms import CustomFieldForm, CustomObjectForm, EmailAlertForm, generate_dynamic_form, resolve_lookup_model
+from .forms import (
+    CPQSettingsForm,
+    CustomFieldForm,
+    CustomObjectForm,
+    EmailAlertForm,
+    generate_dynamic_form,
+    resolve_lookup_model,
+)
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.contenttypes.models import ContentType
@@ -668,6 +676,32 @@ def product_detail(request, product_id):
 
 def settings_view(request):
     return render(request, "cpq/settings.html")
+
+
+@login_required
+def cpq_settings_admin(request):
+    if not request.user.is_staff:
+        return HttpResponseForbidden("You do not have access to CPQ settings.")
+
+    settings_obj = CPQSettings.safe_first() or CPQSettings.objects.create()
+
+    if request.method == "POST":
+        form = CPQSettingsForm(request.POST, instance=settings_obj)
+        if form.is_valid():
+            form.save()
+            CPQSettings.load_cached(force_refresh=True)
+            messages.success(request, "CPQ settings updated.")
+            return redirect("cpq:cpq_settings")
+        messages.error(request, "Please fix the errors below.")
+    else:
+        form = CPQSettingsForm(instance=settings_obj)
+
+    for field in form.fields.values():
+        input_type = getattr(field.widget, "input_type", "")
+        css_class = "settings-checkbox" if input_type == "checkbox" else "settings-input"
+        field.widget.attrs.setdefault("class", css_class)
+
+    return render(request, "cpq_settings.html", {"form": form})
 
 def build_account_quote_hierarchy_for_user(user):
     """Return Account → Opportunity → Quote hierarchy for the given user."""
