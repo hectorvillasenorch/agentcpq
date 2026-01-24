@@ -1,16 +1,22 @@
 from decimal import Decimal, InvalidOperation
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import models
 from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 
-from cpq.models import Product
+from cpq.models import Product, SystemFieldMapping
 from salesforce.utils import get_valid_salesforce_token, soql_query_all, validate_salesforce_connection
 
 
-PRODUCT2_SOQL = (
-    "SELECT Id, Name, ProductCode, Family, IsActive, Description "
-    "FROM Product2"
-)
+BASE_PRODUCT2_FIELDS = [
+    "Id",
+    "Name",
+    "ProductCode",
+    "Family",
+    "IsActive",
+    "Description",
+]
 
 
 class Command(BaseCommand):
@@ -59,7 +65,24 @@ class Command(BaseCommand):
         if not status.get("authenticated"):
             raise CommandError(f"Salesforce auth invalid: {status.get('errors')}")
 
-        soql = PRODUCT2_SOQL
+        mapping_rows = SystemFieldMapping.objects.filter(
+            crm="Salesforce",
+            field_type="Product",
+        )
+        mapping = {
+            row.local_field: row.crm_field
+            for row in mapping_rows
+            if row.crm_field
+        }
+
+        fields = list(BASE_PRODUCT2_FIELDS)
+        for crm_field in mapping.values():
+            if not crm_field or "." in crm_field or " " in crm_field:
+                continue
+            if crm_field not in fields:
+                fields.append(crm_field)
+
+        soql = f"SELECT {', '.join(fields)} FROM Product2"
         if not options["include_inactive"]:
             soql = f"{soql} WHERE IsActive = true"
 
@@ -109,6 +132,8 @@ class Command(BaseCommand):
                         product.save(update_fields=["external_id"])
                     updated += 1
 
+            mapped_values = self._build_mapped_values(mapping, record)
+
             if product:
                 if not options["update_existing"]:
                     if not dry_run:
@@ -131,6 +156,12 @@ class Command(BaseCommand):
                     updates["price"] = price
                 if not product.external_id:
                     updates["external_id"] = sf_id
+                if mapped_values:
+                    for local_field, mapped_value in mapped_values.items():
+                        if mapped_value is None:
+                            continue
+                        if getattr(product, local_field, None) != mapped_value:
+                            updates[local_field] = mapped_value
                 updates["last_synced_at"] = now
                 if updates and not dry_run:
                     Product.objects.filter(pk=product.pk).update(**updates)
@@ -142,16 +173,22 @@ class Command(BaseCommand):
 
             price = price_map.get(sf_id, Decimal("0.00"))
             if not dry_run:
-                Product.objects.create(
-                    name=name or sku,
-                    sku=self._ensure_unique_sku(sku, sf_id),
-                    price=price,
-                    family=family or "Uncategorized",
-                    external_id=sf_id,
-                    is_active=is_active,
-                    description=description,
-                    last_synced_at=now,
-                )
+                create_kwargs = {
+                    "name": name or sku,
+                    "sku": self._ensure_unique_sku(sku, sf_id),
+                    "price": price,
+                    "family": family or "Uncategorized",
+                    "external_id": sf_id,
+                    "is_active": is_active,
+                    "description": description,
+                    "last_synced_at": now,
+                }
+                if mapped_values:
+                    for local_field, mapped_value in mapped_values.items():
+                        if mapped_value is None:
+                            continue
+                        create_kwargs[local_field] = mapped_value
+                Product.objects.create(**create_kwargs)
             created += 1
 
         summary = (
@@ -164,6 +201,68 @@ class Command(BaseCommand):
     def _build_sku(self, record):
         value = record.get("ProductCode") or ""
         value = str(value).strip()
+        return value
+
+    def _build_mapped_values(self, mapping, record):
+        if not mapping:
+            return {}
+
+        skip_local_fields = {
+            "id",
+            "pk",
+            "external_id",
+            "public_id",
+            "prdid",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "updated_by",
+            "last_synced_at",
+        }
+
+        values = {}
+        for local_field, crm_field in mapping.items():
+            if not crm_field or local_field in skip_local_fields:
+                continue
+            if crm_field not in record:
+                continue
+            raw_value = record.get(crm_field)
+            if raw_value is None:
+                continue
+            try:
+                model_field = Product._meta.get_field(local_field)
+            except Exception:
+                continue
+            value = self._coerce_field_value(model_field, raw_value)
+            values[local_field] = value
+
+        return values
+
+    def _coerce_field_value(self, field, value):
+        if value is None:
+            return None
+        if isinstance(field, models.BooleanField):
+            return bool(value)
+        if isinstance(field, models.IntegerField):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+        if isinstance(field, models.DecimalField):
+            try:
+                return Decimal(str(value))
+            except (InvalidOperation, TypeError, ValueError):
+                return None
+        if isinstance(field, models.DateTimeField):
+            if isinstance(value, str):
+                return parse_datetime(value)
+            return value
+        if isinstance(field, models.DateField):
+            if isinstance(value, str):
+                return parse_date(value)
+            return value
+        if isinstance(value, str):
+            return value.strip()
         return value
 
     def _ensure_unique_sku(self, sku, sf_id, product_id=None):

@@ -553,7 +553,14 @@ def sync_quote_to_salesforce(request, quote_id):
 def sync_salesforce_products_view(request):
     stdout = StringIO()
     try:
-        call_command("sync_products", stdout=stdout, stderr=stdout)
+        call_command(
+            "sync_products",
+            "--update-existing",
+            "--match-sku",
+            "--use-standard-pricebook",
+            stdout=stdout,
+            stderr=stdout,
+        )
         output = stdout.getvalue().strip()
         if output:
             messages.success(request, output)
