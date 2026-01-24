@@ -9,6 +9,7 @@ from .models import (
     CustomFieldValue,
     ContentType,
     CustomRecord,
+    picklist_choices,
 )
 from django.forms import modelformset_factory
 from django.apps import apps
@@ -38,6 +39,30 @@ CRM_CHOICES = [
     ('HubSpot', 'HubSpot'),
     ('Salesforce', 'Salesforce'),
     ('AgentCPQ', 'AgentCPQ'),
+]
+
+ROUNDING_MODE_CHOICES = [
+    ("HALF_EVEN", "Half Even"),
+    ("HALF_UP", "Half Up"),
+    ("UP", "Up"),
+    ("DOWN", "Down"),
+]
+
+PRORATION_METHOD_CHOICES = [
+    ("MONTHLY_SIMPLE", "Monthly Simple"),
+]
+
+DAY_COUNT_CONVENTION_CHOICES = [
+    ("ACTUAL", "Actual"),
+]
+
+FORECAST_CREATION_MODE_CHOICES = [
+    ("RENEWAL_ONLY", "Renewal Only"),
+]
+
+FORECAST_AMOUNT_STRATEGY_CHOICES = [
+    ("TOTAL_CONTRACT_VALUE", "Total Contract Value"),
+    ("BASELINE_ACV_ONLY", "Baseline ACV Only"),
 ]
 
 QUOTE_FIELDS = [
@@ -175,6 +200,24 @@ class CPQSettingsForm(forms.ModelForm):
             "auto_recalculate_renewals_on_amendment": "Auto-recalculate renewals on amendment",
             "ramp_deals_enabled": "Ramp deals enabled",
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["rounding_mode"].widget = forms.Select(choices=ROUNDING_MODE_CHOICES)
+        self.fields["proration_method"].widget = forms.Select(choices=PRORATION_METHOD_CHOICES)
+        self.fields["day_count_convention"].widget = forms.Select(choices=DAY_COUNT_CONVENTION_CHOICES)
+        self.fields["forecast_opportunity_creation_mode"].widget = forms.Select(
+            choices=FORECAST_CREATION_MODE_CHOICES
+        )
+        self.fields["forecast_amount_strategy"].widget = forms.Select(
+            choices=FORECAST_AMOUNT_STRATEGY_CHOICES
+        )
+
+        stage_choices = picklist_choices("Opportunity", "stage")
+        if stage_choices:
+            self.fields["forecast_opportunity_stage"].widget = forms.Select(
+                choices=stage_choices
+            )
 
 
 DATA_TYPE_MAPPING = {
