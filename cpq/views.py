@@ -86,6 +86,7 @@ from .models import EmailAlert
 from cpq.models import default_rendered_fields_for_quote_document_settings, default_omitted_fields_for_quote_document_settings
 from django.utils.html import escape
 from django.utils.http import urlencode
+from cpq.renewals.renewals import make_opportunity_renewal
 from django.core.management import call_command
 from io import StringIO
 import boto3
@@ -2471,6 +2472,25 @@ def set_primary_quote(request, quote_id):
             return JsonResponse({"error": "Quote not found"}, status=404)
 
     return JsonResponse({"error": "Invalid method"}, status=405)
+
+
+@login_required
+@require_POST
+def create_renewal_quote(request, opportunity_id):
+    opportunity = get_object_or_404(Opportunity, id=opportunity_id)
+    if not partner_can_access_record(request.user, "Opportunity", opportunity):
+        return HttpResponseForbidden("You do not have access to this opportunity.")
+
+    result = make_opportunity_renewal(opportunity)
+    if result is True:
+        messages.success(request, "Renewal quote created.")
+    elif isinstance(result, tuple) and result and result[0] is False:
+        messages.error(request, f"Renewal creation failed: {result[1]}")
+    else:
+        messages.warning(request, "Unable to create renewal. Ensure a primary quote exists.")
+
+    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or reverse("cpq:accounts")
+    return redirect(next_url)
 
 
 # Maybe it is not used

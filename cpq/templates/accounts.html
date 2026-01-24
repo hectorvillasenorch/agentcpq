@@ -234,6 +234,32 @@
         align-items: flex-start;
         gap: 10px;
     }
+    .opportunity-actions {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .icon-action-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        border: 1px solid rgba(15, 23, 42, 0.12);
+        background: #ffffff;
+        color: #0f172a;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        cursor: pointer;
+    }
+    .icon-action-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+    }
+    .icon-action-btn i {
+        font-size: 18px;
+    }
     .quote-collapsible > li {
         border-top: 1px solid rgba(255, 255, 255, 0.5);
     }
@@ -601,6 +627,15 @@
                                                         </span>
                                                     </span>
                                                 {% endif %}
+                                                <span class="opportunity-actions">
+                                                    <form method="post" action="{% url 'cpq:create_renewal_quote' opportunity.id %}">
+                                                        {% csrf_token %}
+                                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                                        <button type="submit" class="icon-action-btn" title="Create renewal quote" aria-label="Create renewal quote">
+                                                            <i class="material-icons">autorenew</i>
+                                                        </button>
+                                                    </form>
+                                                </span>
                                             </div>
                                         </div>
                                         <div class="collapsible-body">

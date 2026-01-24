@@ -1,6 +1,6 @@
 from django.http import HttpResponse
 from django.urls import path
-from .views import accounts_view, settings_view, cpq_settings_admin, product_list, product_detail, field_mapping_view, save_field_mappings, set_primary_quote, custom_fields_view, create_custom_field, get_company_information, create_custom_object, get_document_template, business_rules_view, create_business_rule, manage_users, admin_integrations
+from .views import accounts_view, settings_view, cpq_settings_admin, product_list, product_detail, field_mapping_view, save_field_mappings, set_primary_quote, create_renewal_quote, custom_fields_view, create_custom_field, get_company_information, create_custom_object, get_document_template, business_rules_view, create_business_rule, manage_users, admin_integrations
 from .views import (
     create_notification,
     create_custom_record,
@@ -37,6 +37,7 @@ urlpatterns = [
     path("crm/schema/", views.crm_schema_api, name="crm_schema_api"),
     path("field-mapping/setup/", views.run_salesforce_setup, name="run_salesforce_setup"),
     path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote'),
+    path("opportunities/<int:opportunity_id>/renewal/", create_renewal_quote, name="create_renewal_quote"),
     path('records/create/<str:object_name>/<str:user_id>', create_custom_record, name='create_custom_record'),
     path('records/success/', lambda r: HttpResponse("Record created."), name='custom_record_success'),
     path("search/accounts/", search_accounts, name="search_accounts"),
