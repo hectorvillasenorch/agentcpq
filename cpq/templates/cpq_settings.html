@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<style>
+  :root {
+    --settings-accent: #1f2937;
+    --settings-muted: #64748b;
+    --settings-border: rgba(15, 23, 42, 0.12);
+    --settings-bg: #ffffff;
+  }
+
+  .settings-page {
+    padding: 18px 6px 26px;
+  }
+
+  .settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin: 6px 0 18px;
+  }
+
+  .settings-title {
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: var(--settings-accent);
+    letter-spacing: -0.02em;
+  }
+
+  .settings-subtitle {
+    margin: 6px 0 0;
+    color: var(--settings-muted);
+    font-size: 0.95rem;
+  }
+
+  .settings-alert {
+    padding: 10px 14px;
+    border-radius: 12px;
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+
+  .settings-alert.success {
+    background: #e6f9f0;
+    color: #0f5132;
+    border: 1px solid #a6e9c5;
+  }
+
+  .settings-alert.error {
+    background: #fde8e8;
+    color: #991b1b;
+    border: 1px solid #f5b5b5;
+  }
+
+  .settings-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .settings-section {
+    background: var(--settings-bg);
+    border: 1px solid var(--settings-border);
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
+  }
+
+  .settings-section h3 {
+    margin: 0 0 6px;
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: #0f172a;
+  }
+
+  .settings-section p {
+    margin: 0 0 16px;
+    color: var(--settings-muted);
+    font-size: 0.92rem;
+  }
+
+  .settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+  }
+
+  .settings-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .settings-field label {
+    font-weight: 700;
+    color: #1f2937;
+  }
+
+  .settings-input,
+  .settings-form input[type="text"],
+  .settings-form input[type="number"],
+  .settings-form select {
+    border: 1px solid var(--settings-border);
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: #fff;
+  }
+
+  .settings-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--settings-border);
+    background: #f8fafc;
+  }
+
+  .settings-toggle label {
+    margin: 0;
+    font-weight: 700;
+  }
+
+  .settings-help {
+    margin: 0;
+    font-size: 0.86rem;
+    color: var(--settings-muted);
+  }
+
+  .settings-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .btn-primary {
+    background: #0f172a !important;
+    border-radius: 14px;
+    font-weight: 700;
+    padding: 0 18px;
+  }
+
+  .field-error {
+    color: #b91c1c;
+    font-size: 0.86rem;
+  }
+</style>
+
+<div class="settings-page">
+  <div class="settings-header">
+    <div>
+      <h1 class="settings-title">CPQ Settings</h1>
+      <p class="settings-subtitle">Configure defaults that power quoting, renewals, and forecasting.</p>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="settings-alert {{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  {% if form.non_field_errors %}
+    <div class="settings-alert error">{{ form.non_field_errors }}</div>
+  {% endif %}
+
+  <form method="post" class="settings-form">
+    {% csrf_token %}
+
+    <section class="settings-section">
+      <h3>Renewals</h3>
+      <p>Defaults for renewal forecasting and quote expiry.</p>
+      <div class="settings-grid">
+        <div class="settings-field">
+          <label for="{{ form.renewal_forecast_window_days.id_for_label }}">{{ form.renewal_forecast_window_days.label }}</label>
+          {{ form.renewal_forecast_window_days }}
+          <p class="settings-help">Days before expiration to generate renewal forecasts.</p>
+          {% if form.renewal_forecast_window_days.errors %}
+            <div class="field-error">{{ form.renewal_forecast_window_days.errors|striptags }}</div>
+          {% endif %}
+        </div>
+        <div class="settings-field">
+          <label for="{{ form.quote_expiration_default_days.id_for_label }}">{{ form.quote_expiration_default_days.label }}</label>
+          {{ form.quote_expiration_default_days }}
+          <p class="settings-help">Default expiration window for new quotes.</p>
+          {% if form.quote_expiration_default_days.errors %}
+            <div class="field-error">{{ form.quote_expiration_default_days.errors|striptags }}</div>
+          {% endif %}
+        </div>
+        <div class="settings-field">
+          <div class="settings-toggle">
+            {{ form.auto_recalculate_renewals_on_amendment }}
+            <label for="{{ form.auto_recalculate_renewals_on_amendment.id_for_label }}">{{ form.auto_recalculate_renewals_on_amendment.label }}</label>
+          </div>
+          {% if form.auto_recalculate_renewals_on_amendment.errors %}
+            <div class="field-error">{{ form.auto_recalculate_renewals_on_amendment.errors|striptags }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h3>Pricing &amp; Proration</h3>
+      <p>Precision, rounding, and proration behavior.</p>
+      <div class="settings-grid">
+        <div class="settings-field">
+          <label for="{{ form.decimal_precision.id_for_label }}">{{ form.decimal_precision.label }}</label>
+          {{ form.decimal_precision }}
+          {% if form.decimal_precision.errors %}
+            <div class="field-error">{{ form.decimal_precision.errors|striptags }}</div>
+          {% endif %}
+        </div>
+        <div class="settings-field">
+          <label for="{{ form.rounding_mode.id_for_label }}">{{ form.rounding_mode.label }}</label>
+          {{ form.rounding_mode }}
+          {% if form.rounding_mode.errors %}
+            <div class="field-error">{{ form.rounding_mode.errors|striptags }}</div>
+          {% endif %}
+        </div>
+        <div class="settings-field">
+          <label for="{{ form.proration_method.id_for_label }}">{{ form.proration_method.label }}</label>
+          {{ form.proration_method }}
+          {% if form.proration_method.errors %}
+            <div class="field-error">{{ form.proration_method.errors|striptags }}</div>
+          {% endif %}
+        </div>
+        <div class="settings-field">
+          <label for="{{ form.day_count_convention.id_for_label }}">{{ form.day_count_convention.label }}</label>
+          {{ form.day_count_convention }}
+          {% if form.day_count_convention.errors %}
+            <div class="field-error">{{ form.day_count_convention.errors|striptags }}</div>
+          {% endif %}
+        </div>
+        <div class="settings-field">
+          <div class="settings-toggle">
+            {{ form.proration_enabled }}
+            <label for="{{ form.proration_enabled.id_for_label }}">{{ form.proration_enabled.label }}</label>
+          </div>
+          {% if form.proration_enabled.errors %}
+            <div class="field-error">{{ form.proration_enabled.errors|striptags }}</div>
+          {% endif %}
+        </div>
+        <div class="settings-field">
+          <div class="settings-toggle">
+            {{ form.ramp_deals_enabled }}
+            <label for="{{ form.ramp_deals_enabled.id_for_label }}">{{ form.ramp_deals_enabled.label }}</label>
+          </div>
+          {% if form.ramp_deals_enabled.errors %}
+            <div class="field-error">{{ form.ramp_deals_enabled.errors|striptags }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h3>Forecasting</h3>
+      <p>How AgentCPQ creates and updates forecast opportunities.</p>
+      <div class="settings-grid">
+        <div class="settings-field">
+          <label for="{{ form.forecast_opportunity_creation_mode.id_for_label }}">{{ form.forecast_opportunity_creation_mode.label }}</label>
+          {{ form.forecast_opportunity_creation_mode }}
+          {% if form.forecast_opportunity_creation_mode.errors %}
+            <div class="field-error">{{ form.forecast_opportunity_creation_mode.errors|striptags }}</div>
+          {% endif %}
+        </div>
+        <div class="settings-field">
+          <label for="{{ form.forecast_opportunity_stage.id_for_label }}">{{ form.forecast_opportunity_stage.label }}</label>
+          {{ form.forecast_opportunity_stage }}
+          {% if form.forecast_opportunity_stage.errors %}
+            <div class="field-error">{{ form.forecast_opportunity_stage.errors|striptags }}</div>
+          {% endif %}
+        </div>
+        <div class="settings-field">
+          <label for="{{ form.forecast_opportunity_probability.id_for_label }}">{{ form.forecast_opportunity_probability.label }}</label>
+          {{ form.forecast_opportunity_probability }}
+          {% if form.forecast_opportunity_probability.errors %}
+            <div class="field-error">{{ form.forecast_opportunity_probability.errors|striptags }}</div>
+          {% endif %}
+        </div>
+        <div class="settings-field">
+          <label for="{{ form.forecast_amount_strategy.id_for_label }}">{{ form.forecast_amount_strategy.label }}</label>
+          {{ form.forecast_amount_strategy }}
+          {% if form.forecast_amount_strategy.errors %}
+            <div class="field-error">{{ form.forecast_amount_strategy.errors|striptags }}</div>
+          {% endif %}
+        </div>
+        <div class="settings-field">
+          <div class="settings-toggle">
+            {{ form.forecast_opportunity_enabled }}
+            <label for="{{ form.forecast_opportunity_enabled.id_for_label }}">{{ form.forecast_opportunity_enabled.label }}</label>
+          </div>
+          {% if form.forecast_opportunity_enabled.errors %}
+            <div class="field-error">{{ form.forecast_opportunity_enabled.errors|striptags }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    <div class="settings-actions">
+      <button type="submit" class="btn btn-primary">Save Settings</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
