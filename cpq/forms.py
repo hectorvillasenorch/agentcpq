@@ -203,21 +203,16 @@ class CPQSettingsForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["rounding_mode"].widget = forms.Select(choices=ROUNDING_MODE_CHOICES)
-        self.fields["proration_method"].widget = forms.Select(choices=PRORATION_METHOD_CHOICES)
-        self.fields["day_count_convention"].widget = forms.Select(choices=DAY_COUNT_CONVENTION_CHOICES)
-        self.fields["forecast_opportunity_creation_mode"].widget = forms.Select(
-            choices=FORECAST_CREATION_MODE_CHOICES
-        )
-        self.fields["forecast_amount_strategy"].widget = forms.Select(
-            choices=FORECAST_AMOUNT_STRATEGY_CHOICES
-        )
+        self.fields["rounding_mode"].choices = ROUNDING_MODE_CHOICES
+        self.fields["proration_method"].choices = PRORATION_METHOD_CHOICES
+        self.fields["day_count_convention"].choices = DAY_COUNT_CONVENTION_CHOICES
+        self.fields["forecast_opportunity_creation_mode"].choices = FORECAST_CREATION_MODE_CHOICES
+        self.fields["forecast_amount_strategy"].choices = FORECAST_AMOUNT_STRATEGY_CHOICES
 
         stage_choices = picklist_choices("Opportunity", "stage")
-        if stage_choices:
-            self.fields["forecast_opportunity_stage"].widget = forms.Select(
-                choices=stage_choices
-            )
+        if not stage_choices:
+            stage_choices = [("Forecast", "Forecast")]
+        self.fields["forecast_opportunity_stage"].choices = stage_choices
 
 
 DATA_TYPE_MAPPING = {
