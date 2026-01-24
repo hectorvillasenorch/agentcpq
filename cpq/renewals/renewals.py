@@ -2,11 +2,71 @@ import logging, re
 from datetime import date, timedelta, datetime
 from django.utils.timezone import now
 from dateutil.relativedelta import relativedelta
-from ..models import Contract, Subscription, Quote, QuoteLine, Opportunity, ScheduledTask
+from ..models import Contract, Subscription, Quote, QuoteLine, Opportunity, ScheduledTask, CPQSettings
 from django.db import transaction
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
+def _push_renewal_to_salesforce(opportunity, quote):
+    settings_obj = CPQSettings.safe_first() or CPQSettings()
+    if not settings_obj.forecast_opportunity_enabled:
+        return
+
+    try:
+        from salesforce.utils import SF_API_VERSION, get_valid_salesforce_token, salesforce_request
+    except Exception as exc:
+        logger.warning("Salesforce sync unavailable: %s", exc)
+        return
+
+    token = get_valid_salesforce_token(timeout=8)
+    if not token:
+        logger.warning("Salesforce token missing; renewal sync skipped.")
+        return
+
+    account_sf_id = getattr(opportunity.account, "external_id", None)
+    if not account_sf_id:
+        logger.warning("Opportunity %s has no Salesforce account id; renewal sync skipped.", opportunity.id)
+        return
+
+    if not opportunity.external_id:
+        stage_name = settings_obj.forecast_opportunity_stage or "Forecast"
+        close_date = opportunity.expected_close_date or (date.today() + timedelta(days=30))
+        quote_id_value = str(quote.public_id or quote.qteid or quote.name)
+        quote_number_value = str(quote.name or quote.qteid or quote.public_id)
+        payload = {
+            "Name": opportunity.name,
+            "AccountId": account_sf_id,
+            "StageName": stage_name,
+            "CloseDate": close_date.isoformat(),
+            "Amount": str(quote.net_amount),
+            "AgentCPQ_Quote_Id__c": quote_id_value,
+            "AgentCPQ_Quote_Number__c": quote_number_value,
+            "AgentCPQ_NACV__c": str(quote.net_amount),
+            "AgentCPQ_ACV__c": str(quote.net_amount),
+        }
+
+        create_url = f"{token.instance_url}/services/data/{SF_API_VERSION}/sobjects/Opportunity"
+        response = salesforce_request(token, "POST", create_url, json=payload, timeout=8)
+        if not response or response.status_code not in {200, 201}:
+            logger.warning(
+                "Failed to create Salesforce renewal opportunity (HTTP %s).",
+                getattr(response, "status_code", "n/a"),
+            )
+            return
+        sf_id = response.json().get("id")
+        if sf_id:
+            opportunity.external_id = sf_id
+            opportunity.save(update_fields=["external_id"])
+            quote.sf_opportunity_id = sf_id
+            quote.save(update_fields=["sf_opportunity_id"])
+
+    if opportunity.external_id:
+        try:
+            from salesforce.views import sync_quote_to_salesforce
+            sync_quote_to_salesforce(None, quote.id)
+        except Exception as exc:
+            logger.warning("Failed to sync renewal quote lines to Salesforce: %s", exc)
 
 def create_contract_after_closed_won(opportunity):
     quote = opportunity.quotes.first()
@@ -210,6 +270,7 @@ def make_opportunity_renewal(opportunity):
         # 6. Update opportunity with the new quote
 
         logger.info(f"✅ Renewal {renewal_opp.name} created with Quote {renewal_quote.name}")
+        _push_renewal_to_salesforce(renewal_opp, renewal_quote)
         return True
 
     except Exception as e:
