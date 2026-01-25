@@ -291,7 +291,14 @@
           if (resultsEl && Array.isArray(data.results)) {
             const lines = data.results.map(result => {
               const status = result.status || "unknown";
-              const details = result.details ? ` (${result.details})` : "";
+              let details = "";
+              if (result.details) {
+                if (typeof result.details === "object") {
+                  details = ` (${JSON.stringify(result.details)})`;
+                } else {
+                  details = ` (${result.details})`;
+                }
+              }
               return `${result.object}.${result.api_name}: ${status}${details}`;
             });
             if (data.product_sync) {
