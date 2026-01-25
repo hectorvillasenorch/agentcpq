@@ -484,11 +484,16 @@ def ensure_salesforce_fields(token, required_fields, timeout=6, dry_run=False):
                 "details": create_response.json().get("id"),
             })
         else:
+            details = None
+            try:
+                details = create_response.json()
+            except ValueError:
+                details = create_response.text
             results.append({
                 "object": object_name,
                 "api_name": api_name,
                 "status": "error",
-                "details": f"create_http_{create_response.status_code}",
+                "details": details or f"create_http_{create_response.status_code}",
             })
 
     return results
