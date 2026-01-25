@@ -17,6 +17,7 @@ import logging
 import datetime
 from datetime import timezone as dt_timezone
 from salesforce.utils import (
+    build_agentcpq_quote_link,
     fetch_salesforce_object_field_metadata,
     get_valid_salesforce_token,
     salesforce_request,
@@ -228,6 +229,13 @@ def sync_quote_to_salesforce(request, quote_id):
         "AgentCPQ_NACV__c": str(quote.net_amount),
         "AgentCPQ_ACV__c": str(quote.net_amount),
     }
+    quote_link = build_agentcpq_quote_link(
+        quote.id,
+        quote_label=quote_number_value,
+        request=request,
+    )
+    if quote_link:
+        opportunity_update_payload["AgentCPQ_Quote_Link__c"] = quote_link
 
     opportunity_url = f"{instance_url}/services/data/v57.0/sobjects/Opportunity/{opportunity_id}"
     opp_response = salesforce_request(

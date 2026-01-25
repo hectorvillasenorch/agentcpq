@@ -18,7 +18,12 @@ def _push_renewal_to_salesforce(opportunity, quote):
         return
 
     try:
-        from salesforce.utils import SF_API_VERSION, get_valid_salesforce_token, salesforce_request
+        from salesforce.utils import (
+            SF_API_VERSION,
+            build_agentcpq_quote_link,
+            get_valid_salesforce_token,
+            salesforce_request,
+        )
     except Exception as exc:
         logger.warning("Salesforce sync unavailable: %s", exc)
         return
@@ -38,6 +43,7 @@ def _push_renewal_to_salesforce(opportunity, quote):
         close_date = opportunity.expected_close_date or (date.today() + timedelta(days=30))
         quote_id_value = str(quote.public_id or quote.qteid or quote.name)
         quote_number_value = str(quote.name or quote.qteid or quote.public_id)
+        quote_link_value = build_agentcpq_quote_link(quote.id, quote_label=quote_number_value)
         payload = {
             "Name": opportunity.name,
             "AccountId": account_sf_id,
@@ -49,6 +55,8 @@ def _push_renewal_to_salesforce(opportunity, quote):
             "AgentCPQ_NACV__c": str(quote.net_amount),
             "AgentCPQ_ACV__c": str(quote.net_amount),
         }
+        if quote_link_value:
+            payload["AgentCPQ_Quote_Link__c"] = quote_link_value
 
         create_url = f"{token.instance_url}/services/data/{SF_API_VERSION}/sobjects/Opportunity"
         response = salesforce_request(token, "POST", create_url, json=payload, timeout=8)

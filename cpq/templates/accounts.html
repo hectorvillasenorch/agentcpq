@@ -718,7 +718,7 @@
                                             {% endif %}
                                             <ul class="collapsible quote-collapsible">
                                                 {% for quote in quotes %}
-                                                    <li>
+                                                    <li class="quote-item" data-quote-id="{{ quote.id }}" id="quote-{{ quote.id }}">
                                                         <div class="collapsible-header quote-header">
                                                             <div class="quote-title">
                                                                 <i class="material-icons">description</i>
@@ -847,6 +847,7 @@
         accordion: false
       });
       initAccountSearch();
+      requestAnimationFrame(openQuoteFromQuery);
     });
 
     function initAccountSearch() {
@@ -899,6 +900,33 @@
       searchInput.addEventListener('input', performFilter);
       searchInput.addEventListener('search', performFilter);
       performFilter();
+    }
+
+    function openCollapsibleItem(item) {
+      if (!item) return;
+      const parent = item.closest('.collapsible');
+      if (!parent) return;
+      const instance = M.Collapsible.getInstance(parent);
+      if (!instance) return;
+      const items = Array.from(parent.children).filter((child) => child.tagName === 'LI');
+      const index = items.indexOf(item);
+      if (index >= 0) {
+        instance.open(index);
+      }
+    }
+
+    function openQuoteFromQuery() {
+      const params = new URLSearchParams(window.location.search);
+      const quoteId = params.get('quote_id');
+      if (!quoteId) return;
+      const quoteItem = document.querySelector(`.quote-item[data-quote-id="${quoteId}"]`);
+      if (!quoteItem) return;
+      const opportunityItem = quoteItem.closest('.opportunity-item');
+      const accountItem = quoteItem.closest('.account-item');
+      openCollapsibleItem(accountItem);
+      openCollapsibleItem(opportunityItem);
+      openCollapsibleItem(quoteItem);
+      quoteItem.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     async function syncSalesforceQuote(quoteId, button = null) {

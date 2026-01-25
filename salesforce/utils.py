@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import datetime
+import os
+import urllib.parse
 import requests
 from django.conf import settings
 from django.utils import timezone
@@ -230,6 +232,11 @@ def _custom_field_metadata(field_spec):
                 ],
             }
         }
+    elif field_type == "Url":
+        metadata["length"] = int(field_spec.get("length", 255))
+        display_format = field_spec.get("display_format")
+        if display_format:
+            metadata["displayFormat"] = display_format
     else:
         raise ValueError(f"Unsupported Salesforce field type: {field_type}")
 
@@ -250,6 +257,34 @@ def _custom_button_metadata(button_spec):
         "url": button_spec["url"],
         "availability": "online",
     }
+
+
+def get_agentcpq_base_url(request=None):
+    if request is not None:
+        return request.build_absolute_uri("/").rstrip("/")
+    for key in ("PUBLIC_BASE_URL", "APP_BASE_URL", "BASE_URL", "SITE_URL"):
+        value = getattr(settings, key, None) or os.getenv(key)
+        if value:
+            return str(value).rstrip("/")
+    return None
+
+
+def build_agentcpq_quote_link(quote_id=None, quote_label=None, request=None):
+    base_url = get_agentcpq_base_url(request=request)
+    if not base_url:
+        return None
+    label_value = quote_label or quote_id
+    if not label_value:
+        return None
+    auto_prompt = f"Show Quote Details {label_value}"
+    query = urllib.parse.urlencode(
+        {
+            "view": "agents",
+            "new_chat": "true",
+            "auto_prompt": auto_prompt,
+        }
+    )
+    return f"{base_url}/dashboard/?{query}"
 
 
 def get_custom_button(token, object_name, api_name, timeout=6):

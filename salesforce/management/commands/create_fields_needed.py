@@ -21,6 +21,14 @@ REQUIRED_FIELDS = [
     },
     {
         "object": "Opportunity",
+        "api_name": "AgentCPQ_Quote_Link__c",
+        "type": "Url",
+        "length": 255,
+        "label": "AgentCPQ Quote Link",
+        "display_format": "Show Quote Details {!AgentCPQ_Quote_Number__c}",
+    },
+    {
+        "object": "Opportunity",
         "api_name": "AgentCPQ_ACV__c",
         "type": "Currency",
         "precision": 18,
