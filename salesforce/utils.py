@@ -233,7 +233,6 @@ def _custom_field_metadata(field_spec):
             }
         }
     elif field_type == "Url":
-        metadata["length"] = int(field_spec.get("length", 255))
         display_format = field_spec.get("display_format")
         if display_format:
             metadata["displayFormat"] = display_format
