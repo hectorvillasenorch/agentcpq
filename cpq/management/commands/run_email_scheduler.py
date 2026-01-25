@@ -41,7 +41,7 @@ def process_offset_email_alerts():
         if alert.trigger == "quote_expiring":
             objects = Quote.objects.filter(expiration_date=target_date)
         elif alert.trigger == "subscription_renewal":
-            objects = Subscription.objects.filter(end_date=target_date)
+            objects = Subscription.objects.filter(end_date=target_date, status="Active")
         else:
             continue
 
@@ -79,7 +79,7 @@ def process_scheduled_alerts():
         if alert.trigger == "quote_expiring":
             objects = Quote.objects.filter(expiration_date__range=[now.date(), now.date()+timedelta(days=7)])
         elif alert.trigger == "subscription_renewal":
-            objects = Subscription.objects.filter(end_date__range=[now.date(), now.date()+timedelta(days=7)])
+            objects = Subscription.objects.filter(end_date__range=[now.date(), now.date()+timedelta(days=7)], status="Active")
         else:
             continue
 
@@ -106,7 +106,7 @@ def weekly_digest():
     today = timezone.now().date()
     next_week = today + timedelta(days=7)
 
-    subscriptions = Subscription.objects.filter(end_date__range=[today, next_week])
+    subscriptions = Subscription.objects.filter(end_date__range=[today, next_week], status="Active")
     quotes = Quote.objects.filter(expiration_date__range=[today, next_week])
 
     if subscriptions.exists() or quotes.exists():

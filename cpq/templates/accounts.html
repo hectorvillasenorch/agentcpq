@@ -334,6 +334,51 @@
         margin-left: auto;
         flex-wrap: wrap;
     }
+    .contract-section,
+    .subscription-section {
+        margin: 16px 32px;
+        padding: 14px 18px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(148, 163, 184, 0.4);
+    }
+    .contract-section h6,
+    .subscription-section h6 {
+        margin: 0 0 10px;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #475569;
+        font-weight: 700;
+    }
+    .contract-list,
+    .subscription-list {
+        display: grid;
+        gap: 10px;
+    }
+    .contract-card,
+    .subscription-card {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: #f8fafc;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+    }
+    .contract-card span,
+    .subscription-card span {
+        font-size: 0.9rem;
+        color: #1f2937;
+        font-weight: 600;
+    }
+    .contract-status {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #2563eb;
+        font-weight: 700;
+    }
     .quote-action-button {
         align-items: center;
         justify-content: center;
@@ -639,6 +684,38 @@
                                             </div>
                                         </div>
                                         <div class="collapsible-body">
+                                            {% if opportunity_group.contracts %}
+                                                <div class="contract-section">
+                                                    <h6>Contracts</h6>
+                                                    <div class="contract-list">
+                                                        {% for contract in opportunity_group.contracts %}
+                                                            <div class="contract-card">
+                                                                <span>
+                                                                    {{ contract.start_date|date:"M j, Y" }}
+                                                                    {% if contract.end_date %}
+                                                                        - {{ contract.end_date|date:"M j, Y" }}
+                                                                    {% endif %}
+                                                                </span>
+                                                                <span class="contract-status">{{ contract.contract_status }}</span>
+                                                            </div>
+                                                        {% endfor %}
+                                                    </div>
+                                                </div>
+                                            {% endif %}
+                                            {% if opportunity_group.active_subscriptions %}
+                                                <div class="subscription-section">
+                                                    <h6>Active Subscriptions</h6>
+                                                    <div class="subscription-list">
+                                                        {% for subscription in opportunity_group.active_subscriptions %}
+                                                            <div class="subscription-card">
+                                                                <span>{{ subscription.product.name }}</span>
+                                                                <span>{{ subscription.term }} mo · {{ subscription.billing_cycle }}</span>
+                                                                <span>{{ subscription.start_date|date:"M j, Y" }} - {{ subscription.end_date|date:"M j, Y" }}</span>
+                                                            </div>
+                                                        {% endfor %}
+                                                    </div>
+                                                </div>
+                                            {% endif %}
                                             <ul class="collapsible quote-collapsible">
                                                 {% for quote in quotes %}
                                                     <li>

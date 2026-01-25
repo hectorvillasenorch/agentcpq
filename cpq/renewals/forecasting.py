@@ -122,6 +122,7 @@ def generate_renewal_forecasts(as_of_date=None, dry_run=False):
         "product",
         "quote__account",
     ).filter(
+        status="Active",
         end_date__isnull=False,
         end_date__gte=as_of_date,
         end_date__lte=window_end,

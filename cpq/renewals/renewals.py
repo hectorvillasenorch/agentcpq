@@ -8,6 +8,10 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+def _is_renewal_opportunity(opportunity):
+    name = (getattr(opportunity, "name", "") or "").strip().lower()
+    return name.startswith("renewal") or "renewal opportunity" in name
+
 def _push_renewal_to_salesforce(opportunity, quote):
     settings_obj = CPQSettings.safe_first() or CPQSettings()
     if not settings_obj.forecast_opportunity_enabled:
@@ -69,22 +73,37 @@ def _push_renewal_to_salesforce(opportunity, quote):
             logger.warning("Failed to sync renewal quote lines to Salesforce: %s", exc)
 
 def create_contract_after_closed_won(opportunity):
-    quote = opportunity.quotes.first()
+    quote = opportunity.primary_quote or opportunity.quotes.order_by("-id").first()
     tomorrow = date.today() + timedelta(days=1)
     if not quote:
         logger.warning("⚠️ Opportunity %s has no quote; skipping contract creation.", opportunity.id)
         return
 
-    contract, created = Contract.objects.get_or_create(
+    existing_contracts = Contract.objects.filter(opportunity=opportunity, contract_status="Active")
+    if existing_contracts.exists():
+        if _is_renewal_opportunity(opportunity):
+            Contract.objects.filter(pk__in=existing_contracts.values_list("pk", flat=True)).update(
+                contract_status="Renewed"
+            )
+            Subscription.objects.filter(contract__in=existing_contracts).update(
+                status="Deprecated"
+            )
+        else:
+            Contract.objects.filter(pk__in=existing_contracts.values_list("pk", flat=True)).update(
+                contract_status="Cancelled"
+            )
+            Subscription.objects.filter(contract__in=existing_contracts).update(
+                status="Cancelled"
+            )
+
+    contract = Contract.objects.create(
         opportunity=opportunity,
-        defaults={
-            "start_date": tomorrow,
-            "end_date": tomorrow + relativedelta(months=12),
-            "contract_status": "Active"
-        }
+        start_date=tomorrow,
+        end_date=tomorrow + relativedelta(months=12),
+        contract_status="Active",
     )
 
-    print(f"\nContract {'created ✅' if created else 'already exists ℹ️'} for opportunity {opportunity.name}\n")
+    print(f"\nContract created ✅ for opportunity {opportunity.name}\n")
 
     max_term = 0
 
@@ -92,7 +111,7 @@ def create_contract_after_closed_won(opportunity):
         if line.is_subscription:
             term_value = line.term if line.term and line.term > 0 else 12
 
-            subscription, subscription_created = Subscription.objects.get_or_create(
+            Subscription.objects.create(
                 quote=quote,
                 quote_line=line,
                 product=line.product,
@@ -101,10 +120,11 @@ def create_contract_after_closed_won(opportunity):
                 billing_cycle=line.billing_frequency,
                 price_per_cycle=line.total_price,
                 term=term_value,
-                end_date=tomorrow + relativedelta(months=term_value)
+                end_date=tomorrow + relativedelta(months=term_value),
+                status="Active",
             )
 
-            print(f"\nSubscription for line {line.product} {'created ✅' if subscription_created else 'already exists ℹ️'}\n")
+            print(f"\nSubscription for line {line.product} created ✅\n")
 
             if term_value > max_term:
                 max_term = term_value

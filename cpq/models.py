@@ -1395,6 +1395,7 @@ class Contract(models.Model):
         ('Active', 'Active'),
         ('Expired', 'Expired'),
         ('Renewed', 'Renewed'),
+        ('Cancelled', 'Cancelled'),
     ])
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
 
@@ -1402,8 +1403,14 @@ class Contract(models.Model):
         return f"Contract for {self.opportunity} ({self.contract_status})"
     
 class Subscription(models.Model):
+    STATUS_CHOICES = [
+        ('Active', 'Active'),
+        ('Deprecated', 'Deprecated'),
+        ('Cancelled', 'Cancelled'),
+    ]
+
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="subscriptions")
-    quote_line = models.OneToOneField(QuoteLine, on_delete=models.CASCADE, related_name="subscription")
+    quote_line = models.ForeignKey(QuoteLine, on_delete=models.CASCADE, related_name="subscriptions")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="subscriptions")
     contract = models.ForeignKey(Contract, on_delete=models.CASCADE, related_name="subscriptions")
     public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, null=True, blank=True)
@@ -1422,6 +1429,7 @@ class Subscription(models.Model):
     price_per_cycle = models.DecimalField(max_digits=10, decimal_places=2)
     term = models.IntegerField()
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="Active")
 
     def __str__(self):
         return f"{self.product.name} Subscription ({self.term} months)"

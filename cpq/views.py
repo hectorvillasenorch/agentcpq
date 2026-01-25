@@ -728,6 +728,25 @@ def build_account_quote_hierarchy_for_user(user):
         .order_by("account__name", "opportunity__name", "name")
     )
 
+    opportunity_ids = {quote.opportunity_id for quote in quotes if quote.opportunity_id}
+    contracts_by_opportunity = defaultdict(list)
+    active_subscriptions_by_opportunity = defaultdict(list)
+    if opportunity_ids:
+        contracts = (
+            Contract.objects.filter(opportunity_id__in=opportunity_ids)
+            .prefetch_related(
+                Prefetch(
+                    "subscriptions",
+                    queryset=Subscription.objects.filter(status="Active").select_related("product"),
+                )
+            )
+            .order_by("-start_date", "-id")
+        )
+        for contract in contracts:
+            contracts_by_opportunity[contract.opportunity_id].append(contract)
+            for subscription in contract.subscriptions.all():
+                active_subscriptions_by_opportunity[contract.opportunity_id].append(subscription)
+
     hierarchy = OrderedDict()
     for quote in quotes:
         account_entry = hierarchy.setdefault(
@@ -736,7 +755,12 @@ def build_account_quote_hierarchy_for_user(user):
         )
         opportunity_entry = account_entry["opportunities"].setdefault(
             quote.opportunity_id,
-            {"opportunity": quote.opportunity, "quotes": []},
+            {
+                "opportunity": quote.opportunity,
+                "quotes": [],
+                "contracts": contracts_by_opportunity.get(quote.opportunity_id, []),
+                "active_subscriptions": active_subscriptions_by_opportunity.get(quote.opportunity_id, []),
+            },
         )
         opportunity_entry["quotes"].append(quote)
 
