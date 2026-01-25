@@ -23,7 +23,6 @@ REQUIRED_FIELDS = [
         "object": "Opportunity",
         "api_name": "AgentCPQ_Quote_Link__c",
         "type": "Url",
-        "length": 255,
         "label": "AgentCPQ Quote Link",
     },
     {
