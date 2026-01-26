@@ -1,0 +1,42 @@
+<template>
+  <div class="panel">
+    <div class="panel-header">AgentCPQ Summary</div>
+    <div class="panel-grid">
+      <div class="item">
+        <div class="label">AgentCPQ ACV</div>
+        <div class="value">{acvDisplay}</div>
+      </div>
+      <div class="item">
+        <div class="label">AgentCPQ Quote Link</div>
+        <div class="value">
+          <template if:true={quoteLink}>
+            <a class="link" href={quoteLink} target="_blank" rel="noopener noreferrer">{quoteLinkLabel}</a>
+          </template>
+          <template if:false={quoteLink}>
+            <span class="value-muted">—</span>
+          </template>
+        </div>
+      </div>
+      <div class="item">
+        <div class="label">AgentCPQ NACV</div>
+        <div class="value">{nacvDisplay}</div>
+      </div>
+      <div class="item">
+        <div class="label">AgentCPQ Quote Number</div>
+        <div class="value">{quoteNumberDisplay}</div>
+      </div>
+      <div class="item">
+        <div class="label">AgentCPQ MRR</div>
+        <div class="value">{mrrDisplay}</div>
+      </div>
+      <div class="item">
+        <div class="label">AgentCPQ Quote Id</div>
+        <div class="value">{quoteIdDisplay}</div>
+      </div>
+      <div class="item">
+        <div class="label">AgentCPQ Forecast Strategy</div>
+        <div class="value">{forecastStrategyDisplay}</div>
+      </div>
+    </div>
+  </div>
+</template>

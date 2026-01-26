@@ -50,6 +50,7 @@ from quickbooks.models import QuickbooksToken
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.exceptions import ObjectDoesNotExist
 import json
+import importlib.util
 from .forms import (
     CPQSettingsForm,
     CustomFieldForm,
@@ -2403,16 +2404,36 @@ def run_salesforce_setup(request):
     button_results = ensure_salesforce_buttons(token, button_specs, timeout=8, dry_run=False)
 
     lwc_result = None
+    deploy_agentcpq_lwc = None
     try:
-        from salesforce.metadata_api import deploy_agentcpq_lwc
-        lwc_result = deploy_agentcpq_lwc(token, timeout=60)
+        from salesforce.metadata_api import deploy_agentcpq_lwc as _deploy_agentcpq_lwc
+        deploy_agentcpq_lwc = _deploy_agentcpq_lwc
     except Exception as exc:
-        lwc_result = {
-            "object": "LightningComponentBundle",
-            "api_name": "agentcpqQuotePanel",
-            "status": "error",
-            "details": str(exc),
-        }
+        module_path = os.path.join(settings.BASE_DIR, "salesforce", "metadata_api.py")
+        if os.path.exists(module_path):
+            spec = importlib.util.spec_from_file_location("agentcpq_salesforce_metadata_api", module_path)
+            if spec and spec.loader:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                deploy_agentcpq_lwc = getattr(module, "deploy_agentcpq_lwc", None)
+        if not deploy_agentcpq_lwc:
+            lwc_result = {
+                "object": "LightningComponentBundle",
+                "api_name": "agentcpqQuotePanel",
+                "status": "error",
+                "details": str(exc),
+            }
+
+    if deploy_agentcpq_lwc:
+        try:
+            lwc_result = deploy_agentcpq_lwc(token, timeout=60)
+        except Exception as exc:
+            lwc_result = {
+                "object": "LightningComponentBundle",
+                "api_name": "agentcpqQuotePanel",
+                "status": "error",
+                "details": str(exc),
+            }
 
     product_sync_summary = None
     try:

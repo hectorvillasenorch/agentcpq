@@ -300,7 +300,24 @@ def get_custom_button(token, object_name, api_name, timeout=6):
         tooling=True,
     )
     if response.status_code != 200:
-        return None, response
+        entity_id = get_entity_definition_id(token, object_name, timeout=timeout)
+        if entity_id:
+            soql = (
+                "SELECT Id, DeveloperName, TableEnumOrId, FullName "
+                f"FROM WebLink WHERE TableEnumOrId = '{entity_id}' "
+                f"AND DeveloperName = '{api_name}'"
+            )
+            response = _soql_query(
+                token.instance_url,
+                _salesforce_headers(token),
+                soql,
+                timeout=timeout,
+                tooling=True,
+            )
+            if response.status_code != 200:
+                return None, response
+        else:
+            return None, response
     records = response.json().get("records", [])
     return (records[0] if records else None), response
 
@@ -331,11 +348,16 @@ def ensure_salesforce_buttons(token, button_specs, timeout=6, dry_run=False):
             timeout=timeout,
         )
         if response.status_code != 200:
+            details = None
+            try:
+                details = response.json()
+            except ValueError:
+                details = response.text
             results.append({
                 "object": object_name,
                 "api_name": api_name,
                 "status": "error",
-                "details": f"query_http_{response.status_code}",
+                "details": details or f"query_http_{response.status_code}",
             })
             continue
 
@@ -370,14 +392,41 @@ def ensure_salesforce_buttons(token, button_specs, timeout=6, dry_run=False):
                 "details": create_response.json().get("id"),
             })
         else:
+            details = None
+            try:
+                details = create_response.json()
+            except ValueError:
+                details = create_response.text
             results.append({
                 "object": object_name,
                 "api_name": api_name,
                 "status": "error",
-                "details": f"create_http_{create_response.status_code}",
+                "details": details or f"create_http_{create_response.status_code}",
             })
 
     return results
+
+
+def get_entity_definition_id(token, object_name, timeout=6):
+    soql = (
+        "SELECT Id, DurableId "
+        f"FROM EntityDefinition WHERE QualifiedApiName = '{object_name}' "
+        "LIMIT 1"
+    )
+    response = _soql_query(
+        token.instance_url,
+        _salesforce_headers(token),
+        soql,
+        timeout=timeout,
+        tooling=True,
+    )
+    if response.status_code != 200:
+        return None
+    records = response.json().get("records", [])
+    if not records:
+        return None
+    record = records[0]
+    return record.get("Id") or record.get("DurableId")
 
 
 def get_custom_field(token, object_name, api_name, timeout=6):
