@@ -2402,6 +2402,18 @@ def run_salesforce_setup(request):
     ]
     button_results = ensure_salesforce_buttons(token, button_specs, timeout=8, dry_run=False)
 
+    lwc_result = None
+    try:
+        from salesforce.metadata_api import deploy_agentcpq_lwc
+        lwc_result = deploy_agentcpq_lwc(token, timeout=60)
+    except Exception as exc:
+        lwc_result = {
+            "object": "LightningComponentBundle",
+            "api_name": "agentcpqQuotePanel",
+            "status": "error",
+            "details": str(exc),
+        }
+
     product_sync_summary = None
     try:
         stdout = StringIO()
@@ -2418,7 +2430,7 @@ def run_salesforce_setup(request):
 
     return JsonResponse({
         "success": True,
-        "results": results + button_results,
+        "results": results + button_results + ([lwc_result] if lwc_result else []),
         "button_urls": button_urls,
         "product_sync": product_sync_summary,
     })
