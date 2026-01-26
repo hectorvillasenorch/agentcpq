@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 
 import requests
 
-from salesforce.utils import SF_API_VERSION
+from salesforce.utils import SF_API_VERSION, refresh_salesforce_token
 
 SOAP_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 METADATA_NS = "http://soap.sforce.com/2006/04/metadata"
@@ -199,11 +199,25 @@ def deploy_agentcpq_lwc(token, timeout=60, poll_interval=3, max_polls=8):
 
     async_id, deploy_error = deploy_metadata_zip(token, zip_bytes, timeout=timeout)
     if deploy_error:
+        fault_message = str(deploy_error.get("fault") or "")
+        if "INVALID_SESSION_ID" in fault_message:
+            refreshed = refresh_salesforce_token(token, timeout=timeout)
+            if refreshed:
+                async_id, deploy_error = deploy_metadata_zip(refreshed, zip_bytes, timeout=timeout)
+                token = refreshed
+        if deploy_error:
+            return {
+                "object": "LightningComponentBundle",
+                "api_name": bundle_name,
+                "status": "error",
+                "details": deploy_error,
+            }
+    if not async_id:
         return {
             "object": "LightningComponentBundle",
             "api_name": bundle_name,
             "status": "error",
-            "details": deploy_error,
+            "details": deploy_error or "Missing deploy id",
         }
 
     last_status = {"status": "pending", "details": {"status": "Queued"}}

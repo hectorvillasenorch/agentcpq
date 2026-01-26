@@ -287,10 +287,10 @@ def build_agentcpq_quote_link(quote_id=None, quote_label=None, request=None):
 
 
 def get_custom_button(token, object_name, api_name, timeout=6):
+    full_name = _custom_button_full_name(object_name, api_name)
     soql = (
-        "SELECT Id, DeveloperName, TableEnumOrId, FullName "
-        f"FROM WebLink WHERE TableEnumOrId = '{object_name}' "
-        f"AND DeveloperName = '{api_name}'"
+        "SELECT Id, Name, TableEnumOrId, FullName "
+        f"FROM WebLink WHERE FullName = '{full_name}'"
     )
     response = _soql_query(
         token.instance_url,
@@ -300,24 +300,7 @@ def get_custom_button(token, object_name, api_name, timeout=6):
         tooling=True,
     )
     if response.status_code != 200:
-        entity_id = get_entity_definition_id(token, object_name, timeout=timeout)
-        if entity_id:
-            soql = (
-                "SELECT Id, DeveloperName, TableEnumOrId, FullName "
-                f"FROM WebLink WHERE TableEnumOrId = '{entity_id}' "
-                f"AND DeveloperName = '{api_name}'"
-            )
-            response = _soql_query(
-                token.instance_url,
-                _salesforce_headers(token),
-                soql,
-                timeout=timeout,
-                tooling=True,
-            )
-            if response.status_code != 200:
-                return None, response
-        else:
-            return None, response
+        return None, response
     records = response.json().get("records", [])
     return (records[0] if records else None), response
 
