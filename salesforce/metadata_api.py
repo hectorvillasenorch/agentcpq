@@ -8,7 +8,11 @@ from xml.sax.saxutils import escape
 
 import requests
 
-from salesforce.utils import SF_API_VERSION, get_metadata_server_url, refresh_salesforce_token
+from salesforce.utils import (
+    SF_API_VERSION,
+    get_metadata_server_url,
+    refresh_salesforce_token,
+)
 
 SOAP_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 METADATA_NS = "http://soap.sforce.com/2006/04/metadata"
@@ -56,6 +60,42 @@ def _metadata_endpoint(token, timeout=6):
         return metadata_url
     version = _metadata_version()
     return f"{token.instance_url}/services/Soap/m/{version}"
+
+
+def _rest_session_probe(token, timeout=6):
+    if not token:
+        return False
+    url = f"{token.instance_url}/services/data/{SF_API_VERSION}/limits"
+    response = requests.get(
+        url,
+        headers={"Authorization": f"Bearer {token.access_token}"},
+        timeout=timeout,
+    )
+    if response.status_code == 200:
+        return True
+    if response.status_code in {401, 403} and token.refresh_token:
+        refreshed = refresh_salesforce_token(token, timeout=timeout)
+        if refreshed:
+            url = f"{refreshed.instance_url}/services/data/{SF_API_VERSION}/limits"
+            response = requests.get(
+                url,
+                headers={"Authorization": f"Bearer {refreshed.access_token}"},
+                timeout=timeout,
+            )
+            if response.status_code == 200:
+                return True
+    return False
+
+
+def _ensure_metadata_session(token, timeout=6):
+    if not token:
+        return None
+    if token.refresh_token:
+        refreshed = refresh_salesforce_token(token, timeout=timeout)
+        if refreshed:
+            token = refreshed
+    _rest_session_probe(token, timeout=timeout)
+    return token
 
 
 def describe_metadata(token, timeout=30):
@@ -186,10 +226,7 @@ def deploy_salesforce_weblinks(token, button_specs, timeout=60, poll_interval=3,
             "details": "Missing Salesforce access token.",
         } for spec in button_specs]
 
-    if token.refresh_token:
-        refreshed = refresh_salesforce_token(token, timeout=timeout)
-        if refreshed:
-            token = refreshed
+    token = _ensure_metadata_session(token, timeout=timeout)
 
     zip_bytes, error = build_weblink_zip(token, button_specs, timeout=timeout)
     if error:
@@ -205,11 +242,9 @@ def deploy_salesforce_weblinks(token, button_specs, timeout=60, poll_interval=3,
     if deploy_error:
         fault_message = str(deploy_error.get("fault") or "")
         if "INVALID_SESSION_ID" in fault_message:
-            refreshed = refresh_salesforce_token(token, timeout=timeout)
-            if refreshed:
-                endpoint = _metadata_endpoint(refreshed, timeout=timeout)
-                async_id, deploy_error = deploy_metadata_zip(refreshed, zip_bytes, timeout=timeout, endpoint=endpoint)
-                token = refreshed
+            token = _ensure_metadata_session(token, timeout=timeout)
+            endpoint = _metadata_endpoint(token, timeout=timeout)
+            async_id, deploy_error = deploy_metadata_zip(token, zip_bytes, timeout=timeout, endpoint=endpoint)
         if deploy_error:
             return [{
                 "object": "WebLink",
@@ -414,10 +449,7 @@ def deploy_agentcpq_lwc(token, timeout=60, poll_interval=3, max_polls=8):
             "details": "Missing Salesforce access token.",
         }
 
-    if token.refresh_token:
-        refreshed = refresh_salesforce_token(token, timeout=timeout)
-        if refreshed:
-            token = refreshed
+    token = _ensure_metadata_session(token, timeout=timeout)
     zip_bytes, error = build_lwc_bundle_zip(bundle_name)
     if error:
         return {
@@ -432,11 +464,9 @@ def deploy_agentcpq_lwc(token, timeout=60, poll_interval=3, max_polls=8):
     if deploy_error:
         fault_message = str(deploy_error.get("fault") or "")
         if "INVALID_SESSION_ID" in fault_message:
-            refreshed = refresh_salesforce_token(token, timeout=timeout)
-            if refreshed:
-                endpoint = _metadata_endpoint(refreshed, timeout=timeout)
-                async_id, deploy_error = deploy_metadata_zip(refreshed, zip_bytes, timeout=timeout, endpoint=endpoint)
-                token = refreshed
+            token = _ensure_metadata_session(token, timeout=timeout)
+            endpoint = _metadata_endpoint(token, timeout=timeout)
+            async_id, deploy_error = deploy_metadata_zip(token, zip_bytes, timeout=timeout, endpoint=endpoint)
         if deploy_error:
             return {
                 "object": "LightningComponentBundle",
