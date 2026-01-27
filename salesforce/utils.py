@@ -322,6 +322,84 @@ def create_custom_button(token, button_spec, timeout=6):
     )
 
 
+def _response_error_payload(response):
+    try:
+        return response.json()
+    except ValueError:
+        return response.text
+
+
+def _response_has_error_code(response, codes):
+    payload = _response_error_payload(response)
+    if isinstance(payload, list):
+        return any(
+            isinstance(entry, dict) and entry.get("errorCode") in codes
+            for entry in payload
+        )
+    if isinstance(payload, dict):
+        return payload.get("errorCode") in codes
+    return False
+
+
+def fetch_tooling_object_field_metadata(token, object_name, timeout=6):
+    url = f"{token.instance_url}/services/data/{SF_API_VERSION}/tooling/sobjects/{object_name}/describe"
+    response = requests.get(url, headers=_salesforce_headers(token), timeout=timeout)
+    if response.status_code == 401:
+        refreshed = refresh_salesforce_token(token, timeout=timeout)
+        if refreshed:
+            url = f"{refreshed.instance_url}/services/data/{SF_API_VERSION}/tooling/sobjects/{object_name}/describe"
+            response = requests.get(url, headers=_salesforce_headers(refreshed), timeout=timeout)
+    if response.status_code != 200:
+        return None, response
+    payload = response.json()
+    return payload.get("fields", []), response
+
+
+def build_weblink_fallback_payload(token, button_spec, timeout=6):
+    fields, response = fetch_tooling_object_field_metadata(token, "WebLink", timeout=timeout)
+    if fields is None:
+        return None, response
+
+    createable = {
+        field.get("name", "").lower(): field.get("name")
+        for field in fields
+        if field.get("name") and field.get("createable")
+    }
+    payload = {}
+
+    def add(field_key, value):
+        field_name = createable.get(field_key.lower())
+        if field_name and value is not None:
+            payload[field_name] = value
+
+    label = button_spec.get("label") or button_spec["api_name"].replace("_", " ")
+    add("Name", button_spec["api_name"])
+    add("MasterLabel", label)
+    add("Url", button_spec["url"])
+    add("LinkType", "url")
+    add("DisplayType", button_spec.get("display_type", "detailPageButton"))
+    add("OpenType", button_spec.get("open_type", "newWindow"))
+    add("Availability", "online")
+
+    return payload or None, None
+
+
+def create_custom_button_fallback(token, button_spec, timeout=6):
+    payload, error = build_weblink_fallback_payload(token, button_spec, timeout=timeout)
+    if error:
+        return None, error
+    if not payload:
+        return None, {"error": "No createable WebLink fields found for fallback payload."}
+    url = f"{token.instance_url}/services/data/{SF_API_VERSION}/tooling/sobjects/WebLink"
+    response = requests.post(
+        url,
+        headers=_salesforce_headers(token),
+        json=payload,
+        timeout=timeout,
+    )
+    return response, None
+
+
 def ensure_salesforce_buttons(token, button_specs, timeout=6, dry_run=False):
     results = []
     for button_spec in button_specs:
@@ -414,6 +492,24 @@ def ensure_salesforce_buttons(token, button_specs, timeout=6, dry_run=False):
             button_spec,
             timeout=timeout,
         )
+        if create_response.status_code >= 400 and _response_has_error_code(
+            create_response,
+            {"JSON_PARSER_ERROR"},
+        ):
+            fallback_response, fallback_error = create_custom_button_fallback(
+                token,
+                button_spec,
+                timeout=timeout,
+            )
+            if fallback_error:
+                results.append({
+                    "object": object_name,
+                    "api_name": api_name,
+                    "status": "error",
+                    "details": fallback_error,
+                })
+                continue
+            create_response = fallback_response
         if create_response.status_code in {200, 201}:
             results.append({
                 "object": object_name,
@@ -422,11 +518,7 @@ def ensure_salesforce_buttons(token, button_specs, timeout=6, dry_run=False):
                 "details": create_response.json().get("id"),
             })
         else:
-            details = None
-            try:
-                details = create_response.json()
-            except ValueError:
-                details = create_response.text
+            details = _response_error_payload(create_response)
             results.append({
                 "object": object_name,
                 "api_name": api_name,
