@@ -89,6 +89,7 @@ from django.utils.html import escape
 from django.utils.http import urlencode
 from cpq.renewals.renewals import make_opportunity_renewal
 from django.core.management import call_command
+from salesforce.models import SalesforceToken
 from io import StringIO
 import boto3
 from botocore.config import Config
@@ -3045,6 +3046,17 @@ def admin_integrations(request):
         "quickbooks_connected": quickbooks_connected,
         "docusign_connected": docusign_connected,
     })
+
+
+@login_required
+@require_POST
+def disconnect_salesforce(request):
+    if not request.user.is_staff:
+        return HttpResponseForbidden("You do not have access to integrations.")
+
+    SalesforceToken.objects.all().delete()
+    messages.success(request, "Salesforce connection removed.")
+    return redirect("cpq:admin_integrations")
 
 
 # No dont require this function (apparently)

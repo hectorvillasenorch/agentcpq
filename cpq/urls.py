@@ -75,6 +75,7 @@ urlpatterns = [
     path("admin/manage-notifications/delete/<str:alert_name>/", delete_email_alert, name="delete_email_alert"),
     path('admin/create-notification', create_notification, name='create_notification'),
     path("admin/manage-rules/create/", create_business_rule, name="create_business_rule"),
+    path("admin/integrations/salesforce/disconnect/", views.disconnect_salesforce, name="disconnect_salesforce"),
     path('quotes/<int:quote_id>/set-primary/', set_primary_quote, name='set_primary_quote'),
     path('admin/usage/', usage_dashboard, name='usage_dashboard'),
     path('admin/usage/documents/', usage_documents, name='usage_documents'),

@@ -109,6 +109,10 @@
     flex-wrap: wrap;
   }
 
+  .integration-actions form {
+    margin: 0;
+  }
+
   .btn-primary,
   .btn-secondary {
     border-radius: 14px !important;
@@ -216,6 +220,12 @@
             <a href="/cpq/field-mapping/?crm=Salesforce&object_type=Opportunity" class="btn-secondary">
               <i class="material-icons">tune</i>Map Fields
             </a>
+            <form method="post" action="{% url 'cpq:disconnect_salesforce' %}" onsubmit="return confirm('Disconnect Salesforce?');">
+              {% csrf_token %}
+              <button type="submit" class="btn-secondary">
+                <i class="material-icons">link_off</i>Disconnect
+              </button>
+            </form>
           {% else %}
             <a href="{% url 'salesforce_login' %}" class="btn-primary btn-salesforce">
               <i class="material-icons">vpn_key</i>Connect
