@@ -289,7 +289,7 @@ def build_agentcpq_quote_link(quote_id=None, quote_label=None, request=None):
 def get_custom_button(token, object_name, api_name, timeout=6):
     full_name = _custom_button_full_name(object_name, api_name)
     soql = (
-        "SELECT Id, Name, TableEnumOrId, FullName "
+        "SELECT Id, Name, FullName "
         f"FROM WebLink WHERE FullName = '{full_name}'"
     )
     response = _soql_query(

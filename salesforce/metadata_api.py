@@ -4,6 +4,7 @@ import os
 import time
 import zipfile
 import xml.etree.ElementTree as ET
+from xml.sax.saxutils import escape
 
 import requests
 
@@ -19,13 +20,14 @@ def _metadata_version():
 
 
 def _soap_envelope(body_xml, session_id):
+    safe_session = escape(session_id or "")
     return (
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
         "<env:Envelope xmlns:env=\"http://schemas.xmlsoap.org/soap/envelope/\" "
         "xmlns:met=\"http://soap.sforce.com/2006/04/metadata\">"
         "<env:Header>"
         "<met:SessionHeader>"
-        f"<met:sessionId>{session_id}</met:sessionId>"
+        f"<met:sessionId>{safe_session}</met:sessionId>"
         "</met:SessionHeader>"
         "</env:Header>"
         "<env:Body>"
@@ -188,6 +190,18 @@ def check_deploy_status(token, async_id, timeout=30, include_details=True):
 
 def deploy_agentcpq_lwc(token, timeout=60, poll_interval=3, max_polls=8):
     bundle_name = "agentcpqQuotePanel"
+    if not token or not token.access_token:
+        return {
+            "object": "LightningComponentBundle",
+            "api_name": bundle_name,
+            "status": "error",
+            "details": "Missing Salesforce access token.",
+        }
+
+    if token.refresh_token:
+        refreshed = refresh_salesforce_token(token, timeout=timeout)
+        if refreshed:
+            token = refreshed
     zip_bytes, error = build_lwc_bundle_zip(bundle_name)
     if error:
         return {
