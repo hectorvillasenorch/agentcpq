@@ -58,6 +58,51 @@ def _metadata_endpoint(token, timeout=6):
     return f"{token.instance_url}/services/Soap/m/{version}"
 
 
+def describe_metadata(token, timeout=30):
+    endpoint = _metadata_endpoint(token, timeout=timeout)
+    version = _metadata_version()
+    body = (
+        "<tns:describeMetadata>"
+        f"<tns:asOfVersion>{version}</tns:asOfVersion>"
+        "</tns:describeMetadata>"
+    )
+    envelope = _soap_envelope(body, token.access_token)
+    response = requests.post(
+        endpoint,
+        data=envelope,
+        headers={"Content-Type": "text/xml", "SOAPAction": "describeMetadata"},
+        timeout=timeout,
+    )
+    if response.status_code != 200:
+        return None, {"http_status": response.status_code, "body": response.text}
+
+    root = ET.fromstring(response.text)
+    fault = _parse_soap_fault(root)
+    if fault:
+        return None, fault
+
+    metadata_objects = []
+    for node in root.findall(".//met:metadataObjects", NSMAP):
+        entry = {
+            "xmlName": _extract_text(node, "xmlName"),
+            "directoryName": _extract_text(node, "directoryName"),
+            "suffix": _extract_text(node, "suffix"),
+            "metaFile": _extract_text(node, "metaFile"),
+        }
+        metadata_objects.append(entry)
+    return metadata_objects, None
+
+
+def get_metadata_type_info(token, type_name, timeout=30):
+    objects, error = describe_metadata(token, timeout=timeout)
+    if error or not objects:
+        return None, error
+    for entry in objects:
+        if entry.get("xmlName") == type_name:
+            return entry, None
+    return None, {"error": f"Metadata type {type_name} not found."}
+
+
 def _build_lwc_package_xml(bundle_name):
     version = _metadata_version()
     return (
@@ -72,20 +117,172 @@ def _build_lwc_package_xml(bundle_name):
     )
 
 
-def build_lwc_bundle_zip(bundle_name):
+def _build_package_xml(type_members):
+    version = _metadata_version()
+    body = ["<?xml version=\"1.0\" encoding=\"UTF-8\"?>", "<Package xmlns=\"http://soap.sforce.com/2006/04/metadata\">"]
+    for type_name, members in type_members.items():
+        if not members:
+            continue
+        body.append("<types>")
+        for member in members:
+            body.append(f"<members>{escape(member)}</members>")
+        body.append(f"<name>{escape(type_name)}</name>")
+        body.append("</types>")
+    body.append(f"<version>{version}</version>")
+    body.append("</Package>")
+    return "".join(body)
+
+
+def build_weblink_metadata_xml(button_spec):
+    label = button_spec.get("label") or button_spec["api_name"].replace("_", " ")
+    display_type = button_spec.get("display_type", "detailPageButton")
+    open_type = button_spec.get("open_type", "newWindow")
+    url = button_spec["url"]
+    return (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<WebLink xmlns=\"http://soap.sforce.com/2006/04/metadata\">"
+        "<availability>online</availability>"
+        f"<displayType>{escape(display_type)}</displayType>"
+        "<encodingKey>UTF-8</encodingKey>"
+        "<linkType>url</linkType>"
+        f"<masterLabel>{escape(label)}</masterLabel>"
+        f"<openType>{escape(open_type)}</openType>"
+        f"<url>{escape(url)}</url>"
+        "</WebLink>"
+    )
+
+
+def build_weblink_zip(token, button_specs, timeout=30):
+    metadata_info, error = get_metadata_type_info(token, "WebLink", timeout=timeout)
+    if error or not metadata_info:
+        return None, error or {"error": "Missing WebLink metadata info."}
+
+    directory = metadata_info.get("directoryName")
+    suffix = metadata_info.get("suffix")
+    if not directory or not suffix:
+        return None, {"error": "WebLink metadata directory/suffix unavailable."}
+
+    members = []
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for button_spec in button_specs:
+            full_name = f"{button_spec['object']}.{button_spec['api_name']}"
+            members.append(full_name)
+            filename = f"{directory}/{full_name}.{suffix}"
+            zf.writestr(filename, build_weblink_metadata_xml(button_spec))
+
+        package_xml = _build_package_xml({"WebLink": members})
+        zf.writestr("package.xml", package_xml)
+
+    return buffer.getvalue(), None
+
+
+def deploy_salesforce_weblinks(token, button_specs, timeout=60, poll_interval=3, max_polls=8):
+    if not token or not token.access_token:
+        return [{
+            "object": "WebLink",
+            "api_name": spec["api_name"],
+            "status": "error",
+            "details": "Missing Salesforce access token.",
+        } for spec in button_specs]
+
+    zip_bytes, error = build_weblink_zip(token, button_specs, timeout=timeout)
+    if error:
+        return [{
+            "object": "WebLink",
+            "api_name": spec["api_name"],
+            "status": "error",
+            "details": error,
+        } for spec in button_specs]
+
+    endpoint = _metadata_endpoint(token, timeout=timeout)
+    async_id, deploy_error = deploy_metadata_zip(token, zip_bytes, timeout=timeout, endpoint=endpoint)
+    if deploy_error:
+        fault_message = str(deploy_error.get("fault") or "")
+        if "INVALID_SESSION_ID" in fault_message:
+            refreshed = refresh_salesforce_token(token, timeout=timeout)
+            if refreshed:
+                endpoint = _metadata_endpoint(refreshed, timeout=timeout)
+                async_id, deploy_error = deploy_metadata_zip(refreshed, zip_bytes, timeout=timeout, endpoint=endpoint)
+                token = refreshed
+        if deploy_error:
+            return [{
+                "object": "WebLink",
+                "api_name": spec["api_name"],
+                "status": "error",
+                "details": deploy_error,
+            } for spec in button_specs]
+
+    last_status = {"status": "pending", "details": {"status": "Queued"}}
+    for _ in range(max_polls):
+        last_status = check_deploy_status(token, async_id, timeout=timeout, endpoint=endpoint)
+        if last_status["status"] in {"success", "error"}:
+            break
+        time.sleep(poll_interval)
+
+    results = []
+    if last_status["status"] == "success":
+        for spec in button_specs:
+            results.append({
+                "object": "WebLink",
+                "api_name": spec["api_name"],
+                "status": "created",
+                "details": "deployed",
+            })
+        return results
+
+    failures = (last_status.get("details") or {}).get("component_failures", [])
+    failure_map = {
+        (entry.get("componentType"), entry.get("fullName")): entry
+        for entry in failures
+        if entry.get("fullName")
+    }
+    for spec in button_specs:
+        full_name = f"{spec['object']}.{spec['api_name']}"
+        failure = failure_map.get(("WebLink", full_name))
+        if failure:
+            results.append({
+                "object": "WebLink",
+                "api_name": spec["api_name"],
+                "status": "error",
+                "details": failure.get("problem") or failure,
+            })
+        else:
+            results.append({
+                "object": "WebLink",
+                "api_name": spec["api_name"],
+                "status": last_status["status"],
+                "details": last_status.get("details"),
+            })
+    return results
+
+
+def collect_lwc_bundle_files(bundle_name):
     base_dir = os.path.join(os.path.dirname(__file__), "metadata", "lwc", bundle_name)
     if not os.path.isdir(base_dir):
         return None, f"Missing LWC bundle directory: {base_dir}"
 
+    files = []
+    for filename in os.listdir(base_dir):
+        file_path = os.path.join(base_dir, filename)
+        if not os.path.isfile(file_path):
+            continue
+        arcname = f"lwc/{bundle_name}/{filename}"
+        with open(file_path, "rb") as handle:
+            files.append((arcname, handle.read()))
+    return files, None
+
+
+def build_lwc_bundle_zip(bundle_name):
+    files, error = collect_lwc_bundle_files(bundle_name)
+    if error:
+        return None, error
+
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("package.xml", _build_lwc_package_xml(bundle_name))
-        for filename in os.listdir(base_dir):
-            file_path = os.path.join(base_dir, filename)
-            if not os.path.isfile(file_path):
-                continue
-            arcname = f"lwc/{bundle_name}/{filename}"
-            zf.write(file_path, arcname)
+        for path, content in files:
+            zf.writestr(path, content)
 
     return buffer.getvalue(), None
 
@@ -94,17 +291,17 @@ def deploy_metadata_zip(token, zip_bytes, timeout=30, endpoint=None):
     endpoint = endpoint or _metadata_endpoint(token, timeout=timeout)
     zip_payload = base64.b64encode(zip_bytes).decode("ascii")
     body = (
-        "<met:deploy>"
-        f"<met:ZipFile>{zip_payload}</met:ZipFile>"
-        "<met:DeployOptions>"
-        "<met:allowMissingFiles>false</met:allowMissingFiles>"
-        "<met:autoUpdatePackage>false</met:autoUpdatePackage>"
-        "<met:checkOnly>false</met:checkOnly>"
-        "<met:ignoreWarnings>true</met:ignoreWarnings>"
-        "<met:rollbackOnError>true</met:rollbackOnError>"
-        "<met:singlePackage>true</met:singlePackage>"
-        "</met:DeployOptions>"
-        "</met:deploy>"
+        "<tns:deploy>"
+        f"<tns:ZipFile>{zip_payload}</tns:ZipFile>"
+        "<tns:DeployOptions>"
+        "<tns:allowMissingFiles>false</tns:allowMissingFiles>"
+        "<tns:autoUpdatePackage>false</tns:autoUpdatePackage>"
+        "<tns:checkOnly>false</tns:checkOnly>"
+        "<tns:ignoreWarnings>true</tns:ignoreWarnings>"
+        "<tns:rollbackOnError>true</tns:rollbackOnError>"
+        "<tns:singlePackage>true</tns:singlePackage>"
+        "</tns:DeployOptions>"
+        "</tns:deploy>"
     )
 
     envelope = _soap_envelope(body, token.access_token)
@@ -134,10 +331,10 @@ def check_deploy_status(token, async_id, timeout=30, include_details=True, endpo
     endpoint = endpoint or _metadata_endpoint(token, timeout=timeout)
     details_flag = "true" if include_details else "false"
     body = (
-        "<met:checkDeployStatus>"
-        f"<met:asyncProcessId>{async_id}</met:asyncProcessId>"
-        f"<met:includeDetails>{details_flag}</met:includeDetails>"
-        "</met:checkDeployStatus>"
+        "<tns:checkDeployStatus>"
+        f"<tns:asyncProcessId>{async_id}</tns:asyncProcessId>"
+        f"<tns:includeDetails>{details_flag}</tns:includeDetails>"
+        "</tns:checkDeployStatus>"
     )
     envelope = _soap_envelope(body, token.access_token)
     response = requests.post(
@@ -165,10 +362,12 @@ def check_deploy_status(token, async_id, timeout=30, include_details=True, endpo
     message = _extract_text(result_node, "errorMessage") or _extract_text(result_node, "errorStatusCode")
 
     failures = []
+    component_failures = []
     for failure in result_node.findall(".//met:componentFailures", NSMAP):
         problem = _extract_text(failure, "problem") or _extract_text(failure, "problemType")
         filename = _extract_text(failure, "fileName")
         full_name = _extract_text(failure, "fullName")
+        component_type = _extract_text(failure, "componentType")
         line = _extract_text(failure, "lineNumber")
         column = _extract_text(failure, "columnNumber")
         detail = " ".join(
@@ -177,11 +376,20 @@ def check_deploy_status(token, async_id, timeout=30, include_details=True, endpo
         )
         if detail:
             failures.append(detail)
+        component_failures.append({
+            "componentType": component_type,
+            "fullName": full_name,
+            "problem": problem,
+            "fileName": filename,
+            "line": line,
+            "column": column,
+        })
 
     details = {
         "status": status,
         "message": message,
         "failures": failures,
+        "component_failures": component_failures,
     }
 
     if done and success:

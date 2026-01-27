@@ -2402,13 +2402,17 @@ def run_salesforce_setup(request):
             "open_type": "newWindow",
         },
     ]
-    button_results = ensure_salesforce_buttons(token, button_specs, timeout=8, dry_run=False)
-
+    button_results = []
     lwc_result = None
     deploy_agentcpq_lwc = None
+    deploy_salesforce_weblinks = None
     try:
-        from salesforce.metadata_api import deploy_agentcpq_lwc as _deploy_agentcpq_lwc
+        from salesforce.metadata_api import (
+            deploy_agentcpq_lwc as _deploy_agentcpq_lwc,
+            deploy_salesforce_weblinks as _deploy_salesforce_weblinks,
+        )
         deploy_agentcpq_lwc = _deploy_agentcpq_lwc
+        deploy_salesforce_weblinks = _deploy_salesforce_weblinks
     except Exception as exc:
         module_path = os.path.join(settings.BASE_DIR, "salesforce", "metadata_api.py")
         if os.path.exists(module_path):
@@ -2417,6 +2421,7 @@ def run_salesforce_setup(request):
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
                 deploy_agentcpq_lwc = getattr(module, "deploy_agentcpq_lwc", None)
+                deploy_salesforce_weblinks = getattr(module, "deploy_salesforce_weblinks", None)
         if not deploy_agentcpq_lwc:
             lwc_result = {
                 "object": "LightningComponentBundle",
@@ -2424,6 +2429,17 @@ def run_salesforce_setup(request):
                 "status": "error",
                 "details": str(exc),
             }
+
+    if deploy_salesforce_weblinks:
+        try:
+            button_results = deploy_salesforce_weblinks(token, button_specs, timeout=60)
+        except Exception as exc:
+            button_results = [{
+                "object": "WebLink",
+                "api_name": spec["api_name"],
+                "status": "error",
+                "details": str(exc),
+            } for spec in button_specs]
 
     if deploy_agentcpq_lwc:
         try:
