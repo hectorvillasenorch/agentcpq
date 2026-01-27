@@ -290,7 +290,7 @@ def get_custom_button(token, object_name, api_name, timeout=6):
     full_name = _custom_button_full_name(object_name, api_name)
     soql = (
         "SELECT Id, Name, FullName "
-        f"FROM WebLink WHERE FullName = '{full_name}'"
+        f"FROM WebLink WHERE Name = '{api_name}'"
     )
     response = _soql_query(
         token.instance_url,
@@ -302,7 +302,10 @@ def get_custom_button(token, object_name, api_name, timeout=6):
     if response.status_code != 200:
         return None, response
     records = response.json().get("records", [])
-    return (records[0] if records else None), response
+    for record in records:
+        if record.get("FullName") == full_name:
+            return record, response
+    return None, response
 
 
 def create_custom_button(token, button_spec, timeout=6):
@@ -336,12 +339,56 @@ def ensure_salesforce_buttons(token, button_specs, timeout=6, dry_run=False):
                 details = response.json()
             except ValueError:
                 details = response.text
-            results.append({
-                "object": object_name,
-                "api_name": api_name,
-                "status": "error",
-                "details": details or f"query_http_{response.status_code}",
-            })
+            if dry_run:
+                results.append({
+                    "object": object_name,
+                    "api_name": api_name,
+                    "status": "error",
+                    "details": details or f"query_http_{response.status_code}",
+                })
+                continue
+
+            create_response = create_custom_button(
+                token,
+                button_spec,
+                timeout=timeout,
+            )
+            if create_response.status_code in {200, 201}:
+                results.append({
+                    "object": object_name,
+                    "api_name": api_name,
+                    "status": "created",
+                    "details": create_response.json().get("id"),
+                })
+                continue
+
+            create_details = None
+            try:
+                create_details = create_response.json()
+            except ValueError:
+                create_details = create_response.text
+
+            duplicate = False
+            if isinstance(create_details, list):
+                duplicate = any(
+                    entry.get("errorCode") in {"DUPLICATE_VALUE", "ALREADY_EXISTS"}
+                    for entry in create_details
+                    if isinstance(entry, dict)
+                )
+            if duplicate:
+                results.append({
+                    "object": object_name,
+                    "api_name": api_name,
+                    "status": "exists",
+                    "details": "duplicate_on_create",
+                })
+            else:
+                results.append({
+                    "object": object_name,
+                    "api_name": api_name,
+                    "status": "error",
+                    "details": create_details or f"create_http_{create_response.status_code}",
+                })
             continue
 
         if existing_button:
