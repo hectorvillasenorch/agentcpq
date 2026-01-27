@@ -277,7 +277,7 @@ def get_salesforce_userinfo(token, timeout=6):
         headers=headers,
         timeout=timeout,
     )
-    if response.status_code == 401:
+    if response.status_code in {401, 403}:
         refreshed = refresh_salesforce_token(token, timeout=timeout)
         if refreshed:
             headers = _salesforce_headers(refreshed)
@@ -778,6 +778,16 @@ def validate_salesforce_connection(token, timeout=6):
     except requests.RequestException:
         status["errors"].append("userinfo_request_failed")
         return status
+
+    if userinfo_response.status_code in {401, 403} and token.refresh_token:
+        token = refresh_salesforce_token(token, timeout=timeout)
+        if token:
+            headers = _salesforce_headers(token)
+            userinfo_response = requests.get(
+                f"{token.instance_url}/services/oauth2/userinfo",
+                headers=headers,
+                timeout=timeout,
+            )
 
     if userinfo_response.status_code != 200:
         status["errors"].append(f"userinfo_http_{userinfo_response.status_code}")

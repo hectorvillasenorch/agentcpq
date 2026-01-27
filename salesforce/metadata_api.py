@@ -186,6 +186,11 @@ def deploy_salesforce_weblinks(token, button_specs, timeout=60, poll_interval=3,
             "details": "Missing Salesforce access token.",
         } for spec in button_specs]
 
+    if token.refresh_token:
+        refreshed = refresh_salesforce_token(token, timeout=timeout)
+        if refreshed:
+            token = refreshed
+
     zip_bytes, error = build_weblink_zip(token, button_specs, timeout=timeout)
     if error:
         return [{
