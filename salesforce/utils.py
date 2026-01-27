@@ -268,6 +268,71 @@ def get_agentcpq_base_url(request=None):
     return None
 
 
+def get_salesforce_userinfo(token, timeout=6):
+    if not token:
+        return None, None
+    headers = _salesforce_headers(token)
+    response = requests.get(
+        f"{token.instance_url}/services/oauth2/userinfo",
+        headers=headers,
+        timeout=timeout,
+    )
+    if response.status_code == 401:
+        refreshed = refresh_salesforce_token(token, timeout=timeout)
+        if refreshed:
+            headers = _salesforce_headers(refreshed)
+            response = requests.get(
+                f"{refreshed.instance_url}/services/oauth2/userinfo",
+                headers=headers,
+                timeout=timeout,
+            )
+    if response.status_code != 200:
+        return None, response
+    return response.json(), response
+
+
+def get_metadata_server_url(token, timeout=6):
+    userinfo, response = get_salesforce_userinfo(token, timeout=timeout)
+    if not userinfo:
+        return None
+
+    def _format_metadata_url(url_template, org_id):
+        if not url_template:
+            return None
+        version = SF_API_VERSION.lstrip("v")
+        url = url_template.replace("{version}", version).replace("v{version}", f"v{version}")
+        if org_id:
+            url = (
+                url.replace("{orgId}", org_id)
+                .replace("{organization_id}", org_id)
+                .replace("{organizationId}", org_id)
+            )
+        return url
+
+    org_id = userinfo.get("organization_id") or userinfo.get("org_id")
+    urls = userinfo.get("urls") or {}
+    metadata_url = urls.get("metadata") or userinfo.get("metadataServerUrl") or urls.get("metadataServerUrl")
+    if metadata_url:
+        formatted = _format_metadata_url(metadata_url, org_id)
+        if formatted:
+            return formatted
+
+    identity_url = userinfo.get("id")
+    if identity_url:
+        headers = _salesforce_headers(token)
+        identity_response = requests.get(identity_url, headers=headers, timeout=timeout)
+        if identity_response.status_code == 200:
+            identity = identity_response.json()
+            org_id = identity.get("organization_id") or org_id
+            identity_urls = identity.get("urls") or {}
+            metadata_url = identity_urls.get("metadata")
+            formatted = _format_metadata_url(metadata_url, org_id)
+            if formatted:
+                return formatted
+
+    return None
+
+
 def build_agentcpq_quote_link(quote_id=None, quote_label=None, request=None):
     base_url = get_agentcpq_base_url(request=request)
     if not base_url:
@@ -369,17 +434,29 @@ def build_weblink_fallback_payload(token, button_spec, timeout=6):
 
     def add(field_key, value):
         field_name = createable.get(field_key.lower())
-        if field_name and value is not None:
+        if field_name and value is not None and field_name not in payload:
             payload[field_name] = value
+            return True
+        return False
+
+    def add_any(field_keys, value):
+        for key in field_keys:
+            if add(key, value):
+                return True
+        return False
 
     label = button_spec.get("label") or button_spec["api_name"].replace("_", " ")
-    add("Name", button_spec["api_name"])
-    add("MasterLabel", label)
-    add("Url", button_spec["url"])
-    add("LinkType", "url")
-    add("DisplayType", button_spec.get("display_type", "detailPageButton"))
-    add("OpenType", button_spec.get("open_type", "newWindow"))
-    add("Availability", "online")
+    full_name = _custom_button_full_name(button_spec["object"], button_spec["api_name"])
+
+    add_any(["FullName"], full_name)
+    add_any(["DeveloperName", "Name"], button_spec["api_name"])
+    add_any(["MasterLabel", "Label"], label)
+    add_any(["Url", "LinkUrl", "PageUrl"], button_spec["url"])
+    add_any(["LinkType"], "url")
+    add_any(["DisplayType"], button_spec.get("display_type", "detailPageButton"))
+    add_any(["OpenType"], button_spec.get("open_type", "newWindow"))
+    add_any(["Availability"], "online")
+    add_any(["SobjectType", "TableEnumOrId", "EntityDefinitionId"], button_spec["object"])
 
     return payload or None, None
 

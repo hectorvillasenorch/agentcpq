@@ -8,7 +8,7 @@ from xml.sax.saxutils import escape
 
 import requests
 
-from salesforce.utils import SF_API_VERSION, refresh_salesforce_token
+from salesforce.utils import SF_API_VERSION, get_metadata_server_url, refresh_salesforce_token
 
 SOAP_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 METADATA_NS = "http://soap.sforce.com/2006/04/metadata"
@@ -24,11 +24,11 @@ def _soap_envelope(body_xml, session_id):
     return (
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
         "<env:Envelope xmlns:env=\"http://schemas.xmlsoap.org/soap/envelope/\" "
-        "xmlns:met=\"http://soap.sforce.com/2006/04/metadata\">"
+        "xmlns:tns=\"http://soap.sforce.com/2006/04/metadata\">"
         "<env:Header>"
-        "<met:SessionHeader>"
-        f"<met:sessionId>{safe_session}</met:sessionId>"
-        "</met:SessionHeader>"
+        "<tns:SessionHeader>"
+        f"<tns:sessionId>{safe_session}</tns:sessionId>"
+        "</tns:SessionHeader>"
         "</env:Header>"
         "<env:Body>"
         f"{body_xml}"
@@ -50,7 +50,10 @@ def _extract_text(node, tag):
     return child.text if child is not None else None
 
 
-def _metadata_endpoint(token):
+def _metadata_endpoint(token, timeout=6):
+    metadata_url = get_metadata_server_url(token, timeout=timeout)
+    if metadata_url:
+        return metadata_url
     version = _metadata_version()
     return f"{token.instance_url}/services/Soap/m/{version}"
 
@@ -87,8 +90,8 @@ def build_lwc_bundle_zip(bundle_name):
     return buffer.getvalue(), None
 
 
-def deploy_metadata_zip(token, zip_bytes, timeout=30):
-    endpoint = _metadata_endpoint(token)
+def deploy_metadata_zip(token, zip_bytes, timeout=30, endpoint=None):
+    endpoint = endpoint or _metadata_endpoint(token, timeout=timeout)
     zip_payload = base64.b64encode(zip_bytes).decode("ascii")
     body = (
         "<met:deploy>"
@@ -127,8 +130,8 @@ def deploy_metadata_zip(token, zip_bytes, timeout=30):
     return async_id, None
 
 
-def check_deploy_status(token, async_id, timeout=30, include_details=True):
-    endpoint = _metadata_endpoint(token)
+def check_deploy_status(token, async_id, timeout=30, include_details=True, endpoint=None):
+    endpoint = endpoint or _metadata_endpoint(token, timeout=timeout)
     details_flag = "true" if include_details else "false"
     body = (
         "<met:checkDeployStatus>"
@@ -211,13 +214,15 @@ def deploy_agentcpq_lwc(token, timeout=60, poll_interval=3, max_polls=8):
             "details": error,
         }
 
-    async_id, deploy_error = deploy_metadata_zip(token, zip_bytes, timeout=timeout)
+    endpoint = _metadata_endpoint(token, timeout=timeout)
+    async_id, deploy_error = deploy_metadata_zip(token, zip_bytes, timeout=timeout, endpoint=endpoint)
     if deploy_error:
         fault_message = str(deploy_error.get("fault") or "")
         if "INVALID_SESSION_ID" in fault_message:
             refreshed = refresh_salesforce_token(token, timeout=timeout)
             if refreshed:
-                async_id, deploy_error = deploy_metadata_zip(refreshed, zip_bytes, timeout=timeout)
+                endpoint = _metadata_endpoint(refreshed, timeout=timeout)
+                async_id, deploy_error = deploy_metadata_zip(refreshed, zip_bytes, timeout=timeout, endpoint=endpoint)
                 token = refreshed
         if deploy_error:
             return {
@@ -236,7 +241,7 @@ def deploy_agentcpq_lwc(token, timeout=60, poll_interval=3, max_polls=8):
 
     last_status = {"status": "pending", "details": {"status": "Queued"}}
     for _ in range(max_polls):
-        last_status = check_deploy_status(token, async_id, timeout=timeout)
+        last_status = check_deploy_status(token, async_id, timeout=timeout, endpoint=endpoint)
         if last_status["status"] in {"success", "error"}:
             break
         time.sleep(poll_interval)
