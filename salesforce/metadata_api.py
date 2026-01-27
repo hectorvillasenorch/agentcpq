@@ -7,11 +7,13 @@ import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
 import requests
+from django.conf import settings
 
+from salesforce.endpoints import build_metadata_soap_url
 from salesforce.utils import (
     SF_API_VERSION,
+    ensure_valid_access_token,
     get_metadata_server_url,
-    refresh_salesforce_token,
 )
 
 SOAP_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/"
@@ -59,42 +61,13 @@ def _metadata_endpoint(token, timeout=6):
     if metadata_url:
         return metadata_url
     version = _metadata_version()
-    return f"{token.instance_url}/services/Soap/m/{version}"
-
-
-def _rest_session_probe(token, timeout=6):
-    if not token:
-        return False
-    url = f"{token.instance_url}/services/data/{SF_API_VERSION}/limits"
-    response = requests.get(
-        url,
-        headers={"Authorization": f"Bearer {token.access_token}"},
-        timeout=timeout,
-    )
-    if response.status_code == 200:
-        return True
-    if response.status_code in {401, 403} and token.refresh_token:
-        refreshed = refresh_salesforce_token(token, timeout=timeout)
-        if refreshed:
-            url = f"{refreshed.instance_url}/services/data/{SF_API_VERSION}/limits"
-            response = requests.get(
-                url,
-                headers={"Authorization": f"Bearer {refreshed.access_token}"},
-                timeout=timeout,
-            )
-            if response.status_code == 200:
-                return True
-    return False
+    return build_metadata_soap_url(token.instance_url, version)
 
 
 def _ensure_metadata_session(token, timeout=6):
     if not token:
         return None
-    if token.refresh_token:
-        refreshed = refresh_salesforce_token(token, timeout=timeout)
-        if refreshed:
-            token = refreshed
-    _rest_session_probe(token, timeout=timeout)
+    token = ensure_valid_access_token(token, timeout=timeout, allow_limits_cache=False)
     return token
 
 
@@ -227,6 +200,13 @@ def deploy_salesforce_weblinks(token, button_specs, timeout=60, poll_interval=3,
         } for spec in button_specs]
 
     token = _ensure_metadata_session(token, timeout=timeout)
+    if not token:
+        return [{
+            "object": "WebLink",
+            "api_name": spec["api_name"],
+            "status": "error",
+            "details": "Salesforce session invalid. Reconnect Salesforce.",
+        } for spec in button_specs]
 
     zip_bytes, error = build_weblink_zip(token, button_specs, timeout=timeout)
     if error:
@@ -241,7 +221,11 @@ def deploy_salesforce_weblinks(token, button_specs, timeout=60, poll_interval=3,
     async_id, deploy_error = deploy_metadata_zip(token, zip_bytes, timeout=timeout, endpoint=endpoint)
     if deploy_error:
         fault_message = str(deploy_error.get("fault") or "")
-        if "INVALID_SESSION_ID" in fault_message:
+        if "INVALID_SESSION_ID" in fault_message and getattr(
+            settings,
+            "SALESFORCE_REFRESH_ON_INVALID_SESSION",
+            True,
+        ):
             token = _ensure_metadata_session(token, timeout=timeout)
             endpoint = _metadata_endpoint(token, timeout=timeout)
             async_id, deploy_error = deploy_metadata_zip(token, zip_bytes, timeout=timeout, endpoint=endpoint)
@@ -367,7 +351,7 @@ def deploy_metadata_zip(token, zip_bytes, timeout=30, endpoint=None):
     return async_id, None
 
 
-def check_deploy_status(token, async_id, timeout=30, include_details=True, endpoint=None):
+def check_deploy_status(token, async_id, timeout=30, include_details=True, endpoint=None, retry_on_invalid_session=True):
     endpoint = endpoint or _metadata_endpoint(token, timeout=timeout)
     details_flag = "true" if include_details else "false"
     body = (
@@ -390,6 +374,21 @@ def check_deploy_status(token, async_id, timeout=30, include_details=True, endpo
     root = ET.fromstring(response.text)
     fault = _parse_soap_fault(root)
     if fault:
+        if (
+            retry_on_invalid_session
+            and "INVALID_SESSION_ID" in (fault.get("fault") or "")
+            and getattr(settings, "SALESFORCE_REFRESH_ON_INVALID_SESSION", True)
+        ):
+            refreshed = _ensure_metadata_session(token, timeout=timeout)
+            if refreshed:
+                return check_deploy_status(
+                    refreshed,
+                    async_id,
+                    timeout=timeout,
+                    include_details=include_details,
+                    endpoint=_metadata_endpoint(refreshed, timeout=timeout),
+                    retry_on_invalid_session=False,
+                )
         return {"status": "error", "details": fault}
 
     result_node = root.find(".//met:result", NSMAP)
@@ -450,6 +449,13 @@ def deploy_agentcpq_lwc(token, timeout=60, poll_interval=3, max_polls=8):
         }
 
     token = _ensure_metadata_session(token, timeout=timeout)
+    if not token:
+        return {
+            "object": "LightningComponentBundle",
+            "api_name": bundle_name,
+            "status": "error",
+            "details": "Salesforce session invalid. Reconnect Salesforce.",
+        }
     zip_bytes, error = build_lwc_bundle_zip(bundle_name)
     if error:
         return {
@@ -463,7 +469,11 @@ def deploy_agentcpq_lwc(token, timeout=60, poll_interval=3, max_polls=8):
     async_id, deploy_error = deploy_metadata_zip(token, zip_bytes, timeout=timeout, endpoint=endpoint)
     if deploy_error:
         fault_message = str(deploy_error.get("fault") or "")
-        if "INVALID_SESSION_ID" in fault_message:
+        if "INVALID_SESSION_ID" in fault_message and getattr(
+            settings,
+            "SALESFORCE_REFRESH_ON_INVALID_SESSION",
+            True,
+        ):
             token = _ensure_metadata_session(token, timeout=timeout)
             endpoint = _metadata_endpoint(token, timeout=timeout)
             async_id, deploy_error = deploy_metadata_zip(token, zip_bytes, timeout=timeout, endpoint=endpoint)

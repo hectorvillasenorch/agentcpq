@@ -17,6 +17,7 @@ import logging
 import datetime
 from datetime import timezone as dt_timezone
 from salesforce.utils import (
+    SF_API_VERSION,
     build_agentcpq_quote_link,
     fetch_salesforce_object_field_metadata,
     get_valid_salesforce_token,
@@ -138,7 +139,7 @@ def test_salesforce_api(request):
     instance_url = token_entry.instance_url
 
     # ✅ Construct the request URL
-    url = f"{instance_url}/services/data/v57.0/sobjects/Account/"  # Example: Fetch Account data
+    url = f"{instance_url}/services/data/{SF_API_VERSION}/sobjects/Account/"  # Example: Fetch Account data
 
     response = salesforce_request(token_entry, "GET", url, timeout=6)
     if response is None:
@@ -237,7 +238,7 @@ def sync_quote_to_salesforce(request, quote_id):
     if quote_link:
         opportunity_update_payload["AgentCPQ_Quote_Link__c"] = quote_link
 
-    opportunity_url = f"{instance_url}/services/data/v57.0/sobjects/Opportunity/{opportunity_id}"
+    opportunity_url = f"{instance_url}/services/data/{SF_API_VERSION}/sobjects/Opportunity/{opportunity_id}"
     opp_response = salesforce_request(
         token_entry,
         "PATCH",
@@ -421,7 +422,7 @@ def sync_quote_to_salesforce(request, quote_id):
                     create_response = salesforce_request(
                         token_entry,
                         "POST",
-                        f"{instance_url}/services/data/v57.0/sobjects/PricebookEntry",
+                        f"{instance_url}/services/data/{SF_API_VERSION}/sobjects/PricebookEntry",
                         json=payload,
                         timeout=6,
                     )
@@ -518,7 +519,7 @@ def sync_quote_to_salesforce(request, quote_id):
             continue
 
         if existing_oli_id:
-            line_item_url = f"{instance_url}/services/data/v57.0/sobjects/OpportunityLineItem/{existing_oli_id}"
+            line_item_url = f"{instance_url}/services/data/{SF_API_VERSION}/sobjects/OpportunityLineItem/{existing_oli_id}"
             line_item_response = salesforce_request(
                 token_entry,
                 "PATCH",
@@ -527,7 +528,7 @@ def sync_quote_to_salesforce(request, quote_id):
                 timeout=6,
             )
         else:
-            line_item_url = f"{instance_url}/services/data/v57.0/sobjects/OpportunityLineItem/"
+            line_item_url = f"{instance_url}/services/data/{SF_API_VERSION}/sobjects/OpportunityLineItem/"
             line_item_response = salesforce_request(
                 token_entry,
                 "POST",

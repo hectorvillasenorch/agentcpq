@@ -42,7 +42,6 @@ from salesforce.utils import (
     ensure_salesforce_buttons,
     ensure_salesforce_fields,
     fetch_salesforce_object_fields,
-    get_salesforce_userinfo,
     get_valid_salesforce_token,
     validate_salesforce_connection,
 )
@@ -2369,17 +2368,12 @@ def run_salesforce_setup(request):
     if not token:
         return JsonResponse({"success": False, "error": "Salesforce not authenticated."}, status=401)
 
-    userinfo, userinfo_response = get_salesforce_userinfo(token, timeout=8)
-    if not userinfo:
-        status_code = getattr(userinfo_response, "status_code", 401)
-        return JsonResponse(
-            {"success": False, "error": f"Salesforce authentication failed (userinfo_http_{status_code})."},
-            status=401,
-        )
-
     status = validate_salesforce_connection(token, timeout=8)
     if not status.get("authenticated"):
-        return JsonResponse({"success": False, "error": "Salesforce authentication failed."}, status=401)
+        return JsonResponse(
+            {"success": False, "error": f"Salesforce authentication failed ({status.get('errors')})."},
+            status=401,
+        )
 
     try:
         from salesforce.management.commands.create_fields_needed import REQUIRED_FIELDS

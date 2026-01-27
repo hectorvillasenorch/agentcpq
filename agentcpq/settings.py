@@ -243,6 +243,17 @@ SALESFORCE_REDIRECT_URI = os.getenv(
 SALESFORCE_AUTH_URL = "https://login.salesforce.com/services/oauth2/authorize"
 SALESFORCE_TOKEN_URL = os.getenv("SALESFORCE_TOKEN_URL", "https://login.salesforce.com/services/oauth2/token")
 SALESFORCE_OAUTH_SCOPES = os.getenv("SALESFORCE_OAUTH_SCOPES", "api refresh_token")
+SALESFORCE_USE_USERINFO = os.getenv("SALESFORCE_USE_USERINFO", "").strip().lower() in {"1", "true", "yes", "on"}
+SALESFORCE_ENFORCE_INSTANCE_URL = os.getenv(
+    "SALESFORCE_ENFORCE_INSTANCE_URL", "true"
+).strip().lower() in {"1", "true", "yes", "on"}
+SALESFORCE_REFRESH_ON_INVALID_SESSION = os.getenv(
+    "SALESFORCE_REFRESH_ON_INVALID_SESSION", "true"
+).strip().lower() in {"1", "true", "yes", "on"}
+try:
+    SALESFORCE_LIMITS_CACHE_TTL = int(os.getenv("SALESFORCE_LIMITS_CACHE_TTL", "120"))
+except ValueError:
+    SALESFORCE_LIMITS_CACHE_TTL = 120
 
 def _clean_mail_credential(value):
     if value is None:

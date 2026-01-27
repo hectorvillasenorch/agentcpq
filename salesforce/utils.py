@@ -1,15 +1,55 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import os
 import urllib.parse
+
 import requests
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 
 from salesforce.models import SalesforceToken
+from salesforce.endpoints import (
+    apply_instance_url as _apply_instance_url_base,
+    build_rest_url,
+    is_login_host as _is_login_host,
+    join_instance_url as _join_instance_url_base,
+    normalize_instance_url as _normalize_instance_url,
+)
+
+logger = logging.getLogger(__name__)
 
 SF_API_VERSION = "v57.0"
+
+
+def _is_valid_instance_url(value):
+    normalized = _normalize_instance_url(value)
+    if not normalized:
+        return False
+    return not _is_login_host(normalized)
+
+
+def _join_instance_url(token, path, query=None):
+    return _join_instance_url_base(getattr(token, "instance_url", None), path, query)
+
+
+def _apply_instance_url(token, url):
+    return _apply_instance_url_base(getattr(token, "instance_url", None), url)
+
+
+def _limits_cache_key(token):
+    token_id = token.pk or token.user_id
+    updated_at = int(token.updated_at.timestamp()) if token.updated_at else 0
+    return f"salesforce:limits:{token_id}:{updated_at}"
+
+
+def _use_salesforce_userinfo():
+    scopes = (settings.SALESFORCE_OAUTH_SCOPES or "").split()
+    if "openid" not in scopes:
+        return False
+    return bool(getattr(settings, "SALESFORCE_USE_USERINFO", False))
 
 
 def _salesforce_headers(token):
@@ -52,7 +92,9 @@ def refresh_salesforce_token(token, timeout=6):
         expires_at = issued_at + datetime.timedelta(hours=1)
 
     token.access_token = access_token
-    token.instance_url = data.get("instance_url", token.instance_url)
+    instance_url = _normalize_instance_url(data.get("instance_url") or token.instance_url)
+    if instance_url:
+        token.instance_url = instance_url
     token.issued_at_raw = issued_at_raw or token.issued_at_raw
     token.issued_at = issued_at or token.issued_at
     token.expires_at = expires_at or token.expires_at
@@ -66,19 +108,119 @@ def get_valid_salesforce_token(timeout=6):
     token = SalesforceToken.objects.first()
     if not token:
         return None
+    if token.instance_url:
+        normalized = _normalize_instance_url(token.instance_url)
+        if normalized and normalized != token.instance_url:
+            token.instance_url = normalized
+            token.save(update_fields=["instance_url"])
+    if not token.instance_url and token.refresh_token:
+        refreshed = refresh_salesforce_token(token, timeout=timeout)
+        token = refreshed or token
+    if not token.instance_url:
+        return None
     if token.expires_at and token.expires_at <= timezone.now():
         if token.refresh_token:
             refreshed = refresh_salesforce_token(token, timeout=timeout)
-            return refreshed
-        return None
+            token = refreshed or token
+        else:
+            return None
     if token.refresh_token and not token.expires_at:
         refreshed = refresh_salesforce_token(token, timeout=timeout)
-        return refreshed or token
+        token = refreshed or token
+    enforce_instance = getattr(settings, "SALESFORCE_ENFORCE_INSTANCE_URL", True)
+    if enforce_instance and not _is_valid_instance_url(token.instance_url):
+        if token.refresh_token:
+            refreshed = refresh_salesforce_token(token, timeout=timeout)
+            token = refreshed or token
+        if not _is_valid_instance_url(token.instance_url):
+            return None
     return token
 
 
-def salesforce_request(token, method, url, *, params=None, data=None, json=None, headers=None, timeout=6):
+def salesforce_limits_check(token, timeout=6, allow_cache=True):
+    enforce_instance = getattr(settings, "SALESFORCE_ENFORCE_INSTANCE_URL", True)
+    if not token or not token.instance_url:
+        return False, None, token
+    if enforce_instance and not _is_valid_instance_url(token.instance_url):
+        return False, None, token
+
+    cache_key = _limits_cache_key(token)
+    if allow_cache and cache.get(cache_key):
+        return True, None, token
+
+    url = build_rest_url(token.instance_url, SF_API_VERSION, "/limits")
+    try:
+        response = requests.get(url, headers=_salesforce_headers(token), timeout=timeout)
+    except requests.RequestException:
+        return False, None, token
+
+    refresh_on_invalid = getattr(settings, "SALESFORCE_REFRESH_ON_INVALID_SESSION", True)
+    if refresh_on_invalid and (
+        response.status_code in {401, 403}
+        or _response_has_error_code(response, {"INVALID_SESSION_ID"})
+    ):
+        refreshed = refresh_salesforce_token(token, timeout=timeout)
+        if refreshed:
+            token = refreshed
+            url = build_rest_url(token.instance_url, SF_API_VERSION, "/limits")
+            try:
+                response = requests.get(url, headers=_salesforce_headers(token), timeout=timeout)
+            except requests.RequestException:
+                return False, None, token
+
+    if response.status_code == 200:
+        cache.set(
+            cache_key,
+            True,
+            getattr(settings, "SALESFORCE_LIMITS_CACHE_TTL", 120),
+        )
+        return True, response, token
+
+    return False, response, token
+
+
+def ensure_valid_access_token(token, timeout=6, allow_limits_cache=True):
+    token = get_valid_salesforce_token(timeout=timeout) if token else None
     if not token:
+        return None
+    enforce_instance = getattr(settings, "SALESFORCE_ENFORCE_INSTANCE_URL", True)
+    if not token.instance_url:
+        return None
+    if enforce_instance and not _is_valid_instance_url(token.instance_url):
+        return None
+
+    ok, response, token = salesforce_limits_check(token, timeout=timeout, allow_cache=allow_limits_cache)
+    if ok:
+        return token
+
+    if response is not None:
+        logger.warning(
+            "Salesforce limits check failed (HTTP %s).",
+            response.status_code,
+        )
+    return None
+
+
+def salesforce_request(
+    token,
+    method,
+    url,
+    *,
+    params=None,
+    data=None,
+    json=None,
+    headers=None,
+    timeout=6,
+    allow_limits_cache=True,
+):
+    token = ensure_valid_access_token(token, timeout=timeout, allow_limits_cache=allow_limits_cache)
+    if not token:
+        return None
+
+    enforce_instance = getattr(settings, "SALESFORCE_ENFORCE_INSTANCE_URL", True)
+    request_url = _apply_instance_url(token, url) if enforce_instance else url
+    if enforce_instance and _is_login_host(request_url):
+        logger.warning("Blocked Salesforce request to login/test host.")
         return None
 
     request_headers = {"Content-Type": "application/json"}
@@ -89,7 +231,7 @@ def salesforce_request(token, method, url, *, params=None, data=None, json=None,
     try:
         response = requests.request(
             method,
-            url,
+            request_url,
             headers=request_headers,
             params=params,
             data=data,
@@ -99,17 +241,21 @@ def salesforce_request(token, method, url, *, params=None, data=None, json=None,
     except requests.RequestException:
         return None
 
-    if response.status_code != 401:
+    if response.status_code not in {401, 403} and not _response_has_error_code(
+        response,
+        {"INVALID_SESSION_ID"},
+    ):
+        return response
+
+    refresh_on_invalid = getattr(settings, "SALESFORCE_REFRESH_ON_INVALID_SESSION", True)
+    if not refresh_on_invalid:
         return response
 
     refreshed = refresh_salesforce_token(token, timeout=timeout)
     if not refreshed:
         return response
 
-    refreshed_url = url
-    if token.instance_url and refreshed.instance_url and url.startswith(token.instance_url):
-        refreshed_url = f"{refreshed.instance_url}{url[len(token.instance_url):]}"
-
+    refreshed_url = _apply_instance_url(refreshed, request_url)
     request_headers["Authorization"] = f"Bearer {refreshed.access_token}"
     try:
         return requests.request(
@@ -138,32 +284,27 @@ def _extract_user_id(userinfo):
     return None
 
 
-def _soql_query(instance_url, headers, soql, timeout=6, tooling=False):
+def _soql_query(token, soql, timeout=6, tooling=False):
     route = "tooling/query" if tooling else "query"
-    url = f"{instance_url}/services/data/{SF_API_VERSION}/{route}"
-    return requests.get(url, headers=headers, params={"q": soql}, timeout=timeout)
+    url = build_rest_url(token.instance_url, SF_API_VERSION, f"/{route}")
+    return salesforce_request(
+        token,
+        "GET",
+        url,
+        params={"q": soql},
+        timeout=timeout,
+    )
 
 
 def soql_query_all(token, soql, timeout=6, tooling=False):
-    headers = _salesforce_headers(token)
     response = _soql_query(
-        token.instance_url,
-        headers,
+        token,
         soql,
         timeout=timeout,
         tooling=tooling,
     )
-    if response.status_code == 401:
-        refreshed = refresh_salesforce_token(token, timeout=timeout)
-        if refreshed:
-            headers = _salesforce_headers(refreshed)
-            response = _soql_query(
-                refreshed.instance_url,
-                headers,
-                soql,
-                timeout=timeout,
-                tooling=tooling,
-            )
+    if response is None:
+        return None, response
     if response.status_code != 200:
         return None, response
 
@@ -173,12 +314,13 @@ def soql_query_all(token, soql, timeout=6, tooling=False):
         next_url = payload.get("nextRecordsUrl")
         if not next_url:
             break
-        response = requests.get(
-            f"{token.instance_url}{next_url}",
-            headers=headers,
+        response = salesforce_request(
+            token,
+            "GET",
+            _join_instance_url(token, next_url),
             timeout=timeout,
         )
-        if response.status_code != 200:
+        if response is None or response.status_code != 200:
             return records, response
         payload = response.json()
         records.extend(payload.get("records", []))
@@ -269,24 +411,16 @@ def get_agentcpq_base_url(request=None):
 
 
 def get_salesforce_userinfo(token, timeout=6):
-    if not token:
+    if not token or not _use_salesforce_userinfo():
         return None, None
-    headers = _salesforce_headers(token)
-    response = requests.get(
-        f"{token.instance_url}/services/oauth2/userinfo",
-        headers=headers,
+    url = _join_instance_url(token, "/services/oauth2/userinfo")
+    response = salesforce_request(
+        token,
+        "GET",
+        url,
         timeout=timeout,
     )
-    if response.status_code in {401, 403}:
-        refreshed = refresh_salesforce_token(token, timeout=timeout)
-        if refreshed:
-            headers = _salesforce_headers(refreshed)
-            response = requests.get(
-                f"{refreshed.instance_url}/services/oauth2/userinfo",
-                headers=headers,
-                timeout=timeout,
-            )
-    if response.status_code != 200:
+    if response is None or response.status_code != 200:
         return None, response
     return response.json(), response
 
@@ -318,7 +452,7 @@ def get_metadata_server_url(token, timeout=6):
             return formatted
 
     identity_url = userinfo.get("id")
-    if identity_url:
+    if identity_url and not _is_login_host(identity_url):
         headers = _salesforce_headers(token)
         identity_response = requests.get(identity_url, headers=headers, timeout=timeout)
         if identity_response.status_code == 200:
@@ -358,13 +492,12 @@ def get_custom_button(token, object_name, api_name, timeout=6):
         f"FROM WebLink WHERE Name = '{api_name}'"
     )
     response = _soql_query(
-        token.instance_url,
-        _salesforce_headers(token),
+        token,
         soql,
         timeout=timeout,
         tooling=True,
     )
-    if response.status_code != 200:
+    if response is None or response.status_code != 200:
         return None, response
     records = response.json().get("records", [])
     for record in records:
@@ -378,16 +511,19 @@ def create_custom_button(token, button_spec, timeout=6):
         "FullName": _custom_button_full_name(button_spec["object"], button_spec["api_name"]),
         "Metadata": _custom_button_metadata(button_spec),
     }
-    url = f"{token.instance_url}/services/data/{SF_API_VERSION}/tooling/sobjects/WebLink"
-    return requests.post(
+    url = _join_instance_url(token, f"/services/data/{SF_API_VERSION}/tooling/sobjects/WebLink")
+    return salesforce_request(
+        token,
+        "POST",
         url,
-        headers=_salesforce_headers(token),
         json=payload,
         timeout=timeout,
     )
 
 
 def _response_error_payload(response):
+    if response is None:
+        return None
     try:
         return response.json()
     except ValueError:
@@ -407,14 +543,9 @@ def _response_has_error_code(response, codes):
 
 
 def fetch_tooling_object_field_metadata(token, object_name, timeout=6):
-    url = f"{token.instance_url}/services/data/{SF_API_VERSION}/tooling/sobjects/{object_name}/describe"
-    response = requests.get(url, headers=_salesforce_headers(token), timeout=timeout)
-    if response.status_code == 401:
-        refreshed = refresh_salesforce_token(token, timeout=timeout)
-        if refreshed:
-            url = f"{refreshed.instance_url}/services/data/{SF_API_VERSION}/tooling/sobjects/{object_name}/describe"
-            response = requests.get(url, headers=_salesforce_headers(refreshed), timeout=timeout)
-    if response.status_code != 200:
+    url = _join_instance_url(token, f"/services/data/{SF_API_VERSION}/tooling/sobjects/{object_name}/describe")
+    response = salesforce_request(token, "GET", url, timeout=timeout)
+    if response is None or response.status_code != 200:
         return None, response
     payload = response.json()
     return payload.get("fields", []), response
@@ -467,10 +598,11 @@ def create_custom_button_fallback(token, button_spec, timeout=6):
         return None, error
     if not payload:
         return None, {"error": "No createable WebLink fields found for fallback payload."}
-    url = f"{token.instance_url}/services/data/{SF_API_VERSION}/tooling/sobjects/WebLink"
-    response = requests.post(
+    url = _join_instance_url(token, f"/services/data/{SF_API_VERSION}/tooling/sobjects/WebLink")
+    response = salesforce_request(
+        token,
+        "POST",
         url,
-        headers=_salesforce_headers(token),
         json=payload,
         timeout=timeout,
     )
@@ -488,18 +620,21 @@ def ensure_salesforce_buttons(token, button_specs, timeout=6, dry_run=False):
             api_name,
             timeout=timeout,
         )
-        if response.status_code != 200:
+        if response is None or response.status_code != 200:
             details = None
-            try:
-                details = response.json()
-            except ValueError:
-                details = response.text
+            if response is None:
+                details = "request_failed"
+            else:
+                try:
+                    details = response.json()
+                except ValueError:
+                    details = response.text
             if dry_run:
                 results.append({
                     "object": object_name,
                     "api_name": api_name,
                     "status": "error",
-                    "details": details or f"query_http_{response.status_code}",
+                    "details": details or f"query_http_{getattr(response, 'status_code', 'unknown')}",
                 })
                 continue
 
@@ -508,6 +643,14 @@ def ensure_salesforce_buttons(token, button_specs, timeout=6, dry_run=False):
                 button_spec,
                 timeout=timeout,
             )
+            if create_response is None:
+                results.append({
+                    "object": object_name,
+                    "api_name": api_name,
+                    "status": "error",
+                    "details": "create_request_failed",
+                })
+                continue
             if create_response.status_code in {200, 201}:
                 results.append({
                     "object": object_name,
@@ -569,6 +712,14 @@ def ensure_salesforce_buttons(token, button_specs, timeout=6, dry_run=False):
             button_spec,
             timeout=timeout,
         )
+        if create_response is None:
+            results.append({
+                "object": object_name,
+                "api_name": api_name,
+                "status": "error",
+                "details": "create_request_failed",
+            })
+            continue
         if create_response.status_code >= 400 and _response_has_error_code(
             create_response,
             {"JSON_PARSER_ERROR"},
@@ -587,6 +738,14 @@ def ensure_salesforce_buttons(token, button_specs, timeout=6, dry_run=False):
                 })
                 continue
             create_response = fallback_response
+            if create_response is None:
+                results.append({
+                    "object": object_name,
+                    "api_name": api_name,
+                    "status": "error",
+                    "details": "fallback_request_failed",
+                })
+                continue
         if create_response.status_code in {200, 201}:
             results.append({
                 "object": object_name,
@@ -613,13 +772,12 @@ def get_entity_definition_id(token, object_name, timeout=6):
         "LIMIT 1"
     )
     response = _soql_query(
-        token.instance_url,
-        _salesforce_headers(token),
+        token,
         soql,
         timeout=timeout,
         tooling=True,
     )
-    if response.status_code != 200:
+    if response is None or response.status_code != 200:
         return None
     records = response.json().get("records", [])
     if not records:
@@ -636,13 +794,12 @@ def get_custom_field(token, object_name, api_name, timeout=6):
         f" AND DeveloperName = '{developer_name}'"
     )
     response = _soql_query(
-        token.instance_url,
-        _salesforce_headers(token),
+        token,
         soql,
         timeout=timeout,
         tooling=True,
     )
-    if response.status_code != 200:
+    if response is None or response.status_code != 200:
         return None, response
 
     records = response.json().get("records", [])
@@ -654,10 +811,11 @@ def create_custom_field(token, object_name, field_spec, timeout=6):
         "FullName": _custom_field_full_name(object_name, field_spec["api_name"]),
         "Metadata": _custom_field_metadata(field_spec),
     }
-    url = f"{token.instance_url}/services/data/{SF_API_VERSION}/tooling/sobjects/CustomField"
-    return requests.post(
+    url = _join_instance_url(token, f"/services/data/{SF_API_VERSION}/tooling/sobjects/CustomField")
+    return salesforce_request(
+        token,
+        "POST",
         url,
-        headers=_salesforce_headers(token),
         json=payload,
         timeout=timeout,
     )
@@ -674,12 +832,12 @@ def ensure_salesforce_fields(token, required_fields, timeout=6, dry_run=False):
             api_name,
             timeout=timeout,
         )
-        if response.status_code != 200:
+        if response is None or response.status_code != 200:
             results.append({
                 "object": object_name,
                 "api_name": api_name,
                 "status": "error",
-                "details": f"query_http_{response.status_code}",
+                "details": f"query_http_{getattr(response, 'status_code', 'unknown')}",
             })
             continue
 
@@ -707,6 +865,14 @@ def ensure_salesforce_fields(token, required_fields, timeout=6, dry_run=False):
             field_spec,
             timeout=timeout,
         )
+        if create_response is None:
+            results.append({
+                "object": object_name,
+                "api_name": api_name,
+                "status": "error",
+                "details": "create_request_failed",
+            })
+            continue
         if create_response.status_code in {200, 201}:
             try:
                 from cpq.events import emit_domain_event
@@ -762,100 +928,85 @@ def validate_salesforce_connection(token, timeout=6):
         status["errors"].append("missing_token")
         return status
 
-    if token.expires_at and token.expires_at <= timezone.now():
-        token = refresh_salesforce_token(token, timeout=timeout)
-        if not token:
-            status["errors"].append("token_expired")
-            return status
-
-    headers = _salesforce_headers(token)
-    try:
-        userinfo_response = requests.get(
-            f"{token.instance_url}/services/oauth2/userinfo",
-            headers=headers,
-            timeout=timeout,
-        )
-    except requests.RequestException:
-        status["errors"].append("userinfo_request_failed")
+    token = get_valid_salesforce_token(timeout=timeout) or token
+    if not _is_valid_instance_url(token.instance_url):
+        status["errors"].append("invalid_instance_url")
         return status
 
-    if userinfo_response.status_code in {401, 403} and token.refresh_token:
-        token = refresh_salesforce_token(token, timeout=timeout)
-        if token:
-            headers = _salesforce_headers(token)
-            userinfo_response = requests.get(
-                f"{token.instance_url}/services/oauth2/userinfo",
-                headers=headers,
-                timeout=timeout,
-            )
-
-    if userinfo_response.status_code != 200:
-        status["errors"].append(f"userinfo_http_{userinfo_response.status_code}")
+    limits_ok, limits_response, token = salesforce_limits_check(
+        token,
+        timeout=timeout,
+        allow_cache=False,
+    )
+    if not limits_ok:
+        if limits_response is None:
+            status["errors"].append("limits_request_failed")
+        else:
+            status["errors"].append(f"limits_http_{limits_response.status_code}")
         return status
 
     status["authenticated"] = True
-    userinfo = userinfo_response.json() if userinfo_response.content else {}
-    user_id = _extract_user_id(userinfo)
-    status["user_id"] = user_id
 
-    if user_id:
+    userinfo, userinfo_response = get_salesforce_userinfo(token, timeout=timeout)
+    if userinfo:
+        user_id = _extract_user_id(userinfo)
+        status["user_id"] = user_id
+    elif userinfo_response is not None:
+        status["errors"].append(f"userinfo_http_{userinfo_response.status_code}")
+    else:
+        status["errors"].append("userinfo_skipped")
+
+    if status["user_id"]:
         soql = (
             "SELECT UserPermissionsCustomizeApplication,"
             " UserPermissionsModifyAllData"
-            f" FROM User WHERE Id = '{user_id}'"
+            f" FROM User WHERE Id = '{status['user_id']}'"
         )
-        try:
-            perm_response = _soql_query(
-                token.instance_url,
-                headers,
-                soql,
-                timeout=timeout,
-                tooling=False,
-            )
-            if perm_response.status_code == 200:
-                records = perm_response.json().get("records", [])
-                if records:
-                    record = records[0]
-                    status["permissions"]["CustomizeApplication"] = bool(
-                        record.get("UserPermissionsCustomizeApplication")
-                    )
-                    status["permissions"]["ModifyAllData"] = bool(
-                        record.get("UserPermissionsModifyAllData")
-                    )
-                else:
-                    status["errors"].append("permission_record_missing")
-            else:
-                status["errors"].append(f"permissions_http_{perm_response.status_code}")
-        except requests.RequestException:
-            status["errors"].append("permissions_request_failed")
-
-    try:
-        tooling_response = _soql_query(
-            token.instance_url,
-            headers,
-            "SELECT Id FROM EntityDefinition LIMIT 1",
+        perm_response = _soql_query(
+            token,
+            soql,
             timeout=timeout,
-            tooling=True,
+            tooling=False,
         )
-        if tooling_response.status_code == 200:
-            status["tooling_api_enabled"] = True
+        if perm_response is None:
+            status["errors"].append("permissions_request_failed")
+        elif perm_response.status_code == 200:
+            records = perm_response.json().get("records", [])
+            if records:
+                record = records[0]
+                status["permissions"]["CustomizeApplication"] = bool(
+                    record.get("UserPermissionsCustomizeApplication")
+                )
+                status["permissions"]["ModifyAllData"] = bool(
+                    record.get("UserPermissionsModifyAllData")
+                )
+            else:
+                status["errors"].append("permission_record_missing")
         else:
-            status["errors"].append(f"tooling_http_{tooling_response.status_code}")
-    except requests.RequestException:
+            status["errors"].append(f"permissions_http_{perm_response.status_code}")
+    else:
+        status["errors"].append("permissions_unchecked")
+
+    tooling_response = _soql_query(
+        token,
+        "SELECT Id FROM EntityDefinition LIMIT 1",
+        timeout=timeout,
+        tooling=True,
+    )
+    if tooling_response is None:
         status["errors"].append("tooling_request_failed")
+    elif tooling_response.status_code == 200:
+        status["tooling_api_enabled"] = True
+    else:
+        status["errors"].append(f"tooling_http_{tooling_response.status_code}")
 
     return status
 
 
 def fetch_salesforce_object_fields(token, object_name, timeout=6):
-    url = f"{token.instance_url}/services/data/{SF_API_VERSION}/sobjects/{object_name}/describe"
-    response = requests.get(url, headers=_salesforce_headers(token), timeout=timeout)
-    if response.status_code == 401:
-        refreshed = refresh_salesforce_token(token, timeout=timeout)
-        if refreshed:
-            url = f"{refreshed.instance_url}/services/data/{SF_API_VERSION}/sobjects/{object_name}/describe"
-            response = requests.get(url, headers=_salesforce_headers(refreshed), timeout=timeout)
-    if response.status_code != 200:
+    url = _join_instance_url(token, f"/services/data/{SF_API_VERSION}/sobjects/{object_name}/describe")
+    response = salesforce_request(token, "GET", url, timeout=timeout)
+    if response is None or response.status_code != 200:
         return None, response
     payload = response.json()
     fields = [
@@ -867,14 +1018,9 @@ def fetch_salesforce_object_fields(token, object_name, timeout=6):
 
 
 def fetch_salesforce_object_field_metadata(token, object_name, timeout=6):
-    url = f"{token.instance_url}/services/data/{SF_API_VERSION}/sobjects/{object_name}/describe"
-    response = requests.get(url, headers=_salesforce_headers(token), timeout=timeout)
-    if response.status_code == 401:
-        refreshed = refresh_salesforce_token(token, timeout=timeout)
-        if refreshed:
-            url = f"{refreshed.instance_url}/services/data/{SF_API_VERSION}/sobjects/{object_name}/describe"
-            response = requests.get(url, headers=_salesforce_headers(refreshed), timeout=timeout)
-    if response.status_code != 200:
+    url = _join_instance_url(token, f"/services/data/{SF_API_VERSION}/sobjects/{object_name}/describe")
+    response = salesforce_request(token, "GET", url, timeout=timeout)
+    if response is None or response.status_code != 200:
         return None, response
     payload = response.json()
     return payload.get("fields", []), response
