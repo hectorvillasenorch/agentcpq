@@ -88,8 +88,15 @@ class Command(BaseCommand):
 
         product_records, response = soql_query_all(token, soql, timeout=timeout)
         if product_records is None:
+            detail = "request_failed"
+            status_code = getattr(response, "status_code", "unknown")
+            if response is not None:
+                try:
+                    detail = response.json()
+                except ValueError:
+                    detail = response.text
             raise CommandError(
-                f"Failed to fetch Product2 records (HTTP {response.status_code})."
+                f"Failed to fetch Product2 records (HTTP {status_code}). {detail}"
             )
 
         price_map = {}

@@ -2443,6 +2443,20 @@ def run_salesforce_setup(request):
                 "status": "error",
                 "details": str(exc),
             } for spec in button_specs]
+        missing_weblink_type = False
+        for entry in button_results:
+            details = entry.get("details")
+            if isinstance(details, dict) and details.get("error") == "Metadata type WebLink not found.":
+                missing_weblink_type = True
+                break
+            if isinstance(details, str) and "Metadata type WebLink not found." in details:
+                missing_weblink_type = True
+                break
+        if missing_weblink_type:
+            fallback_results = ensure_salesforce_buttons(token, button_specs, timeout=8, dry_run=False)
+            for entry in fallback_results:
+                entry["details"] = {"tooling_fallback": entry.get("details")}
+            button_results = fallback_results
 
     if deploy_agentcpq_lwc:
         try:

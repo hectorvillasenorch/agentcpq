@@ -7,7 +7,6 @@ import AGENTCPQ_QUOTE_NUMBER from "@salesforce/schema/Opportunity.AgentCPQ_Quote
 import AGENTCPQ_MRR from "@salesforce/schema/Opportunity.AgentCPQ_MRR__c";
 import AGENTCPQ_QUOTE_ID from "@salesforce/schema/Opportunity.AgentCPQ_Quote_Id__c";
 import AGENTCPQ_FORECAST_STRATEGY from "@salesforce/schema/Opportunity.AgentCPQ_Forecast_Strategy__c";
-import CURRENCY_ISO_CODE from "@salesforce/schema/Opportunity.CurrencyIsoCode";
 
 const FIELDS = [
   AGENTCPQ_ACV,
@@ -17,7 +16,6 @@ const FIELDS = [
   AGENTCPQ_MRR,
   AGENTCPQ_QUOTE_ID,
   AGENTCPQ_FORECAST_STRATEGY,
-  CURRENCY_ISO_CODE,
 ];
 
 export default class AgentcpqQuotePanel extends LightningElement {
@@ -27,7 +25,7 @@ export default class AgentcpqQuotePanel extends LightningElement {
   record;
 
   get currencyCode() {
-    return getFieldValue(this.record.data, CURRENCY_ISO_CODE) || "USD";
+    return "USD";
   }
 
   get quoteLink() {
