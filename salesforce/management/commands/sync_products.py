@@ -6,7 +6,12 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
 from cpq.models import Product, SystemFieldMapping
-from salesforce.utils import get_valid_salesforce_token, soql_query_all, validate_salesforce_connection
+from salesforce.utils import (
+    fetch_salesforce_object_field_metadata,
+    get_valid_salesforce_token,
+    soql_query_all,
+    validate_salesforce_connection,
+)
 
 
 BASE_PRODUCT2_FIELDS = [
@@ -81,6 +86,25 @@ class Command(BaseCommand):
                 continue
             if crm_field not in fields:
                 fields.append(crm_field)
+
+        field_metadata, field_response = fetch_salesforce_object_field_metadata(
+            token,
+            "Product2",
+            timeout=timeout,
+        )
+        if field_metadata is not None:
+            available_fields = {
+                field.get("name")
+                for field in field_metadata
+                if field.get("name")
+            }
+            fields = [field for field in fields if field in available_fields]
+        elif field_response is not None:
+            self.stderr.write(
+                self.style.WARNING(
+                    f"Product2 describe failed (HTTP {field_response.status_code}); using default field list."
+                )
+            )
 
         soql = f"SELECT {', '.join(fields)} FROM Product2"
         if not options["include_inactive"]:

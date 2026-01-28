@@ -578,15 +578,20 @@ def build_weblink_fallback_payload(token, button_spec, timeout=6):
 
     label = button_spec.get("label") or button_spec["api_name"].replace("_", " ")
     full_name = _custom_button_full_name(button_spec["object"], button_spec["api_name"])
+    metadata_field = createable.get("metadata")
+
+    if metadata_field:
+        payload[metadata_field] = _custom_button_metadata(button_spec)
 
     add_any(["FullName"], full_name)
     add_any(["DeveloperName", "Name"], button_spec["api_name"])
-    add_any(["MasterLabel", "Label"], label)
-    add_any(["Url", "LinkUrl", "PageUrl"], button_spec["url"])
-    add_any(["LinkType"], "url")
-    add_any(["DisplayType"], button_spec.get("display_type", "detailPageButton"))
-    add_any(["OpenType"], button_spec.get("open_type", "newWindow"))
-    add_any(["Availability"], "online")
+    if not metadata_field:
+        add_any(["MasterLabel", "Label"], label)
+        add_any(["Url", "LinkUrl", "PageUrl"], button_spec["url"])
+        add_any(["LinkType"], "url")
+        add_any(["DisplayType"], button_spec.get("display_type", "detailPageButton"))
+        add_any(["OpenType"], button_spec.get("open_type", "newWindow"))
+        add_any(["Availability"], "online")
     add_any(["SobjectType", "TableEnumOrId", "EntityDefinitionId"], button_spec["object"])
 
     return payload or None, None
