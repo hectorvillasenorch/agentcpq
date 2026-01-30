@@ -426,9 +426,13 @@ def get_salesforce_userinfo(token, timeout=6):
 
 
 def get_metadata_server_url(token, timeout=6):
-    userinfo, response = get_salesforce_userinfo(token, timeout=timeout)
-    if not userinfo:
+    if not token or not getattr(token, "instance_url", None):
         return None
+
+    userinfo, response = get_salesforce_userinfo(token, timeout=timeout)
+    org_id = None
+    if userinfo:
+        org_id = userinfo.get("organization_id") or userinfo.get("org_id")
 
     def _format_metadata_url(url_template, org_id):
         if not url_template:
@@ -443,26 +447,50 @@ def get_metadata_server_url(token, timeout=6):
             )
         return url
 
-    org_id = userinfo.get("organization_id") or userinfo.get("org_id")
-    urls = userinfo.get("urls") or {}
-    metadata_url = urls.get("metadata") or userinfo.get("metadataServerUrl") or urls.get("metadataServerUrl")
-    if metadata_url:
-        formatted = _format_metadata_url(metadata_url, org_id)
-        if formatted:
-            return formatted
-
-    identity_url = userinfo.get("id")
-    if identity_url and not _is_login_host(identity_url):
-        headers = _salesforce_headers(token)
-        identity_response = requests.get(identity_url, headers=headers, timeout=timeout)
-        if identity_response.status_code == 200:
-            identity = identity_response.json()
-            org_id = identity.get("organization_id") or org_id
-            identity_urls = identity.get("urls") or {}
-            metadata_url = identity_urls.get("metadata")
+    if userinfo:
+        urls = userinfo.get("urls") or {}
+        metadata_url = urls.get("metadata") or userinfo.get("metadataServerUrl") or urls.get("metadataServerUrl")
+        if metadata_url:
             formatted = _format_metadata_url(metadata_url, org_id)
             if formatted:
                 return formatted
+
+        identity_url = userinfo.get("id")
+        if identity_url and not _is_login_host(identity_url):
+            headers = _salesforce_headers(token)
+            identity_response = requests.get(identity_url, headers=headers, timeout=timeout)
+            if identity_response.status_code == 200:
+                identity = identity_response.json()
+                org_id = identity.get("organization_id") or org_id
+                identity_urls = identity.get("urls") or {}
+                metadata_url = identity_urls.get("metadata")
+                formatted = _format_metadata_url(metadata_url, org_id)
+                if formatted:
+                    return formatted
+
+    if not org_id:
+        cache_key = _limits_cache_key(token).replace("limits", "org")
+        org_id = cache.get(cache_key)
+        if not org_id:
+            query = "SELECT Id FROM Organization LIMIT 1"
+            url = build_rest_url(token.instance_url, SF_API_VERSION, "/query")
+            response = salesforce_request(
+                token,
+                "GET",
+                url,
+                params={"q": query},
+                timeout=timeout,
+                allow_limits_cache=True,
+            )
+            if response is not None and response.status_code == 200:
+                records = response.json().get("records", [])
+                org_id = records[0].get("Id") if records else None
+                if org_id:
+                    cache.set(cache_key, org_id, 3600)
+
+    if org_id:
+        version = SF_API_VERSION.lstrip("v")
+        return f"{_normalize_instance_url(token.instance_url)}/services/Soap/m/{version}/{org_id}"
 
     return None
 
