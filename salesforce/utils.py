@@ -591,38 +591,30 @@ def build_weblink_fallback_payload(token, button_spec, timeout=6):
     }
     payload = {}
 
-    def add(field_key, value):
-        field_name = createable.get(field_key.lower())
-        if field_name and value is not None and field_name not in payload:
-            payload[field_name] = value
-            return True
-        return False
-
-    def add_any(field_keys, value):
-        for key in field_keys:
-            if add(key, value):
-                return True
-        return False
-
     label = button_spec.get("label") or button_spec["api_name"].replace("_", " ")
     full_name = _custom_button_full_name(button_spec["object"], button_spec["api_name"])
-    metadata_field = createable.get("metadata")
 
-    if metadata_field:
-        payload[metadata_field] = _custom_button_metadata(button_spec)
+    metadata_field = createable.get("metadata") or "Metadata"
+    full_name_field = createable.get("fullname") or "FullName"
+    developer_field = createable.get("developername") or createable.get("name")
+    sobject_field = (
+        createable.get("sobjecttype")
+        or createable.get("tableenumorid")
+        or createable.get("entitydefinitionid")
+    )
 
-    add_any(["FullName"], full_name)
-    add_any(["DeveloperName", "Name"], button_spec["api_name"])
-    if not metadata_field:
-        add_any(["MasterLabel", "Label"], label)
-        add_any(["Url", "LinkUrl", "PageUrl"], button_spec["url"])
-        add_any(["LinkType"], "url")
-        add_any(["DisplayType"], button_spec.get("display_type", "detailPageButton"))
-        add_any(["OpenType"], button_spec.get("open_type", "newWindow"))
-        add_any(["Availability"], "online")
-    add_any(["SobjectType", "TableEnumOrId", "EntityDefinitionId"], button_spec["object"])
+    payload[metadata_field] = _custom_button_metadata(button_spec)
+    payload[full_name_field] = full_name
+    if developer_field:
+        payload[developer_field] = button_spec["api_name"]
+    if sobject_field:
+        payload[sobject_field] = button_spec["object"]
 
-    return payload or None, None
+    # Preserve label for older orgs that require it outside Metadata.
+    if "masterlabel" in createable:
+        payload[createable["masterlabel"]] = label
+
+    return payload, None
 
 
 def create_custom_button_fallback(token, button_spec, timeout=6):
@@ -631,6 +623,7 @@ def create_custom_button_fallback(token, button_spec, timeout=6):
         return None, error
     if not payload:
         return None, {"error": "No createable WebLink fields found for fallback payload."}
+    logger.debug("WebLink tooling fallback payload for %s.%s: %s", button_spec["object"], button_spec["api_name"], payload)
     url = _join_instance_url(token, f"/services/data/{SF_API_VERSION}/tooling/sobjects/WebLink")
     response = salesforce_request(
         token,
