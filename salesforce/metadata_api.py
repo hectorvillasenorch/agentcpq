@@ -172,7 +172,7 @@ def build_weblink_zip(token, button_specs, timeout=30):
     if error or not metadata_info:
         # Fall back to standard WebLink metadata folder/suffix.
         directory = "webLinks"
-        suffix = "weblink"
+        suffix = "webLink"
     else:
         directory = metadata_info.get("directoryName")
         suffix = metadata_info.get("suffix")
