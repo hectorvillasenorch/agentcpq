@@ -151,9 +151,11 @@ def build_weblink_metadata_xml(button_spec):
     display_type = button_spec.get("display_type", "detailPageButton")
     open_type = button_spec.get("open_type", "newWindow")
     url = button_spec["url"]
+    full_name = f"{button_spec['object']}.{button_spec['api_name']}"
     return (
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
         "<WebLink xmlns=\"http://soap.sforce.com/2006/04/metadata\">"
+        f"<fullName>{escape(full_name)}</fullName>"
         "<availability>online</availability>"
         f"<displayType>{escape(display_type)}</displayType>"
         "<encodingKey>UTF-8</encodingKey>"
@@ -168,12 +170,14 @@ def build_weblink_metadata_xml(button_spec):
 def build_weblink_zip(token, button_specs, timeout=30):
     metadata_info, error = get_metadata_type_info(token, "WebLink", timeout=timeout)
     if error or not metadata_info:
-        return None, error or {"error": "Missing WebLink metadata info."}
-
-    directory = metadata_info.get("directoryName")
-    suffix = metadata_info.get("suffix")
-    if not directory or not suffix:
-        return None, {"error": "WebLink metadata directory/suffix unavailable."}
+        # Fall back to standard WebLink metadata folder/suffix.
+        directory = "webLinks"
+        suffix = "weblink"
+    else:
+        directory = metadata_info.get("directoryName")
+        suffix = metadata_info.get("suffix")
+        if not directory or not suffix:
+            return None, {"error": "WebLink metadata directory/suffix unavailable."}
 
     members = []
     buffer = io.BytesIO()
