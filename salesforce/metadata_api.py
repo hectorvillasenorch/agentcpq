@@ -1,5 +1,6 @@
 import base64
 import io
+import logging
 import os
 import time
 import zipfile
@@ -19,6 +20,7 @@ from salesforce.utils import (
 SOAP_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 METADATA_NS = "http://soap.sforce.com/2006/04/metadata"
 NSMAP = {"env": SOAP_ENV_NS, "met": METADATA_NS}
+logger = logging.getLogger(__name__)
 
 
 def _metadata_version():
@@ -180,6 +182,7 @@ def build_weblink_zip(token, button_specs, timeout=30):
             return None, {"error": "WebLink metadata directory/suffix unavailable."}
 
     members = []
+    file_names = []
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for button_spec in button_specs:
@@ -187,10 +190,20 @@ def build_weblink_zip(token, button_specs, timeout=30):
             members.append(full_name)
             filename = f"{directory}/{full_name}.{suffix}"
             zf.writestr(filename, build_weblink_metadata_xml(button_spec))
+            file_names.append(filename)
 
         package_xml = _build_package_xml({"WebLink": members})
         zf.writestr("package.xml", package_xml)
+        file_names.append("package.xml")
 
+    logger.debug(
+        "WebLink zip contents (dir=%s suffix=%s members=%s files=%s package=%s)",
+        directory,
+        suffix,
+        members,
+        file_names,
+        package_xml,
+    )
     return buffer.getvalue(), None
 
 
