@@ -171,15 +171,12 @@ def build_weblink_metadata_xml(button_spec):
 
 def build_weblink_zip(token, button_specs, timeout=30):
     metadata_info, error = get_metadata_type_info(token, "WebLink", timeout=timeout)
-    if error or not metadata_info:
-        # Fall back to standard WebLink metadata folder/suffix.
-        directory = "webLinks"
-        suffix = "webLink"
+    if metadata_info:
+        directory = metadata_info.get("directoryName") or "webLinks"
+        suffix = metadata_info.get("suffix") or "weblink"
     else:
-        directory = metadata_info.get("directoryName")
-        suffix = metadata_info.get("suffix")
-        if not directory or not suffix:
-            return None, {"error": "WebLink metadata directory/suffix unavailable."}
+        directory = "webLinks"
+        suffix = "weblink"
 
     members = []
     file_names = []
@@ -196,7 +193,7 @@ def build_weblink_zip(token, button_specs, timeout=30):
         zf.writestr("package.xml", package_xml)
         file_names.append("package.xml")
 
-    logger.debug(
+    logger.info(
         "WebLink zip contents (dir=%s suffix=%s members=%s files=%s package=%s)",
         directory,
         suffix,
