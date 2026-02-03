@@ -258,23 +258,29 @@ def create_weblink_metadata(token, button_spec, timeout=30):
                 return create_weblink_metadata(token, button_spec, timeout=timeout)
         return {"status": "error", "details": fault}
 
-    result_node = root.find(".//met:result", NSMAP)
+    result_node = root.find(".//met:result", NSMAP) or root.find(".//result")
     if result_node is None:
+        logger.info("WebLink create response missing result node: %s", response.text)
         return {"status": "error", "details": {"error": "Missing create result", "body": response.text}}
 
-    success = (_extract_text(result_node, "success") or "").lower() == "true"
+    success = (_extract_text(result_node, "success") or result_node.findtext("success") or "").lower() == "true"
     if success:
-        return {"status": "created", "details": _extract_text(result_node, "id")}
+        return {
+            "status": "created",
+            "details": _extract_text(result_node, "id") or result_node.findtext("id"),
+        }
 
     errors = []
-    for err in result_node.findall("met:errors", NSMAP):
+    for err in result_node.findall("met:errors", NSMAP) + result_node.findall("errors"):
         errors.append({
-            "statusCode": _extract_text(err, "statusCode"),
-            "message": _extract_text(err, "message"),
+            "statusCode": _extract_text(err, "statusCode") or err.findtext("statusCode"),
+            "message": _extract_text(err, "message") or err.findtext("message"),
         })
     if any((err.get("statusCode") or "").upper() in {"DUPLICATE_VALUE", "ALREADY_EXISTS"} for err in errors):
         return {"status": "exists", "details": errors}
-    return {"status": "error", "details": errors or {"error": "Unknown create error"}}
+    if not errors:
+        logger.info("WebLink create response missing errors: %s", response.text)
+    return {"status": "error", "details": errors or {"error": "Unknown create error", "body": response.text}}
 
 
 def build_weblink_zip(token, button_specs, timeout=30):
