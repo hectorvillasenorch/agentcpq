@@ -359,6 +359,9 @@ def check_metadata_create_status(token, async_id, timeout=30, poll_interval=2, m
     if state in {"completed", "success"}:
         return {"status": "created", "details": async_id}
     if state in {"failed", "error"}:
+        status_code = (last_result.get("statusCode") or "").upper()
+        if status_code in {"DUPLICATE_DEVELOPER_NAME", "DUPLICATE_VALUE", "ALREADY_EXISTS"}:
+            return {"status": "exists", "details": last_result}
         return {"status": "error", "details": last_result}
     return {"status": "pending", "details": last_result}
 

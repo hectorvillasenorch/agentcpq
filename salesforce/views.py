@@ -223,13 +223,19 @@ def sync_quote_to_salesforce(request, quote_id):
     # ✅ Step 1: Update Opportunity with Quote Data
     quote_id_value = str(quote.public_id or quote.qteid or quote.name)
     quote_number_value = str(quote.name or quote.qteid or quote.public_id)
-    opportunity_update_payload = {
-        "Amount": str(quote.net_amount),  # ✅ Update Opportunity value
-        "AgentCPQ_Quote_Id__c": quote_id_value,
-        "AgentCPQ_Quote_Number__c": quote_number_value,
-        "AgentCPQ_NACV__c": str(quote.net_amount),
-        "AgentCPQ_ACV__c": str(quote.net_amount),
-    }
+    def _safe_string(value):
+        return None if value is None else str(value)
+
+    opportunity_update_payload = {}
+    amount_value = _safe_string(quote.net_amount)
+    if amount_value is not None:
+        opportunity_update_payload["Amount"] = amount_value  # ✅ Update Opportunity value
+        opportunity_update_payload["AgentCPQ_NACV__c"] = amount_value
+        opportunity_update_payload["AgentCPQ_ACV__c"] = amount_value
+    if quote_id_value:
+        opportunity_update_payload["AgentCPQ_Quote_Id__c"] = quote_id_value
+    if quote_number_value:
+        opportunity_update_payload["AgentCPQ_Quote_Number__c"] = quote_number_value
     quote_link = build_agentcpq_quote_link(
         quote.id,
         quote_label=quote_number_value,
@@ -254,6 +260,12 @@ def sync_quote_to_salesforce(request, quote_id):
             details = opp_response.json()
         except ValueError:
             details = opp_response.text
+        logging.getLogger(__name__).warning(
+            "Salesforce Opportunity update failed (status=%s payload=%s details=%s)",
+            opp_response.status_code,
+            opportunity_update_payload,
+            details,
+        )
         return JsonResponse({"error": "Failed to update Salesforce Opportunity", "details": details}, status=400)
 
     # ✅ Ensure Opportunity has a Pricebook2Id
