@@ -177,6 +177,8 @@ def build_weblink_zip(token, button_specs, timeout=30):
     else:
         directory = "webLinks"
         suffix = "weblink"
+    if suffix.lower() == "weblink":
+        suffix = "webLink"
 
     members = []
     file_names = []
