@@ -19,6 +19,7 @@ from salesforce.utils import (
 
 SOAP_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 METADATA_NS = "http://soap.sforce.com/2006/04/metadata"
+XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 NSMAP = {"env": SOAP_ENV_NS, "met": METADATA_NS}
 logger = logging.getLogger(__name__)
 
@@ -150,7 +151,7 @@ def _build_package_xml(type_members):
 
 def build_weblink_metadata_xml(button_spec):
     label = button_spec.get("label") or button_spec["api_name"].replace("_", " ")
-    display_type = button_spec.get("display_type", "detailPageButton")
+    display_type = normalize_weblink_display_type(button_spec.get("display_type"))
     open_type = button_spec.get("open_type", "newWindow")
     url = button_spec["url"]
     full_name = f"{button_spec['object']}.{button_spec['api_name']}"
@@ -167,6 +168,113 @@ def build_weblink_metadata_xml(button_spec):
         f"<url>{escape(url)}</url>"
         "</WebLink>"
     )
+
+
+def normalize_weblink_display_type(value):
+    if not value:
+        return "button"
+    normalized = str(value).strip()
+    mapping = {
+        "detailpagebutton": "button",
+        "detailpagelink": "link",
+        "button": "button",
+        "link": "link",
+        "massactionbutton": "massActionButton",
+    }
+    return mapping.get(normalized.lower(), normalized)
+
+
+def _weblink_fields(button_spec):
+    label = button_spec.get("label") or button_spec["api_name"].replace("_", " ")
+    open_type = button_spec.get("open_type", "newWindow")
+    display_type = normalize_weblink_display_type(button_spec.get("display_type"))
+    fields = {
+        "fullName": f"{button_spec['object']}.{button_spec['api_name']}",
+        "masterLabel": label,
+        "availability": "online",
+        "displayType": display_type,
+        "encodingKey": "UTF-8",
+        "linkType": "url",
+        "openType": open_type,
+        "url": button_spec["url"],
+    }
+    if open_type == "newWindow":
+        fields.update(
+            {
+                "height": int(button_spec.get("height", 800)),
+                "width": int(button_spec.get("width", 1200)),
+                "isResizable": str(bool(button_spec.get("is_resizable", True))).lower(),
+                "hasScrollbars": str(bool(button_spec.get("has_scrollbars", True))).lower(),
+                "hasToolbar": str(bool(button_spec.get("has_toolbar", False))).lower(),
+                "hasMenubar": str(bool(button_spec.get("has_menubar", False))).lower(),
+                "showsLocation": str(bool(button_spec.get("shows_location", False))).lower(),
+                "showsStatus": str(bool(button_spec.get("shows_status", False))).lower(),
+                "position": "none",
+            }
+        )
+    return fields
+
+
+def create_weblink_metadata(token, button_spec, timeout=30):
+    token = _ensure_metadata_session(token, timeout=timeout)
+    if not token:
+        return {"status": "error", "details": "Salesforce session invalid."}
+
+    endpoint = _metadata_endpoint(token, timeout=timeout)
+    fields = _weblink_fields(button_spec)
+    field_xml = "".join(
+        f"<tns:{name}>{escape(str(value))}</tns:{name}>"
+        for name, value in fields.items()
+        if value is not None
+    )
+    body = (
+        "<tns:create>"
+        f"<tns:metadata xmlns:xsi=\"{XSI_NS}\" xsi:type=\"tns:WebLink\">"
+        f"{field_xml}"
+        "</tns:metadata>"
+        "</tns:create>"
+    )
+    envelope = _soap_envelope(body, token.access_token)
+    response = requests.post(
+        endpoint,
+        data=envelope,
+        headers={"Content-Type": "text/xml", "SOAPAction": "create"},
+        timeout=timeout,
+    )
+    if response.status_code != 200:
+        return {"status": "error", "details": {"http_status": response.status_code, "body": response.text}}
+
+    root = ET.fromstring(response.text)
+    fault = _parse_soap_fault(root)
+    if fault:
+        fault_message = fault.get("fault") or ""
+        if "INVALID_SESSION_ID" in fault_message and getattr(
+            settings,
+            "SALESFORCE_REFRESH_ON_INVALID_SESSION",
+            True,
+        ):
+            token = _ensure_metadata_session(token, timeout=timeout)
+            if token:
+                return create_weblink_metadata(token, button_spec, timeout=timeout)
+        return {"status": "error", "details": fault}
+
+    result_node = root.find(".//met:result", NSMAP)
+    if result_node is None:
+        return {"status": "error", "details": {"error": "Missing create result", "body": response.text}}
+
+    success = (_extract_text(result_node, "success") or "").lower() == "true"
+    if success:
+        return {"status": "created", "details": _extract_text(result_node, "id")}
+
+    errors = []
+    for err in result_node.findall("met:errors", NSMAP):
+        errors.append({
+            "statusCode": _extract_text(err, "statusCode"),
+            "message": _extract_text(err, "message"),
+        })
+    if any((err.get("statusCode") or "").upper() in {"DUPLICATE_VALUE", "ALREADY_EXISTS"} for err in errors):
+        return {"status": "exists", "details": errors}
+    return {"status": "error", "details": errors or {"error": "Unknown create error"}}
 
 
 def build_weblink_zip(token, button_specs, timeout=30):
@@ -208,92 +316,27 @@ def build_weblink_zip(token, button_specs, timeout=30):
 
 def deploy_salesforce_weblinks(token, button_specs, timeout=60, poll_interval=3, max_polls=8):
     if not token or not token.access_token:
-        return [{
-            "object": "WebLink",
-            "api_name": spec["api_name"],
-            "status": "error",
-            "details": "Missing Salesforce access token.",
-        } for spec in button_specs]
-
-    token = _ensure_metadata_session(token, timeout=timeout)
-    if not token:
-        return [{
-            "object": "WebLink",
-            "api_name": spec["api_name"],
-            "status": "error",
-            "details": "Salesforce session invalid. Reconnect Salesforce.",
-        } for spec in button_specs]
-
-    zip_bytes, error = build_weblink_zip(token, button_specs, timeout=timeout)
-    if error:
-        return [{
-            "object": "WebLink",
-            "api_name": spec["api_name"],
-            "status": "error",
-            "details": error,
-        } for spec in button_specs]
-
-    endpoint = _metadata_endpoint(token, timeout=timeout)
-    async_id, deploy_error = deploy_metadata_zip(token, zip_bytes, timeout=timeout, endpoint=endpoint)
-    if deploy_error:
-        fault_message = str(deploy_error.get("fault") or "")
-        if "INVALID_SESSION_ID" in fault_message and getattr(
-            settings,
-            "SALESFORCE_REFRESH_ON_INVALID_SESSION",
-            True,
-        ):
-            token = _ensure_metadata_session(token, timeout=timeout)
-            endpoint = _metadata_endpoint(token, timeout=timeout)
-            async_id, deploy_error = deploy_metadata_zip(token, zip_bytes, timeout=timeout, endpoint=endpoint)
-        if deploy_error:
-            return [{
+        return [
+            {
                 "object": "WebLink",
                 "api_name": spec["api_name"],
                 "status": "error",
-                "details": deploy_error,
-            } for spec in button_specs]
-
-    last_status = {"status": "pending", "details": {"status": "Queued"}}
-    for _ in range(max_polls):
-        last_status = check_deploy_status(token, async_id, timeout=timeout, endpoint=endpoint)
-        if last_status["status"] in {"success", "error"}:
-            break
-        time.sleep(poll_interval)
+                "details": "Missing Salesforce access token.",
+            }
+            for spec in button_specs
+        ]
 
     results = []
-    if last_status["status"] == "success":
-        for spec in button_specs:
-            results.append({
-                "object": "WebLink",
-                "api_name": spec["api_name"],
-                "status": "created",
-                "details": "deployed",
-            })
-        return results
-
-    failures = (last_status.get("details") or {}).get("component_failures", [])
-    failure_map = {
-        (entry.get("componentType"), entry.get("fullName")): entry
-        for entry in failures
-        if entry.get("fullName")
-    }
     for spec in button_specs:
-        full_name = f"{spec['object']}.{spec['api_name']}"
-        failure = failure_map.get(("WebLink", full_name))
-        if failure:
-            results.append({
+        result = create_weblink_metadata(token, spec, timeout=timeout)
+        results.append(
+            {
                 "object": "WebLink",
                 "api_name": spec["api_name"],
-                "status": "error",
-                "details": failure.get("problem") or failure,
-            })
-        else:
-            results.append({
-                "object": "WebLink",
-                "api_name": spec["api_name"],
-                "status": last_status["status"],
-                "details": last_status.get("details"),
-            })
+                "status": result.get("status"),
+                "details": result.get("details"),
+            }
+        )
     return results
 
 
