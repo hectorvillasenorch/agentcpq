@@ -263,12 +263,16 @@ def create_weblink_metadata(token, button_spec, timeout=30):
         logger.info("WebLink create response missing result node: %s", response.text)
         return {"status": "error", "details": {"error": "Missing create result", "body": response.text}}
 
+    done = (_extract_text(result_node, "done") or result_node.findtext("done") or "").lower()
+    state = (_extract_text(result_node, "state") or result_node.findtext("state") or "")
+    async_id = _extract_text(result_node, "id") or result_node.findtext("id")
+
+    if async_id and (done != "true" or state.lower() in {"inprogress", "queued"}):
+        return check_metadata_create_status(token, async_id, timeout=timeout)
+
     success = (_extract_text(result_node, "success") or result_node.findtext("success") or "").lower() == "true"
     if success:
-        return {
-            "status": "created",
-            "details": _extract_text(result_node, "id") or result_node.findtext("id"),
-        }
+        return {"status": "created", "details": async_id or _extract_text(result_node, "id")}
 
     errors = []
     for err in result_node.findall("met:errors", NSMAP) + result_node.findall("errors"):
@@ -281,6 +285,82 @@ def create_weblink_metadata(token, button_spec, timeout=30):
     if not errors:
         logger.info("WebLink create response missing errors: %s", response.text)
     return {"status": "error", "details": errors or {"error": "Unknown create error", "body": response.text}}
+
+
+def check_metadata_create_status(token, async_id, timeout=30, poll_interval=2, max_polls=10):
+    token = _ensure_metadata_session(token, timeout=timeout)
+    if not token:
+        return {"status": "error", "details": "Salesforce session invalid."}
+
+    endpoint = _metadata_endpoint(token, timeout=timeout)
+    body = (
+        "<tns:checkStatus>"
+        f"<tns:asyncProcessId>{escape(async_id)}</tns:asyncProcessId>"
+        "</tns:checkStatus>"
+    )
+    envelope = _soap_envelope(body, token.access_token)
+
+    last_result = None
+    for _ in range(max_polls):
+        response = requests.post(
+            endpoint,
+            data=envelope,
+            headers={"Content-Type": "text/xml", "SOAPAction": "checkStatus"},
+            timeout=timeout,
+        )
+        if response.status_code != 200:
+            return {"status": "error", "details": {"http_status": response.status_code, "body": response.text}}
+
+        root = ET.fromstring(response.text)
+        fault = _parse_soap_fault(root)
+        if fault:
+            fault_message = fault.get("fault") or ""
+            if "INVALID_SESSION_ID" in fault_message and getattr(
+                settings,
+                "SALESFORCE_REFRESH_ON_INVALID_SESSION",
+                True,
+            ):
+                token = _ensure_metadata_session(token, timeout=timeout)
+                if token:
+                    return check_metadata_create_status(
+                        token,
+                        async_id,
+                        timeout=timeout,
+                        poll_interval=poll_interval,
+                        max_polls=max_polls,
+                    )
+            return {"status": "error", "details": fault}
+
+        result_node = root.find(".//met:result", NSMAP) or root.find(".//result")
+        if result_node is None:
+            return {"status": "error", "details": {"error": "Missing checkStatus result", "body": response.text}}
+
+        done = (_extract_text(result_node, "done") or result_node.findtext("done") or "").lower()
+        state = (_extract_text(result_node, "state") or result_node.findtext("state") or "")
+        state_detail = _extract_text(result_node, "stateDetail") or result_node.findtext("stateDetail")
+        message = _extract_text(result_node, "message") or result_node.findtext("message")
+        status_code = _extract_text(result_node, "statusCode") or result_node.findtext("statusCode")
+
+        last_result = {
+            "done": done,
+            "state": state,
+            "stateDetail": state_detail,
+            "message": message,
+            "statusCode": status_code,
+        }
+        if done == "true":
+            break
+        time.sleep(poll_interval)
+
+    if last_result is None:
+        return {"status": "error", "details": {"error": "Missing checkStatus result"}}
+
+    state = (last_result.get("state") or "").lower()
+    if state in {"completed", "success"}:
+        return {"status": "created", "details": async_id}
+    if state in {"failed", "error"}:
+        return {"status": "error", "details": last_result}
+    return {"status": "pending", "details": last_result}
 
 
 def build_weblink_zip(token, button_specs, timeout=30):
