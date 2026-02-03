@@ -559,6 +559,36 @@ def sync_quote_to_salesforce(request, quote_id):
                 details = line_item_response.text
             failed_lines.append({"line_id": line.id, "reason": details})
 
+    # ✅ Step 3: For primary quote sync, override Opportunity Amount with quote net amount.
+    primary_quote_id = quote.opportunity.primary_quote_id if quote.opportunity_id else None
+    should_update_amount = not primary_quote_id or primary_quote_id == quote.id
+    if should_update_amount:
+        amount_value = _safe_string(quote.net_amount)
+        final_payload = {}
+        if amount_value is not None:
+            final_payload["Amount"] = amount_value
+            final_payload["AgentCPQ_NACV__c"] = amount_value
+            final_payload["AgentCPQ_ACV__c"] = amount_value
+        if final_payload:
+            final_response = salesforce_request(
+                token_entry,
+                "PATCH",
+                opportunity_url,
+                json=final_payload,
+                timeout=6,
+            )
+            if final_response is None or final_response.status_code >= 400:
+                try:
+                    final_details = final_response.json() if final_response is not None else None
+                except ValueError:
+                    final_details = final_response.text if final_response is not None else None
+                logging.getLogger(__name__).warning(
+                    "Salesforce Opportunity amount override failed (status=%s payload=%s details=%s)",
+                    getattr(final_response, "status_code", None),
+                    final_payload,
+                    final_details,
+                )
+
     # ✅ Step 3: Return Success Response
     message = "Quote synced successfully!"
     if failed_lines:
