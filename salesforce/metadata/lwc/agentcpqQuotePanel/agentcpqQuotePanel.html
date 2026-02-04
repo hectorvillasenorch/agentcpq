@@ -1,41 +1,19 @@
 <template>
-  <div class="panel">
-    <div class="panel-header">AgentCPQ Summary</div>
-    <div class="panel-grid">
-      <div class="item">
-        <div class="label">AgentCPQ ACV</div>
-        <div class="value">{acvDisplay}</div>
+  <div class="slds-card slds-p-around_medium quote-card">
+    <div class="slds-media slds-media_center">
+      <div class="slds-media__figure slds-m-right_medium">
+        <span class="slds-avatar slds-avatar_circle slds-theme_shade icon-badge">
+          <lightning-icon
+            icon-name="standard:quotes"
+            size="small"
+            alternative-text="Quote"
+            class="icon"
+          ></lightning-icon>
+        </span>
       </div>
-      <div class="item">
-        <div class="label">AgentCPQ Quote Link</div>
-        <div class="value">
-          <template if:true={quoteLink}>
-            <a class="link" href={quoteLink} target="_blank" rel="noopener noreferrer">{quoteLinkLabel}</a>
-          </template>
-          <template if:false={quoteLink}>
-            <span class="value-muted">—</span>
-          </template>
-        </div>
-      </div>
-      <div class="item">
-        <div class="label">AgentCPQ NACV</div>
-        <div class="value">{nacvDisplay}</div>
-      </div>
-      <div class="item">
-        <div class="label">AgentCPQ Quote Number</div>
-        <div class="value">{quoteNumberDisplay}</div>
-      </div>
-      <div class="item">
-        <div class="label">AgentCPQ MRR</div>
-        <div class="value">{mrrDisplay}</div>
-      </div>
-      <div class="item">
-        <div class="label">AgentCPQ Quote Id</div>
-        <div class="value">{quoteIdDisplay}</div>
-      </div>
-      <div class="item">
-        <div class="label">AgentCPQ Forecast Strategy</div>
-        <div class="value">{forecastStrategyDisplay}</div>
+      <div class="slds-media__body">
+        <div class="slds-text-title_caps slds-text-color_weak">AgentCPQ Quote Number</div>
+        <div class="slds-text-heading_large quote-number">{quoteNumberDisplay}</div>
       </div>
     </div>
   </div>
