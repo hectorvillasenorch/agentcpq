@@ -13,7 +13,37 @@
       </div>
       <div class="slds-media__body">
         <div class="slds-text-title_caps slds-text-color_weak">AgentCPQ Quote Number</div>
-        <div class="slds-text-heading_large quote-number">{quoteNumberDisplay}</div>
+        <template if:true={quoteLink}>
+          <a
+            class="slds-text-heading_large quote-number quote-link"
+            href={quoteLink}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {quoteNumberDisplay}
+          </a>
+        </template>
+        <template if:false={quoteLink}>
+          <div class="slds-text-heading_large quote-number">{quoteNumberDisplay}</div>
+        </template>
+        <div class="metrics slds-m-top_small">
+          <div class="metric">
+            <div class="slds-text-title_caps slds-text-color_weak">AgentCPQ ACV</div>
+            <div class="metric-value">{acvDisplay}</div>
+          </div>
+          <div class="metric">
+            <div class="slds-text-title_caps slds-text-color_weak">AgentCPQ NACV</div>
+            <div class="metric-value">{nacvDisplay}</div>
+          </div>
+          <div class="metric">
+            <div class="slds-text-title_caps slds-text-color_weak">AgentCPQ TCV</div>
+            <div class="metric-value">{tcvDisplay}</div>
+          </div>
+          <div class="metric">
+            <div class="slds-text-title_caps slds-text-color_weak">AgentCPQ MRR</div>
+            <div class="metric-value">{mrrDisplay}</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

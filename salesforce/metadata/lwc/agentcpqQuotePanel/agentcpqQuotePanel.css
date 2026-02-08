@@ -15,3 +15,27 @@
 .quote-number {
   word-break: break-word;
 }
+
+.quote-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.quote-link:hover {
+  text-decoration: underline;
+}
+
+.metrics {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.metric {
+  min-width: 140px;
+}
+
+.metric-value {
+  font-size: 0.9rem;
+  color: #1f2a44;
+}

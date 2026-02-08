@@ -43,6 +43,14 @@ REQUIRED_FIELDS = [
     },
     {
         "object": "Opportunity",
+        "api_name": "AgentCPQ_TCV__c",
+        "type": "Currency",
+        "precision": 18,
+        "scale": 2,
+        "label": "AgentCPQ TCV",
+    },
+    {
+        "object": "Opportunity",
         "api_name": "AgentCPQ_MRR__c",
         "type": "Currency",
         "precision": 18,

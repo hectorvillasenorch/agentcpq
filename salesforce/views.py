@@ -220,6 +220,49 @@ def sync_quote_to_salesforce(request, quote_id):
             },
         }, status=400)
 
+    def _calculate_quote_metrics(target_quote, lines):
+        tcv = Decimal(str(target_quote.net_amount or 0)).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+        has_subscription = any(getattr(line, "is_subscription", False) for line in lines)
+        term_months = None
+        if has_subscription:
+            terms = [
+                int(line.term)
+                for line in lines
+                if getattr(line, "is_subscription", False) and line.term
+            ]
+            if terms:
+                term_months = max(terms)
+            if not term_months or term_months <= 0:
+                term_months = 12
+
+        if has_subscription and term_months:
+            annualized = (tcv * Decimal("12") / Decimal(term_months)).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+            mrr = (tcv / Decimal(term_months)).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+            return {
+                "tcv": tcv,
+                "acv": annualized,
+                "nacv": annualized,
+                "mrr": mrr,
+            }
+
+        return {
+            "tcv": tcv,
+            "acv": tcv,
+            "nacv": tcv,
+            "mrr": None,
+        }
+
+    metrics = _calculate_quote_metrics(quote, quote_lines)
+
     # ✅ Step 1: Update Opportunity with Quote Data
     quote_id_value = str(quote.public_id or quote.qteid or quote.name)
     quote_number_value = str(quote.name or quote.qteid or quote.public_id)
@@ -227,11 +270,19 @@ def sync_quote_to_salesforce(request, quote_id):
         return None if value is None else str(value)
 
     opportunity_update_payload = {}
-    amount_value = _safe_string(quote.net_amount)
+    amount_value = _safe_string(metrics["tcv"])
     if amount_value is not None:
         opportunity_update_payload["Amount"] = amount_value  # ✅ Update Opportunity value
-        opportunity_update_payload["AgentCPQ_NACV__c"] = amount_value
-        opportunity_update_payload["AgentCPQ_ACV__c"] = amount_value
+        opportunity_update_payload["AgentCPQ_TCV__c"] = amount_value
+    acv_value = _safe_string(metrics["acv"])
+    if acv_value is not None:
+        opportunity_update_payload["AgentCPQ_ACV__c"] = acv_value
+    nacv_value = _safe_string(metrics["nacv"])
+    if nacv_value is not None:
+        opportunity_update_payload["AgentCPQ_NACV__c"] = nacv_value
+    mrr_value = _safe_string(metrics["mrr"])
+    if mrr_value is not None:
+        opportunity_update_payload["AgentCPQ_MRR__c"] = mrr_value
     if quote_id_value:
         opportunity_update_payload["AgentCPQ_Quote_Id__c"] = quote_id_value
     if quote_number_value:
@@ -563,12 +614,20 @@ def sync_quote_to_salesforce(request, quote_id):
     primary_quote_id = quote.opportunity.primary_quote_id if quote.opportunity_id else None
     should_update_amount = not primary_quote_id or primary_quote_id == quote.id
     if should_update_amount:
-        amount_value = _safe_string(quote.net_amount)
+        amount_value = _safe_string(metrics["tcv"])
         final_payload = {}
         if amount_value is not None:
             final_payload["Amount"] = amount_value
-            final_payload["AgentCPQ_NACV__c"] = amount_value
-            final_payload["AgentCPQ_ACV__c"] = amount_value
+            final_payload["AgentCPQ_TCV__c"] = amount_value
+        acv_value = _safe_string(metrics["acv"])
+        if acv_value is not None:
+            final_payload["AgentCPQ_ACV__c"] = acv_value
+        nacv_value = _safe_string(metrics["nacv"])
+        if nacv_value is not None:
+            final_payload["AgentCPQ_NACV__c"] = nacv_value
+        mrr_value = _safe_string(metrics["mrr"])
+        if mrr_value is not None:
+            final_payload["AgentCPQ_MRR__c"] = mrr_value
         if final_payload:
             final_response = salesforce_request(
                 token_entry,
