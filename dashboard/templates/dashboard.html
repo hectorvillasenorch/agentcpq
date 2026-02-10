@@ -54,7 +54,7 @@
                 {% if item.icon %}
                     <i class="material-icons">{{ item.icon }}</i>
                 {% else %}
-                    <i class="material-icons collapsed-only-icon" aria-hidden="true">chevron_right</i>
+                    <i class="material-icons collapsed-only-icon" aria-hidden="true">{{ item.collapsed_icon|default:"chevron_right" }}</i>
                 {% endif %}
                 <span class="nav-label">{{ item.label }}</span>
             </a>
@@ -85,7 +85,7 @@
                    class="chat-history-item chat-history-item--no-icon"
                    data-session-id="{{ chat.session_id }}"
                    data-session-title="{{ chat.title|default:'Untitled' }}">
-                    <span class="material-icons collapsed-only-icon" aria-hidden="true">history</span>
+                    <span class="material-icons collapsed-only-icon" aria-hidden="true">chat_bubble</span>
                     <span class="nav-label chat-history-title">{{ chat.title|default:"Untitled"|truncatechars:24 }}</span>
                     <span class="material-icons chat-edit-trigger" role="button" aria-label="Rename session" tabindex="0">edit</span>
                 </a>

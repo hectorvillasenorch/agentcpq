@@ -73,6 +73,7 @@
     border-radius: 18px;
     padding: 18px;
     box-shadow: 0 16px 34px rgba(15, 23, 42, 0.06);
+    min-width: 0;
   }
 
   .users-grid {
@@ -115,8 +116,18 @@
     font-size: 0.85rem;
   }
 
+  .table-scroll {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-radius: 14px;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .users-table {
     width: 100%;
+    min-width: 760px;
     border-collapse: collapse;
     overflow: hidden;
     border-radius: 14px;
@@ -124,6 +135,7 @@
 
   .groups-table {
     width: 100%;
+    min-width: 460px;
     border-collapse: collapse;
     overflow: hidden;
     border-radius: 14px;
@@ -501,71 +513,73 @@
           {% endif %}
         </div>
       </div>
-      <table class="users-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Email</th>
-            <th>Username</th>
-            <th>Role</th>
-            <th>Status</th>
-            <th>Last Login</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for user in users %}
-            <tr
-              data-user-id="{{ user.id }}"
-              data-username="{{ user.username }}"
-              data-first-name="{{ user.first_name }}"
-              data-last-name="{{ user.last_name }}"
-              data-email="{{ user.email }}"
-              data-is-staff="{{ user.is_staff|yesno:'true,false' }}"
-              data-is-superuser="{{ user.is_superuser|yesno:'true,false' }}"
-              data-is-active="{{ user.is_active|yesno:'true,false' }}"
-              data-group-ids="{% for group in user.groups.all %}{{ group.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
-              data-permission-ids="{% for perm in user.user_permissions.all %}{{ perm.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
-              data-groups="{% for group in user.groups.all %}{{ group.name }}{% if not forloop.last %}, {% endif %}{% endfor %}"
-              data-permissions-count="{{ user.user_permissions.all|length }}"
-            >
-              <td>{{ user.get_full_name|default:user.username }}</td>
-              <td>{{ user.email|default:"—" }}</td>
-              <td>{{ user.username }}</td>
-              <td>
-                {% if user.is_superuser %}
-                  <span class="pill">Superuser</span>
-                {% elif user.is_staff %}
-                  <span class="pill">Admin</span>
-                {% else %}
-                  <span class="pill">User</span>
-                {% endif %}
-              </td>
-              <td>
-                {% if user.is_active %}
-                  <span class="pill pill--active">Active</span>
-                {% else %}
-                  <span class="pill pill--inactive">Inactive</span>
-                {% endif %}
-              </td>
-              <td>{{ user.last_login|date:"M d, Y"|default:"—" }}</td>
-              <td>
-                {% if can_change %}
-                  <div class="table-actions">
-                  <button type="button" class="table-action-btn table-action-btn--icon" title="Edit user" onclick="openUserModal('edit', this)">
-                    <i class="material-icons">edit</i>
-                  </button>
-                </div>
-              {% endif %}
-            </td>
-          </tr>
-          {% empty %}
+      <div class="table-scroll">
+        <table class="users-table">
+          <thead>
             <tr>
-              <td colspan="7">No users found.</td>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Last Login</th>
+              <th></th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {% for user in users %}
+              <tr
+                data-user-id="{{ user.id }}"
+                data-username="{{ user.username }}"
+                data-first-name="{{ user.first_name }}"
+                data-last-name="{{ user.last_name }}"
+                data-email="{{ user.email }}"
+                data-is-staff="{{ user.is_staff|yesno:'true,false' }}"
+                data-is-superuser="{{ user.is_superuser|yesno:'true,false' }}"
+                data-is-active="{{ user.is_active|yesno:'true,false' }}"
+                data-group-ids="{% for group in user.groups.all %}{{ group.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
+                data-permission-ids="{% for perm in user.user_permissions.all %}{{ perm.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
+                data-groups="{% for group in user.groups.all %}{{ group.name }}{% if not forloop.last %}, {% endif %}{% endfor %}"
+                data-permissions-count="{{ user.user_permissions.all|length }}"
+              >
+                <td>{{ user.get_full_name|default:user.username }}</td>
+                <td>{{ user.email|default:"—" }}</td>
+                <td>{{ user.username }}</td>
+                <td>
+                  {% if user.is_superuser %}
+                    <span class="pill">Superuser</span>
+                  {% elif user.is_staff %}
+                    <span class="pill">Admin</span>
+                  {% else %}
+                    <span class="pill">User</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if user.is_active %}
+                    <span class="pill pill--active">Active</span>
+                  {% else %}
+                    <span class="pill pill--inactive">Inactive</span>
+                  {% endif %}
+                </td>
+                <td>{{ user.last_login|date:"M d, Y"|default:"—" }}</td>
+                <td>
+                  {% if can_change %}
+                    <div class="table-actions">
+                      <button type="button" class="table-action-btn table-action-btn--icon" title="Edit user" onclick="openUserModal('edit', this)">
+                        <i class="material-icons">edit</i>
+                      </button>
+                    </div>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="7">No users found.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div class="panel">
@@ -582,47 +596,49 @@
           {% endif %}
         </div>
       </div>
-      <table class="groups-table">
-        <thead>
-          <tr>
-            <th>Group</th>
-            <th>Users</th>
-            <th>Permissions</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for group in groups %}
-            <tr
-              data-group-id="{{ group.id }}"
-              data-group-name="{{ group.name }}"
-              data-permission-ids="{% for perm in group.permissions.all %}{{ perm.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
-            >
-              <td>{{ group.name }}</td>
-              <td>{{ group.user_set.count }}</td>
-              <td>{{ group.permissions.count }}</td>
-              <td>
-                <div class="table-actions">
-                  {% if can_change_group %}
-                    <button type="button" class="table-action-btn table-action-btn--icon" title="Edit group" onclick="openGroupModal('edit', this)">
-                      <i class="material-icons">edit</i>
-                    </button>
-                  {% endif %}
-                  {% if can_delete_group %}
-                    <button type="button" class="table-action-btn table-action-btn--icon table-action-btn--danger" title="Delete group" onclick="submitGroupDelete(this)">
-                      <i class="material-icons">delete</i>
-                    </button>
-                  {% endif %}
-                </div>
-              </td>
-            </tr>
-          {% empty %}
+      <div class="table-scroll">
+        <table class="groups-table">
+          <thead>
             <tr>
-              <td colspan="4">No groups found.</td>
+              <th>Group</th>
+              <th>Users</th>
+              <th>Permissions</th>
+              <th></th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {% for group in groups %}
+              <tr
+                data-group-id="{{ group.id }}"
+                data-group-name="{{ group.name }}"
+                data-permission-ids="{% for perm in group.permissions.all %}{{ perm.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
+              >
+                <td>{{ group.name }}</td>
+                <td>{{ group.user_set.count }}</td>
+                <td>{{ group.permissions.count }}</td>
+                <td>
+                  <div class="table-actions">
+                    {% if can_change_group %}
+                      <button type="button" class="table-action-btn table-action-btn--icon" title="Edit group" onclick="openGroupModal('edit', this)">
+                        <i class="material-icons">edit</i>
+                      </button>
+                    {% endif %}
+                    {% if can_delete_group %}
+                      <button type="button" class="table-action-btn table-action-btn--icon table-action-btn--danger" title="Delete group" onclick="submitGroupDelete(this)">
+                        <i class="material-icons">delete</i>
+                      </button>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="4">No groups found.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>

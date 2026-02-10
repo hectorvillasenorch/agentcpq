@@ -4,6 +4,7 @@ STANDARD_SIDENAV_ITEMS = [
         "label": "Products",
         "view": "products",
         "icon": None,
+        "collapsed_icon": "inventory_2",
         "css_class": "nav-link--no-icon",
     },
     {
@@ -18,6 +19,7 @@ STANDARD_SIDENAV_ITEMS = [
         "label": "Leads",
         "view": "agents",
         "icon": None,
+        "collapsed_icon": "person_add",
         "css_class": "nav-link--no-icon",
         "auto_prompt": "show leads",
     },
@@ -26,6 +28,7 @@ STANDARD_SIDENAV_ITEMS = [
         "label": "Opportunities",
         "view": "agents",
         "icon": None,
+        "collapsed_icon": "trending_up",
         "css_class": "nav-link--no-icon",
         "auto_prompt": "show opportunities",
     },
