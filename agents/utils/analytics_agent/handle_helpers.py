@@ -518,6 +518,17 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
                 _forecast_value=Coalesce("primary_quote__net_amount", "amount")
             )
             field = "_forecast_value"
+    if model.__name__ == "Opportunity" and isinstance(date_field, str):
+        normalized_date_field = date_field.strip().lower()
+        if normalized_date_field == "expected_close_date":
+            # Keep forecast/reporting usable when expected close date is missing.
+            qs = qs.annotate(
+                _effective_close_date=Coalesce(
+                    "expected_close_date",
+                    Cast("created_at", output_field=DateField()),
+                )
+            )
+            date_field = "_effective_close_date"
 
     agg_map = {
         "sum": Sum,
