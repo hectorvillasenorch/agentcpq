@@ -910,6 +910,20 @@ def _parse_batch_update_requests(user_message: str):
     for offset in range(0, len(data_lines), row_size):
         row = data_lines[offset: offset + row_size]
         identifier = _sanitize(row[identifier_index] if identifier_index < len(row) else None)
+        if identifier_hint == "email":
+            # Protect against column drift: ensure identifier is an email.
+            if not identifier or "@" not in str(identifier):
+                fallback_email = None
+                for idx, value in enumerate(row):
+                    text_value = _sanitize(value)
+                    if text_value and "@" in str(text_value):
+                        header_raw = _normalize_key(header_entries[idx].get("raw"))
+                        if "email" in header_raw:
+                            fallback_email = text_value
+                            break
+                if fallback_email:
+                    identifier = fallback_email
+
         fields: Dict[str, object] = {}
         for idx, entry in enumerate(header_entries):
             header = entry.get("resolved")
@@ -921,6 +935,9 @@ def _parse_batch_update_requests(user_message: str):
             if value is None:
                 continue
             fields[header] = value
+
+        if identifier_hint == "email" and (not identifier or "@" not in str(identifier)):
+            identifier = None
 
         completed = bool(object_name and identifier and fields)
         parsed_requests.append(
@@ -940,6 +957,7 @@ def _parse_batch_update_requests(user_message: str):
 def _extract_update_requests(user_message: str, current_state, previous_summary: Optional[str]):
     _refresh_allowed_fields()
 
+    marker_in_message = BATCH_UPDATE_DATA_MARKER in str(user_message or "")
     batch_requests = _parse_batch_update_requests(user_message)
     if batch_requests:
         object_name = (batch_requests[0].get("data") or {}).get("object") or "records"
@@ -950,6 +968,17 @@ def _extract_update_requests(user_message: str, current_state, previous_summary:
             "update_standard_record": batch_requests,
             "agent_message": "",
             "summary": summary,
+        }, 0, 0
+    if marker_in_message:
+        # Deterministic batch payload was provided; never fall back to LLM guessing.
+        return {
+            "update_standard_record": [],
+            "agent_message": (
+                "⚠️ Batch update payload could not be parsed. "
+                "Please include the identifier column exactly as requested (for example, email) "
+                "and re-upload the CSV."
+            ),
+            "summary": previous_summary or "",
         }, 0, 0
 
     allowed_fields_prompt = "\n".join(
