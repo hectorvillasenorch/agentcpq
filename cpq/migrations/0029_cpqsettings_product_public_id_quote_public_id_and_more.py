@@ -11,28 +11,7 @@ def create_cpqsettings_if_missing(apps, schema_editor):
     if table_name in existing:
         return
 
-    class CPQSettings(models.Model):
-        renewal_forecast_window_days = models.PositiveIntegerField(default=90)
-        quote_expiration_default_days = models.PositiveIntegerField(default=30)
-        decimal_precision = models.PositiveSmallIntegerField(default=2)
-        rounding_mode = models.CharField(max_length=20, default="HALF_EVEN")
-        proration_enabled = models.BooleanField(default=True)
-        proration_method = models.CharField(max_length=30, default="MONTHLY_SIMPLE")
-        day_count_convention = models.CharField(max_length=20, default="ACTUAL")
-        forecast_opportunity_enabled = models.BooleanField(default=True)
-        forecast_opportunity_creation_mode = models.CharField(max_length=30, default="RENEWAL_ONLY")
-        forecast_opportunity_stage = models.CharField(max_length=50, default="Forecast")
-        forecast_opportunity_probability = models.PositiveSmallIntegerField(default=70)
-        forecast_amount_strategy = models.CharField(max_length=40, default="TOTAL_CONTRACT_VALUE")
-        auto_recalculate_renewals_on_amendment = models.BooleanField(default=True)
-        ramp_deals_enabled = models.BooleanField(default=True)
-        created_at = models.DateTimeField(auto_now_add=True)
-        updated_at = models.DateTimeField(auto_now=True)
-
-        class Meta:
-            app_label = "cpq"
-            db_table = table_name
-
+    CPQSettings = apps.get_model("cpq", "CPQSettings")
     schema_editor.create_model(CPQSettings)
 
 
@@ -51,6 +30,7 @@ def backfill_public_ids(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    atomic = False
 
     dependencies = [
         ("cpq", "0028_tenant_sidebar_standard_objects"),
@@ -58,9 +38,7 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.SeparateDatabaseAndState(
-            database_operations=[
-                migrations.RunPython(create_cpqsettings_if_missing, migrations.RunPython.noop),
-            ],
+            database_operations=[],
             state_operations=[
                 migrations.CreateModel(
                     name="CPQSettings",
@@ -125,6 +103,7 @@ class Migration(migrations.Migration):
                 ),
             ],
         ),
+        migrations.RunPython(create_cpqsettings_if_missing, migrations.RunPython.noop),
         migrations.AddField(
             model_name="product",
             name="public_id",
