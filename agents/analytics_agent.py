@@ -178,6 +178,10 @@ def _extract_range_key(user_message: str) -> str | None:
     if not user_message:
         return None
     lowered = user_message.lower()
+    if re.search(r"\b(this quarter|current quarter)\b", lowered):
+        return "this_quarter"
+    if re.search(r"\b(last quarter|previous quarter)\b", lowered):
+        return "last_quarter"
     if re.search(r"\b(this year|year to date|ytd|current year|to date)\b", lowered):
         return "this_year"
     if re.search(r"\bthis month\b", lowered):
