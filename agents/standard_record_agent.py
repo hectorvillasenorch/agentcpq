@@ -768,6 +768,26 @@ def _extract_batch_identifier_hint(line: str, normalized_allowed_map: Dict[str, 
     return None
 
 
+def _find_identifier_index_from_hint(
+    identifier_hint: Optional[str],
+    header_entries: List[Dict[str, Optional[str]]],
+) -> Optional[int]:
+    if not identifier_hint:
+        return None
+
+    normalized_hint = _normalize_key(identifier_hint)
+    for idx, entry in enumerate(header_entries):
+        resolved = entry.get("resolved")
+        raw = _normalize_key(entry.get("raw"))
+        if resolved and _normalize_key(resolved) == normalized_hint:
+            return idx
+        if normalized_hint == "email" and "email" in raw:
+            return idx
+        if normalized_hint and raw == normalized_hint:
+            return idx
+    return None
+
+
 def _parse_batch_update_requests(user_message: str):
     lines = [line.strip() for line in str(user_message or "").splitlines() if line and line.strip()]
     if len(lines) < 4:
@@ -857,8 +877,8 @@ def _parse_batch_update_requests(user_message: str):
     identifier_index = None
     if "identifier" in resolved_headers:
         identifier_index = _find_header_index("identifier")
-    elif identifier_hint and identifier_hint in resolved_headers:
-        identifier_index = _find_header_index(identifier_hint)
+    elif identifier_hint:
+        identifier_index = _find_identifier_index_from_hint(identifier_hint, header_entries)
     else:
         preferred_identifier_fields = []
         if object_name in {"Lead", "Contact"}:

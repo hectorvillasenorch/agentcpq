@@ -2079,7 +2079,9 @@ async function buildBatchPayload(message) {
     return { fallbackMessage: cleaned, error: "row_mismatch" };
   }
 
-  const mapped = await mapBatchHeaders(objectInfo.name, headerLines);
+  const mapped = operation === "update"
+    ? { headers: headerLines, unmapped: [] }
+    : await mapBatchHeaders(objectInfo.name, headerLines);
   const mappedHeaders = mapped.headers || headerLines;
 
   const batches = [];
@@ -2145,7 +2147,9 @@ async function buildBatchPayloadFromUpload(message, upload) {
     return { error: "row_mismatch" };
   }
 
-  const mapped = await mapBatchHeaders(objectInfo.name, headerLines);
+  const mapped = operation === "update"
+    ? { headers: headerLines, unmapped: [] }
+    : await mapBatchHeaders(objectInfo.name, headerLines);
   const mappedHeaders = mapped.headers || headerLines;
   const allowedSet = new Set((objectInfo.headers || []).map(normalizeBatchHeader));
   const overlap = headerLines.filter((header) => allowedSet.has(normalizeBatchHeader(header))).length;
