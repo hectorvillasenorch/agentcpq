@@ -30,6 +30,7 @@ from cpq.models import (
     Tenant,
     generate_agentcpq_id,
 )
+from cpq.permissions import partner_can_access_record
 from django.contrib.contenttypes.models import ContentType
 from .utils.agents_utils import clean_llm_json
 from .utils.message_formatters import SUCCESS_ICON
@@ -197,13 +198,8 @@ def _refresh_allowed_fields():
 
 
 def standard_record_agent(user, action, user_message, session_data):
-    # Admin-only guard for standard-object CRUD via chat.
-    if action in {"CreateStandardRecord", "UpdateStandardRecord", "DeleteStandardRecord"}:
-        if not getattr(user, "is_staff", False) and not getattr(user, "is_superuser", False):
-            return {
-                "message": "⚠️ You don’t have permission to create/update/delete standard records via chat. Please contact an admin.",
-                "hiddenMessage": False,
-            }
+    # Chat CRUD is allowed for authenticated users.
+    # Record-level authorization for update/delete is enforced in persistence helpers.
 
     if action == "CreateStandardRecord":
         return _create_standard_records(user, user_message, session_data)
@@ -577,7 +573,7 @@ def _delete_standard_records(user, user_message, session_data):
     for req in completed_requests:
         obj_name = (req.get("data") or {}).get("object")
         identifier = (req.get("data") or {}).get("identifier")
-        success, message, payload = _persist_delete(obj_name, identifier)
+        success, message, payload = _persist_delete(user, obj_name, identifier)
         if success:
             deleted.append(payload)
         else:
@@ -976,6 +972,9 @@ def _persist_update(user, object_name: str, identifier: str, fields: Dict[str, o
             )
         return False, f"⚠️ {object_name} '{identifier}' not found.", {}
 
+    if not partner_can_access_record(user, object_name, record, permission="change"):
+        return False, f"⚠️ You do not have permission to update this {object_name}.", {}
+
     try:
         _apply_updates(user, object_name, record, fields)
 
@@ -998,7 +997,7 @@ def _persist_update(user, object_name: str, identifier: str, fields: Dict[str, o
     return True, "", _record_payload(object_name, record)
 
 
-def _persist_delete(object_name: str, identifier: str) -> Tuple[bool, str, Dict[str, object]]:
+def _persist_delete(user, object_name: str, identifier: str) -> Tuple[bool, str, Dict[str, object]]:
     if object_name not in UPDATE_DELETE_SUPPORTED_OBJECTS:
         return False, f"⚠️ Unsupported object '{object_name}'.", {}
     if not identifier:
@@ -1014,6 +1013,9 @@ def _persist_delete(object_name: str, identifier: str) -> Tuple[bool, str, Dict[
                 {},
             )
         return False, f"⚠️ {object_name} '{identifier}' not found.", {}
+
+    if not partner_can_access_record(user, object_name, record, permission="delete"):
+        return False, f"⚠️ You do not have permission to delete this {object_name}.", {}
 
     payload = _record_payload(object_name, record)
     try:
