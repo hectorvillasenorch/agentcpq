@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db import models
 from django.utils import timezone
@@ -59,9 +60,20 @@ class Command(BaseCommand):
             default=10,
             help="Salesforce API timeout in seconds.",
         )
+        parser.add_argument(
+            "--actor-user-id",
+            type=int,
+            default=None,
+            help="Optional AgentCPQ user id to stamp created_by/updated_by on synced products.",
+        )
 
     def handle(self, *args, **options):
         timeout = options["timeout"]
+        actor_user = None
+        actor_user_id = options.get("actor_user_id")
+        if actor_user_id:
+            actor_user = get_user_model().objects.filter(pk=actor_user_id).first()
+
         token = get_valid_salesforce_token(timeout=timeout)
         if not token:
             raise CommandError("No Salesforce token found. Authenticate first.")
@@ -168,7 +180,12 @@ class Command(BaseCommand):
             if product:
                 if not options["update_existing"]:
                     if not dry_run:
-                        Product.objects.filter(pk=product.pk).update(last_synced_at=now)
+                        skip_updates = {"last_synced_at": now}
+                        if actor_user and not product.created_by_id:
+                            skip_updates["created_by_id"] = actor_user.id
+                        if actor_user:
+                            skip_updates["updated_by_id"] = actor_user.id
+                        Product.objects.filter(pk=product.pk).update(**skip_updates)
                     skipped += 1
                     continue
                 updates = {}
@@ -193,6 +210,10 @@ class Command(BaseCommand):
                             continue
                         if getattr(product, local_field, None) != mapped_value:
                             updates[local_field] = mapped_value
+                if actor_user and not product.created_by_id:
+                    updates["created_by_id"] = actor_user.id
+                if actor_user:
+                    updates["updated_by_id"] = actor_user.id
                 updates["last_synced_at"] = now
                 if updates and not dry_run:
                     Product.objects.filter(pk=product.pk).update(**updates)
@@ -214,6 +235,9 @@ class Command(BaseCommand):
                     "description": description,
                     "last_synced_at": now,
                 }
+                if actor_user:
+                    create_kwargs["created_by"] = actor_user
+                    create_kwargs["updated_by"] = actor_user
                 if mapped_values:
                     for local_field, mapped_value in mapped_values.items():
                         if mapped_value is None:

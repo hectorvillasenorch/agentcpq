@@ -659,6 +659,7 @@ def sync_quote_to_salesforce(request, quote_id):
     })
 
 
+@login_required
 @require_POST
 def sync_salesforce_products_view(request):
     stdout = StringIO()
@@ -668,6 +669,7 @@ def sync_salesforce_products_view(request):
             "--update-existing",
             "--match-sku",
             "--use-standard-pricebook",
+            actor_user_id=request.user.id,
             stdout=stdout,
             stderr=stdout,
         )

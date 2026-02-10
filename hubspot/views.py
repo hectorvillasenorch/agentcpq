@@ -18,6 +18,7 @@ from math import ceil
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.shortcuts import redirect
+from django.contrib.auth.decorators import login_required
 
 
 logger = logging.getLogger(__name__)
@@ -270,7 +271,7 @@ def get_contacts():
     return response.json()
 
 
-def sync_hubspot_products(user_id="default"):
+def sync_hubspot_products(user_id="default", actor_user=None):
     try:
         token = get_valid_hubspot_token(user_id)
     except HubspotToken.DoesNotExist:
@@ -354,10 +355,14 @@ def sync_hubspot_products(user_id="default"):
                 product_data["term"] = 12
 
         if product_data:
-            Product.objects.update_or_create(
+            product, _ = Product.objects.update_or_create(
                 external_id=item["id"],
                 defaults=product_data
             )
+            if actor_user and getattr(actor_user, "is_authenticated", False) and not product.created_by_id:
+                product.created_by = actor_user
+                product.updated_by = actor_user
+                product.save(update_fields=["created_by", "updated_by"])
 
     print("✅ HubSpot product sync complete.")
 
@@ -696,11 +701,12 @@ def create_hubspot_property(object_type, name, label, data_type, user_id="defaul
     response = requests.post(url, headers=headers, json=body)
     return response.status_code == 201, response.json()
 
+@login_required
 @require_POST
 def sync_hubspot_products_view(request):
     try:
         user_id = request.POST.get("user_id", "default")
-        sync_hubspot_products(user_id=user_id)
+        sync_hubspot_products(user_id=user_id, actor_user=request.user)
         messages.success(request, "✅ HubSpot product sync complete.")
     except Exception as e:
         messages.error(request, f"❌ HubSpot product sync failed: {e}")

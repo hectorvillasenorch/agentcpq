@@ -1,8 +1,9 @@
 from django.contrib.auth.models import Group, User
 from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
+from decimal import Decimal
 
-from cpq.models import Account, AccessPolicy, RecordAccessGrant
+from cpq.models import Account, AccessPolicy, Product, RecordAccessGrant
 from cpq.permissions import apply_partner_access_filter, partner_can_access_record
 
 
@@ -16,6 +17,13 @@ class RecordAccessPolicyTests(TestCase):
         self.account = Account.objects.create(
             name="Acme Corp",
             owner=self.owner,
+            created_by=self.owner,
+        )
+        self.product = Product.objects.create(
+            name="Starter Plan",
+            sku="STARTER-001",
+            price=Decimal("29.00"),
+            family="Software",
             created_by=self.owner,
         )
 
@@ -77,3 +85,45 @@ class RecordAccessPolicyTests(TestCase):
         self.assertTrue(
             partner_can_access_record(self.viewer, "Account", self.account, permission="change")
         )
+
+    def test_owner_strategy_falls_back_to_creator_for_product(self):
+        policy = AccessPolicy.objects.get(is_active=True)
+        policy.strategy = AccessPolicy.STRATEGY_OWNER_OR_GROUP
+        policy.save(update_fields=["strategy"])
+
+        owner_visible = apply_partner_access_filter(
+            self.owner,
+            "Product",
+            Product.objects.filter(id=self.product.id),
+            permission="view",
+        )
+        self.assertTrue(owner_visible.exists())
+
+        viewer_visible = apply_partner_access_filter(
+            self.viewer,
+            "Product",
+            Product.objects.filter(id=self.product.id),
+            permission="view",
+        )
+        self.assertFalse(viewer_visible.exists())
+
+    def test_creator_only_allows_creator_for_product(self):
+        policy = AccessPolicy.objects.get(is_active=True)
+        policy.strategy = AccessPolicy.STRATEGY_CREATOR_ONLY
+        policy.save(update_fields=["strategy"])
+
+        owner_visible = apply_partner_access_filter(
+            self.owner,
+            "Product",
+            Product.objects.filter(id=self.product.id),
+            permission="view",
+        )
+        self.assertTrue(owner_visible.exists())
+
+        viewer_visible = apply_partner_access_filter(
+            self.viewer,
+            "Product",
+            Product.objects.filter(id=self.product.id),
+            permission="view",
+        )
+        self.assertFalse(viewer_visible.exists())

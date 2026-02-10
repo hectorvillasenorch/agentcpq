@@ -2466,6 +2466,7 @@ def run_salesforce_setup(request):
             "sync_products",
             use_standard_pricebook=True,
             update_existing=True,
+            actor_user_id=request.user.id,
             stdout=stdout,
             stderr=stdout,
         )

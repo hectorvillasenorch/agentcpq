@@ -235,17 +235,27 @@ def _strict_record_access_q(user, queryset, policy: AccessPolicy, permission: st
     }
 
     model = queryset.model
+    has_created_by = _model_has_field(model, "created_by")
+    has_owner = _model_has_field(model, "owner")
+
+    # Strategy fallback so strict policies still work for models that define
+    # only one principal field (e.g., Product has created_by but no owner).
+    if include_owner and not has_owner and has_created_by:
+        include_creator = True
+    if include_creator and not has_created_by and has_owner:
+        include_owner = True
+
     allow_unassigned = bool(getattr(policy, "allow_unassigned_records", False))
 
     access_q = Q(pk__in=[])
 
-    if include_creator and _model_has_field(model, "created_by"):
+    if include_creator and has_created_by:
         creator_q = Q(created_by=user)
         if allow_unassigned:
             creator_q |= Q(created_by__isnull=True)
         access_q |= creator_q
 
-    if include_owner and _model_has_field(model, "owner"):
+    if include_owner and has_owner:
         owner_q = Q(owner=user)
         if allow_unassigned:
             owner_q |= Q(owner__isnull=True)
