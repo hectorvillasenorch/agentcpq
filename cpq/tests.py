@@ -1,9 +1,11 @@
+from datetime import timedelta
 from django.contrib.auth.models import Group, User
 from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
+from django.utils.timezone import now
 from decimal import Decimal
 
-from cpq.models import Account, AccessPolicy, Product, RecordAccessGrant
+from cpq.models import Account, AccessPolicy, Opportunity, Product, RecordAccessGrant
 from cpq.permissions import apply_partner_access_filter, partner_can_access_record
 
 
@@ -127,3 +129,22 @@ class RecordAccessPolicyTests(TestCase):
             permission="view",
         )
         self.assertFalse(viewer_visible.exists())
+
+
+class OpportunityDefaultsTests(TestCase):
+    def test_expected_close_date_defaults_to_30_days_from_today(self):
+        user = User.objects.create_user(username="opportunity-owner", password="test123")
+        account = Account.objects.create(
+            name="Default Date Account",
+            owner=user,
+            created_by=user,
+        )
+
+        expected_date = now().date() + timedelta(days=30)
+        opportunity = Opportunity.objects.create(
+            name="Default Date Opportunity",
+            account=account,
+            created_by=user,
+        )
+
+        self.assertEqual(opportunity.expected_close_date, expected_date)

@@ -133,6 +133,10 @@ def default_opportunity_stage():
     return picklist_default_key("Opportunity", "stage") or DEFAULT_OPPORTUNITY_STAGE_KEY
 
 
+def default_opportunity_expected_close_date():
+    return now().date() + timedelta(days=30)
+
+
 class PicklistValue(models.Model):
     object_name = models.CharField(max_length=100)
     field_name = models.CharField(max_length=100)
@@ -389,7 +393,11 @@ class Opportunity(models.Model):
     stage = models.CharField(max_length=50, default=default_opportunity_stage)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
-    expected_close_date = models.DateField(blank=True, null=True)
+    expected_close_date = models.DateField(
+        blank=True,
+        null=True,
+        default=default_opportunity_expected_close_date,
+    )
     primary_quote = models.ForeignKey(
         "Quote",
         on_delete=models.SET_NULL,  # Set to NULL if quote is deleted

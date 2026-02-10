@@ -28,6 +28,7 @@ from cpq.models import (
     QuoteLine,
     Subscription,
     Tenant,
+    default_opportunity_expected_close_date,
     generate_agentcpq_id,
 )
 from cpq.permissions import partner_can_access_record
@@ -1335,12 +1336,17 @@ def _create_opportunity(user, fields: Dict[str, object]) -> Tuple[bool, str, Dic
     if stage_value not in valid_stages:
         return False, f"⚠️ Invalid stage '{stage_value}'. Allowed: {', '.join(valid_stages)}.", {}
 
+    expected_close_date = (
+        _coerce_date(fields.get("expected_close_date"))
+        or default_opportunity_expected_close_date()
+    )
+
     opportunity = Opportunity.objects.create(
         name=str(fields.get("name")),
         account=account_ref,
         amount=_coerce_decimal(fields.get("amount")),
         stage=stage_value,
-        expected_close_date=_coerce_date(fields.get("expected_close_date")),
+        expected_close_date=expected_close_date,
         owner=_resolve_user(fields.get("owner")),
         created_by=user,
     )
