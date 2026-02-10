@@ -563,16 +563,18 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
 
     date_custom_field = None
     if date_field:
-        try:
-            model._meta.get_field(date_field)
-        except Exception:
-            date_custom_field = _resolve_custom_field(date_field)
-            if date_custom_field:
-                date_data_type = (date_custom_field.data_type or "").lower()
-                if date_data_type not in DATE_TYPES:
-                    return None, f"date_field '{date_field}' is not a date field"
-            else:
-                return None, f"date_field '{date_field}' does not exist"
+        annotated_date_fields = set(getattr(getattr(qs, "query", None), "annotations", {}).keys())
+        if date_field not in annotated_date_fields:
+            try:
+                model._meta.get_field(date_field)
+            except Exception:
+                date_custom_field = _resolve_custom_field(date_field)
+                if date_custom_field:
+                    date_data_type = (date_custom_field.data_type or "").lower()
+                    if date_data_type not in DATE_TYPES:
+                        return None, f"date_field '{date_field}' is not a date field"
+                else:
+                    return None, f"date_field '{date_field}' does not exist"
 
     custom_field = None
     if isinstance(field, str):
