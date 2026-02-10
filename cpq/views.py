@@ -570,9 +570,8 @@ def product_list(request):
                 messages.error(request, "Missing product ID for update.")
                 return redirect(next_url)
             product = get_object_or_404(Product, id=product_id)
-            if not (request.user.is_staff or request.user.is_superuser):
-                if is_partner_user(request.user) and product.created_by_id != request.user.id:
-                    return HttpResponseForbidden("You do not have permission to edit this product.")
+            if not partner_can_access_record(request.user, "Product", product, permission="change"):
+                return HttpResponseForbidden("You do not have permission to edit this product.")
         else:
             product = Product(created_by=request.user)
 
@@ -653,8 +652,8 @@ def product_list(request):
 
         return redirect(next_url)
 
-    products = Product.objects.all()
-    options = Option.objects.all()
+    products = apply_partner_access_filter(request.user, "Product", Product.objects.all(), permission="view")
+    options = Option.objects.filter(parent_product__in=products)
     for product in products:
         product.bundle_options = [
             opt for opt in options if opt.parent_product_id == product.id
@@ -709,14 +708,8 @@ def cpq_settings_admin(request):
 def build_account_quote_hierarchy_for_user(user):
     """Return Account → Opportunity → Quote hierarchy for the given user."""
 
-    if user.is_superuser:
-        base_qs = Quote.objects.all()
-    else:
-        base_qs = Quote.objects.all()
-        if not is_partner_user(user):
-            base_qs = base_qs.filter(owner=user)
-
-    base_qs = apply_partner_access_filter(user, "Quote", base_qs)
+    base_qs = Quote.objects.all()
+    base_qs = apply_partner_access_filter(user, "Quote", base_qs, permission="view")
 
     quotes = (
         base_qs.select_related("account", "opportunity__account")
@@ -2085,7 +2078,12 @@ def single_record_api(request):
     if record is None:
         return JsonResponse({"error": "Record not found."}, status=404)
 
-    if not partner_can_access_record(request.user, object_name, record, custom_object=custom_object):
+    if not partner_can_access_record(
+        request.user,
+        object_name,
+        record,
+        custom_object=custom_object,
+    ):
         return HttpResponseForbidden("You do not have access to this record.")
 
     payload = serialize_record(record, object_name, custom_object, custom_fields, user=request.user)
@@ -2148,7 +2146,13 @@ def delete_single_record_api(request):
     except model.DoesNotExist:
         return JsonResponse({"error": "Record not found."}, status=404)
 
-    if not partner_can_access_record(request.user, object_name, record, custom_object=custom_object):
+    if not partner_can_access_record(
+        request.user,
+        object_name,
+        record,
+        custom_object=custom_object,
+        permission="delete",
+    ):
         return HttpResponseForbidden("You do not have access to this record.")
 
     if custom_object:
@@ -2508,11 +2512,14 @@ def save_field_mappings(request):
     return JsonResponse({"success": False, "message": "Invalid request."})
 
 
+@login_required
 @csrf_exempt
 def set_primary_quote(request, quote_id):
     if request.method == "POST":
         try:
             quote = Quote.objects.select_related("opportunity").get(id=quote_id)
+            if not partner_can_access_record(request.user, "Quote", quote, permission="change"):
+                return HttpResponseForbidden("You do not have access to this quote.")
             opportunity_id = quote.opportunity_id
 
             # Clear existing primary flags in the same opportunity
@@ -2555,7 +2562,7 @@ def set_primary_quote(request, quote_id):
 @require_POST
 def create_renewal_quote(request, opportunity_id):
     opportunity = get_object_or_404(Opportunity, id=opportunity_id)
-    if not partner_can_access_record(request.user, "Opportunity", opportunity):
+    if not partner_can_access_record(request.user, "Opportunity", opportunity, permission="change"):
         return HttpResponseForbidden("You do not have access to this opportunity.")
 
     result = make_opportunity_renewal(opportunity)
@@ -3098,7 +3105,13 @@ def get_custom_record_form(request, record_id):
     record = get_object_or_404(CustomRecord, id=record_id)
     if not user_can_access_custom_object(request.user, record.object_type, "change"):
         return HttpResponseForbidden("You do not have permission to edit records for this object.")
-    if not partner_can_access_record(request.user, record.object_type.name, record, custom_object=record.object_type):
+    if not partner_can_access_record(
+        request.user,
+        record.object_type.name,
+        record,
+        custom_object=record.object_type,
+        permission="change",
+    ):
         return HttpResponseForbidden("You do not have access to this record.")
     DynamicForm = generate_dynamic_form(record.object_type)
 
@@ -3132,7 +3145,13 @@ def edit_custom_record(request, record_id):
     record = get_object_or_404(CustomRecord, id=record_id)
     if not user_can_access_custom_object(request.user, record.object_type, "change"):
         return HttpResponseForbidden("You do not have permission to edit records for this object.")
-    if not partner_can_access_record(request.user, record.object_type.name, record, custom_object=record.object_type):
+    if not partner_can_access_record(
+        request.user,
+        record.object_type.name,
+        record,
+        custom_object=record.object_type,
+        permission="change",
+    ):
         return HttpResponseForbidden("You do not have access to this record.")
     DynamicForm = generate_dynamic_form(record.object_type)
 
@@ -3197,13 +3216,20 @@ def edit_custom_record(request, record_id):
             messages.error(request, "Form contains errors. Please fix them.")
     return redirect(request.META.get('HTTP_REFERER', '/dashboard/'))
 
+@login_required
 @csrf_exempt
 def delete_custom_record(request, record_id):
     if request.method == "POST":
         record = get_object_or_404(CustomRecord, id=record_id)
         if not user_can_access_custom_object(request.user, record.object_type, "delete"):
             return JsonResponse({"status": "error", "error": "You do not have permission to delete this record."}, status=403)
-        if not partner_can_access_record(request.user, record.object_type.name, record, custom_object=record.object_type):
+        if not partner_can_access_record(
+            request.user,
+            record.object_type.name,
+            record,
+            custom_object=record.object_type,
+            permission="delete",
+        ):
             return JsonResponse({"status": "error", "error": "You do not have access to this record."}, status=403)
         record.delete()
         if request.user.is_authenticated:
@@ -3540,6 +3566,7 @@ def create_business_rule(request):
 
 
 
+@login_required
 def create_custom_record(request, object_name, user_id):
 
     custom_object = get_object_or_404(CustomObject, name=object_name)
@@ -3550,7 +3577,11 @@ def create_custom_record(request, object_name, user_id):
     if request.method == 'POST':
         form = DynamicForm(request.POST)
         if form.is_valid():
-            user = User.objects.get(id=user_id)
+            if str(request.user.id) != str(user_id) and not (request.user.is_staff or request.user.is_superuser):
+                return HttpResponseForbidden("You do not have permission to create records for another user.")
+            user = request.user
+            if request.user.is_staff or request.user.is_superuser:
+                user = User.objects.filter(id=user_id).first() or request.user
 
             # 🔥 CLAVE: UNA sola transacción para TODO el flujo
             with transaction.atomic():

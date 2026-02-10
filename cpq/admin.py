@@ -16,6 +16,8 @@ from .models import (
     Activity,
     CustomObject,
     CustomObjectPermission,
+    AccessPolicy,
+    RecordAccessGrant,
     CustomField,
     Option,
     BusinessRule,
@@ -119,6 +121,64 @@ class CustomObjectPermissionAdmin(admin.ModelAdmin):
     list_filter = ("custom_object", "group", "can_view", "can_add", "can_change", "can_delete")
     search_fields = ("group__name", "custom_object__name", "custom_object__label")
     autocomplete_fields = ("group", "custom_object")
+
+
+@admin.register(AccessPolicy)
+class AccessPolicyAdmin(admin.ModelAdmin):
+    list_display = (
+        "key",
+        "label",
+        "strategy",
+        "is_active",
+        "allow_superuser",
+        "allow_staff",
+        "include_partner_scope",
+        "use_record_grants",
+        "allow_unassigned_records",
+        "updated_at",
+    )
+    list_filter = (
+        "strategy",
+        "is_active",
+        "allow_superuser",
+        "allow_staff",
+        "include_partner_scope",
+        "use_record_grants",
+    )
+    search_fields = ("key", "label")
+    ordering = ("-updated_at",)
+
+
+@admin.register(RecordAccessGrant)
+class RecordAccessGrantAdmin(admin.ModelAdmin):
+    list_display = (
+        "content_type",
+        "object_id",
+        "user",
+        "group",
+        "can_view",
+        "can_change",
+        "can_delete",
+        "can_share",
+        "created_by",
+        "updated_at",
+    )
+    list_filter = (
+        "content_type",
+        "can_view",
+        "can_change",
+        "can_delete",
+        "can_share",
+    )
+    search_fields = (
+        "object_id",
+        "user__username",
+        "group__name",
+        "content_type__model",
+    )
+    autocomplete_fields = ("user", "group", "created_by")
+    raw_id_fields = ("content_type",)
+    ordering = ("-updated_at",)
 
 
 class CustomObjectPermissionInline(admin.TabularInline):

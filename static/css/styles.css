@@ -244,6 +244,10 @@ h4{
   display: inline-block;
 }
 
+.collapsed-only-icon {
+  display: none !important;
+}
+
 .sidenav-fixed a + a {
   margin-top: 6px;
 }
@@ -658,6 +662,15 @@ body.email-alert-page .main-content {
 .sidenav-fixed.collapse_sidebar .nav-action-btn .nav-icon-image,
 .sidenav-fixed.collapse_sidebar .nav-collapse-btn .nav-icon-image {
   margin: 0;
+}
+
+.sidenav-fixed.collapse_sidebar .collapsed-only-icon {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  font-size: 22px;
+  color: var(--sidenav-icon-muted, #9e9e9e);
 }
 
 .sidenav-fixed.collapse_sidebar .chat-history-item {

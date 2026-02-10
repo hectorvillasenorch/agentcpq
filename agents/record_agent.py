@@ -13,6 +13,7 @@ from .utils.record_agent.handle_helpers import (
     serialize_record,
     update_record_field,
 )
+from cpq.permissions import partner_can_access_record
 from .utils.quote_agent.general_helpers import set_active_quote_to_session_data
 from .utils.session_context_helpers.session_context_helpers import get_session_context
 
@@ -232,6 +233,12 @@ def update_single_record_from_ui(user, user_message, session_data):
     except model.DoesNotExist:
         return {
             "message": "⚠️ I couldn’t find that record anymore. Try refreshing the card.",
+            "hiddenMessage": True,
+        }
+
+    if not partner_can_access_record(user, object_name, record, custom_object=custom_object, permission="change"):
+        return {
+            "message": "⚠️ You don’t have permission to update that record.",
             "hiddenMessage": True,
         }
 

@@ -1727,6 +1727,161 @@ class GroupUISettings(models.Model):
     def __str__(self):
         return f"{self.group.name} UI Settings"
 
+
+class AccessPolicy(models.Model):
+    STRATEGY_LEGACY_PARTNER = "legacy_partner"
+    STRATEGY_CREATOR_ONLY = "creator_only"
+    STRATEGY_CREATOR_OR_GROUP = "creator_or_group"
+    STRATEGY_OWNER_OR_GROUP = "owner_or_group"
+    STRATEGY_CREATOR_OR_OWNER_OR_GROUP = "creator_or_owner_or_group"
+
+    STRATEGY_CHOICES = [
+        (STRATEGY_LEGACY_PARTNER, "Legacy Partner Scope"),
+        (STRATEGY_CREATOR_ONLY, "Creator Only"),
+        (STRATEGY_CREATOR_OR_GROUP, "Creator Or Group Grant"),
+        (STRATEGY_OWNER_OR_GROUP, "Owner Or Group Grant"),
+        (STRATEGY_CREATOR_OR_OWNER_OR_GROUP, "Creator/Owner Or Group Grant"),
+    ]
+
+    key = models.CharField(
+        max_length=80,
+        unique=True,
+        default="global",
+        help_text="Unique key for this policy (for example: global).",
+    )
+    label = models.CharField(max_length=120, blank=True)
+    strategy = models.CharField(
+        max_length=40,
+        choices=STRATEGY_CHOICES,
+        default=STRATEGY_LEGACY_PARTNER,
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Only one active access policy should exist at a time.",
+    )
+    allow_superuser = models.BooleanField(default=True)
+    allow_staff = models.BooleanField(default=True)
+    include_partner_scope = models.BooleanField(
+        default=True,
+        help_text="Apply existing partner account/contact scoping before record ACL evaluation.",
+    )
+    allow_unassigned_records = models.BooleanField(
+        default=False,
+        help_text="Allow records with no owner/creator under strict strategies.",
+    )
+    use_record_grants = models.BooleanField(
+        default=True,
+        help_text="Enable explicit user/group grants for record access.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Access Policy"
+        verbose_name_plural = "Access Policies"
+
+    def clean(self):
+        super().clean()
+        if self.is_active:
+            qs = AccessPolicy.objects.filter(is_active=True)
+            if self.pk:
+                qs = qs.exclude(pk=self.pk)
+            if qs.exists():
+                raise ValidationError("Only one AccessPolicy can be active at a time.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.label or self.key
+
+    @classmethod
+    def get_active_policy(cls):
+        try:
+            return cls.objects.filter(is_active=True).order_by("id").first()
+        except (OperationalError, ProgrammingError):
+            return None
+        except Exception:
+            return None
+
+
+class RecordAccessGrant(models.Model):
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveBigIntegerField(db_index=True)
+    content_object = GenericForeignKey("content_type", "object_id")
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="record_access_grants",
+    )
+    group = models.ForeignKey(
+        Group,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="record_access_grants",
+    )
+
+    can_view = models.BooleanField(default=True)
+    can_change = models.BooleanField(default=False)
+    can_delete = models.BooleanField(default=False)
+    can_share = models.BooleanField(default=False)
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="record_access_grants_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Record Access Grant"
+        verbose_name_plural = "Record Access Grants"
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    (models.Q(user__isnull=False) & models.Q(group__isnull=True))
+                    | (models.Q(user__isnull=True) & models.Q(group__isnull=False))
+                ),
+                name="record_access_grant_user_xor_group",
+            ),
+            models.CheckConstraint(
+                check=(
+                    models.Q(can_view=True)
+                    | models.Q(can_change=True)
+                    | models.Q(can_delete=True)
+                    | models.Q(can_share=True)
+                ),
+                name="record_access_grant_requires_permission",
+            ),
+            models.UniqueConstraint(
+                fields=["content_type", "object_id", "user"],
+                condition=models.Q(user__isnull=False),
+                name="record_access_grant_unique_user",
+            ),
+            models.UniqueConstraint(
+                fields=["content_type", "object_id", "group"],
+                condition=models.Q(group__isnull=False),
+                name="record_access_grant_unique_group",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["content_type", "object_id"]),
+            models.Index(fields=["user"]),
+            models.Index(fields=["group"]),
+        ]
+
+    def __str__(self):
+        principal = self.user.username if self.user_id else (self.group.name if self.group_id else "unknown")
+        model_label = self.content_type.model if self.content_type_id else "record"
+        return f"{principal} -> {model_label}:{self.object_id}"
 #dummy model for all custom objects
 class CustomRecord(models.Model):
     custom_identifier = models.CharField(max_length=30, unique=True, blank=True, null=True)

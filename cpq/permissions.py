@@ -3,16 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional
 
+from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
 
 from .models import (
     Account,
+    AccessPolicy,
     Contact,
     CustomObject,
     CustomObjectPermission,
     CustomField,
     CustomFieldValue,
     PartnerProfile,
+    RecordAccessGrant,
 )
 
 
@@ -146,7 +149,116 @@ def _resolve_partner_contacts(user, profile: Optional[PartnerProfile], accounts)
     return Contact.objects.filter(account__in=accounts)
 
 
-def apply_partner_access_filter(user, object_name: str, queryset, *, custom_object=None):
+def _normalize_record_permission(permission: str) -> str:
+    value = (permission or "view").strip().lower()
+    if value in {"edit", "update"}:
+        return "change"
+    if value in {"remove"}:
+        return "delete"
+    return value
+
+
+def _record_permission_field(permission: str) -> str:
+    normalized = _normalize_record_permission(permission)
+    if normalized in {"change", "write"}:
+        return "can_change"
+    if normalized == "delete":
+        return "can_delete"
+    if normalized == "share":
+        return "can_share"
+    return "can_view"
+
+
+def _fallback_access_policy() -> AccessPolicy:
+    return AccessPolicy(
+        key="fallback",
+        label="Fallback Access Policy",
+        strategy=AccessPolicy.STRATEGY_LEGACY_PARTNER,
+        is_active=True,
+        allow_superuser=True,
+        allow_staff=True,
+        include_partner_scope=True,
+        allow_unassigned_records=False,
+        use_record_grants=False,
+    )
+
+
+def get_record_access_policy() -> AccessPolicy:
+    policy = AccessPolicy.get_active_policy()
+    return policy if policy else _fallback_access_policy()
+
+
+def _policy_user_bypass(user, policy: AccessPolicy) -> bool:
+    if not user or getattr(user, "is_anonymous", False):
+        return False
+    if getattr(policy, "allow_superuser", True) and getattr(user, "is_superuser", False):
+        return True
+    if getattr(policy, "allow_staff", True) and getattr(user, "is_staff", False):
+        return True
+    return False
+
+
+def _model_has_field(model, field_name: str) -> bool:
+    try:
+        model._meta.get_field(field_name)
+        return True
+    except Exception:
+        return False
+
+
+def _granted_record_ids(user, model, permission: str):
+    if not user or getattr(user, "is_anonymous", False):
+        return []
+    try:
+        content_type = ContentType.objects.get_for_model(model)
+        perm_field = _record_permission_field(permission)
+        grants_qs = RecordAccessGrant.objects.filter(content_type=content_type).filter(**{perm_field: True})
+        user_groups = list(user.groups.values_list("id", flat=True))
+        principal_filter = Q(user=user)
+        if user_groups:
+            principal_filter |= Q(group_id__in=user_groups)
+        return grants_qs.filter(principal_filter).values_list("object_id", flat=True)
+    except Exception:
+        return []
+
+
+def _strict_record_access_q(user, queryset, policy: AccessPolicy, permission: str):
+    strategy = getattr(policy, "strategy", AccessPolicy.STRATEGY_LEGACY_PARTNER)
+    include_creator = strategy in {
+        AccessPolicy.STRATEGY_CREATOR_ONLY,
+        AccessPolicy.STRATEGY_CREATOR_OR_GROUP,
+        AccessPolicy.STRATEGY_CREATOR_OR_OWNER_OR_GROUP,
+    }
+    include_owner = strategy in {
+        AccessPolicy.STRATEGY_OWNER_OR_GROUP,
+        AccessPolicy.STRATEGY_CREATOR_OR_OWNER_OR_GROUP,
+    }
+
+    model = queryset.model
+    allow_unassigned = bool(getattr(policy, "allow_unassigned_records", False))
+
+    access_q = Q(pk__in=[])
+
+    if include_creator and _model_has_field(model, "created_by"):
+        creator_q = Q(created_by=user)
+        if allow_unassigned:
+            creator_q |= Q(created_by__isnull=True)
+        access_q |= creator_q
+
+    if include_owner and _model_has_field(model, "owner"):
+        owner_q = Q(owner=user)
+        if allow_unassigned:
+            owner_q |= Q(owner__isnull=True)
+        access_q |= owner_q
+
+    if getattr(policy, "use_record_grants", True):
+        grant_ids = _granted_record_ids(user, model, permission)
+        access_q |= Q(pk__in=grant_ids)
+
+    return access_q
+
+
+def _apply_legacy_partner_scope(user, object_name: str, queryset, *, custom_object=None):
     profile = get_partner_profile(user)
     if not (profile or _user_in_partner_group(user)):
         return queryset
@@ -208,14 +320,45 @@ def apply_partner_access_filter(user, object_name: str, queryset, *, custom_obje
     return queryset
 
 
-def partner_can_access_record(user, object_name: str, record, *, custom_object=None) -> bool:
-    profile = get_partner_profile(user)
-    if not profile:
-        return True
+def apply_partner_access_filter(user, object_name: str, queryset, *, custom_object=None, permission: str = "view"):
+    if queryset is None:
+        return queryset
+    if not user or getattr(user, "is_anonymous", False):
+        return queryset.none()
+
+    policy = get_record_access_policy()
+    if _policy_user_bypass(user, policy):
+        return queryset
+
+    scoped_queryset = queryset
+    if getattr(policy, "include_partner_scope", True):
+        scoped_queryset = _apply_legacy_partner_scope(user, object_name, scoped_queryset, custom_object=custom_object)
+
+    if getattr(policy, "strategy", AccessPolicy.STRATEGY_LEGACY_PARTNER) == AccessPolicy.STRATEGY_LEGACY_PARTNER:
+        return scoped_queryset.distinct()
+
+    strict_q = _strict_record_access_q(user, scoped_queryset, policy, permission)
+    return scoped_queryset.filter(strict_q).distinct()
+
+
+def partner_can_access_record(
+    user,
+    object_name: str,
+    record,
+    *,
+    custom_object=None,
+    permission: str = "view",
+) -> bool:
     if record is None:
         return False
     queryset = record.__class__.objects.all()
     if custom_object is not None and hasattr(record, "object_type"):
         queryset = queryset.filter(object_type=custom_object)
-    filtered = apply_partner_access_filter(user, object_name, queryset, custom_object=custom_object)
+    filtered = apply_partner_access_filter(
+        user,
+        object_name,
+        queryset,
+        custom_object=custom_object,
+        permission=permission,
+    )
     return filtered.filter(pk=record.pk).exists()

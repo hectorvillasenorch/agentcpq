@@ -53,6 +53,8 @@
             <a href="{% url 'dashboard' %}?view={{ item.view }}{% if item.auto_prompt %}&new_chat=true&auto_prompt={{ item.auto_prompt|urlencode }}{% endif %}"{% if item.css_class %} class="{{ item.css_class }}"{% endif %}>
                 {% if item.icon %}
                     <i class="material-icons">{{ item.icon }}</i>
+                {% else %}
+                    <i class="material-icons collapsed-only-icon" aria-hidden="true">chevron_right</i>
                 {% endif %}
                 <span class="nav-label">{{ item.label }}</span>
             </a>
@@ -61,6 +63,7 @@
         {% if custom_objects %}
             {% for obj in custom_objects %}
                 <a href="{% url 'dashboard' %}?view=custom&object_name={{ obj.name }}" class="nav-link--no-icon">
+                    <i class="material-icons collapsed-only-icon" aria-hidden="true">category</i>
                     <span class="nav-label">{{ obj.label }}</span>
                 </a>
             {% endfor %}
@@ -82,6 +85,7 @@
                    class="chat-history-item chat-history-item--no-icon"
                    data-session-id="{{ chat.session_id }}"
                    data-session-title="{{ chat.title|default:'Untitled' }}">
+                    <span class="material-icons collapsed-only-icon" aria-hidden="true">history</span>
                     <span class="nav-label chat-history-title">{{ chat.title|default:"Untitled"|truncatechars:24 }}</span>
                     <span class="material-icons chat-edit-trigger" role="button" aria-label="Rename session" tabindex="0">edit</span>
                 </a>

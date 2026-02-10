@@ -127,7 +127,7 @@ def receive_lead(request):
             status=status_value,
             external_id=data.get("external_id") or None,
             created_at=timezone.now(),
-            created_by_id=1,  # adjust if needed
+            created_by=request.user if getattr(request, "user", None) and request.user.is_authenticated else None,
         )
         standard_fields = {
             "first_name",

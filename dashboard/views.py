@@ -411,6 +411,7 @@ def dashboard(request):
 
     if view == "products":
         product_queryset = Product.objects.filter(is_active=True)
+        product_queryset = apply_partner_access_filter(user, "Product", product_queryset)
 
         products = list(product_queryset)
         product_ids = [product.id for product in products]
@@ -583,9 +584,8 @@ def delete_chat_session(request, session_id):
     })
 
 def get_user_accounts(user):
-    if user.is_superuser:
-        return Account.objects.all()
-    return Account.objects.filter(owner=user)
+    queryset = Account.objects.all()
+    return apply_partner_access_filter(user, "Account", queryset)
 
 
 @login_required
