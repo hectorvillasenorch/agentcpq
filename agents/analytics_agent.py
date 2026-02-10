@@ -71,6 +71,32 @@ _BASIC_LIST_RE = re.compile(
     r"(?:\s+records?)?\s*$",
     re.IGNORECASE,
 )
+_STANDARD_WRITE_OBJECT_RE = re.compile(
+    r"\b(lead|leads|account|accounts|contact|contacts|opportunity|opportunities|activity|activities|"
+    r"contract|contracts|subscription|subscriptions|tenant|tenants|knowledge|option|options)\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_misrouted_standard_write_action(user_message: str) -> str | None:
+    if not user_message:
+        return None
+
+    lowered = user_message.strip().lower()
+    if not lowered:
+        return None
+    if lowered.startswith("show metrics:"):
+        return None
+    if not _STANDARD_WRITE_OBJECT_RE.search(lowered):
+        return None
+
+    if re.match(r"^\s*(?:batch\s*:)?\s*(create|add|insert|import|load|ingest)\b", lowered):
+        return "CreateStandardRecord"
+    if re.match(r"^\s*(?:batch\s*:)?\s*(update|edit|change|modify|set)\b", lowered):
+        return "UpdateStandardRecord"
+    if re.match(r"^\s*(?:batch\s*:)?\s*(delete|remove)\b", lowered):
+        return "DeleteStandardRecord"
+    return None
 
 
 def _resolve_metrics_object_name(raw_object):
@@ -266,6 +292,11 @@ def show_metrics(user, user_message, session_data):
     and generates dynamic summaries or insights for monitoring.
     """
     logging.info("🔧 Showing metrics...\n\n")
+
+    write_action = _detect_misrouted_standard_write_action(user_message)
+    if write_action:
+        from .standard_record_agent import standard_record_agent
+        return standard_record_agent(user, write_action, user_message, session_data)
 
     direct_request = (
         _parse_revenue_request(user_message)
