@@ -10,6 +10,7 @@ OPENAI_MODEL = "gpt-4o-mini"
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 from ..orchestrator.context_handle_helpers import estimate_cost
+from ..message_formatters import format_message_with_standard_icons
 
 
 def extract_product_data_with_llm(user_message, current_state, previous_summary=None):
@@ -46,10 +47,11 @@ def extract_product_data_with_llm(user_message, current_state, previous_summary=
     - If product is bundle (is_bundle = True, the required fields would now be name and sku, price is not necessary and you can mark completed as True if they are already configured.)
     - If product is bundle (is_bundle =  True) set price as 0, and if name and sku are provided by the user, mark completed as true.
     - completed=true only if required fields are present.
-    - agent_message should be short, friendly, professional, emoji-rich, ask follow-ups.
+    - agent_message should be short, friendly, professional, and ask follow-ups.
     - This message is a continuation of an ongoing conversation. Do NOT start with greetings like 'Hello' or 'Hi'. Just continue naturally.
     - The message is sensitive to HTML tags, so if you want to make line breaks use the <br> tag.
-    - Do NOT use emojis for message.
+    - Do NOT use emojis.
+    - Do NOT start with interjections like "Great news!" or "Awesome!".
     - Create a short, detailed summary with the previous summary + the changes you made in this iteration.
     """
 
@@ -112,7 +114,7 @@ def extract_product_data_with_llm(user_message, current_state, previous_summary=
 def generate_final_product_message(completed_products, db_results, remaining_products, previous_summary):
     """
     Generates in ONE LLM call:
-    1) A concise, professional, emoji-rich message for the user.
+    1) A concise, professional message for the user.
     2) An updated short summary that extends the previous summary with changes from this iteration.
     Returns (message_text, updated_summary, tokens_used, cost_est).
     """
@@ -132,7 +134,7 @@ def generate_final_product_message(completed_products, db_results, remaining_pro
     - Previous summary: {previous_summary}.
 
     Instructions for "message":
-    - Be should be short friendly, professional, emoji-rich, ask follow-ups, concise but specific and friendly.
+    - Be short, friendly, professional, concise but specific, and ask follow-ups.
     - For successful products, do NOT list them one by one. Instead, summarize them in ONE short sentence.
     - For failed products, mention the product and its error, but only if there are any.
     - For incomplete products, list the fields you already have and those that are missing for each product.
@@ -140,6 +142,8 @@ def generate_final_product_message(completed_products, db_results, remaining_pro
     - End by asking a short, natural follow-up question about next steps.
     - The message is sensitive to HTML tags, so if you want to make line breaks use the <br> tag.
     - Keep it user-facing.
+    - Do NOT use emojis.
+    - Do NOT start with interjections like "Great news!", "Awesome!", or "Perfect!".
 
     Instructions for "summary":
     - Write a short but detailed summary that continues the previous summary with the new changes.
@@ -179,5 +183,7 @@ def generate_final_product_message(completed_products, db_results, remaining_pro
         logging.error(f"❌ Error parsing LLM JSON output: {e}")
         message = raw_output
         updated_summary = previous_summary
+
+    message = format_message_with_standard_icons(message)
 
     return message, updated_summary, tokens_used, cost_est

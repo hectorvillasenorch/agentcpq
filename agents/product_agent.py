@@ -7,7 +7,7 @@ import re
 import logging,threading
 from django.contrib.contenttypes.models import ContentType
 from .utils.quote_agent.db_helpers import log_action_usage
-from .utils.message_formatters import SUCCESS_ICON
+from .utils.message_formatters import SUCCESS_ICON, format_message_with_standard_icons
 from decimal import Decimal
 
 from .utils.orchestrator.context_handle_helpers import estimate_cost
@@ -74,8 +74,9 @@ def create_product(user, user_message, session_data):
 
     # Return if not any completed products
     if not completed_products:
+        agent_message = format_message_with_standard_icons(llm_result.get("agent_message", ""))
         return {
-            "message": llm_result["agent_message"],
+            "message": agent_message,
             "session_summary": llm_result["summary"]
         }
 
@@ -93,7 +94,7 @@ def create_product(user, user_message, session_data):
     )
 
     return {
-        "message": dynamic_message,
+        "message": format_message_with_standard_icons(dynamic_message),
         "session_summary": updated_summary
     }
 
