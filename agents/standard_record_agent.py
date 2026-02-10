@@ -1124,6 +1124,41 @@ def _format_candidates(object_name: str, candidates: List[object]) -> str:
     return "Matches:<br>" + "<br>".join(lines)
 
 
+def _normalize_opportunity_stage_value(raw_stage, stage_choices, default_stage=None):
+    stage_value = raw_stage if raw_stage not in (None, "") else default_stage
+    if stage_value in (None, ""):
+        return stage_value
+
+    normalized = re.sub(r"[^a-z0-9]+", "", str(stage_value).strip().lower())
+
+    key_map = {}
+    label_map = {}
+    for key, label in (stage_choices or []):
+        key_norm = re.sub(r"[^a-z0-9]+", "", str(key).strip().lower())
+        label_norm = re.sub(r"[^a-z0-9]+", "", str(label).strip().lower())
+        key_map[key_norm] = key
+        label_map[label_norm] = key
+
+    alias_map = {
+        "qualification": "qualifiedtobuy",
+        "qualified": "qualifiedtobuy",
+        "qualify": "qualifiedtobuy",
+        "qualifiedbuy": "qualifiedtobuy",
+        "qualifiedtobuy": "qualifiedtobuy",
+    }
+
+    if normalized in key_map:
+        return key_map[normalized]
+    if normalized in label_map:
+        return label_map[normalized]
+    if normalized in alias_map:
+        alias_key = alias_map[normalized]
+        alias_norm = re.sub(r"[^a-z0-9]+", "", alias_key.lower())
+        if not key_map or alias_norm in key_map:
+            return alias_key
+    return stage_value
+
+
 def _apply_updates(user, object_name: str, record, fields: Dict[str, object]) -> None:
     blocked_fields = {
         "id",
@@ -1139,10 +1174,15 @@ def _apply_updates(user, object_name: str, record, fields: Dict[str, object]) ->
     if object_name == "Opportunity" and "stage" in fields:
         from cpq.models import picklist_choices, picklist_default_key
         stage_choices = picklist_choices("Opportunity", "stage")
-        stage_value = fields.get("stage") or picklist_default_key("Opportunity", "stage")
+        stage_value = _normalize_opportunity_stage_value(
+            fields.get("stage"),
+            stage_choices,
+            picklist_default_key("Opportunity", "stage"),
+        )
         valid_stages = [choice[0] for choice in stage_choices] if stage_choices else []
         if stage_value and valid_stages and stage_value not in valid_stages:
             raise ValueError(f"Invalid stage '{stage_value}'. Allowed: {', '.join(valid_stages)}.")
+        fields["stage"] = stage_value
 
     for key, value in fields.items():
         if key in blocked_fields:
@@ -1286,7 +1326,11 @@ def _create_opportunity(user, fields: Dict[str, object]) -> Tuple[bool, str, Dic
 
     from cpq.models import picklist_choices, picklist_default_key
     stage_choices = picklist_choices("Opportunity", "stage")
-    stage_value = fields.get("stage") or picklist_default_key("Opportunity", "stage")
+    stage_value = _normalize_opportunity_stage_value(
+        fields.get("stage"),
+        stage_choices,
+        picklist_default_key("Opportunity", "stage"),
+    )
     valid_stages = [choice[0] for choice in stage_choices] if stage_choices else []
     if stage_value not in valid_stages:
         return False, f"⚠️ Invalid stage '{stage_value}'. Allowed: {', '.join(valid_stages)}.", {}
