@@ -1609,6 +1609,7 @@ function escapeHtml(text) {
 
 
 const BATCH_ROW_SIZE = 5;
+const BATCH_UPDATE_DATA_MARKER = "__BATCH_DATA_START__";
 const batchSchemaCache = {
   loaded: false,
   data: null,
@@ -2094,6 +2095,9 @@ async function buildBatchPayload(message) {
       batchLines.push(...preambleLines);
     }
     batchLines.push(...mappedHeaders);
+    if (operation === "update") {
+      batchLines.push(BATCH_UPDATE_DATA_MARKER);
+    }
     batchLines.push(...records.slice(i, i + BATCH_ROW_SIZE).flat());
     batches.push(batchLines.join("\n"));
   }
@@ -2154,6 +2158,9 @@ async function buildBatchPayloadFromUpload(message, upload) {
     const batchLines = [];
     batchLines.push(operationLine);
     batchLines.push(...mappedHeaders);
+    if (operation === "update") {
+      batchLines.push(BATCH_UPDATE_DATA_MARKER);
+    }
     batchLines.push(...records.slice(i, i + BATCH_ROW_SIZE).flat());
     batches.push(batchLines.join("\n"));
   }

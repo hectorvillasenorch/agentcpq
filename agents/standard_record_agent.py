@@ -69,6 +69,7 @@ BULK_CREATE_SUPPORTED_OBJECTS = {
 }
 BULK_CREATE_THRESHOLD = int(os.getenv("BULK_CREATE_THRESHOLD", "2"))
 BULK_CREATE_BATCH_SIZE = int(os.getenv("BULK_CREATE_BATCH_SIZE", "50"))
+BATCH_UPDATE_DATA_MARKER = "__BATCH_DATA_START__"
 
 # Keep update/delete limited to the original supported objects for now.
 UPDATE_DELETE_SUPPORTED_OBJECTS = ["Lead", "Account", "Contact", "Opportunity"]
@@ -735,6 +736,20 @@ def _resolve_batch_update_header(raw_header: str, normalized_allowed_map: Dict[s
     token = _normalize_key(raw_header)
     if token in {"identifier", "record id", "recordid", "id"}:
         return "identifier"
+    alias_map = {
+        "ext id": "external_id",
+        "external id": "external_id",
+        "lead id": "leadId",
+        "contact id": "contactId",
+        "account id": "accid",
+        "opportunity id": "oppid",
+        "email address": "email",
+        "e mail": "email",
+    }
+    alias_target = alias_map.get(token)
+    if alias_target:
+        if alias_target in normalized_allowed_map.values():
+            return alias_target
     return normalized_allowed_map.get(token)
 
 
@@ -785,30 +800,65 @@ def _parse_batch_update_requests(user_message: str):
     identifier_hint = _extract_batch_identifier_hint(lines[operation_idx], normalized_allowed_map)
 
     payload_lines = lines[operation_idx + 1:]
-    headers: List[str] = []
-    data_start_idx = 0
-    for idx, line in enumerate(payload_lines):
-        resolved_header = _resolve_batch_update_header(line, normalized_allowed_map)
-        if not resolved_header:
-            if len(headers) >= 2:
-                data_start_idx = idx
-                break
-            return None
-        headers.append(resolved_header)
-    else:
-        data_start_idx = len(payload_lines)
+    marker_idx = None
+    try:
+        marker_idx = payload_lines.index(BATCH_UPDATE_DATA_MARKER)
+    except ValueError:
+        marker_idx = None
 
-    if len(headers) < 2:
+    raw_headers: List[str] = []
+    data_lines: List[str] = []
+    if marker_idx is not None:
+        raw_headers = payload_lines[:marker_idx]
+        data_lines = payload_lines[marker_idx + 1:]
+    else:
+        # Backwards compatibility with older payloads (no marker).
+        headers: List[str] = []
+        data_start_idx = 0
+        for idx, line in enumerate(payload_lines):
+            resolved_header = _resolve_batch_update_header(line, normalized_allowed_map)
+            if not resolved_header:
+                if len(headers) >= 2:
+                    data_start_idx = idx
+                    break
+                return None
+            headers.append(resolved_header)
+        else:
+            data_start_idx = len(payload_lines)
+        raw_headers = headers
+        data_lines = payload_lines[data_start_idx:]
+
+    if not raw_headers:
         return None
 
-    data_lines = payload_lines[data_start_idx:]
+    header_entries: List[Dict[str, Optional[str]]] = []
+    for raw in raw_headers:
+        header_entries.append(
+            {
+                "raw": raw,
+                "resolved": _resolve_batch_update_header(raw, normalized_allowed_map),
+            }
+        )
+
+    resolved_headers = [entry["resolved"] for entry in header_entries]
+    known_headers = [header for header in resolved_headers if header]
+    if len(known_headers) < 2:
+        return None
+
     if not data_lines:
         return None
 
-    if "identifier" in headers:
-        identifier_header = "identifier"
-    elif identifier_hint and identifier_hint in headers:
-        identifier_header = identifier_hint
+    def _find_header_index(header_name: str) -> Optional[int]:
+        for idx, candidate in enumerate(resolved_headers):
+            if candidate == header_name:
+                return idx
+        return None
+
+    identifier_index = None
+    if "identifier" in resolved_headers:
+        identifier_index = _find_header_index("identifier")
+    elif identifier_hint and identifier_hint in resolved_headers:
+        identifier_index = _find_header_index(identifier_hint)
     else:
         preferred_identifier_fields = []
         if object_name in {"Lead", "Contact"}:
@@ -821,12 +871,17 @@ def _parse_batch_update_requests(user_message: str):
                 "id",
             ]
         )
-        identifier_header = next((field for field in preferred_identifier_fields if field in headers), None)
+        for field in preferred_identifier_fields:
+            identifier_index = _find_header_index(field)
+            if identifier_index is not None:
+                break
 
-    if not identifier_header:
+    if identifier_index is None:
         return None
 
-    row_size = len(headers)
+    row_size = len(header_entries)
+    if row_size <= 1:
+        return None
     remainder = len(data_lines) % row_size
     if remainder:
         data_lines = data_lines + [""] * (row_size - remainder)
@@ -834,13 +889,15 @@ def _parse_batch_update_requests(user_message: str):
     parsed_requests = []
     for offset in range(0, len(data_lines), row_size):
         row = data_lines[offset: offset + row_size]
-        row_payload = dict(zip(headers, row))
-        identifier = _sanitize(row_payload.get(identifier_header))
+        identifier = _sanitize(row[identifier_index] if identifier_index < len(row) else None)
         fields: Dict[str, object] = {}
-        for header in headers:
-            if header == identifier_header or header == "identifier":
+        for idx, entry in enumerate(header_entries):
+            header = entry.get("resolved")
+            if not header:
                 continue
-            value = _sanitize(row_payload.get(header))
+            if idx == identifier_index or header == "identifier":
+                continue
+            value = _sanitize(row[idx] if idx < len(row) else None)
             if value is None:
                 continue
             fields[header] = value
