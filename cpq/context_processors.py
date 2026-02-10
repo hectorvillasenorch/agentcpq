@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Dict
 
 from django.db.utils import OperationalError
@@ -32,6 +33,32 @@ def _is_light(hex_value: str) -> bool:
     return (0.2126 * r + 0.7152 * g + 0.0722 * b) > 160
 
 
+def _parse_bool_env(value):
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def _detect_playground_mode(tenant) -> bool:
+    env_override = _parse_bool_env(os.getenv("AGENTCPQ_PLAYGROUND_MODE"))
+    if env_override is None:
+        env_override = _parse_bool_env(os.getenv("PLAYGROUND_MODE"))
+    if env_override is not None:
+        return env_override
+
+    if not tenant:
+        return False
+
+    parts = [getattr(tenant, "name", ""), getattr(tenant, "domain", ""), getattr(tenant, "tenant_id", "")]
+    marker = " ".join(str(part or "") for part in parts).lower()
+    return "playground" in marker
+
+
 def tenant_theme(request) -> Dict[str, Dict[str, str]]:  # noqa: ARG001
     defaults = {
         "sidenav_bg_1": "#041530",
@@ -51,12 +78,15 @@ def tenant_theme(request) -> Dict[str, Dict[str, str]]:  # noqa: ARG001
     except Exception:
         tenant = None
 
+    is_playground_mode = _detect_playground_mode(tenant)
+
     if not tenant:
         return {
             "tenant_theme": defaults,
             "tenant_version": "",
             "tenant_name": "",
             "tenant_logo_url": "",
+            "is_playground_mode": is_playground_mode,
         }
 
     logo_url = ""
@@ -101,4 +131,5 @@ def tenant_theme(request) -> Dict[str, Dict[str, str]]:  # noqa: ARG001
         "tenant_version": tenant.version or "",
         "tenant_name": tenant.name or "",
         "tenant_logo_url": logo_url,
+        "is_playground_mode": is_playground_mode,
     }

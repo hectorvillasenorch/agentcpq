@@ -2024,6 +2024,37 @@ body.is-chat-empty {
   color: rgba(15, 23, 42, 0.65);
 }
 
+.chat-playground-guide {
+  margin: 8px auto 14px;
+  padding: 14px 14px 10px;
+  max-width: 760px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.95);
+}
+
+.chat-playground-title {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.chat-playground-copy {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+  color: rgba(15, 23, 42, 0.76);
+}
+
+.chat-empty-actions--starter {
+  margin-bottom: 2px;
+}
+
+.chat-empty-chip--starter {
+  font-size: 0.86rem;
+  padding: 7px 12px;
+}
+
 /* ✅ User & Agent Messages */
 .chat-message
  {
@@ -2172,6 +2203,25 @@ body.is-chat-empty {
 
   .chat-empty-hint {
     font-size: 0.85rem;
+  }
+
+  .chat-playground-guide {
+    margin: 6px auto 10px;
+    padding: 10px 10px 8px;
+  }
+
+  .chat-playground-title {
+    font-size: 0.86rem;
+  }
+
+  .chat-playground-copy {
+    font-size: 0.8rem;
+    margin-bottom: 8px;
+  }
+
+  .chat-empty-chip--starter {
+    font-size: 0.78rem;
+    padding: 6px 10px;
   }
 
   .chat-box {

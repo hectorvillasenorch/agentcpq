@@ -28,7 +28,11 @@
         <div id="chat-box" class="chat-box">
             <div id="chat-empty-state" class="chat-empty-state" aria-hidden="true">
               <div class="chat-empty-shell">
-                <div class="chat-empty-badge">AgentCPQ - PLAYGROUND MODE</div>
+                {% if is_playground_mode %}
+                  <div class="chat-empty-badge">AgentCPQ - PLAYGROUND MODE</div>
+                {% else %}
+                  <div class="chat-empty-badge">AgentCPQ Assistant</div>
+                {% endif %}
                 <h1>What can I do for you, <span data-user-name>there</span>?</h1>
                 <p class="chat-empty-subtitle">Ask me to create quotes, leads, opportunities, or search records.</p>
                 <div class="chat-empty-actions">
@@ -37,6 +41,35 @@
                   <button type="button" class="chat-empty-chip" data-example="Search for account Investors App.">Search records</button>
                   <button type="button" class="chat-empty-chip" data-example="Show my last 5 opportunities.">Insights</button>
                 </div>
+                {% if is_playground_mode %}
+                  <div class="chat-playground-guide">
+                    <p class="chat-playground-title">New here? Start with seed data.</p>
+                    <p class="chat-playground-copy">Create these records first: a few products, sample accounts, and starter opportunities so quotes can be generated quickly.</p>
+                    <div class="chat-empty-actions chat-empty-actions--starter">
+                      <button
+                        type="button"
+                        class="chat-empty-chip chat-empty-chip--starter"
+                        data-example="Create these records for playground setup: Product Starter Plan (SKU STARTER, price 29), Product Growth Plan (SKU GROWTH, price 79), and Product Enterprise Plan (SKU ENTERPRISE, price 199)."
+                      >
+                        Create starter products
+                      </button>
+                      <button
+                        type="button"
+                        class="chat-empty-chip chat-empty-chip--starter"
+                        data-example="Create these records for playground setup: Accounts Acme Labs, Northwind Health, and Summit Retail."
+                      >
+                        Create sample accounts
+                      </button>
+                      <button
+                        type="button"
+                        class="chat-empty-chip chat-empty-chip--starter"
+                        data-example="Create these records: one opportunity for each account (Acme Labs, Northwind Health, Summit Retail) with amount 25000 and stage qualification."
+                      >
+                        Create starter opportunities
+                      </button>
+                    </div>
+                  </div>
+                {% endif %}
                 <div class="chat-empty-hint">Try: "Create a quote for Investors App with 5 seats."</div>
               </div>
             </div>
