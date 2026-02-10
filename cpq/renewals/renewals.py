@@ -2,7 +2,16 @@ import logging, re
 from datetime import date, timedelta, datetime
 from django.utils.timezone import now
 from dateutil.relativedelta import relativedelta
-from ..models import Contract, Subscription, Quote, QuoteLine, Opportunity, ScheduledTask, CPQSettings
+from ..models import (
+    Contract,
+    Subscription,
+    Quote,
+    QuoteLine,
+    Opportunity,
+    ScheduledTask,
+    CPQSettings,
+    default_opportunity_stage,
+)
 from django.db import transaction
 from django.utils import timezone
 
@@ -210,7 +219,7 @@ def make_opportunity_renewal(opportunity):
                 name=renewal_name,
                 account=account,
                 amount=original_quote.net_amount,
-                stage="appointmentscheduled",
+                stage=default_opportunity_stage(),
                 owner=opportunity.owner,
                 expected_close_date=expected_close_date,
                 created_by=user,

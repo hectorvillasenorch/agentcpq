@@ -38,6 +38,7 @@ DEFAULT_OPPORTUNITY_STAGES = [
     ("closedwon", "Closed Won"),
     ("closedlost", "Closed Lost"),
 ]
+DEFAULT_OPPORTUNITY_STAGE_KEY = "qualifiedtobuy"
 
 
 BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -84,6 +85,12 @@ def picklist_default_key(object_name: str, field_name: str):
     """
     Returns the default key for a picklist (first default, else first active, else fallback first).
     """
+    preferred_key = (
+        DEFAULT_OPPORTUNITY_STAGE_KEY
+        if object_name == "Opportunity" and field_name == "stage"
+        else None
+    )
+
     try:
         from django.apps import apps
         PicklistValueModel = apps.get_model("cpq", "PicklistValue")
@@ -95,6 +102,15 @@ def picklist_default_key(object_name: str, field_name: str):
         ).order_by("sort_order", "key").first()
         if default_row:
             return default_row.key
+        if preferred_key:
+            preferred_row = PicklistValueModel.objects.filter(
+                object_name=object_name,
+                field_name=field_name,
+                active=True,
+                key=preferred_key,
+            ).order_by("sort_order", "key").first()
+            if preferred_row:
+                return preferred_row.key
         first_row = PicklistValueModel.objects.filter(
             object_name=object_name,
             field_name=field_name,
@@ -106,11 +122,15 @@ def picklist_default_key(object_name: str, field_name: str):
         pass
 
     fallback = picklist_choices(object_name, field_name)
+    if preferred_key:
+        for key, _label in fallback:
+            if key == preferred_key:
+                return key
     return fallback[0][0] if fallback else None
 
 
 def default_opportunity_stage():
-    return picklist_default_key("Opportunity", "stage") or "appointmentscheduled"
+    return picklist_default_key("Opportunity", "stage") or DEFAULT_OPPORTUNITY_STAGE_KEY
 
 
 class PicklistValue(models.Model):
@@ -160,12 +180,15 @@ class OpportunityStage(models.Model):
             default = cls.objects.filter(active=True, is_default=True).order_by("sort_order").first()
             if default:
                 return default.key
+            preferred = cls.objects.filter(active=True, key=DEFAULT_OPPORTUNITY_STAGE_KEY).order_by("sort_order").first()
+            if preferred:
+                return preferred.key
             first = cls.objects.filter(active=True).order_by("sort_order", "key").first()
             if first:
                 return first.key
         except Exception:
             pass
-        return DEFAULT_OPPORTUNITY_STAGES[0][0]
+        return DEFAULT_OPPORTUNITY_STAGE_KEY
 def increment_alpha_code(code):
     letters = string.ascii_uppercase
     result = list(code)
