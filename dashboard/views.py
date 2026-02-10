@@ -8,7 +8,7 @@ from cpq.permissions import is_partner_user
 from salesforce.models import SalesforceToken
 from hubspot.models import HubspotToken
 from quickbooks.models import QuickbooksToken
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from agents.models import ChatSession, ChatMessage
 from django.utils.timezone import now
 import requests
@@ -37,6 +37,7 @@ from django.utils.dateparse import parse_datetime
 import logging
 import json
 import time
+import os
 logger = logging.getLogger(__name__)
 from datetime import datetime, timezone as dt_timezone
 from django.contrib.auth.views import PasswordResetView
@@ -946,6 +947,51 @@ def get_tenant_usage(request):
 
 @xframe_options_exempt
 def signup(request):
+    def _parse_bool_env(value):
+        if value is None:
+            return None
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        return None
+
+    def _is_playground_mode_enabled() -> bool:
+        env_override = _parse_bool_env(os.getenv("AGENTCPQ_PLAYGROUND_MODE"))
+        if env_override is None:
+            env_override = _parse_bool_env(os.getenv("PLAYGROUND_MODE"))
+        if env_override is not None:
+            return env_override
+
+        try:
+            tenant = Tenant.safe_first()
+        except Exception:
+            tenant = None
+        if not tenant:
+            return False
+
+        marker = " ".join(
+            [
+                str(getattr(tenant, "name", "") or ""),
+                str(getattr(tenant, "domain", "") or ""),
+                str(getattr(tenant, "tenant_id", "") or ""),
+            ]
+        ).lower()
+        return "playground" in marker
+
+    def _assign_playground_default_group(new_user):
+        if not _is_playground_mode_enabled():
+            return
+        try:
+            group, _ = Group.objects.get_or_create(name="user_standard")
+            new_user.groups.add(group)
+        except Exception:
+            logger.exception(
+                "Failed to assign playground default group for user %s",
+                getattr(new_user, "pk", None),
+            )
+
     def _send_welcome_email(new_user):
         if not new_user.email:
             logger.debug("Signup welcome email skipped: no email for user %s", new_user.pk)
@@ -1009,6 +1055,7 @@ def signup(request):
         form = SignupForm(request.POST)
         if form.is_valid():
             user = form.save()
+            _assign_playground_default_group(user)
             _send_welcome_email(user)
             login(request, user)
             return redirect('dashboard')

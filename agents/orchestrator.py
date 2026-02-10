@@ -156,6 +156,21 @@ def handle_user_request(user,user_message, session_data):
             logging.info("Do NOT use GPT (pending show_single_record follow-up)\n")
             return orchestrate_request_trigger(user, user_message, session_data, decision="ShowSingleRecord")
 
+    # 🧠 Shortcut manual: deterministic standard record writes (must run before metrics shortcuts)
+    standard_write_decision = _infer_standard_record_write_decision(user_message)
+    if standard_write_decision:
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(
+            user,
+            user_message,
+            session_data,
+            decision=standard_write_decision,
+        )
+        response["chat_sessions"] = list(
+            ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at")
+        )
+        return response
+
     # 🧠 Shortcut manual: "show details" (defaults to quote details)
     if normalized_message in {"show details", "show detail", "show quote details", "show quote detail"}:
         logging.info("Do NOT use GPT\n")
@@ -199,16 +214,6 @@ def handle_user_request(user,user_message, session_data):
     elif "create a quote" in message or "create the quote" in message:
         logging.info("Do NOT use GPT\n")
         response = orchestrate_request_trigger(user, user_message, session_data, decision="CreateQuote")
-
-    # 🧠 Shortcut manual: deterministic standard record writes
-    elif (standard_write_decision := _infer_standard_record_write_decision(user_message)):
-        logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(
-            user,
-            user_message,
-            session_data,
-            decision=standard_write_decision,
-        )
 
     elif user_message.startswith("Update Bundle Option:"):
         logging.info("Do NOT use GPT\n")
