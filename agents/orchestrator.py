@@ -200,6 +200,16 @@ def handle_user_request(user,user_message, session_data):
         logging.info("Do NOT use GPT\n")
         response = orchestrate_request_trigger(user, user_message, session_data, decision="CreateQuote")
 
+    # 🧠 Shortcut manual: deterministic standard record writes
+    elif (standard_write_decision := _infer_standard_record_write_decision(user_message)):
+        logging.info("Do NOT use GPT\n")
+        response = orchestrate_request_trigger(
+            user,
+            user_message,
+            session_data,
+            decision=standard_write_decision,
+        )
+
     elif user_message.startswith("Update Bundle Option:"):
         logging.info("Do NOT use GPT\n")
         response = orchestrate_request_trigger(user, user_message, session_data, decision="UpdateBundleOption")
@@ -445,6 +455,16 @@ def orchestrate_request(user, user_message, session_data):
             return {
                 "message": "⚠️ I couldn’t find an active quote. Please specify a quote name (e.g., Q-00066) or ask me to create a new quote."
             }
+
+        # 🔒 Guard: write intents for standard records should not route to metrics.
+        if decision == "ShowMetrics":
+            standard_write_decision = _infer_standard_record_write_decision(user_message)
+            if standard_write_decision:
+                logging.info(
+                    "Guarding against metrics for standard record write intent; rerouting to %s.",
+                    standard_write_decision,
+                )
+                decision = standard_write_decision
 
         # 🔒 Guard: singular requests should open single-record, not metrics list
         if decision == "ShowMetrics" and _should_shortcut_to_single_record(user_message):
@@ -726,6 +746,50 @@ def _should_shortcut_to_knowledge(user_message: str) -> bool:
     )
 
     return any(phrase in lowered for phrase in knowledge_phrases)
+
+
+def _infer_standard_record_write_decision(user_message: str) -> str | None:
+    if not user_message:
+        return None
+
+    lowered = user_message.lower()
+
+    # Keep quote/bundle flows out of standard record mutation shortcuts.
+    if re.search(r"\b(quote|quote line|quoteline|bundle|product option|pdf)\b", lowered):
+        return None
+
+    standard_terms = (
+        "lead",
+        "leads",
+        "account",
+        "accounts",
+        "contact",
+        "contacts",
+        "opportunity",
+        "opportunities",
+        "activity",
+        "activities",
+        "contract",
+        "contracts",
+        "subscription",
+        "subscriptions",
+        "tenant",
+        "tenants",
+        "knowledge",
+        "option",
+        "options",
+    )
+    if not _has_any_term(lowered, standard_terms):
+        return None
+
+    if re.search(r"\b(create|add|insert|import|load|ingest)\b", lowered):
+        return "CreateStandardRecord"
+    if re.search(r"\b(update|edit|change|modify|set)\b", lowered):
+        return "UpdateStandardRecord"
+    if re.search(r"\b(delete|remove)\b", lowered):
+        return "DeleteStandardRecord"
+
+    return None
 
 
 def _is_view_request(lowered: str) -> bool:
