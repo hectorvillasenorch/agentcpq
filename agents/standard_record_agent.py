@@ -712,8 +712,168 @@ Return only JSON.
     return cleaned, tokens_used, cost_est
 
 
+def _resolve_batch_update_object(line: str) -> Optional[str]:
+    normalized_line = _normalize_key(line)
+    if not re.search(r"\b(update|edit|change|modify|set)\b", normalized_line):
+        return None
+
+    aliases = {
+        "Lead": ["lead", "leads"],
+        "Account": ["account", "accounts"],
+        "Contact": ["contact", "contacts"],
+        "Opportunity": ["opportunity", "opportunities", "deal", "deals", "opp", "opps"],
+    }
+
+    for object_name in UPDATE_DELETE_SUPPORTED_OBJECTS:
+        for alias in aliases.get(object_name, [object_name.lower()]):
+            if re.search(rf"\b{re.escape(alias)}\b", normalized_line):
+                return object_name
+    return None
+
+
+def _resolve_batch_update_header(raw_header: str, normalized_allowed_map: Dict[str, str]) -> Optional[str]:
+    token = _normalize_key(raw_header)
+    if token in {"identifier", "record id", "recordid", "id"}:
+        return "identifier"
+    return normalized_allowed_map.get(token)
+
+
+def _extract_batch_identifier_hint(line: str, normalized_allowed_map: Dict[str, str]) -> Optional[str]:
+    normalized_line = _normalize_key(line)
+    match = re.search(r"\bby\s+([a-z0-9_ ]+?)(?:\s+(?:for|with|using|where|from)\b|$)", normalized_line)
+    if not match:
+        return None
+
+    raw_hint = _normalize_key(match.group(1))
+    if raw_hint in {"identifier", "record id", "recordid", "id"}:
+        return "identifier"
+
+    if raw_hint in normalized_allowed_map:
+        return normalized_allowed_map.get(raw_hint)
+    return None
+
+
+def _parse_batch_update_requests(user_message: str):
+    lines = [line.strip() for line in str(user_message or "").splitlines() if line and line.strip()]
+    if len(lines) < 4:
+        return None
+
+    operation_idx = None
+    object_name = None
+    for idx, line in enumerate(lines):
+        resolved = _resolve_batch_update_object(line)
+        if resolved:
+            operation_idx = idx
+            object_name = resolved
+            break
+        # If we reached likely data rows before detecting an update intent, bail out.
+        if idx > 4:
+            break
+
+    if operation_idx is None or not object_name:
+        return None
+
+    allowed_map = ALLOWED_FIELD_MAP.get(object_name, {})
+    if not allowed_map:
+        return None
+
+    normalized_allowed_map: Dict[str, str] = {}
+    for key, canonical in allowed_map.items():
+        normalized_allowed_map[_normalize_key(key)] = canonical
+        normalized_allowed_map[_normalize_key(canonical)] = canonical
+
+    identifier_hint = _extract_batch_identifier_hint(lines[operation_idx], normalized_allowed_map)
+
+    payload_lines = lines[operation_idx + 1:]
+    headers: List[str] = []
+    data_start_idx = 0
+    for idx, line in enumerate(payload_lines):
+        resolved_header = _resolve_batch_update_header(line, normalized_allowed_map)
+        if not resolved_header:
+            if len(headers) >= 2:
+                data_start_idx = idx
+                break
+            return None
+        headers.append(resolved_header)
+    else:
+        data_start_idx = len(payload_lines)
+
+    if len(headers) < 2:
+        return None
+
+    data_lines = payload_lines[data_start_idx:]
+    if not data_lines:
+        return None
+
+    if "identifier" in headers:
+        identifier_header = "identifier"
+    elif identifier_hint and identifier_hint in headers:
+        identifier_header = identifier_hint
+    else:
+        preferred_identifier_fields = []
+        if object_name in {"Lead", "Contact"}:
+            preferred_identifier_fields.append("email")
+        preferred_identifier_fields.extend(
+            [
+                _id_field_for_object(object_name),
+                "external_id",
+                "name",
+                "id",
+            ]
+        )
+        identifier_header = next((field for field in preferred_identifier_fields if field in headers), None)
+
+    if not identifier_header:
+        return None
+
+    row_size = len(headers)
+    remainder = len(data_lines) % row_size
+    if remainder:
+        data_lines = data_lines + [""] * (row_size - remainder)
+
+    parsed_requests = []
+    for offset in range(0, len(data_lines), row_size):
+        row = data_lines[offset: offset + row_size]
+        row_payload = dict(zip(headers, row))
+        identifier = _sanitize(row_payload.get(identifier_header))
+        fields: Dict[str, object] = {}
+        for header in headers:
+            if header == identifier_header or header == "identifier":
+                continue
+            value = _sanitize(row_payload.get(header))
+            if value is None:
+                continue
+            fields[header] = value
+
+        completed = bool(object_name and identifier and fields)
+        parsed_requests.append(
+            {
+                "data": {
+                    "object": object_name,
+                    "identifier": identifier,
+                    "fields": fields,
+                },
+                "completed": completed,
+            }
+        )
+
+    return parsed_requests if parsed_requests else None
+
+
 def _extract_update_requests(user_message: str, current_state, previous_summary: Optional[str]):
     _refresh_allowed_fields()
+
+    batch_requests = _parse_batch_update_requests(user_message)
+    if batch_requests:
+        object_name = (batch_requests[0].get("data") or {}).get("object") or "records"
+        batch_summary = f"Batch update parsed for {object_name} ({len(batch_requests)} rows)."
+        summary = previous_summary or ""
+        summary = f"{summary}\n{batch_summary}".strip() if summary else batch_summary
+        return {
+            "update_standard_record": batch_requests,
+            "agent_message": "",
+            "summary": summary,
+        }, 0, 0
 
     allowed_fields_prompt = "\n".join(
         [f"   - {obj}: {', '.join(sorted(ALLOWED_FIELDS.get(obj, [])))}" for obj in UPDATE_DELETE_SUPPORTED_OBJECTS]

@@ -1872,8 +1872,46 @@ function detectBatchObject(cleaned, lines, schemaObjects, headerTokens = null) {
   return best ? best.object : null;
 }
 
-function buildBatchCreateLine(objectInfo) {
+function detectBatchOperation(message) {
+  const normalized = normalizeBatchSearch(message);
+  if (!normalized) return "create";
+  if (/\b(update|edit|change|modify|set)\b/i.test(normalized)) {
+    return "update";
+  }
+  return "create";
+}
+
+function extractBatchIdentifierHint(message) {
+  const text = String(message || "").toLowerCase();
+  const match = text.match(/\bby\s+([a-z0-9_ ]+?)(?=\s+(?:for|with|using|where|from)\b|$)/i);
+  if (!match || !match[1]) return "";
+  const token = String(match[1]).trim().replace(/\s+/g, " ");
+  if (!token) return "";
+  const normalized = token.replace(/[^a-z0-9_ ]+/g, "").trim();
+  const aliasMap = {
+    "id": "id",
+    "record id": "id",
+    "recordid": "id",
+    "identifier": "id",
+    "name": "name",
+    "email": "email",
+    "e mail": "email",
+    "external id": "external_id",
+    "externalid": "external_id",
+    "leadid": "leadId",
+    "contactid": "contactId",
+    "accid": "accid",
+    "oppid": "oppid",
+  };
+  return aliasMap[normalized] || normalized.replace(/\s+/g, "_");
+}
+
+function buildBatchOperationLine(objectInfo, operation = "create", identifierField = "") {
   const label = (objectInfo && (objectInfo.label || objectInfo.name)) || "records";
+  if (operation === "update") {
+    const base = /record/i.test(label) ? `Update ${label}` : `Update ${label} records`;
+    return identifierField ? `${base} by ${identifierField}` : base;
+  }
   if (/record/i.test(label)) {
     return `Create ${label}`;
   }
@@ -1940,7 +1978,7 @@ function getBatchObjectFromMessage(message, schemaObjects) {
 function shouldUsePendingBatchUpload(message, schemaObjects) {
   if (!message || !schemaObjects) return false;
   if (/(upload|csv|spreadsheet|file)/i.test(message)) return true;
-  if (/(create|import|load|ingest)/i.test(message)) {
+  if (/(create|import|load|ingest|update|edit|change|modify)/i.test(message)) {
     return Boolean(getBatchObjectFromMessage(message, schemaObjects));
   }
   return false;
@@ -1985,6 +2023,8 @@ async function buildBatchPayload(message) {
   if (!objectInfo) {
     return { fallbackMessage: cleaned, error: "unknown_object" };
   }
+  const operation = detectBatchOperation(cleaned);
+  const identifierFieldHint = operation === "update" ? extractBatchIdentifierHint(cleaned) : "";
 
   let headerLines = [];
   let preambleLines = [];
@@ -2043,13 +2083,15 @@ async function buildBatchPayload(message) {
 
   const batches = [];
   const objectLabel = objectInfo.label || objectInfo.name || "records";
-  const createLine = buildBatchCreateLine(objectInfo);
+  const operationLine = buildBatchOperationLine(objectInfo, operation, identifierFieldHint);
   for (let i = 0; i < records.length; i += BATCH_ROW_SIZE) {
     const batchLines = [];
+    const hasOperationLine = preambleLines.some((line) => /^(create|update|edit|change|modify)\b/i.test(String(line || "").trim()));
+    if (!hasOperationLine) {
+      batchLines.push(operationLine);
+    }
     if (preambleLines.length) {
       batchLines.push(...preambleLines);
-    } else {
-      batchLines.push(createLine);
     }
     batchLines.push(...mappedHeaders);
     batchLines.push(...records.slice(i, i + BATCH_ROW_SIZE).flat());
@@ -2063,6 +2105,7 @@ async function buildBatchPayload(message) {
     objectName: objectInfo.name,
     unmappedHeaders: mapped.unmapped || [],
     rowMismatch,
+    operation,
   };
 }
 
@@ -2073,6 +2116,8 @@ async function buildBatchPayloadFromUpload(message, upload) {
   if (!schema || !Array.isArray(schema.objects) || schema.objects.length === 0) {
     return { error: "schema_unavailable" };
   }
+  const operation = detectBatchOperation(message);
+  const identifierFieldHint = operation === "update" ? extractBatchIdentifierHint(message) : "";
 
   if (!shouldUsePendingBatchUpload(message, schema.objects)) {
     return null;
@@ -2080,7 +2125,7 @@ async function buildBatchPayloadFromUpload(message, upload) {
 
   const objectInfo = getBatchObjectFromMessage(message, schema.objects);
   if (!objectInfo) {
-    return { error: "missing_object" };
+    return { error: "missing_object", operation };
   }
 
   const delimited = parseDelimitedBatch(upload.content);
@@ -2104,10 +2149,10 @@ async function buildBatchPayloadFromUpload(message, upload) {
 
   const batches = [];
   const objectLabel = objectInfo.label || objectInfo.name || "records";
-  const createLine = buildBatchCreateLine(objectInfo);
+  const operationLine = buildBatchOperationLine(objectInfo, operation, identifierFieldHint);
   for (let i = 0; i < records.length; i += BATCH_ROW_SIZE) {
     const batchLines = [];
-    batchLines.push(createLine);
+    batchLines.push(operationLine);
     batchLines.push(...mappedHeaders);
     batchLines.push(...records.slice(i, i + BATCH_ROW_SIZE).flat());
     batches.push(batchLines.join("\n"));
@@ -2122,6 +2167,7 @@ async function buildBatchPayloadFromUpload(message, upload) {
       unmappedHeaders: mapped.unmapped || [],
       rowMismatch,
       headerMismatch,
+      operation,
     }
   };
 }
@@ -2449,7 +2495,9 @@ async function sendMessage() {
               if (uploadResult.error === "schema_unavailable") {
                 warning = "⚠️ Batch schema unavailable. Try again later.";
               } else if (uploadResult.error === "missing_object") {
-                warning = "⚠️ Tell me which object to create (e.g. 'Create Leads from upload').";
+                warning = uploadResult.operation === "update"
+                  ? "⚠️ Tell me which object to update (e.g. 'Update Contacts from upload by email')."
+                  : "⚠️ Tell me which object to create (e.g. 'Create Leads from upload').";
               } else if (uploadResult.error === "row_mismatch") {
                 warning = "⚠️ Upload rows don't match the header count. Ensure every record has the same number of columns.";
               }
