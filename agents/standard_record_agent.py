@@ -833,19 +833,29 @@ def _parse_batch_update_requests(user_message: str):
         data_lines = payload_lines[marker_idx + 1:]
     else:
         # Backwards compatibility with older payloads (no marker).
-        headers: List[str] = []
         data_start_idx = 0
-        for idx, line in enumerate(payload_lines):
-            resolved_header = _resolve_batch_update_header(line, normalized_allowed_map)
-            if not resolved_header:
-                if len(headers) >= 2:
+        if identifier_hint == "email":
+            for idx, line in enumerate(payload_lines):
+                candidate = _sanitize(line)
+                if candidate and re.search(r"@", str(candidate)):
                     data_start_idx = idx
                     break
+            else:
                 return None
-            headers.append(resolved_header)
+            raw_headers = payload_lines[:data_start_idx]
         else:
-            data_start_idx = len(payload_lines)
-        raw_headers = headers
+            headers: List[str] = []
+            for idx, line in enumerate(payload_lines):
+                resolved_header = _resolve_batch_update_header(line, normalized_allowed_map)
+                if not resolved_header:
+                    if len(headers) >= 2:
+                        data_start_idx = idx
+                        break
+                    return None
+                headers.append(resolved_header)
+            else:
+                data_start_idx = len(payload_lines)
+            raw_headers = payload_lines[:data_start_idx]
         data_lines = payload_lines[data_start_idx:]
 
     if not raw_headers:
