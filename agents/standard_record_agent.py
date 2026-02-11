@@ -789,14 +789,14 @@ def _find_identifier_index_from_hint(
 
 
 def _parse_batch_update_requests(user_message: str):
-    lines = [line.strip() for line in str(user_message or "").splitlines() if line and line.strip()]
-    if len(lines) < 4:
+    raw_lines = [str(line).rstrip("\r") for line in str(user_message or "").splitlines()]
+    if len(raw_lines) < 4:
         return None
 
     operation_idx = None
     object_name = None
-    for idx, line in enumerate(lines):
-        resolved = _resolve_batch_update_object(line)
+    for idx, line in enumerate(raw_lines):
+        resolved = _resolve_batch_update_object(line.strip())
         if resolved:
             operation_idx = idx
             object_name = resolved
@@ -817,19 +817,19 @@ def _parse_batch_update_requests(user_message: str):
         normalized_allowed_map[_normalize_key(key)] = canonical
         normalized_allowed_map[_normalize_key(canonical)] = canonical
 
-    identifier_hint = _extract_batch_identifier_hint(lines[operation_idx], normalized_allowed_map)
+    identifier_hint = _extract_batch_identifier_hint(raw_lines[operation_idx], normalized_allowed_map)
 
-    payload_lines = lines[operation_idx + 1:]
+    payload_lines = raw_lines[operation_idx + 1:]
     marker_idx = None
-    try:
-        marker_idx = payload_lines.index(BATCH_UPDATE_DATA_MARKER)
-    except ValueError:
-        marker_idx = None
+    for idx, line in enumerate(payload_lines):
+        if line.strip() == BATCH_UPDATE_DATA_MARKER:
+            marker_idx = idx
+            break
 
     raw_headers: List[str] = []
     data_lines: List[str] = []
     if marker_idx is not None:
-        raw_headers = payload_lines[:marker_idx]
+        raw_headers = [line.strip() for line in payload_lines[:marker_idx] if line.strip()]
         data_lines = payload_lines[marker_idx + 1:]
     else:
         # Backwards compatibility with older payloads (no marker).
@@ -842,11 +842,14 @@ def _parse_batch_update_requests(user_message: str):
                     break
             else:
                 return None
-            raw_headers = payload_lines[:data_start_idx]
+            raw_headers = [line.strip() for line in payload_lines[:data_start_idx] if line.strip()]
         else:
             headers: List[str] = []
             for idx, line in enumerate(payload_lines):
-                resolved_header = _resolve_batch_update_header(line, normalized_allowed_map)
+                stripped_line = line.strip()
+                if not stripped_line:
+                    continue
+                resolved_header = _resolve_batch_update_header(stripped_line, normalized_allowed_map)
                 if not resolved_header:
                     if len(headers) >= 2:
                         data_start_idx = idx
@@ -855,7 +858,7 @@ def _parse_batch_update_requests(user_message: str):
                 headers.append(resolved_header)
             else:
                 data_start_idx = len(payload_lines)
-            raw_headers = payload_lines[:data_start_idx]
+            raw_headers = [line.strip() for line in payload_lines[:data_start_idx] if line.strip()]
         data_lines = payload_lines[data_start_idx:]
 
     if not raw_headers:
