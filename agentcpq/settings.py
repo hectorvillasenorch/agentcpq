@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     "hubspot",
     "quickbooks",
     "agentcpq.intelligence",
+    "agentcpq.dealdesk",
     'django.contrib.humanize',
     'storages',
     'api',

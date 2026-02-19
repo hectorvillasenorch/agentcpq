@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentcpq/dealdesk/schemas/deal_packet_v1.schema.json",
+  "title": "DealPacketV1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "account",
+    "opportunity",
+    "commercial_terms",
+    "pricing_summary",
+    "concessions",
+    "request_context",
+    "policy_inputs"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "account": {
+      "type": "object",
+      "required": ["id", "industry", "size_band", "region"],
+      "properties": {
+        "id": { "type": ["string", "integer"] },
+        "industry": { "type": "string" },
+        "size_band": { "type": "string" },
+        "region": { "type": "string" }
+      }
+    },
+    "opportunity": {
+      "type": "object",
+      "required": ["id", "name", "amount", "close_date", "stage"],
+      "properties": {
+        "id": { "type": ["string", "integer"] },
+        "name": { "type": "string" },
+        "amount": { "type": "number" },
+        "close_date": { "type": "string", "format": "date" },
+        "stage": { "type": "string" }
+      }
+    },
+    "commercial_terms": {
+      "type": "object",
+      "required": ["term_months", "billing_frequency", "payment_terms"],
+      "properties": {
+        "term_months": { "type": "integer", "minimum": 1 },
+        "billing_frequency": {
+          "type": "string",
+          "description": "Tenant-validated via PolicyConfig."
+        },
+        "payment_terms": {
+          "type": "string",
+          "description": "Tenant-validated via PolicyConfig."
+        },
+        "ramp_segments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["start_date", "end_date", "net_total"],
+            "properties": {
+              "label": { "type": ["string", "null"] },
+              "start_date": { "type": "string", "format": "date" },
+              "end_date": { "type": "string", "format": "date" },
+              "list_total": { "type": ["number", "null"] },
+              "discount_percent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+              "qty": { "type": ["number", "integer", "null"] },
+              "net_total": { "type": "number" },
+              "notes": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "pricing_summary": {
+      "type": "object",
+      "required": ["list_total", "discount_percent", "net_total"],
+      "properties": {
+        "list_total": { "type": "number" },
+        "discount_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "net_total": { "type": "number" },
+        "margin_band": { "type": ["string", "null"] }
+      }
+    },
+    "concessions": {
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "type": "object",
+        "required": ["type", "value", "description"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["discount", "free_months", "credit", "custom_terms"]
+          },
+          "value": { "type": ["number", "string"] },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": ["string", "integer"] },
+          "name": { "type": "string" },
+          "url": { "type": "string" }
+        }
+      }
+    },
+    "request_context": {
+      "type": "object",
+      "required": ["request_reason", "deal_notes", "justification"],
+      "properties": {
+        "request_reason": { "type": "string" },
+        "justification": { "type": "string" },
+        "competitor": { "type": ["string", "null"] },
+        "deal_notes": { "type": "string" }
+      }
+    },
+    "policy_inputs": {
+      "type": "object",
+      "required": ["discount_percent", "requested_payment_terms", "has_custom_terms"],
+      "properties": {
+        "discount_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "requested_payment_terms": { "type": "string" },
+        "margin_percent": { "type": ["number", "null"] },
+        "has_custom_terms": { "type": "boolean" },
+        "requires_legal": { "type": ["boolean", "null"] },
+        "required_attachments": {
+          "type": ["array", "null"],
+          "items": { "type": "string" }
+        },
+        "segment": { "type": ["string", "null"] },
+        "region_override": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "requested_outcome": {
+      "type": "string",
+      "enum": ["fastest_approval", "best_margin", "best_win_prob"]
+    }
+  },
+  "additionalProperties": false
+}
