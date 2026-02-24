@@ -36,7 +36,11 @@ from .models import (
     EmailAlert,
     CustomAction,
     ActionLog,
-    DomainEvent
+    DomainEvent,
+    ApprovalWorkflow,
+    ApprovalRule,
+    ApprovalStep,
+    QuoteApproval,
 )
 from .models import PicklistValue
 from .forms import  get_dynamic_form
@@ -399,6 +403,83 @@ class QuoteAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     search_fields = ('name', 'qteid', 'account__name', 'opportunity__name')
 
 admin.site.register(Quote, QuoteAdmin)
+
+
+class ApprovalRuleInline(admin.TabularInline):
+    model = ApprovalRule
+    fk_name = "workflow"
+    extra = 0
+    fields = ("name", "priority")
+    show_change_link = True
+
+
+class ApprovalStepInline(admin.TabularInline):
+    model = ApprovalStep
+    fk_name = "rule"
+    extra = 0
+    fields = ("sequence", "approver_role")
+    ordering = ("sequence",)
+
+
+@admin.register(ApprovalWorkflow)
+class ApprovalWorkflowAdmin(admin.ModelAdmin):
+    list_display = ("name", "description", "rule_count")
+    search_fields = ("name", "description")
+    inlines = (ApprovalRuleInline,)
+
+    def rule_count(self, obj):
+        return obj.rules.count()
+
+    rule_count.short_description = "Rules"
+
+
+@admin.register(ApprovalRule)
+class ApprovalRuleAdmin(admin.ModelAdmin):
+    list_display = ("name", "workflow", "priority", "step_count")
+    list_filter = ("workflow",)
+    search_fields = ("name", "workflow__name")
+    ordering = ("workflow__name", "-priority", "name")
+    inlines = (ApprovalStepInline,)
+
+    def step_count(self, obj):
+        return obj.steps.count()
+
+    step_count.short_description = "Steps"
+
+
+@admin.register(ApprovalStep)
+class ApprovalStepAdmin(admin.ModelAdmin):
+    list_display = ("workflow_name", "rule", "sequence", "approver_role")
+    list_filter = ("rule__workflow", "approver_role")
+    search_fields = ("approver_role", "rule__name", "rule__workflow__name")
+    ordering = ("rule__workflow__name", "rule__name", "sequence")
+
+    def workflow_name(self, obj):
+        return obj.rule.workflow.name if obj.rule_id and obj.rule.workflow_id else "-"
+
+    workflow_name.short_description = "Workflow"
+
+
+@admin.register(QuoteApproval)
+class QuoteApprovalAdmin(admin.ModelAdmin):
+    list_display = (
+        "quote",
+        "workflow",
+        "step",
+        "status",
+        "approved_by",
+        "approved_at",
+    )
+    list_filter = ("status", "workflow")
+    search_fields = (
+        "quote__name",
+        "quote__id",
+        "workflow__name",
+        "step__approver_role",
+        "approved_by",
+    )
+    raw_id_fields = ("quote",)
+    ordering = ("quote__id", "workflow__name", "step__sequence")
 
 # Admin for QuoteDocument
 @admin.register(QuoteDocument)

@@ -6,22 +6,161 @@
 {% block extrastyle %}
   {{ block.super }}
   <link rel="stylesheet" href="{% static 'css/agentcpq_admin.css' %}">
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+{% endblock %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const dropdowns = document.querySelectorAll(".admin-user-dropdown");
+
+      document.addEventListener("click", function (event) {
+        dropdowns.forEach(function (dropdown) {
+          if (dropdown.open && !dropdown.contains(event.target)) {
+            dropdown.removeAttribute("open");
+          }
+        });
+      });
+
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          dropdowns.forEach(function (dropdown) {
+            dropdown.removeAttribute("open");
+          });
+        }
+      });
+
+      const objectTools = document.querySelector("#content-main .object-tools");
+      const resultsBlock = document.querySelector("#changelist-form .results, #changelist .results");
+
+      if (objectTools && resultsBlock && resultsBlock.parentNode) {
+        resultsBlock.parentNode.insertBefore(objectTools, resultsBlock);
+        objectTools.classList.add("object-tools-inline-top");
+      }
+
+      if (document.body.classList.contains("dashboard")) {
+        const storageKey = "admin_dashboard_module_collapse_v1";
+        const isAdminAppIndex = /^\/admin\/[^/]+\/$/.test(window.location.pathname);
+        let collapsedMap = {};
+        try {
+          collapsedMap = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        } catch (e) {
+          collapsedMap = {};
+        }
+
+        const modules = document.querySelectorAll("#content-main .module");
+        modules.forEach(function (module, index) {
+          const caption = module.querySelector("caption");
+          const tbody = module.querySelector("tbody");
+          if (!caption || !tbody) return;
+
+          const sectionLink = caption.querySelector("a.section");
+          const moduleKey =
+            (sectionLink && sectionLink.getAttribute("href")) ||
+            module.className ||
+            "module-" + index;
+
+          caption.classList.add("admin-module-caption");
+
+          const toggle = document.createElement("button");
+          toggle.type = "button";
+          toggle.className = "admin-module-toggle";
+          toggle.title = "Collapse section";
+          toggle.setAttribute("aria-label", "Toggle section");
+          toggle.innerHTML = '<span class="material-icons" aria-hidden="true">expand_less</span>';
+          caption.appendChild(toggle);
+
+          const applyState = function (isCollapsed) {
+            module.classList.toggle("is-collapsed", isCollapsed);
+            toggle.setAttribute("aria-expanded", String(!isCollapsed));
+            const icon = toggle.querySelector(".material-icons");
+            if (icon) {
+              icon.textContent = isCollapsed ? "expand_more" : "expand_less";
+            }
+          };
+
+          if (isAdminAppIndex) {
+            applyState(false);
+            collapsedMap[moduleKey] = false;
+            localStorage.setItem(storageKey, JSON.stringify(collapsedMap));
+          } else if (collapsedMap[moduleKey] === true) {
+            applyState(true);
+          } else {
+            applyState(false);
+          }
+
+          toggle.addEventListener("click", function (event) {
+            event.preventDefault();
+            const nextCollapsed = !module.classList.contains("is-collapsed");
+            applyState(nextCollapsed);
+            collapsedMap[moduleKey] = nextCollapsed;
+            localStorage.setItem(storageKey, JSON.stringify(collapsedMap));
+          });
+
+          caption.addEventListener("click", function (event) {
+            if (event.target.closest("a.section") || event.target.closest(".admin-module-toggle")) {
+              return;
+            }
+            toggle.click();
+          });
+        });
+      }
+    });
+  </script>
 {% endblock %}
 
 {% block branding %}
-  <h1 id="site-name" style="margin-bottom: 0;">
-    <a href="{% url 'dashboard' %}?view=agents&new_chat=true">
+  <h1 id="site-name" class="admin-branding">
+    <a href="{% url 'dashboard' %}?view=agents&new_chat=true" class="admin-brand-link">
       {% if tenant_logo_url %}
-        <img src="{{ tenant_logo_url }}" style="height: 40px;" alt="Company Logo">
+        <img src="{{ tenant_logo_url }}" class="admin-brand-logo" alt="Company Logo">
       {% else %}
-        <img src="{% static 'img/logo-small.png' %}" style="height: 40px;" alt="AgentCPQ">
+        <img src="{% static 'img/logo-small.png' %}" class="admin-brand-logo" alt="AgentCPQ">
       {% endif %}
     </a>
-  </h1><br>
-  <p style="margin-top: 24px;">
-    <a href="{% url 'cpq:get_company_information' %}" style="font-size: 16px; text-decoration: none; color: white !important;">← Back to AgentCPQ</a>
-  </p>
+  </h1>
+{% endblock %}
+
+{% block welcome-msg %}{% endblock %}
+
+{% block userlinks %}
+  <div class="admin-userlinks-shell">
+    <a href="{% url 'cpq:get_company_information' %}" class="admin-nav-chip admin-nav-chip--primary admin-nav-chip--compact">
+      <span class="material-icons" aria-hidden="true">arrow_back</span>
+      <span>Back to AgentCPQ</span>
+    </a>
+
+    <details class="admin-user-dropdown">
+      <summary class="admin-user-dropdown-trigger">
+        <span class="admin-user-avatar">{{ user.get_full_name|default:user.username|first|upper }}</span>
+        <span class="admin-user-name">{{ user.username|lower }}</span>
+        <span class="material-icons admin-user-dropdown-caret" aria-hidden="true">expand_more</span>
+      </summary>
+
+      <div class="admin-user-dropdown-menu">
+        <a href="{% url 'admin:index' %}" class="admin-user-dropdown-item">
+          <span class="material-icons" aria-hidden="true">dashboard</span>
+          <span>Admin Home</span>
+        </a>
+
+        {% if user.has_usable_password %}
+          <a href="{% url 'admin:password_change' %}" class="admin-user-dropdown-item">
+            <span class="material-icons" aria-hidden="true">settings</span>
+            <span>Change password</span>
+          </a>
+        {% endif %}
+
+        <form id="logout-form" method="post" action="{% url 'admin:logout' %}" class="admin-user-dropdown-form">
+          {% csrf_token %}
+          <button type="submit" class="admin-user-dropdown-item admin-user-dropdown-item--danger">
+            <span class="material-icons" aria-hidden="true">logout</span>
+            <span>Log out</span>
+          </button>
+        </form>
+      </div>
+    </details>
+  </div>
 {% endblock %}
 
 
