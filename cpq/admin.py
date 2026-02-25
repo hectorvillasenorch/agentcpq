@@ -3,6 +3,7 @@ from django import forms
 import json
 from django.contrib.auth.admin import GroupAdmin as DjangoGroupAdmin
 from django.contrib.auth.models import Group
+from django.db import models
 from django.db.models import JSONField
 from .models import (
     Quote,
@@ -48,7 +49,7 @@ from agents.models import ChatMessage, ChatSession, AgentPrompt
 from django.contrib.contenttypes.models import ContentType
 from django.utils.html import format_html, format_html_join
 from django.forms.models import construct_instance
-from django.core.exceptions import ValidationError
+from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.urls import reverse
 from django.http import HttpResponseRedirect
 from django.utils.timezone import localtime
@@ -357,6 +358,7 @@ admin.site.register(Lead, LeadAdmin)
 class AccountAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(Account, crm="AgentCPQ", object_type="Account")
     list_display = ('tenant_id','name', 'industry', 'website', 'phone', 'created_at_js', 'updated_at_js')
+    search_fields = ("tenant_id", "name", "industry", "website", "phone")
     def get_fieldsets(self, request, obj=None):
         fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
         return [(None, {'fields': fields})]
@@ -1267,3 +1269,118 @@ class CustomActionAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
         fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
         return [(None, {'fields': fields})]
 admin.site.register(CustomAction, CustomActionAdmin)
+
+
+def _infer_search_fields(model):
+    """
+    Build a safe default search_fields tuple for CPQ models that do not define one.
+    Preference: common identifier text fields, then other text-like fields, then exact PK.
+    """
+    text_field_types = (
+        models.CharField,
+        models.TextField,
+        models.EmailField,
+        models.SlugField,
+        models.UUIDField,
+    )
+    preferred_names = ("name", "label", "title", "key", "email", "username", "code")
+    inferred = []
+
+    for field_name in preferred_names:
+        try:
+            field = model._meta.get_field(field_name)
+        except FieldDoesNotExist:
+            continue
+        if isinstance(field, text_field_types):
+            inferred.append(field_name)
+
+    for field in model._meta.fields:
+        if isinstance(field, text_field_types) and field.name not in inferred:
+            inferred.append(field.name)
+        if len(inferred) >= 5:
+            break
+
+    if inferred:
+        return tuple(inferred)
+
+    # Fallback keeps the search UI available for models without text fields.
+    return (f"={model._meta.pk.name}",)
+
+
+def _apply_default_cpq_search_fields():
+    for model, model_admin in admin.site._registry.items():
+        if model._meta.app_label != "cpq":
+            continue
+        if getattr(model_admin, "search_fields", None):
+            continue
+        model_admin.search_fields = _infer_search_fields(model)
+
+
+def _is_filterable_field(field):
+    if getattr(field, "auto_created", False):
+        return False
+    if getattr(field, "choices", None):
+        return True
+    return isinstance(
+        field,
+        (
+            models.BooleanField,
+            models.DateField,
+            models.DateTimeField,
+            models.ForeignKey,
+            models.OneToOneField,
+        ),
+    )
+
+
+def _infer_list_filter_fields(model):
+    """
+    Build safe default list_filter fields for CPQ models without explicit filters.
+    Prefer status/active/date fields, then any filterable field.
+    """
+    preferred_names = (
+        "status",
+        "is_active",
+        "active",
+        "created_at",
+        "updated_at",
+        "owner",
+        "assigned_to",
+        "type",
+    )
+    inferred = []
+
+    for field_name in preferred_names:
+        try:
+            field = model._meta.get_field(field_name)
+        except FieldDoesNotExist:
+            continue
+        if _is_filterable_field(field):
+            inferred.append(field_name)
+
+    for field in model._meta.fields:
+        if field.name in inferred:
+            continue
+        if _is_filterable_field(field):
+            inferred.append(field.name)
+        if len(inferred) >= 6:
+            break
+
+    if inferred:
+        return tuple(inferred)
+
+    # Keep a filter UI available even on models without typical filterable fields.
+    return (model._meta.pk.name,)
+
+
+def _apply_default_cpq_list_filters():
+    for model, model_admin in admin.site._registry.items():
+        if model._meta.app_label != "cpq":
+            continue
+        if getattr(model_admin, "list_filter", None):
+            continue
+        model_admin.list_filter = _infer_list_filter_fields(model)
+
+
+_apply_default_cpq_search_fields()
+_apply_default_cpq_list_filters()

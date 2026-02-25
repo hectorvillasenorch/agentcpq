@@ -14,6 +14,35 @@
   <script>
     document.addEventListener("DOMContentLoaded", function () {
       const dropdowns = document.querySelectorAll(".admin-user-dropdown");
+      const dropdownTriggers = document.querySelectorAll(".admin-user-dropdown > summary");
+      const isPasswordChangePage = /\/admin\/password_change\/?$/.test(window.location.pathname);
+
+      if (isPasswordChangePage) {
+        document.body.classList.add("admin-password-change");
+        const fontScale = 1.15;
+        const fontTargets = document.querySelectorAll("#header, #header *, #content, #content *");
+        fontTargets.forEach(function (element) {
+          const currentFontSize = parseFloat(window.getComputedStyle(element).fontSize);
+          if (!Number.isFinite(currentFontSize) || currentFontSize <= 0) {
+            return;
+          }
+          element.style.fontSize = (currentFontSize * fontScale).toFixed(2) + "px";
+        });
+      }
+
+      dropdownTriggers.forEach(function (trigger) {
+        trigger.addEventListener("click", function (event) {
+          event.preventDefault();
+          const dropdown = trigger.parentElement;
+          const shouldOpen = dropdown && !dropdown.open;
+          dropdowns.forEach(function (item) {
+            item.removeAttribute("open");
+          });
+          if (dropdown && shouldOpen) {
+            dropdown.setAttribute("open", "");
+          }
+        });
+      });
 
       document.addEventListener("click", function (event) {
         dropdowns.forEach(function (dropdown) {
@@ -33,8 +62,31 @@
 
       const objectTools = document.querySelector("#content-main .object-tools");
       const resultsBlock = document.querySelector("#changelist-form .results, #changelist .results");
+      const changelistSearch = document.querySelector("#changelist-search");
+      const bulkActions = document.querySelector("#changelist-form .actions");
+      const toolbar = document.querySelector("#toolbar");
+      const isCpqChangeList =
+        document.body.classList.contains("app-cpq") &&
+        document.body.classList.contains("change-list");
 
-      if (objectTools && resultsBlock && resultsBlock.parentNode) {
+      if (changelistSearch) {
+        changelistSearch.classList.add("admin-search-fullwidth");
+      }
+
+      if (bulkActions) {
+        bulkActions.classList.add("admin-bulk-actions");
+      }
+
+      if (isCpqChangeList && objectTools && resultsBlock && resultsBlock.parentNode) {
+        resultsBlock.parentNode.insertBefore(objectTools, resultsBlock);
+        objectTools.classList.remove("object-tools-in-toolbar");
+        objectTools.classList.add("object-tools-inline-top");
+      } else if (objectTools && toolbar) {
+        toolbar.classList.add("admin-toolbar-inline");
+        toolbar.appendChild(objectTools);
+        objectTools.classList.remove("object-tools-inline-top");
+        objectTools.classList.add("object-tools-in-toolbar");
+      } else if (objectTools && resultsBlock && resultsBlock.parentNode) {
         resultsBlock.parentNode.insertBefore(objectTools, resultsBlock);
         objectTools.classList.add("object-tools-inline-top");
       }
@@ -112,7 +164,11 @@
 
 {% block branding %}
   <h1 id="site-name" class="admin-branding">
-    <a href="{% url 'dashboard' %}?view=agents&new_chat=true" class="admin-brand-link">
+    {% if user.is_authenticated %}
+      <a href="{% url 'dashboard' %}?view=agents&new_chat=true" class="admin-brand-link">
+    {% else %}
+      <a href="{% url 'admin:login' %}" class="admin-brand-link">
+    {% endif %}
       {% if tenant_logo_url %}
         <img src="{{ tenant_logo_url }}" class="admin-brand-logo" alt="Company Logo">
       {% else %}
@@ -125,42 +181,44 @@
 {% block welcome-msg %}{% endblock %}
 
 {% block userlinks %}
-  <div class="admin-userlinks-shell">
-    <a href="{% url 'cpq:get_company_information' %}" class="admin-nav-chip admin-nav-chip--primary admin-nav-chip--compact">
-      <span class="material-icons" aria-hidden="true">arrow_back</span>
-      <span>Back to AgentCPQ</span>
-    </a>
+  {% if user.is_authenticated %}
+    <div class="admin-userlinks-shell">
+      <a href="{% url 'cpq:get_company_information' %}" class="admin-nav-chip admin-nav-chip--primary admin-nav-chip--compact">
+        <span class="material-icons" aria-hidden="true">arrow_back</span>
+        <span>Back to AgentCPQ</span>
+      </a>
 
-    <details class="admin-user-dropdown">
-      <summary class="admin-user-dropdown-trigger">
-        <span class="admin-user-avatar">{{ user.get_full_name|default:user.username|first|upper }}</span>
-        <span class="admin-user-name">{{ user.username|lower }}</span>
-        <span class="material-icons admin-user-dropdown-caret" aria-hidden="true">expand_more</span>
-      </summary>
+      <details class="admin-user-dropdown">
+        <summary class="admin-user-dropdown-trigger">
+          <span class="admin-user-avatar">{{ user.get_full_name|default:user.username|first|upper }}</span>
+          <span class="admin-user-name">{{ user.username|lower }}</span>
+          <span class="material-icons admin-user-dropdown-caret" aria-hidden="true">expand_more</span>
+        </summary>
 
-      <div class="admin-user-dropdown-menu">
-        <a href="{% url 'admin:index' %}" class="admin-user-dropdown-item">
-          <span class="material-icons" aria-hidden="true">dashboard</span>
-          <span>Admin Home</span>
-        </a>
-
-        {% if user.has_usable_password %}
-          <a href="{% url 'admin:password_change' %}" class="admin-user-dropdown-item">
-            <span class="material-icons" aria-hidden="true">settings</span>
-            <span>Change password</span>
+        <div class="admin-user-dropdown-menu">
+          <a href="{% url 'admin:index' %}" class="admin-user-dropdown-item">
+            <span class="material-icons" aria-hidden="true">dashboard</span>
+            <span>Admin Home</span>
           </a>
-        {% endif %}
 
-        <form id="logout-form" method="post" action="{% url 'admin:logout' %}" class="admin-user-dropdown-form">
-          {% csrf_token %}
-          <button type="submit" class="admin-user-dropdown-item admin-user-dropdown-item--danger">
-            <span class="material-icons" aria-hidden="true">logout</span>
-            <span>Log out</span>
-          </button>
-        </form>
-      </div>
-    </details>
-  </div>
+          {% if user.has_usable_password %}
+            <a href="{% url 'admin:password_change' %}" class="admin-user-dropdown-item">
+              <span class="material-icons" aria-hidden="true">settings</span>
+              <span>Change password</span>
+            </a>
+          {% endif %}
+
+          <form id="logout-form" method="post" action="{% url 'admin:logout' %}" class="admin-user-dropdown-form">
+            {% csrf_token %}
+            <button type="submit" class="admin-user-dropdown-item admin-user-dropdown-item--danger">
+              <span class="material-icons" aria-hidden="true">logout</span>
+              <span>Log out</span>
+            </button>
+          </form>
+        </div>
+      </details>
+    </div>
+  {% endif %}
 {% endblock %}
 
 
