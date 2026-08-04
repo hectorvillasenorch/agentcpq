@@ -947,123 +947,128 @@ def get_tenant_usage(request):
 
 @xframe_options_exempt
 def signup(request):
-    def _parse_bool_env(value):
-        if value is None:
-            return None
-        normalized = str(value).strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off"}:
-            return False
-        return None
+    def _clean(value):
+        return (value or "").strip()
 
-    def _is_playground_mode_enabled() -> bool:
-        env_override = _parse_bool_env(os.getenv("AGENTCPQ_PLAYGROUND_MODE"))
-        if env_override is None:
-            env_override = _parse_bool_env(os.getenv("PLAYGROUND_MODE"))
-        if env_override is not None:
-            return env_override
+    def _valid_email(value):
+        return bool(re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", value or ""))
+
+    values = {
+        "firstName": "",
+        "lastName": "",
+        "companyEmail": "",
+        "companyName": "",
+    }
+    context = {
+        "values": values,
+        "message": "",
+        "message_type": "",
+    }
+
+    if request.method == "POST":
+        values = {
+            "firstName": _clean(request.POST.get("firstName")),
+            "lastName": _clean(request.POST.get("lastName")),
+            "companyEmail": _clean(request.POST.get("companyEmail")).lower(),
+            "companyName": _clean(request.POST.get("companyName")),
+        }
+        context["values"] = values
+
+        if _clean(request.POST.get("website")):
+            context.update(
+                {
+                    "values": {
+                        "firstName": "",
+                        "lastName": "",
+                        "companyEmail": "",
+                        "companyName": "",
+                    },
+                    "message": "Thanks. We received your information.",
+                    "message_type": "success",
+                }
+            )
+            return render(request, "auth/signup.html", context)
+
+        if not values["firstName"] or not values["lastName"] or not values["companyEmail"]:
+            context.update(
+                {
+                    "message": "First name, last name, and company email are required.",
+                    "message_type": "error",
+                }
+            )
+            return render(request, "auth/signup.html", context, status=400)
+
+        if not _valid_email(values["companyEmail"]):
+            context.update(
+                {
+                    "message": "Enter a valid company email address.",
+                    "message_type": "error",
+                }
+            )
+            return render(request, "auth/signup.html", context, status=400)
+
+        webhook_key = os.getenv("WEBHOOK_KEY")
+        webhook_url = os.getenv("WEBHOOK_URL", "https://sympletech.agentcpq.ai/api/v1/leads/")
+
+        if not webhook_key:
+            logger.error("Signup request form missing WEBHOOK_KEY")
+            context.update(
+                {
+                    "message": "This request form is not configured yet.",
+                    "message_type": "error",
+                }
+            )
+            return render(request, "auth/signup.html", context, status=500)
+
+        payload = {
+            "firstName": values["firstName"],
+            "lastName": values["lastName"],
+            "companyEmail": values["companyEmail"],
+            "companyName": values["companyName"] or None,
+            "first_name": values["firstName"],
+            "last_name": values["lastName"],
+            "company_email": values["companyEmail"],
+            "company_name": values["companyName"] or None,
+            "source": "agentcpq-playground-signup",
+            "submitted_at": datetime.now(dt_timezone.utc).isoformat(),
+        }
 
         try:
-            tenant = Tenant.safe_first()
-        except Exception:
-            tenant = None
-        if not tenant:
-            return False
-
-        marker = " ".join(
-            [
-                str(getattr(tenant, "name", "") or ""),
-                str(getattr(tenant, "domain", "") or ""),
-                str(getattr(tenant, "tenant_id", "") or ""),
-            ]
-        ).lower()
-        return "playground" in marker
-
-    def _assign_playground_default_group(new_user):
-        if not _is_playground_mode_enabled():
-            return
-        try:
-            group, _ = Group.objects.get_or_create(name="user_standard")
-            new_user.groups.add(group)
-        except Exception:
-            logger.exception(
-                "Failed to assign playground default group for user %s",
-                getattr(new_user, "pk", None),
+            response = requests.post(
+                webhook_url,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {webhook_key}",
+                    "X-API-Key": webhook_key,
+                    "X-Webhook-Key": webhook_key,
+                },
+                timeout=10,
             )
-
-    def _send_welcome_email(new_user):
-        if not new_user.email:
-            logger.debug("Signup welcome email skipped: no email for user %s", new_user.pk)
-            return
-
-        from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or getattr(settings, 'EMAIL_HOST_USER', None)
-        if not from_email:
-            logger.debug(
-                "Signup welcome email skipped: no from_email configured (user=%s)",
-                new_user.pk,
+            response.raise_for_status()
+        except requests.RequestException:
+            logger.exception("Signup request webhook failed")
+            context.update(
+                {
+                    "message": "The request could not be sent. Please try again.",
+                    "message_type": "error",
+                }
             )
-            return
+            return render(request, "auth/signup.html", context, status=502)
 
-        first_name = (new_user.first_name or new_user.username).replace('\xa0', ' ').strip()
-        last_name = (new_user.last_name or '').replace('\xa0', ' ').strip()
-        subject = "Welcome to AgentCPQ"
-        dashboard_url = request.build_absolute_uri(reverse('dashboard'))
-        message = render_to_string(
-            'auth/welcome_email.html',
+        context.update(
             {
-                'first_name': first_name,
-                'last_name': last_name,
-                'username': new_user.username,
-                'dashboard_url': dashboard_url,
-                'current_year': datetime.now().year,
-            },
+                "values": {
+                    "firstName": "",
+                    "lastName": "",
+                    "companyEmail": "",
+                    "companyName": "",
+                },
+                "message": "Thanks. We received your information.",
+                "message_type": "success",
+            }
         )
 
-        reply_to = getattr(settings, 'DEFAULT_REPLY_TO', None) or from_email
-        email = EmailMessage(subject, message, from_email, [new_user.email], reply_to=[reply_to])
-        email.encoding = 'utf-8'
-        email.content_subtype = 'html'
-        email.extra_headers = email.extra_headers or {}
-        email.extra_headers.setdefault('Content-Transfer-Encoding', '8bit')
-
-        try:
-            sent_count = email.send(fail_silently=True)
-            logger.debug(
-                "Signup welcome email attempted: user=%s email=%s sent=%s",
-                new_user.pk,
-                new_user.email,
-                bool(sent_count),
-            )
-        except UnicodeEncodeError:
-            logger.exception(
-                "Signup welcome email failed due to Unicode error (user=%s, email=%s)",
-                new_user.pk,
-                new_user.email,
-            )
-        except smtplib.SMTPException:
-            logger.exception(
-                "Signup welcome email SMTP failure (user=%s, email=%s)",
-                new_user.pk,
-                new_user.email,
-            )
-
-    if request.user.is_authenticated:
-        return redirect('dashboard')
-
-    if request.method == 'POST':
-        form = SignupForm(request.POST)
-        if form.is_valid():
-            user = form.save()
-            _assign_playground_default_group(user)
-            _send_welcome_email(user)
-            login(request, user)
-            return redirect('dashboard')
-    else:
-        form = SignupForm()
-
-    return render(request, 'auth/signup.html', {'form': form})
-
+    return render(request, "auth/signup.html", context)
 
 class CustomPasswordResetView(PasswordResetView):
     def send_mail(self, subject_template_name, email_template_name,

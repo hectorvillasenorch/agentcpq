@@ -1,91 +1,408 @@
 {% load static %}
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Sign Up | AgentCPQ</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Symple Tech Solutions | AI Product Consultation</title>
+    <meta
+      name="description"
+      content="Connect with Symple Tech Solutions about AgentCPQ and SympleOps."
+    />
+    <link rel="icon" href="{% static 'img/sympletech-icon.png' %}" type="image/png" />
+    <link rel="preconnect" href="https://fonts.cdnfonts.com" crossorigin />
+    <link
+      href="https://fonts.cdnfonts.com/css/euclid-circular-a"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f8fafc;
+        --surface: #ffffff;
+        --ink: #1f2937;
+        --muted: #5f6b7a;
+        --line: #e5e7eb;
+        --line-strong: #cbd5e1;
+        --cyan: #25bcbb;
+        --cyan-dark: #0f8f99;
+        --cyan-soft: rgba(37, 188, 187, 0.1);
+        --orange: #fc6a3d;
+        --orange-hover: #ff7a3d;
+        --focus: #25bcbb;
+        --error: #b42318;
+        --success: #0f8f99;
+        font-family: "Euclid Circular A", ui-sans-serif, system-ui, -apple-system,
+          BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
 
-  <!-- Materialize & Icons -->
-  <link rel="stylesheet" href="{% static 'materialize/materialize.min.css' %}" />
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+      * {
+        box-sizing: border-box;
+      }
 
-  <!-- Shared login/signup styling -->
-  <link rel="stylesheet" href="{% static 'css/login.css' %}" />
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 14% 12%, rgba(37, 188, 187, 0.18), transparent 34%),
+          radial-gradient(circle at 88% 4%, rgba(252, 106, 61, 0.12), transparent 32%),
+          linear-gradient(180deg, #ffffff 0%, var(--bg) 100%);
+      }
 
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js?plugins=TextPlugin,ScrollTrigger"></script>
-</head>
-<body>
-  <script src="{% static 'js/agents/login.js' %}" defer></script>
-  <div class="login-wrapper">
-    <section class="login-left z-depth-1">
-      <img src="{% static 'img/logo-bg-white.png' %}" alt="AgentCPQ Logo" class="login-logo" />
-      <form class="login-form" method="post" action="{% url 'signup' %}">
-        {% csrf_token %}
-        {{ form.non_field_errors }}
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
 
-        <div class="input-field">
-          {{ form.username }}
-          <label for="{{ form.username.id_for_label }}">Username</label>
-          {{ form.username.errors }}
-        </div>
+      .site-header {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        width: 100%;
+        min-height: 80px;
+        padding: 0 max(20px, calc((100vw - 1120px) / 2));
+        background: #ffffff;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.07);
+        z-index: 2;
+      }
 
-        <div class="input-field">
-          {{ form.first_name }}
-          <label for="{{ form.first_name.id_for_label }}">First Name</label>
-          {{ form.first_name.errors }}
-        </div>
+      .brand {
+        display: inline-flex;
+        align-items: center;
+      }
 
-        <div class="input-field">
-          {{ form.last_name }}
-          <label for="{{ form.last_name.id_for_label }}">Last Name</label>
-          {{ form.last_name.errors }}
-        </div>
+      .brand img {
+        display: block;
+        width: 150px;
+        height: auto;
+        object-fit: contain;
+      }
 
-        <div class="input-field">
-          {{ form.email }}
-          <label for="{{ form.email.id_for_label }}">Email</label>
-          {{ form.email.errors }}
-        </div>
+      .header-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 0 18px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        background: #ffffff;
+        font-size: 16px;
+        font-weight: 600;
+      }
 
-        <div class="input-field">
-          {{ form.password1 }}
-          <label for="{{ form.password1.id_for_label }}">Password</label>
-          {{ form.password1.errors }}
-        </div>
+      .header-link:hover {
+        border-color: rgba(37, 188, 187, 0.34);
+        color: var(--cyan-dark);
+      }
 
-        <div class="input-field">
-          {{ form.password2 }}
-          <label for="{{ form.password2.id_for_label }}">Confirm Password</label>
-          {{ form.password2.errors }}
-        </div>
+      .page-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 0.95fr) minmax(460px, 560px);
+        gap: clamp(36px, 5vw, 72px);
+        align-items: center;
+        width: min(1120px, calc(100% - 40px));
+        min-height: calc(100vh - 80px);
+        margin: 0 auto;
+        padding: 48px 0 88px;
+      }
 
-        <div class="input-field" style="margin-top: 20px;">
-          <p>
-            <label>
-              {{ form.email_consent }}
-              <span>{{ form.email_consent.label }}</span>
+      .intro {
+        max-width: 650px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        margin: 0 0 18px;
+        border: 1px solid rgba(37, 188, 187, 0.28);
+        border-radius: 999px;
+        padding: 8px 14px;
+        color: var(--cyan-dark);
+        background: var(--cyan-soft);
+        font-size: 13px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 720px;
+        margin: 0;
+        font-size: clamp(52px, 7vw, 86px);
+        line-height: 0.96;
+        font-weight: 800;
+      }
+
+      .intro-copy {
+        max-width: 620px;
+        margin: 28px 0 0;
+        color: var(--muted);
+        font-size: clamp(20px, 2vw, 24px);
+        line-height: 1.55;
+      }
+
+      .intro-copy-secondary {
+        margin-top: 16px;
+        font-size: clamp(18px, 1.7vw, 21px);
+      }
+
+      .form-panel {
+        border: 1px solid var(--line);
+        border-top: 4px solid var(--cyan);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 24px 70px rgba(31, 41, 55, 0.1);
+        overflow: hidden;
+      }
+
+      form {
+        display: grid;
+        gap: 26px;
+        padding: clamp(34px, 4.5vw, 48px);
+      }
+
+      .field-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .field {
+        display: grid;
+        gap: 11px;
+        color: var(--ink);
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .field em {
+        color: var(--muted);
+        font-style: normal;
+        font-weight: 500;
+      }
+
+      input {
+        width: 100%;
+        min-height: 68px;
+        border: 1px solid var(--line-strong);
+        border-radius: 8px;
+        padding: 0 18px;
+        color: var(--ink);
+        background: #ffffff;
+        font: inherit;
+        font-size: 20px;
+        font-weight: 500;
+        outline: none;
+        transition:
+          border-color 150ms ease,
+          box-shadow 150ms ease;
+      }
+
+      input:focus {
+        border-color: var(--focus);
+        box-shadow: 0 0 0 4px rgba(37, 188, 187, 0.22);
+      }
+
+      .hidden-field {
+        position: absolute;
+        left: -10000px;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+      }
+
+      .submit-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 70px;
+        border: 0;
+        border-radius: 8px;
+        padding: 0 28px;
+        color: #ffffff;
+        background: var(--orange);
+        box-shadow: 0 16px 36px rgba(252, 106, 61, 0.22);
+        font: inherit;
+        font-size: 20px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .submit-button:hover {
+        background: var(--orange-hover);
+      }
+
+      .form-message {
+        min-height: 30px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 17px;
+        line-height: 1.45;
+      }
+
+      .form-message.is-error {
+        color: var(--error);
+      }
+
+      .form-message.is-success {
+        color: var(--success);
+      }
+
+      @media (max-width: 1024px) {
+        .page-shell {
+          grid-template-columns: 1fr;
+          gap: 38px;
+          align-items: start;
+          min-height: auto;
+          padding: 40px 0 72px;
+        }
+
+        .intro {
+          max-width: 760px;
+        }
+
+        .form-panel {
+          width: min(100%, 680px);
+        }
+
+        h1 {
+          font-size: clamp(52px, 8vw, 74px);
+        }
+      }
+
+      @media (max-width: 540px) {
+        .site-header {
+          padding: 0 14px;
+        }
+
+        .header-link {
+          display: none;
+        }
+
+        .page-shell {
+          width: min(100% - 28px, 1120px);
+        }
+
+        .field-grid {
+          grid-template-columns: 1fr;
+        }
+
+        form {
+          padding: 28px;
+        }
+
+        .field {
+          font-size: 16px;
+        }
+
+        input,
+        .submit-button {
+          min-height: 62px;
+          font-size: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Symple Tech Solutions home">
+        <img
+          src="{% static 'img/logo-sympletech-small.png' %}"
+          alt="SympleTech Logo"
+          width="734"
+          height="307"
+        />
+      </a>
+      <a class="header-link" href="https://www.sympletechsolutions.com/">
+        Main site
+      </a>
+    </header>
+
+    <main class="page-shell">
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">AgentCPQ and SympleOps</p>
+        <h1 id="page-title">AI products built for revenue teams.</h1>
+        <p class="intro-copy">
+          Symple Tech Solutions helps sales, quoting, and operations teams move
+          faster with focused AI products. AgentCPQ streamlines quote creation
+          through guided conversations, while SympleOps brings AI assistance to
+          Salesforce revenue operations.
+        </p>
+        <p class="intro-copy intro-copy-secondary">
+          Tell us where your team needs help and we will follow up with the
+          right next step.
+        </p>
+      </section>
+
+      <section class="form-panel" aria-label="Contact form">
+        <form method="post" action="{% url 'signup' %}" novalidate>
+          {% csrf_token %}
+          <div class="field-grid">
+            <label class="field">
+              <span>First name</span>
+              <input
+                autocomplete="given-name"
+                name="firstName"
+                required
+                type="text"
+                value="{{ values.firstName|default:'' }}"
+              />
             </label>
-          </p>
-          {{ form.email_consent.errors }}
-        </div>
-        <div class="center-align">
-          <button type="submit" class="btn login-btn waves-effect waves-light">
-            <i class="material-icons left">person_add</i> Sign Up Now
-          </button>
-        </div>
-        <div class="center-align" style="padding-top: 30px;">
-          <span>Already have an account? <a href="{% url 'login' %}">Log in here</a></span>
-        </div>
-      </form>
-    </section>
-    <section class="login-right">
-      <canvas id="node-canvas"></canvas>
-      <div class="robot-scene">
-        <img src="{% static 'img/botcpq.png' %}" id="robot" class="robot floating" />
-        <p class="takeover-text" id="takeover-message"></p>
-      </div>
-    </section>
-  </div>
-</body>
+
+            <label class="field">
+              <span>Last name</span>
+              <input
+                autocomplete="family-name"
+                name="lastName"
+                required
+                type="text"
+                value="{{ values.lastName|default:'' }}"
+              />
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Company email</span>
+            <input
+              autocomplete="email"
+              inputmode="email"
+              name="companyEmail"
+              required
+              type="email"
+              value="{{ values.companyEmail|default:'' }}"
+            />
+          </label>
+
+          <label class="field">
+            <span>Company name <em>optional</em></span>
+            <input
+              autocomplete="organization"
+              name="companyName"
+              type="text"
+              value="{{ values.companyName|default:'' }}"
+            />
+          </label>
+
+          <label class="hidden-field" aria-hidden="true">
+            Website
+            <input autocomplete="off" name="website" tabindex="-1" type="text" />
+          </label>
+
+          <button class="submit-button" type="submit">Send request</button>
+
+          {% if message %}
+            <p class="form-message is-{{ message_type }}" role="status">
+              {{ message }}
+            </p>
+          {% else %}
+            <p class="form-message" role="status"></p>
+          {% endif %}
+        </form>
+      </section>
+    </main>
+  </body>
 </html>
