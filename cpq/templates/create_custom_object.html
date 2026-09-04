@@ -1,40 +1,47 @@
 {% extends "base.html" %}
 {% block content %}
-<style>
-  .full-page-form {
-    max-width: 600px;
-    margin: 60px auto;
-    padding: 30px;
-    border: 1px solid #e0e0e0;
-    border-radius: 10px;
-    background-color: white;
-  }
+  <div class="cpq-form-page">
+    <div class="cpq-form-wrapper">
+      <div class="cpq-form-card">
+        <div class="cpq-form-card__header">
+          <p class="cpq-form-card__eyebrow">Metadata Management</p>
+          <h4 class="cpq-form-card__title">Create New Custom Object</h4>
+          <p class="cpq-form-card__subtitle">Define a new object type to store records tailored to your process.</p>
+        </div>
 
-  .full-page-title {
-    text-align: center;
-    color: #fc6a3d;
-    margin-top: 40px;
-    font-weight: bold;
-    font-size: 28px;
-  }
+        {% if form.non_field_errors %}
+          <div class="cpq-form-alert" role="alert">
+            {% for error in form.non_field_errors %}
+              <p>{{ error }}</p>
+            {% endfor %}
+          </div>
+        {% endif %}
 
-  .submit-btn {
-    background-color: #fc6a3d;
-  }
-</style>
+        <form method="post" class="cpq-form" novalidate>
+          {% csrf_token %}
+          <div class="cpq-form-grid">
+            {% for field in form %}
+              <div class="cpq-form-field">
+                {{ field.label_tag }}
+                {{ field }}
+                {% for error in field.errors %}
+                  <p class="cpq-form-error">{{ error }}</p>
+                {% endfor %}
+                {% if field.help_text %}
+                  <p class="cpq-form-help">{{ field.help_text }}</p>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
 
-<h4 class="full-page-title">Create New Custom Object</h4>
-
-<div class="full-page-form">
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-
-    <div class="center-align" style="margin-top: 20px;">
-      <button class="btn waves-effect waves-light submit-btn" type="submit">
-        Save
-      </button>
+          <div class="cpq-form-footer">
+            <div class="cpq-form-footer__actions">
+              <a href="{% url 'cpq:custom_fields' %}" class="cpq-btn cpq-btn--ghost">Cancel</a>
+              <button class="cpq-btn cpq-btn--primary" type="submit">Save</button>
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
-  </form>
-</div>
+  </div>
 {% endblock %}

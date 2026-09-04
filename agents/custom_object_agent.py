@@ -18,12 +18,14 @@ from .utils.custom_object_agent.handle_helpers import handle_custom_object_creat
 from .utils.session_context_helpers.session_context_helpers import get_session_context
 from .utils.message_formatters import SUCCESS_ICON, ERROR_ICON, INFO_ICON, WARNING_ICON
 
+from agents.llm import get_llm_client, get_model
+
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4"
+OPENAI_MODEL = get_model("structured")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = get_llm_client()
 
 def custom_object_agent(user, action, user_message, session_data):
 

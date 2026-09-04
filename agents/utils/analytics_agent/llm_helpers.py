@@ -6,13 +6,14 @@ from functools import lru_cache
 from dotenv import load_dotenv
 from datetime import date
 
+from agents.llm import chat_json, get_llm_client, get_model
+
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4o-mini"
-# OPENAI_MODEL = "gpt-4"
+OPENAI_MODEL = get_model("structured")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = get_llm_client()
 
 # Session Context Helpers
 from ..orchestrator.context_handle_helpers import estimate_cost
@@ -310,10 +311,11 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
     tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 LLM Metrics - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(
+        client,
         model=OPENAI_MODEL,
         messages=messages,
-        temperature=0
+        temperature=0,
     )
 
     raw_response = response.choices[0].message.content.strip()
@@ -423,11 +425,11 @@ def generate_final_metrics_message(completed_metrics, db_results, remaining_metr
     tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(
+        client,
         model=OPENAI_MODEL,
         messages=messages_for_llm,
         temperature=0.7,
-        response_format={"type": "json_object"}  # fuerza JSON válido (si usas GPT-4.1 / GPT-4o / GPT-5)
     )
 
     raw_output = response.choices[0].message.content.strip()

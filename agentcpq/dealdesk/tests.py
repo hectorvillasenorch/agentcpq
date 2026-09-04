@@ -9,7 +9,8 @@ from django.db import close_old_connections
 from django.test import Client, TestCase, TransactionTestCase
 from django.utils import timezone
 
-from cpq.models import Account, ApprovalRule, ApprovalStep, ApprovalWorkflow, Opportunity
+from agents.dealdesk_agent import dealdesk_agent
+from cpq.models import Account, ApprovalRule, ApprovalStep, ApprovalWorkflow, Opportunity, Quote, Tenant
 
 from .models import (
     AuditEvent,
@@ -251,3 +252,128 @@ class DealDeskApprovalRoutingSafetyTests(DealDeskBaseMixin, TestCase):
 
         after_checksum = compute_template_checksum([self.template_workflow.id])
         self.assertEqual(before_checksum, after_checksum)
+
+
+class DealDeskChatAgentTests(DealDeskBaseMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.quote = Quote.objects.create(
+            name="Q-99001",
+            account=self.account_a,
+            opportunity=self.opportunity_a,
+            net_amount=Decimal("0.00"),
+            discount_percentage=Decimal("15.00"),
+            created_by=self.user,
+            updated_by=self.user,
+            owner=self.user,
+        )
+        self.session_data = {
+            "active_quote": {
+                "quote_id": self.quote.id,
+                "quote_name": self.quote.name,
+            }
+        }
+
+    def test_submit_for_approval_via_chat_creates_packet_and_route(self):
+        preview = dealdesk_agent(self.user, "SubmitForApproval", "submit this quote for approval", self.session_data)
+        self.assertIn("approval_preview", preview)
+        self.assertEqual(DealPacket.objects.count(), 0)
+
+        response = dealdesk_agent(self.user, "SubmitForApproval", "submit anyway", self.session_data)
+
+        self.assertIn("deal_packet", response)
+        packet_id = response["deal_packet"]["id"]
+        packet = DealPacket.objects.get(id=packet_id)
+
+        self.assertEqual(packet.tenant_id, self.tenant_a.tenant_id)
+        self.assertEqual(packet.external_ref_type, DealPacket.EXTERNAL_REF_QUOTE)
+        self.assertEqual(packet.external_ref_id, str(self.quote.id))
+        self.assertEqual(packet.status, DealPacket.STATUS_IN_APPROVAL)
+        self.assertEqual(DealDeskApprovalInstance.objects.filter(deal_packet=packet).count(), 1)
+
+        self.quote.refresh_from_db()
+        self.assertEqual(self.quote.status, "Pending Approval")
+        latest_approval = self.quote.approvals.order_by("-id").first()
+        self.assertIsNotNone(latest_approval)
+        self.assertEqual(latest_approval.status, "Pending")
+
+    def test_submit_for_approval_via_chat_replays_idempotent_request(self):
+        first = dealdesk_agent(self.user, "SubmitForApproval", "submit anyway", self.session_data)
+        second = dealdesk_agent(self.user, "SubmitForApproval", "submit anyway", self.session_data)
+
+        self.assertIn("deal_packet", first)
+        self.assertIn("deal_packet", second)
+        self.assertEqual(first["deal_packet"]["id"], second["deal_packet"]["id"])
+        self.assertTrue(second.get("replayed"))
+        self.assertEqual(
+            DealPacket.objects.filter(
+                tenant_id=self.tenant_a.tenant_id,
+                external_ref_type=DealPacket.EXTERNAL_REF_QUOTE,
+                external_ref_id=str(self.quote.id),
+            ).count(),
+            1,
+        )
+
+    def test_check_approval_status_via_chat_returns_current_state(self):
+        dealdesk_agent(self.user, "SubmitForApproval", "submit anyway", self.session_data)
+        response = dealdesk_agent(self.user, "CheckApprovalStatus", "check approval status", self.session_data)
+
+        self.assertEqual(response["deal_packet_status"], DealPacket.STATUS_IN_APPROVAL)
+        self.assertIn("deal_packet_id", response)
+        self.assertIn("required_approvals", response)
+
+    def test_approve_quote_via_chat_updates_quote_and_packet(self):
+        submit_response = dealdesk_agent(self.user, "SubmitForApproval", "submit anyway", self.session_data)
+        packet_id = submit_response["deal_packet"]["id"]
+
+        approve_response = dealdesk_agent(self.user, "ApproveQuote", "approve this quote", self.session_data)
+        self.assertIn("approved", approve_response["message"].lower())
+
+        self.quote.refresh_from_db()
+        self.assertEqual(self.quote.status, "Approved")
+
+        packet = DealPacket.objects.get(id=packet_id)
+        self.assertEqual(packet.status, DealPacket.STATUS_APPROVED)
+
+        latest_approval = self.quote.approvals.order_by("-id").first()
+        self.assertIsNotNone(latest_approval)
+        self.assertEqual(latest_approval.status, "Approved")
+
+    def test_chat_flow_uses_first_tenant(self):
+        self.assertEqual(Tenant.objects.first().id, self.tenant_a.id)
+
+        account_b = Account.objects.create(
+            name="Tenant B Account",
+            tenant_id=self.tenant_b.tenant_id,
+            owner=self.user,
+            created_by=self.user,
+        )
+        opportunity_b = Opportunity.objects.create(
+            name="Tenant B Opportunity",
+            account=account_b,
+            amount=Decimal("8000.00"),
+            created_by=self.user,
+            stage="Prospecting",
+        )
+        quote_b = Quote.objects.create(
+            name="Q-99002",
+            account=account_b,
+            opportunity=opportunity_b,
+            net_amount=Decimal("0.00"),
+            discount_percentage=Decimal("15.00"),
+            created_by=self.user,
+            updated_by=self.user,
+            owner=self.user,
+        )
+
+        session_data = {"active_quote": {"quote_id": quote_b.id, "quote_name": quote_b.name}}
+        response = dealdesk_agent(self.user, "SubmitForApproval", "submit anyway", session_data)
+
+        packet = DealPacket.objects.get(id=response["deal_packet"]["id"])
+        self.assertEqual(packet.tenant_id, self.tenant_a.tenant_id)
+
+    def test_status_before_submit_returns_preview_intelligence(self):
+        response = dealdesk_agent(self.user, "CheckApprovalStatus", "check approval status", self.session_data)
+        self.assertIn("approval_preview", response)
+        self.assertIn("Predicted status", response["message"])
+        self.assertEqual(DealPacket.objects.count(), 0)

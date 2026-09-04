@@ -8,13 +8,14 @@ from datetime import date
 # System Prompt Helpers
 from ..prompts_helpers.system_prompt_helpers import make_system_prompt
 
+from agents.llm import chat_json, get_llm_client, get_model
+
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4o-mini"
-# OPENAI_MODEL = "gpt-4"
+OPENAI_MODEL = get_model("structured")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = get_llm_client()
 
 
 # FUNCTION TO EXTRACT BUNDLE COMPONENTS (CREATE_BUNDLE_COMPONENTS)
@@ -134,7 +135,7 @@ def extract_bundle_components(user_message):
     """
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "Extract structured updates details for quote line."},
@@ -208,7 +209,7 @@ def extract_option_updates(user_message):
     user_prompt = user_message
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -389,7 +390,7 @@ def extract_delete_options_from_quote(user_message):
     """
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "Extract structured updates details for quote line."},

@@ -3,6 +3,15 @@
 from django.db import migrations
 
 
+def _column_exists(connection, table_name, column_name):
+    with connection.cursor() as cursor:
+        try:
+            columns = connection.introspection.get_table_description(cursor, table_name)
+        except Exception:
+            return False
+    return any(c.name == column_name for c in columns)
+
+
 def add_account_quickbooks_customer_id_if_missing(apps, schema_editor):
     Account = apps.get_model("cpq", "Account")
     table_name = Account._meta.db_table
@@ -16,19 +25,8 @@ def add_account_quickbooks_customer_id_if_missing(apps, schema_editor):
     field = Account._meta.get_field("quickbooks_customer_id")
     column_name = field.column
 
-    with schema_editor.connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT COUNT(*)
-            FROM information_schema.columns
-            WHERE table_schema = DATABASE()
-              AND table_name = %s
-              AND column_name = %s
-            """,
-            [table_name, column_name],
-        )
-        if cursor.fetchone()[0]:
-            return
+    if _column_exists(schema_editor.connection, table_name, column_name):
+        return
 
     schema_editor.add_field(Account, field)
 

@@ -28,12 +28,14 @@ from .utils.admin_agent.handle_helpers import handle_create_inclusion_rule, hand
 from .utils.session_context_helpers.session_context_helpers import get_session_context
 
 
+from agents.llm import get_llm_client, get_model
+
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4"
+OPENAI_MODEL = get_model("structured")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = get_llm_client()
 
 
 def _is_valid_business_rule_target_type(target_type: str) -> bool:

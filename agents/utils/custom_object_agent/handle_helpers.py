@@ -135,6 +135,14 @@ def handle_custom_object_updates(user, extracted_custom_objects_updates, respons
             )
             continue
 
+        # Normalize "updates" — the LLM may return a list of {field, value} pairs.
+        if isinstance(updates, list):
+            updates_dict = {}
+            for entry in updates:
+                if isinstance(entry, dict) and entry.get("field"):
+                    updates_dict[str(entry["field"]).lower()] = entry.get("value")
+            updates = updates_dict
+
         label_to_update = updates.get("label", None)
         description_to_update = updates.get("description", None)
 
@@ -235,6 +243,31 @@ def handle_custom_object_deletes(user, extracted_custom_objects_deletes, respons
             logging.warning(f"=>>>>>>>>>>>>>>>>>>>> ⚠️ {error_msg}")
 
     return response_message, objects_deleted
+
+
+def _infer_lookup_model(field_label):
+    """Infer the lookup target model from a field name like 'Account' or 'Product'."""
+    text = str(field_label or "").strip().lower()
+    for token, model_name in (
+        ("account", "cpq.Account"),
+        ("opportunit", "cpq.Opportunity"),
+        ("opp", "cpq.Opportunity"),
+        ("lead", "cpq.Lead"),
+        ("contact", "cpq.Contact"),
+        ("product", "cpq.Product"),
+        ("quote", "cpq.Quote"),
+        ("activity", "cpq.Activity"),
+        ("contract", "cpq.Contract"),
+        ("subscription", "cpq.Subscription"),
+        ("option", "cpq.Option"),
+        ("tenant", "cpq.Tenant"),
+        ("knowledge", "cpq.Knowledge"),
+        ("user", "auth.User"),
+    ):
+        if token in text:
+            return model_name
+    return ""
+
 
 def handle_custom_fields_creation(user, extracted_custom_fields, response_message, session_context):
 
@@ -354,6 +387,10 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
 
         if not required:
             required = False
+
+        # Lookup fields need a target model; infer it from the field name when missing.
+        if (data_type or "").lower() == "lookup" and not lookup_model:
+            lookup_model = _infer_lookup_model(label or name)
 
         field_payload = {
             "label": label,
@@ -763,6 +800,7 @@ def handle_custom_field_deletes(user, extracted_custom_fields_deletes, response_
 def handle_custom_object_records(user, extracted_custom_objects_records, response_message, session_context):
 
     records_created = []
+    seen_requests = set()
 
     for index, custom_object_data in enumerate(extracted_custom_objects_records, start=1):
         custom_object_name = custom_object_data.get("custom_object_name", None)
@@ -774,6 +812,20 @@ def handle_custom_object_records(user, extracted_custom_objects_records, respons
 
         # ✅ Format response message
         response_message += f"<b>🔄 <u>Custom Record Request #{index}</u> 🔄</b><br>"
+
+        # Deduplicate identical requests — the LLM can occasionally echo the same
+        # record twice (or a retry replays it), which would otherwise create it twice.
+        fingerprint = (
+            str(custom_object_name or "").lower(),
+            json.dumps(values if isinstance(values, list) else [], sort_keys=True, default=str),
+        )
+        if fingerprint in seen_requests:
+            response_message += (
+                f"⚠️ Skipping a duplicate request for <strong>{custom_object_name}</strong> — "
+                "that record was already created.<br><br>"
+            )
+            continue
+        seen_requests.add(fingerprint)
 
         # ✅ General validations
 

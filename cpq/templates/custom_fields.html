@@ -4,7 +4,7 @@
 {% block content %}
 <style>
   :root {
-    --brand-accent: #fc6a3d;
+    --brand-accent: #3b62d9;
     --brand-navy: #182740;
     --panel-border: rgba(15, 23, 42, 0.08);
     --panel-shadow: 0 16px 34px rgba(15, 23, 42, 0.06);
@@ -33,7 +33,7 @@
     font-weight: 800;
     color: var(--brand-navy);
     letter-spacing: -0.02em;
-    font-family: 'Euclid Circular A', sans-serif;
+    font-family: 'Inter', 'Euclid Circular A', sans-serif;
   }
 
   .custom-fields-header__subtitle {
@@ -65,8 +65,8 @@
   .custom-fields-nav {
     width: 260px;
     background: #ffffff;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    border-radius: 18px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
     padding: 24px;
     box-shadow: var(--panel-shadow);
     display: flex;
@@ -79,7 +79,7 @@
   }
 
   .custom-fields-nav h2 {
-    font-family: 'Euclid Circular A', sans-serif;
+    font-family: 'Inter', 'Euclid Circular A', sans-serif;
     font-size: 1.1rem;
     font-weight: 600;
     margin: 0 0 18px;
@@ -158,14 +158,14 @@
   #create-object-form {
     display: none;
     border: 1px solid var(--panel-border);
-    border-radius: 18px;
+    border-radius: 12px;
     padding: 22px 24px;
     background: #ffffff;
     box-shadow: var(--panel-shadow);
   }
 
   #create-object-form h5 {
-    font-family: 'Euclid Circular A', sans-serif;
+    font-family: 'Inter', 'Euclid Circular A', sans-serif;
     font-size: 1.1rem;
     font-weight: 600;
     color: #111827;
@@ -190,9 +190,70 @@
       max-height: none;
     }
   }
+
+  /* Inline "Create New Custom Object" form: match the clean card design */
+  #create-object-form form p {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0 0 14px;
+  }
+  #create-object-form form label {
+    order: -1;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #334155;
+  }
+  #create-object-form form input[type="text"],
+  #create-object-form form input[type="url"],
+  #create-object-form form textarea {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+    border: 1px solid rgba(148, 163, 184, 0.7);
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #0f172a;
+    box-shadow: none !important;
+    box-sizing: border-box;
+  }
+  #create-object-form form input[type="text"]:focus,
+  #create-object-form form input[type="url"]:focus,
+  #create-object-form form textarea:focus {
+    border-color: #3b62d9;
+    outline: none;
+  }
+  #create-object-form form textarea {
+    min-height: 70px;
+    resize: vertical;
+  }
+  #create-object-form form input[type="checkbox"] {
+    opacity: 1 !important;
+    position: static !important;
+    width: 16px !important;
+    height: 16px !important;
+    accent-color: #3b62d9;
+    margin: 2px 0 0;
+  }
+  #create-object-form form input[type="checkbox"] + span::before,
+  #create-object-form form input[type="checkbox"] + span::after {
+    content: none !important;
+  }
+  #create-object-form form .right-align {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 18px;
+  }
+  #create-object-form form button[type="submit"] {
+    background: #3b62d9 !important;
+    border-radius: 10px;
+    box-shadow: none !important;
+    font-weight: 600;
+  }
 </style>
 
-<div class="custom-fields-page container" style="max-width: 1280px;">
+<div class="custom-fields-page container">
   <div class="custom-fields-header">
     <div>
       <h1 class="custom-fields-header__title">
@@ -424,11 +485,17 @@
     showTab(initialTab);
   });
   document.addEventListener("DOMContentLoaded", function () {
+    // Strip trailing colons from the inline "Create New Custom Object" form labels.
+    document.querySelectorAll("#create-object-form form label").forEach(function (label) {
+      label.textContent = label.textContent.replace(/:$/, "");
+    });
+  });
+  document.addEventListener("DOMContentLoaded", function () {
     const toggleBtn = document.getElementById("toggle-create-form");
     const formDiv = document.getElementById("create-object-form");
 
     toggleBtn.addEventListener("click", function () {
-      const isHidden = formDiv.style.display === "none";
+      const isHidden = getComputedStyle(formDiv).display === "none";
 
       if (isHidden) {
         formDiv.style.display = "block";

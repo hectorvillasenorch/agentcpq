@@ -2,6 +2,7 @@ import logging
 import json
 import os
 import re
+from decimal import Decimal
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from datetime import datetime
@@ -306,6 +307,11 @@ def set_active_quote_to_session_data(session_data, quote):
 def extract_quote_name(user_message):
     """Extracts the quote name from user input."""
     import re
+    # Operate on the current request only — ignore any injected conversation
+    # context that may mention a *previous* quote (e.g. Q-00001) before the
+    # actual current request (e.g. Q-00002).
+    from agents.utils.orchestrator.context_handle_helpers import extract_current_request
+    user_message = extract_current_request(user_message)
     match = re.search(r"\bQ-\d{4,}\b", user_message, re.IGNORECASE)
     return match.group(0) if match else None
 
@@ -470,6 +476,65 @@ def restrict_quote_document_settings_to_line_item_object_types(object_types: lis
 
 
 
+
+_CAP_TITLE_EXCEPTIONS = (" And ", " Or ", " Of ", " Per ", " The ")
+_NUMERIC_COL_HINTS = ("qty", "quantity", "price", "amount", "discount", "subtotal",
+                      "total", "cost", "annual", "value", "revenue", "margin", "fee", "tax")
+
+
+def _clean_column_header(label):
+    """'Product And SKU' -> 'Product and SKU' (readable compound labels)."""
+    text = str(label)
+    for token in _CAP_TITLE_EXCEPTIONS:
+        if token in text:
+            text = text.replace(token, " " + token.strip().lower() + " ")
+    return text
+
+
+def _is_numeric_col(label):
+    low = str(label).lower()
+    return any(hint in low for hint in _NUMERIC_COL_HINTS)
+
+
+class _QuotePageCanvas(canvas.Canvas):
+    """Canvas that draws a slim footer + page number on every page."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._footer_left = ""
+        self._footer_right = ""
+
+    def showPage(self):
+        self._footerize()
+        super().showPage()
+
+    def save(self):
+        self._footerize()
+        super().save()
+
+    def _footerize(self):
+        try:
+            self.saveState()
+            self.setStrokeColor(HexColor("#d1d5db"))
+            self.setLineWidth(0.6)
+            self.line(50, 48, 562, 48)
+            self.setFont("Helvetica", 7.5)
+            self.setFillColor(HexColor("#9aa3af"))
+            if self._footer_left:
+                self.drawString(50, 40, str(self._footer_left))
+            if self._footer_right:
+                self.drawString(50, 31.5, str(self._footer_right))
+            self.setFont("Helvetica-Bold", 7.5)
+            self.setFillColor(HexColor("#6b7280"))
+            self.drawRightString(562, 40, "Page %d" % self._pageNumber)
+            self.restoreState()
+        except Exception:
+            try:
+                self.restoreState()
+            except Exception:
+                pass
+
+
 def get_document_pdf(quote, session_data=None, user=None):
     try:
         # ✅ Fetch related quote lines
@@ -519,8 +584,14 @@ def get_document_pdf(quote, session_data=None, user=None):
 
         # ✅ Create PDF in memory
         buffer = BytesIO()
-        pdf = canvas.Canvas(buffer, pagesize=letter)
+        pdf = _QuotePageCanvas(buffer, pagesize=letter)
         pdf.setTitle(f"Quote {quote.name}")
+        try:
+            pdf._footer_left = f"Prepared by {company.name}" if company and company.name else "AgentCPQ"
+            pdf._footer_right = (company.domain or company.contact_email or "").strip()
+        except Exception:
+            pdf._footer_left = "AgentCPQ"
+            pdf._footer_right = ""
         CBLACK = "#000000"
 
 
@@ -533,14 +604,10 @@ def get_document_pdf(quote, session_data=None, user=None):
             SCOLOR = CBLACK
 
 
-        # ✅ Letterhead
+        # ✅ Letterhead — clean date chip, top-right
         pdf.setFont("Helvetica", 8)
-        pdf.drawString(20, 770, f"{datetime.now().strftime('%m/%d/%Y, %H:%M:%S')}")
-
-        # ✅ Quote Header
-        pdf.setFont("Helvetica-Bold", 26)
-        pdf.setFillColor(HexColor(PCOLOR))
-        pdf.drawString(50, 730, f"Quote: {quote.name}")
+        pdf.setFillColor(HexColor("#98a2b3"))
+        pdf.drawRightString(562, 774, datetime.now().strftime("%B %d, %Y"))
         pdf.setFillColor(HexColor(CBLACK))
 
         # ✅ Add Logo (via default_storage, not .path)
@@ -549,162 +616,162 @@ def get_document_pdf(quote, session_data=None, user=None):
             if partner_logo_name:
                 logo_name = partner_logo_name
             elif company and company.logo:
-                logo_name = company.logo.name  # relative key in R2
+                logo_name = company.logo.name
 
         if logo_name and default_storage.exists(logo_name):
             with default_storage.open(logo_name, 'rb') as logo_file:
                 img = ImageReader(logo_file)
                 pdf.drawImage(
                     img,
-                    430, 710,
-                    width=150, height=60,
+                    452, 704,
+                    width=110, height=60,
                     preserveAspectRatio=True,
                     mask='auto'
                 )
 
-        # ------------------------------------
-        pdf.setStrokeColor(HexColor(PCOLOR))
-        pdf.setLineWidth(2)
-        pdf.line(32, 700, 580, 700)
-
-        if partner_label:
-            pdf.setFont("Helvetica-Bold", 9)
-            label_text = str(partner_label)
-            text_width = pdf.stringWidth(label_text, "Helvetica-Bold", 9)
-            pill_width = text_width + 14
-            pill_height = 14
-            pill_x = 580 - pill_width
-            pill_y = 683
-            pdf.setFillColor(HexColor("#e6f4ea"))
-            pdf.roundRect(pill_x, pill_y, pill_width, pill_height, 7, fill=1, stroke=0)
-            pdf.setFillColor(HexColor("#137333"))
-            pdf.drawString(pill_x + 7, pill_y + 4, label_text)
-            pdf.setFillColor(HexColor(CBLACK))
-
-        # ✅ Set Y and X position for Company Information
-        y_position = 660
-        x_position = 50
-        company_count = 0
-        pdf.setFont("Helvetica-Bold", 12)
-
-        # ✅ Company Information
-        if template.show_company_name and company.name:
-            pdf.drawString(x_position, y_position, f"{company.name}")
-            company_count += 1
-            y_position -= 15
-
-        # ✅ Company email with hyperlink
-        if template.show_company_email and company.contact_email:
-            pdf.setFillColor(HexColor("#888888"))
-            x = x_position
-            y = y_position
-            email = company.contact_email
-            pdf.drawString(x_position, y_position, email)
-            pdf.linkURL(f"mailto:{email}", (x_position, y_position - 2, x + pdf.stringWidth(email), y + 10), relative=0)
-            pdf.setFillColor(HexColor(CBLACK))
-            company_count += 1
-            y_position -= 15
-
-        # ✅ Company addres
-        if template.show_company_address and company.street_address and company.city and company.state:
-            pdf.setFillColor(HexColor("#888888"))
-            pdf.drawString(x_position, y_position, company.street_address)
-            y_position -= 15
-            pdf.drawString(x_position, y_position, f"{company.city}, {company.state}")
-            pdf.setFillColor(HexColor(CBLACK))
-            company_count += 1
-            y_position -= 15
-
-        # ✅ Company phone
-        if template.show_company_phone and company.phone_number:
-            pdf.setFillColor(HexColor("#888888"))
-            pdf.drawString(x_position, y_position, f"Phone: {company.phone_number}")
-            pdf.setFillColor(HexColor(CBLACK))
-            company_count += 1
-            y_position -= 15
-
-        # ✅ Company domain
-        if template.show_company_domain and company.domain:
-            pdf.setFillColor(HexColor("#888888"))
-            pdf.drawString(x_position, y_position, company.domain)
-            pdf.setFillColor(HexColor(CBLACK))
-            company_count += 1
-            y_position -= 15
-
-        # ✅ Set Y and X position for Account Information
-        y_position = 660
-        x_position = 350
-        account_count = 0
-
-        # ✅ Account Name
-        if template.show_account_name and account.name:
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, "Account:")
-            y_position -= 15
-            pdf.drawString(x_position, y_position, account.name)
-            y_position -= 15
-            account_count += 1
-
-        # ✅ Account Address
-        if template.show_account_name and account and (account.street or account.city or account.state or account.zip_code):
-            pdf.setFillColor(HexColor("#888888"))
-
-            if account.street:
-                pdf.drawString(x_position, y_position, account.street)
-                y_position -= 15
-
-            city_state = ", ".join([p for p in [account.city, account.state] if p])
-            city_state_zip = " ".join([p for p in [city_state, account.zip_code] if p])
-            if city_state_zip:
-                pdf.drawString(x_position, y_position, city_state_zip)
-                y_position -= 15
-
-            pdf.setFillColor(HexColor(CBLACK))
-            account_count += 1
-
-        # ✅ Account Website
-        if template.show_account_website and account.website:
-            pdf.setFillColor(HexColor("#888888"))
-            pdf.drawString(x_position, y_position, account.website)
-            pdf.setFillColor(HexColor(CBLACK))
-            y_position -= 15
-            account_count += 1
-
-        # ✅ Account Website
-        if template.show_account_phone and account.phone:
-            pdf.setFillColor(HexColor("#888888"))
-            pdf.drawString(x_position, y_position, account.phone)
-            pdf.setFillColor(HexColor(CBLACK))
-            y_position -= 15
-            account_count += 1
-
-        # ✅ Set Y and X position for General Quote Information
-        y_position = 660 - (max(company_count, account_count) * 15) - 30
-        x_position = 350
-
-        # ✅ Quote Opportunity Name
+        # ✅ Quote hero — eyebrow + document id + primary ruler
+        pdf.setFillColor(HexColor(PCOLOR))
+        pdf.setFont("Helvetica-Bold", 9)
+        pdf.drawString(50, 754, "COMMERCIAL QUOTE")
+        pdf.setFillColor(HexColor("#111827"))
+        pdf.setFont("Helvetica-Bold", 23)
+        pdf.drawString(50, 728, f"{quote.name}")
+        doc_id_w = pdf.stringWidth(str(quote.name), "Helvetica-Bold", 23)
         if template.show_quote_opportunity and quote.opportunity.name:
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, quote.opportunity.name)
-            y_position -= 15
+            pdf.setFillColor(HexColor("#6b7280"))
+            pdf.setFont("Helvetica", 9.5)
+            pdf.drawString(50, 712, str(quote.opportunity.name))
+        pdf.setFillColor(HexColor(CBLACK))
 
-        # ✅ Quote Status
+        # Signature accent: the primary ruler under the hero
+        pdf.setStrokeColor(HexColor(PCOLOR))
+        pdf.setLineWidth(1.4)
+        pdf.line(50, 700, 562, 700)
+        pdf.setStrokeColor(HexColor(CBLACK))
+        pdf.setLineWidth(1)
+
+        # Partner chip (right, under the ruler)
+        if partner_label:
+            pdf.setFont("Helvetica-Bold", 8.5)
+            label_text = str(partner_label)
+            text_width = pdf.stringWidth(label_text, "Helvetica-Bold", 8.5)
+            pill_width = text_width + 18
+            pill_height = 16
+            pill_x = 562 - pill_width
+            pill_y = 682
+            try:
+                chip_fg = HexColor(PCOLOR)
+            except Exception:
+                chip_fg = HexColor("#4f46e5")
+            pdf.setFillColor(HexColor("#eef2ff"))
+            pdf.roundRect(pill_x, pill_y, pill_width, pill_height, 8, fill=1, stroke=0)
+            pdf.setFillColor(chip_fg)
+            pdf.drawRightString(pill_x + pill_width - 9, pill_y + 5, label_text)
+            pdf.setFillColor(HexColor(CBLACK))
+
+        # ✅ FROM / TO metadata columns
+        meta_top = 674
+
+        def _meta_company_rows():
+            rows = []
+            if template.show_company_name and company.name:
+                rows.append((True, str(company.name)))
+            if template.show_company_email and company.contact_email:
+                rows.append((False, str(company.contact_email)))
+            if template.show_company_phone and company.phone_number:
+                rows.append((False, str(company.phone_number)))
+            if template.show_company_address and company.street_address:
+                rows.append((False, str(company.street_address)))
+            if template.show_company_address and (company.city or company.state):
+                rows.append((False, ", ".join([p for p in [company.city, company.state] if p])))
+            if template.show_company_domain and company.domain:
+                rows.append((False, str(company.domain)))
+            return rows
+
+        def _meta_account_rows():
+            rows = []
+            if template.show_account_name and account.name:
+                rows.append((True, str(account.name)))
+            if template.show_account_name and (account.street or account.city or account.state or account.zip_code):
+                city_state = ", ".join([p for p in [account.city, account.state] if p])
+                addr = ", ".join([p for p in [account.street, city_state, account.zip_code] if p])
+                rows.append((False, addr))
+            if template.show_account_website and account.website:
+                rows.append((False, str(account.website)))
+            if template.show_account_phone and account.phone:
+                rows.append((False, str(account.phone)))
+            return rows
+
+        from_rows = _meta_company_rows()
+        to_rows = _meta_account_rows()
+
+        def _fit_meta(text, font, size, max_w):
+            text = str(text)
+            if pdf.stringWidth(text, font, size) <= max_w:
+                return text
+            while text and pdf.stringWidth(text + "\u2026", font, size) > max_w:
+                text = text[:-1]
+            return (text + "\u2026") if text else ""
+
+        def _draw_meta_col(caption, rows, col_x, col_w):
+            yy = meta_top
+            pdf.setFillColor(HexColor("#9aa3af"))
+            pdf.setFont("Helvetica-Bold", 8)
+            pdf.drawString(col_x, yy, caption)
+            yy -= 15
+            for bold, text in rows:
+                font = "Helvetica-Bold" if bold else "Helvetica"
+                size = 11 if bold else 9
+                pdf.setFont(font, size)
+                pdf.setFillColor(HexColor("#111827") if bold else HexColor("#52525b"))
+                pdf.drawString(col_x, yy, _fit_meta(text, font, size, col_w))
+                yy -= 12.5
+            pdf.setFillColor(HexColor(CBLACK))
+            return yy
+
+        _draw_meta_col("FROM", from_rows, 50, 250)
+        _draw_meta_col("TO", to_rows, 330, 218)
+
+        company_count = len(from_rows)
+        account_count = len(to_rows)
+
+        # ✅ Quote meta (status / issued / valid-until) — right aligned "DETAILS" block
+        meta_rows = []
         if template.show_quote_status and quote.status:
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, f"Status {quote.status}")
-            y_position -= 15
-
-        # ✅ Quote Created Date
+            meta_rows.append(("STATUS", str(quote.status)))
         if template.show_quote_created_at and quote.created_at:
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, f"Created at: {quote.created_at.strftime('%m/%d/%Y')}")
-            y_position -= 15
+            meta_rows.append(("ISSUED", quote.created_at.strftime("%b %d, %Y")))
+        if template.show_quote_expires_at and quote.expiration_date:
+            meta_rows.append(("VALID UNTIL", quote.expiration_date.strftime("%b %d, %Y")))
 
-        # ✅ Quote Expiration Date
-        if template.show_quote_expires_at: #and quote.expiration_date:
+        left_rows = max(len(from_rows), len(to_rows), 1)
+        detail_top = meta_top - 34 - left_rows * 13
+        if meta_rows:
+            yy = detail_top + 6
+            pdf.setFillColor(HexColor("#9aa3af"))
+            pdf.setFont("Helvetica-Bold", 8)
+            pdf.drawString(50, yy, "QUOTE DETAILS")
+            pdf.setStrokeColor(HexColor("#e5e7eb"))
+            pdf.setLineWidth(0.5)
+            pdf.line(50, yy - 3, 562, yy - 3)
+            yy -= 16
+            for label, value in meta_rows:
+                pdf.setFont("Helvetica-Bold", 8)
+                pdf.setFillColor(HexColor("#9aa3af"))
+                pdf.drawString(50, yy, label)
+                pdf.setFont("Helvetica", 9.5)
+                pdf.setFillColor(HexColor("#111827"))
+                pdf.drawRightString(562, yy, _fit_meta(value, "Helvetica", 9.5, 210))
+                yy -= 12.5
             pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(x_position, y_position, f"Expiration Date: {quote.expiration_date.strftime('%m/%d/%Y')}")
-            y_position -= 15
+
+        # Cursor for the next section (Notes / Products)
+        y_position = detail_top - (len(meta_rows) + 1) * 14 - 2
+        if y_position > 570:
+            y_position = 570
+        x_position = 50
+        pdf.setFont("Helvetica-Bold", 12)
+        pdf.setFillColor(HexColor(CBLACK))
 
         # ✅ Quote Notes
         if template.show_quote_notes and quote.notes:
@@ -798,7 +865,7 @@ def get_document_pdf(quote, session_data=None, user=None):
             for index, field in enumerate(template.rendered_fields):
                 # Imprimimos los encabezados de las columnas
                 # 🔤 Si es un campo compuesto como "Product.UOM", mostramos solo "UOM"
-                display_field = field.split(".")[1] if "." in field else field
+                display_field = _clean_column_header(field.split(".")[1] if "." in field else field)
                 # Obtenemos la posición en la que va a iniciar el texto de la columna
                 column_x_position = x_position + index * column_spacing
                 # Calculamos el ancho real del texto del encabezado
@@ -806,12 +873,12 @@ def get_document_pdf(quote, session_data=None, user=None):
                 last_index = len(template.rendered_fields) - 1
 
                 # Alineaciones
-                if index == 0:
-                    aligned_x = column_x_position
-                elif index == last_index:
+                if _is_numeric_col(display_field) or index == last_index:
                     aligned_x = column_x_position + column_spacing - text_width
+                elif index == 0:
+                    aligned_x = column_x_position
                 else:
-                    aligned_x = column_x_position + (column_spacing - text_width) / 2
+                    aligned_x = column_x_position
 
                 # Imprimir el texto del encabezado
                 pdf.drawString(aligned_x, y_position, display_field)
@@ -868,7 +935,7 @@ def get_document_pdf(quote, session_data=None, user=None):
                     # Renderizamos los encabezados de la tabla
                     for index, field in enumerate(template.rendered_fields):
                         # 🔤 Si es un campo compuesto como "Product.UOM", mostramos solo "UOM"
-                        display_field = field.split(".")[1] if "." in field else field
+                        display_field = _clean_column_header(field.split(".")[1] if "." in field else field)
 
                         # Obtenemos la posición en la que va a iniciar el texto de la columna
                         column_x_position = x_position + index * column_spacing
@@ -969,6 +1036,16 @@ def get_document_pdf(quote, session_data=None, user=None):
                         cleaned = clean_inline_html(raw_html)
                         html = normalize_linebreaks(cleaned)
 
+                        if not html.strip():
+                            pdf.setFont("Helvetica", 9)
+                            pdf.setFillColor(HexColor("#cbd5e1"))
+                            pdf.drawString(column_x, y_position, "—")
+                            pdf.setFillColor(HexColor(CBLACK))
+                            _h = 10
+                            if _h > max_text_height:
+                                max_text_height = _h
+                            continue
+
                         # Build paragraph and measure it for current column width
                         max_width = column_spacing - 2
                         para = Paragraph(html, DESC_PARAGRAPH_STYLE)
@@ -989,16 +1066,16 @@ def get_document_pdf(quote, session_data=None, user=None):
                             pdf.setFillColor(HexColor(CBLACK))
                             column_spacing = 512 / len(template.rendered_fields)
                             for hdr_index, hdr_field in enumerate(template.rendered_fields):
-                                display_field = hdr_field.split(".")[1] if "." in hdr_field else hdr_field
+                                display_field = _clean_column_header(hdr_field.split(".")[1] if "." in hdr_field else hdr_field)
                                 column_x_position = x_position + hdr_index * column_spacing
                                 text_width = pdf.stringWidth(display_field, "Helvetica-Bold", 10)
                                 last_hdr_index = len(template.rendered_fields) - 1
-                                if hdr_index == 0:
-                                    hdr_aligned_x = column_x_position
-                                elif hdr_index == last_hdr_index:
+                                if _is_numeric_col(display_field) or hdr_index == last_hdr_index:
                                     hdr_aligned_x = column_x_position + column_spacing - text_width
+                                elif hdr_index == 0:
+                                    hdr_aligned_x = column_x_position
                                 else:
-                                    hdr_aligned_x = column_x_position + (column_spacing - text_width) / 2
+                                    hdr_aligned_x = column_x_position
                                 pdf.drawString(hdr_aligned_x, y_position, display_field)
 
                             y_position -= 15
@@ -1096,12 +1173,12 @@ def get_document_pdf(quote, session_data=None, user=None):
 
                             # Alineación horizontal
                             text_width = pdf.stringWidth(wrapped_line, font_name, font_size)
-                            if index == 0:
-                                aligned_x = column_x
-                            elif index == last_index:
+                            if _is_numeric_col(field_title) or index == last_index:
                                 aligned_x = column_x + column_spacing - text_width
+                            elif index == 0:
+                                aligned_x = column_x
                             else:
-                                aligned_x = column_x + (column_spacing - text_width) / 2
+                                aligned_x = column_x
 
                             pdf.drawString(aligned_x, y, wrapped_line)
 
@@ -1217,36 +1294,45 @@ def get_document_pdf(quote, session_data=None, user=None):
             y_position -= 30
 
             # === Discount ===
-            discount_label = "Discount:"
-            discount_value = f"{quote.discount_percentage:.2f}% (- ${format_currency(quote.discount_amount)})"
+            has_discount = Decimal(str(quote.discount_percentage or 0)) != 0 or Decimal(str(quote.discount_amount or 0)) != 0
+            if has_discount:
+                discount_label = "Discount:"
+                if Decimal(str(quote.discount_percentage or 0)) > 0:
+                    discount_value = f"-${format_currency(quote.discount_amount)}  ({quote.discount_percentage:.2f}%)"
+                else:
+                    discount_value = f"-${format_currency(quote.discount_amount)}"
 
-            discount_label_width = pdf.stringWidth(discount_label, label_font, label_size)
-            discount_value_width = pdf.stringWidth(discount_value, value_font, value_size)
+                discount_label_width = pdf.stringWidth(discount_label, label_font, label_size)
+                discount_value_width = pdf.stringWidth(discount_value, value_font, value_size)
 
-            start_x = right_margin - 150 - discount_label_width
+                start_x = right_margin - 150 - discount_label_width
 
-            pdf.setFont(label_font, label_size)
-            pdf.setFillColor(HexColor(CBLACK))
-            pdf.drawString(start_x, y_position, discount_label)
+                pdf.setFont(label_font, label_size)
+                pdf.setFillColor(HexColor(CBLACK))
+                pdf.drawString(start_x, y_position, discount_label)
 
-            pdf.setFont(value_font, value_size)
-            pdf.setFillColor(red)
-            pdf.drawString(right_margin - discount_value_width, y_position, discount_value)
+                pdf.setFont(value_font, value_size)
+                pdf.setFillColor(HexColor("#4b5563"))
+                pdf.drawString(right_margin - discount_value_width, y_position, discount_value)
 
-            y_position -= 30
+                y_position -= 30
 
             # === Tax information ===
-            if template.show_quote_tax_information and (template.show_quote_tax_percentage or template.show_quote_tax_amount):
+            if template.show_quote_tax_information and (template.show_quote_tax_percentage or template.show_quote_tax_amount) and (Decimal(str(quote.tax_amount or 0)) != 0 or Decimal(str(quote.tax_percentage or 0)) != 0):
                 discount_label = "Tax:"
                 discount_value = ""
 
                 tax_label = "Tax:"
 
-                tax_value = (
-                    (f"{quote.tax_percentage:.2f}%" if template.show_quote_tax_percentage else '') +
-                    (' (' if template.show_quote_tax_percentage and template.show_quote_tax_amount else '') +
-                    (f"${format_currency(quote.tax_amount)}" if template.show_quote_tax_amount else '') +
-                    (')' if template.show_quote_tax_percentage and template.show_quote_tax_amount else '')
+                tax_value = "  ".join(
+                    [
+                        part
+                        for part in (
+                            (f"${format_currency(quote.tax_amount)}" if template.show_quote_tax_amount else ""),
+                            (f"({quote.tax_percentage:.2f}%)" if template.show_quote_tax_percentage else ""),
+                        )
+                        if part
+                    ]
                 )
 
                 tax_label_width = pdf.stringWidth(tax_label, label_font, label_size)
@@ -1264,21 +1350,30 @@ def get_document_pdf(quote, session_data=None, user=None):
 
                 y_position -= 30
 
-            # === Net Amount ===
+            # === Net Amount (emphasized) ===
             net_label = "Net Amount:"
             net_value = f"${format_currency(quote.net_amount)}"
 
-            net_label_width = pdf.stringWidth(net_label, label_font, label_size)
-            net_value_width = pdf.stringWidth(net_value, value_font, value_size)
+            pdf.setStrokeColor(HexColor("#d1d5db"))
+            pdf.setLineWidth(0.6)
+            pdf.line(345, y_position + 12, right_margin, y_position + 12)
+
+            net_label_width = pdf.stringWidth(net_label, "Helvetica-Bold", 11)
+            net_value_width = pdf.stringWidth(net_value, "Helvetica-Bold", 11.5)
 
             start_x = right_margin - 150 - net_label_width
 
-            pdf.setFont(label_font, label_size)
+            pdf.setFont("Helvetica-Bold", 11)
             pdf.setFillColor(HexColor(CBLACK))
             pdf.drawString(start_x, y_position, net_label)
 
-            pdf.setFont(value_font, value_size)
+            pdf.setFont("Helvetica-Bold", 11.5)
+            pdf.setFillColor(HexColor("#111827"))
             pdf.drawString(right_margin - net_value_width, y_position, net_value)
+            pdf.setFont("Helvetica", 7.5)
+            pdf.setFillColor(HexColor("#9aa3af"))
+            pdf.drawRightString(right_margin, y_position - 9, "All amounts shown in USD.")
+            pdf.setFillColor(HexColor(CBLACK))
 
             y_position -= 30
             x_position = 50
@@ -1336,6 +1431,8 @@ def get_document_pdf(quote, session_data=None, user=None):
 
             pdf.setFont("Helvetica-Bold", 12)
             pdf.setFillColor(HexColor(CBLACK))
+            y_position -= 6
+            pdf.setFillColor(HexColor("#111827"))
             pdf.drawString(x_position, y_position, "Signature")
 
             y_position -= 40

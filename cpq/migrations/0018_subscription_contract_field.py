@@ -4,6 +4,15 @@ import django.db.models.deletion
 from django.db import migrations, models
 
 
+def _column_exists(connection, table_name, column_name):
+    with connection.cursor() as cursor:
+        try:
+            columns = connection.introspection.get_table_description(cursor, table_name)
+        except Exception:
+            return False
+    return any(c.name == column_name for c in columns)
+
+
 def ensure_subscription_contract_column(apps, schema_editor):
     Contract = apps.get_model("cpq", "Contract")
     Subscription = apps.get_model("cpq", "Subscription")
@@ -25,19 +34,8 @@ def ensure_subscription_contract_column(apps, schema_editor):
     # If the column already exists, nothing to do.
     contract_field = Subscription._meta.get_field("contract")
     contract_column = contract_field.column
-    with schema_editor.connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT COUNT(*)
-            FROM information_schema.columns
-            WHERE table_schema = DATABASE()
-              AND table_name = %s
-              AND column_name = %s
-            """,
-            [subscription_table, contract_column],
-        )
-        if cursor.fetchone()[0]:
-            return
+    if _column_exists(schema_editor.connection, subscription_table, contract_column):
+        return
 
     # Add as nullable to avoid failures when historical rows exist.
     field = models.ForeignKey(

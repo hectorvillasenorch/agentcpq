@@ -27,3 +27,14 @@ class CpqConfig(AppConfig):
             raise
         # t = threading.Thread(target=start_renewal_scheduler, daemon=True)
         # t.start()
+
+        # 📧 Deliver scheduled email reminders (runs every ~60s in-process).
+        if os.environ.get("RUN_AUTO_RELOAD") != "true":
+            try:
+                from .tasks.email_scheduler import start_email_scheduler
+
+                thread = threading.Thread(target=start_email_scheduler, daemon=True, name="email-scheduler")
+                thread.start()
+            except Exception:
+                # Never block app boot because of the scheduler.
+                pass

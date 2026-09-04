@@ -5,9 +5,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+from agents.llm import chat_json, get_llm_client, get_model
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4o-mini"
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+OPENAI_MODEL = get_model("structured")
+client = get_llm_client()
 
 from ..orchestrator.context_handle_helpers import estimate_cost
 from ..message_formatters import format_message_with_standard_icons
@@ -75,7 +77,7 @@ def extract_product_data_with_llm(user_message, current_state, previous_summary=
     tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 FIRST LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages,
         temperature=1
@@ -165,7 +167,7 @@ def generate_final_product_message(completed_products, db_results, remaining_pro
     tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages_for_llm,
         temperature=0.7,

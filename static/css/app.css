@@ -1,0 +1,1092 @@
+/* ============================================================
+   AgentCPQ — Messaging styles (Phase 1)
+   Modern chat styling aligned with the SympleOps 2 visual language
+   (neutral slate + blue primary, Inter). Load AFTER agents_main.css.
+   ============================================================ */
+
+:root {
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(222 47% 11%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(222 47% 11%);
+  --border: hsl(220 13% 91%);
+  --input: hsl(220 13% 91%);
+  --ring: hsl(217 91% 60%);
+
+  --primary: hsl(217 91% 60%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(210 40% 96%);
+  --muted: hsl(210 40% 96%);
+  --muted-foreground: hsl(215 16% 47%);
+  --accent: hsl(210 40% 96%);
+
+  /* Sidebar tokens used by the app.css sidebar override block */
+  --sidebar: hsl(0 0% 100%);
+  --sidebar-foreground: hsl(222 47% 11%);
+  --sidebar-border: hsl(220 13% 91%);
+  --sidebar-accent: hsl(210 40% 96%);
+  --sidebar-muted: hsl(215 16% 47%);
+
+  --radius: 0.5rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  --chat-max-width: 100%;
+}
+
+/* ============================ Chat ============================ */
+.chat-container {
+  font-family: var(--font-sans);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: var(--chat-max-width);
+  margin: 0 auto;
+  width: 100%;
+}
+
+.chat-box {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 24px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chat-box::-webkit-scrollbar {
+  width: 8px;
+}
+.chat-box::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+/* Empty state */
+.chat-empty-state {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-empty-shell {
+  text-align: center;
+  max-width: 560px;
+  padding: 24px;
+}
+.chat-empty-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--primary);
+  background: hsl(217 91% 60% / 0.1);
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 14px;
+}
+.chat-empty-shell h1 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+  color: var(--foreground);
+}
+.chat-empty-subtitle {
+  color: var(--muted-foreground);
+  margin: 0 0 22px;
+}
+.chat-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+.chat-empty-chip {
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+.chat-empty-chip:hover {
+  border-color: var(--primary);
+  background: hsl(217 91% 60% / 0.05);
+}
+.chat-empty-chip:active {
+  transform: translateY(1px);
+}
+.chat-empty-hint {
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+}
+.chat-playground-guide {
+  margin-top: 22px;
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--muted);
+}
+.chat-playground-title {
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+.chat-playground-copy {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  margin: 0 0 12px;
+}
+
+/* Message bubbles */
+.chat-message {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 0;
+  font-size: 14px;
+}
+.chat-message.user {
+  align-items: flex-end;
+}
+.chat-message.agent {
+  align-items: flex-start;
+}
+
+/* Wrappers are transparent — no extra container boxes */
+.chat-text {
+  max-width: 78%;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.chat-text.user {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.chat-text.user::after {
+  content: none !important;
+}
+.chat-text.agent {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.sender,
+.senderagent,
+.chat-text.agent > img {
+  display: none;
+}
+
+/* One clean bubble per message, uniform text size */
+.chat-message .message,
+.chat-message .message p,
+.chat-message .message li,
+.chat-message .message .general-message {
+  font-size: 14px !important;
+  line-height: 1.55;
+}
+.chat-message .message {
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+  color: var(--foreground);
+  word-break: break-word;
+}
+.chat-message .message a {
+  color: var(--primary);
+}
+
+.chat-message.user .message {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-bottom-right-radius: 4px;
+}
+.chat-message.user .message a {
+  color: var(--primary-foreground);
+  text-decoration: underline;
+}
+
+.chat-message.agent .message {
+  background: var(--muted);
+  border: none;
+  border-bottom-left-radius: 4px;
+}
+/* Structured cards inside a message bubble: drop the bubble so the card is the only surface */
+.chat-message.agent .message:has(.single-record-card, .records-container, .quote-container, .metric-card, .records-metric-card) {
+  background: transparent;
+  border: none;
+  padding: 0;
+  box-shadow: none;
+}
+
+/* Structured JSON cards keep their own layout; ensure they fit the new bg */
+.chat-text.agent .agent-json {
+  width: 100%;
+}
+.chat-text.agent .message .agent-json > * {
+  font-family: inherit;
+}
+
+.thinking-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 13.5px;
+}
+
+/* Input bar */
+.chat-input-container {
+  padding: 8px 8px 20px;
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(to top, var(--background) 80%, transparent);
+}
+
+.input-wrapper {
+  max-width: 100%;
+  margin: 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: none;
+  transition: border-color 0.15s ease;
+}
+.input-wrapper:focus-within {
+  border-color: var(--ring);
+}
+
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px 5px 12px;
+}
+
+.chat-input {
+  flex: 1 1 auto;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--foreground);
+  background: transparent;
+  max-height: 120px;
+  padding: 4px 0;
+}
+.chat-input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.send-button {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  border: none;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.send-button:hover {
+  background: hsl(217 91% 55%);
+}
+.send-button .material-icons {
+  font-size: 18px;
+}
+
+/* Attachments */
+.attachment-preview {
+  border-top: 1px solid var(--border);
+  padding: 8px 12px;
+}
+.attachment-actions {
+  display: flex;
+  gap: 6px;
+}
+.upload-clip-btn {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.upload-clip-btn:hover {
+  background: var(--accent);
+}
+.upload-clip-btn .material-icons {
+  font-size: 18px;
+}
+.attachment-details {
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+  margin-top: 6px;
+}
+.batch-upload-status {
+  font-size: 12.5px;
+  margin-top: 6px;
+}
+
+/* ============================ Empty-state embedded input ============================ */
+.chat-empty-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.chat-container.is-empty .chat-empty-state {
+  padding: 40px 24px;
+  overflow-y: auto;
+}
+.chat-container.is-empty .chat-input-container {
+  position: static;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  transform: none;
+  width: 100%;
+  max-width: 620px;
+  margin: 22px auto 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.chat-container.is-empty .chat-input-container .input-wrapper {
+  max-width: 100%;
+  border-radius: 14px;
+  box-shadow: none;
+}
+.chat-container.is-empty .chat-input-container .input-wrapper:focus-within {
+  box-shadow: none;
+}
+
+/* ============================================================
+   Structured cards — cleaner & streamlined
+   8-column field grids, 14px text, fewer background layers.
+   ============================================================ */
+
+/* Base: structured content matches chat text size */
+.chat-text.agent .agent-json,
+.chat-text.agent .agent-json p,
+.chat-text.agent .agent-json li,
+.chat-text.agent .agent-json .message {
+  font-size: 14px;
+}
+
+/* --- Single record card --- */
+.single-record-card {
+  background: var(--card);
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: none;
+  margin: 12px 0;
+}
+.single-record-header,
+.single-record-card[data-record-object="lead"] .single-record-header {
+  background: transparent !important;
+  color: var(--foreground) !important;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.single-record-header-text {
+  gap: 2px;
+}
+.single-record-subtitle {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  opacity: 1;
+  color: var(--muted-foreground);
+}
+.single-record-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.single-record-sections {
+  gap: 12px;
+  padding: 12px 16px 16px;
+}
+.single-record-section {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+.single-record-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 6px;
+}
+/* Field grid defaults to fit long values (emails, UUIDs) without truncation */
+.single-record-grid {
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px 14px;
+}
+.single-record-field {
+  padding: 2px 0;
+  gap: 2px;
+}
+.single-record-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+.single-record-field-value {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+/* Visible form fields: thin border on the control, inputs fill it */
+.single-record-field-control {
+  background: var(--card);
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 10px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  transition: none;
+}
+.single-record-field-control:focus-within {
+  border-color: #cbd5e1;
+  box-shadow: none;
+}
+.single-record-input,
+.single-record-field-control select.single-record-input,
+.single-record-field-control textarea.single-record-input {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none;
+  width: 100%;
+  border-radius: 0;
+  padding: 6px 2px !important;
+  font-size: 13px !important;
+  color: var(--foreground);
+}
+.single-record-field-control select.single-record-input {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  padding-right: 22px !important;
+}
+.single-record-field-control textarea.single-record-input {
+  min-height: 72px;
+  padding: 8px 2px !important;
+  resize: vertical;
+}
+
+/* --- Records list table --- */
+.records-header {
+  background: var(--muted) !important;
+  color: var(--foreground) !important;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+}
+.records-header h5 {
+  font-size: 14px !important;
+  margin: 0;
+}
+.records-table-wrapper {
+  border: 1px solid var(--border);
+  border-radius: 0 0 10px 10px;
+  box-shadow: none;
+}
+.records-table {
+  font-size: 14px !important;
+  background: var(--card);
+}
+.records-table th {
+  font-size: 12px !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--muted) !important;
+  color: var(--muted-foreground) !important;
+  padding: 8px 12px;
+}
+.records-table td {
+  font-size: 14px !important;
+  padding: 8px 12px;
+  border-color: var(--border);
+}
+.records-table tbody tr:nth-child(even) {
+  background-color: var(--muted);
+}
+.records-table tbody tr:hover {
+  background-color: hsl(217 91% 60% / 0.06);
+}
+
+/* --- Quote details --- */
+.quote-container {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: none;
+  background: var(--card);
+}
+.quote-container p,
+.quote-container li,
+.quote-container td,
+.quote-container span {
+  font-size: 14px;
+}
+
+/* --- Metrics / insight cards --- */
+.records-metric-card,
+.metric-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: none;
+  background: var(--card);
+}
+.records-metric-title,
+.records-metric-label,
+.records-metric-value,
+.metric-card * {
+  font-size: 14px;
+}
+
+/* ============================================================
+   Enterprise polish — global clean-up (2026 look)
+   Neutralizes Materialize, unifies typography, lightens nav.
+   ============================================================ */
+
+html {
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--background);
+  color: var(--foreground);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-sans);
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+a {
+  color: var(--primary);
+}
+
+/* --- Materialize neutralization --- */
+.btn,
+.btn-large,
+.btn-small,
+.btn-flat,
+.btn-floating {
+  border-radius: 8px;
+  text-transform: none;
+  box-shadow: none;
+  font-weight: 500;
+  letter-spacing: normal;
+}
+.btn {
+  background: var(--primary);
+}
+.btn:hover {
+  box-shadow: none;
+}
+.btn-flat {
+  color: var(--primary);
+}
+.btn:disabled,
+.btn-large:disabled {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  box-shadow: none;
+}
+
+.input-field input,
+.input-field textarea,
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="date"],
+input[type="datetime-local"],
+select,
+textarea {
+  font-family: inherit;
+  font-size: 14px;
+  border-radius: 8px;
+  color: var(--foreground);
+}
+.input-field .prefix.active,
+.input-field input:focus + label,
+.input-field textarea:focus + label {
+  color: var(--primary);
+}
+.input-field input:focus,
+.input-field textarea:focus {
+  border-bottom-color: var(--primary);
+  box-shadow: 0 1px 0 var(--primary);
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: none;
+  background: var(--card);
+}
+.card .card-title {
+  font-weight: 600;
+}
+
+table,
+.table {
+  font-size: 14px;
+}
+table tbody tr:hover,
+table.highlight tbody tr:hover {
+  background: hsl(217 91% 60% / 0.06);
+}
+thead {
+  color: var(--muted-foreground);
+}
+
+.chip {
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+/* --- Sidebar: light enterprise nav (CSS-only override) --- */
+.sidenav-fixed,
+#sidenav {
+  background: var(--sidebar) !important;
+  border-right: 1px solid var(--sidebar-border) !important;
+  color: var(--sidebar-foreground) !important;
+}
+.sidenav-fixed a,
+#sidenav a {
+  color: var(--sidebar-foreground) !important;
+  border-radius: 8px;
+}
+.sidenav-fixed a:hover,
+#sidenav a:hover {
+  background: var(--sidebar-accent) !important;
+  color: var(--foreground) !important;
+}
+.sidenav-fixed a .material-icons,
+#sidenav a .material-icons {
+  color: var(--muted-foreground) !important;
+}
+.sidenav-fixed .brand,
+#sidenav .brand {
+  border-bottom: 1px solid var(--sidebar-border) !important;
+}
+.sidenav-fixed .session-list-title,
+#sidenav .session-list-title {
+  color: var(--muted-foreground) !important;
+  font-weight: 600;
+}
+.sidenav-fixed .divider,
+#sidenav .divider {
+  background: var(--sidebar-border) !important;
+}
+.nav-user-card {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  color: var(--foreground) !important;
+}
+.nav-user-card__name {
+  color: var(--foreground) !important;
+}
+.nav-collapse-btn,
+.nav-action-btn {
+  color: var(--muted-foreground) !important;
+}
+.nav-collapse-btn:hover,
+.nav-action-btn:hover {
+  color: var(--foreground) !important;
+}
+
+/* --- Login page: clean modern card --- */
+.login-wrapper {
+  font-family: var(--font-sans);
+}
+.login-left {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 16px !important;
+  box-shadow: none !important;
+}
+.login-btn {
+  background: var(--primary) !important;
+  border-radius: 8px !important;
+  text-transform: none !important;
+}
+.login-btn:hover {
+  box-shadow: none !important;
+}
+
+/* --- Main content on the dashboard --- */
+.main-content {
+  background: var(--background);
+}
+#content-area {
+  padding: 24px 28px;
+}
+
+/* ============================================================
+   Card chrome — icons/buttons on white, dark text, no shadows
+   ============================================================ */
+
+/* Record title: dark instead of orange */
+.single-record-title--accent {
+  color: var(--foreground);
+}
+
+/* Header + lead-meta icons: dark on white */
+.single-record-subtitle .material-icons,
+.single-record-lead-meta .material-icons {
+  color: var(--muted-foreground);
+}
+
+/* Related / layout / delete icon buttons: white, thin border, dark icon */
+.single-record-related-btn {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+.single-record-related-btn:hover {
+  background: var(--muted);
+  transform: none;
+}
+.single-record-delete-btn {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+.single-record-delete-btn:hover {
+  background: #fef2f2;
+  color: var(--destructive);
+  box-shadow: none;
+  transform: none;
+}
+.single-record-layout-btn--icon {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+.single-record-related-count {
+  background: var(--primary);
+  box-shadow: none;
+}
+
+/* Badges / labels: light neutral pills with dark text */
+.single-record-badge,
+.single-record-label {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+.single-record-badge--partner {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+}
+
+/* Related popover: light instead of dark glass */
+.single-record-related-popover {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  box-shadow: none;
+}
+.single-record-related-popover .material-icons {
+  color: var(--muted-foreground);
+}
+
+/* No shadows anywhere in the chat/record surface */
+.chat-empty-shell {
+  box-shadow: none;
+}
+
+/* Other cards match the single-record look: thin border, flat, dark text */
+.records-container,
+.quote-container,
+.records-metric-card,
+.metric-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: none;
+}
+.records-container {
+  color: var(--foreground);
+}
+
+/* ============================================================
+   De-orange: brand accent → blue, neutral hovers, no shadows
+   ============================================================ */
+:root {
+  --cpq-accent: var(--primary);
+}
+
+/* Chat empty-state badge */
+.chat-empty-badge {
+  color: var(--primary);
+  background: hsl(217 91% 60% / 0.1);
+}
+
+/* Send button — override higher-specificity legacy rules */
+.send-button,
+.chat-container.is-empty .chat-input-container .send-button,
+.input-wrapper.upload-dropzone .input-row .send-button {
+  background: var(--primary);
+  box-shadow: none;
+}
+
+/* Attach / browse buttons: neutral icons */
+.upload-browse-btn,
+.upload-clip-btn {
+  color: var(--muted-foreground);
+}
+
+/* Select focus: blue instead of orange */
+.select-wrapper input.select-dropdown:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px hsl(217 91% 60% / 0.12) !important;
+}
+
+/* Quote header + chat-title focus: dark / blue */
+.quote-header h3 {
+  color: var(--foreground) !important;
+}
+.chat-title-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px hsl(217 91% 60% / 0.4);
+}
+
+/* Sidebar version label: neutral */
+.nav-user-card__version {
+  color: var(--muted-foreground);
+}
+
+/* CPQ admin orange → blue, flat */
+.cpq-form-page__title {
+  color: var(--foreground);
+}
+.cpq-btn--primary,
+.modal-footer .btn,
+.modal-footer .btn.red,
+.add-field-btn {
+  background: var(--primary) !important;
+  box-shadow: none !important;
+}
+.cpq-btn--primary:hover,
+.modal-footer .btn:hover,
+.modal-footer .btn.red:hover,
+.add-field-btn:hover {
+  background: hsl(217 91% 60% / 0.9) !important;
+  box-shadow: none !important;
+}
+
+/* Login: blue button, neutral hovers + label focus */
+.login-form .login-btn,
+.login-form .login-btn:hover {
+  background: var(--primary) !important;
+  background-color: var(--primary) !important;
+  box-shadow: none !important;
+}
+input:not([type]):focus:not([readonly]) + label,
+input[type="text"]:not(.browser-default):focus:not([readonly]) + label,
+input[type="password"]:not(.browser-default):focus:not([readonly]) + label,
+input[type="email"]:not(.browser-default):focus:not([readonly]) + label {
+  color: var(--primary) !important;
+}
+
+/* ==========================================================================
+   CPQ Admin pages — compact sizing (same look, smaller scale)
+   Scoped to .main-content so the chat SPA / other pages are untouched.
+   ========================================================================== */
+.main-content {
+  font-size: 13.5px;
+}
+
+/* Constrain width + add breathing room so pages never feel cutoff */
+.main-content #content-area {
+  max-width: 1240px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 20px 36px 36px;
+}
+
+/* Containers */
+.main-content .container,
+.custom-fields-page.container {
+  max-width: 1160px !important;
+}
+
+/* Custom fields page: match Company Information's full-width, borderless layout */
+.custom-fields-page.container {
+  max-width: none !important;
+  width: 100%;
+  padding: 18px 6px 26px;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Headers: smaller titles + tighter spacing */
+.main-content h1 {
+  font-size: 1.25rem !important;
+  letter-spacing: -0.01em !important;
+}
+.main-content h2 {
+  font-size: 0.95rem !important;
+}
+.main-content h3 {
+  font-size: 0.88rem !important;
+}
+.main-content .custom-fields-header__title,
+.main-content .settings-title,
+.main-content .company-header__title,
+.main-content .users-header__title,
+.main-content .integrations-header__title,
+.main-content .cpq-page-title {
+  font-size: 1.3rem !important;
+}
+.main-content .custom-fields-header__subtitle,
+.main-content .settings-subtitle,
+.main-content .company-header__subtitle,
+.main-content .users-header__subtitle,
+.main-content .integrations-header__subtitle,
+.main-content .cpq-page-subtitle {
+  font-size: 0.8rem !important;
+}
+.main-content .custom-fields-header,
+.main-content .settings-header,
+.main-content .company-header,
+.main-content .users-header,
+.main-content .integrations-header,
+.main-content .cpq-page-header {
+  margin: 2px 0 14px !important;
+}
+
+/* Layout: tighter gaps and panels */
+.main-content .custom-fields-layout {
+  gap: 16px !important;
+  margin-top: 10px !important;
+}
+.main-content .custom-fields-nav {
+  width: 232px !important;
+  padding: 16px !important;
+  border-radius: 14px !important;
+}
+.main-content .custom-fields-content {
+  gap: 16px !important;
+}
+.main-content .custom-fields-divider {
+  margin: 16px 0 !important;
+}
+.main-content #create-object-form {
+  padding: 18px 20px !important;
+  border-radius: 14px !important;
+}
+.main-content .panel,
+.main-content .card {
+  border-radius: 12px !important;
+}
+.main-content .card .card-content,
+.main-content .panel-body {
+  padding: 16px 18px !important;
+}
+
+/* Buttons: compact Materialize */
+.main-content .btn,
+.main-content button.btn {
+  height: 36px !important;
+  line-height: 36px !important;
+  padding: 0 14px !important;
+  font-size: 13px !important;
+  border-radius: 8px !important;
+}
+.main-content .btn .material-icons,
+.main-content button.btn .material-icons {
+  font-size: 16px !important;
+  line-height: 36px !important;
+}
+
+/* Tables: smaller cells */
+.main-content table,
+.main-content .table {
+  font-size: 13px !important;
+}
+.main-content table th,
+.main-content table td,
+.main-content .table th,
+.main-content .table td {
+  padding: 7px 10px !important;
+  font-size: 12.5px !important;
+}
+
+/* Form controls: slightly smaller */
+.main-content input[type="text"],
+.main-content input[type="email"],
+.main-content input[type="number"],
+.main-content input[type="password"],
+.main-content select,
+.main-content textarea {
+  font-size: 13px !important;
+}
+
+/* Calmer primary accent for admin pages (less saturated blue) */
+.main-content .btn-primary,
+.main-content .cpq-btn--primary,
+.main-content .add-field-btn,
+.main-content button.btn {
+  background-color: #4662c9 !important;
+}
+.main-content a:not(.btn):not(.add-field-btn):not(.cpq-btn):not(.cpq-btn--primary):not(.cpq-btn--ghost):not(.cpq-btn--secondary) {
+  color: #4662c9;
+}
+.main-content a:not(.btn):not(.add-field-btn):not(.cpq-btn):not(.cpq-btn--primary):not(.cpq-btn--ghost):not(.cpq-btn--secondary):hover {
+  color: #3650ab;
+}

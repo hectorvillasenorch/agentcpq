@@ -3,6 +3,15 @@
 from django.db import migrations
 
 
+def _column_exists(connection, table_name, column_name):
+    with connection.cursor() as cursor:
+        try:
+            columns = connection.introspection.get_table_description(cursor, table_name)
+        except Exception:
+            return False
+    return any(c.name == column_name for c in columns)
+
+
 def drop_contract_subscription_legacy_fk(apps, schema_editor):
     """
     Some environments ended up with a legacy `cpq_contract.subscription_id` FK
@@ -13,6 +22,10 @@ def drop_contract_subscription_legacy_fk(apps, schema_editor):
     This migration safely removes the FK (if present) and drops the column.
     It's idempotent and safe to re-run.
     """
+    if schema_editor.connection.vendor != "mysql":
+        # Legacy FK only exists on old MySQL environments; nothing to do elsewhere.
+        return
+
     Contract = apps.get_model("cpq", "Contract")
     table_name = Contract._meta.db_table
     column_name = "subscription_id"

@@ -9,8 +9,11 @@ from typing import Dict, List, Optional, Tuple
 
 import openai
 from django.contrib.auth import get_user_model
+from django.db.models import ForeignKey
 from django.utils.dateparse import parse_date
 from dotenv import load_dotenv
+
+from agents.llm import chat_json, get_llm_client, get_model
 
 from cpq.models import (
     Account,
@@ -35,16 +38,16 @@ from cpq.permissions import partner_can_access_record
 from django.contrib.contenttypes.models import ContentType
 from .utils.agents_utils import clean_llm_json
 from .utils.message_formatters import SUCCESS_ICON
-from .utils.orchestrator.context_handle_helpers import estimate_cost
+from .utils.orchestrator.context_handle_helpers import estimate_cost, extract_current_request
 from .utils.session_context_helpers.session_context_helpers import get_session_context
 from .utils.admin_agent.rules_helpers import check_for_validation_rules
 
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_MODEL = get_model("structured")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = get_llm_client()
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
@@ -71,8 +74,20 @@ BULK_CREATE_THRESHOLD = int(os.getenv("BULK_CREATE_THRESHOLD", "2"))
 BULK_CREATE_BATCH_SIZE = int(os.getenv("BULK_CREATE_BATCH_SIZE", "50"))
 BATCH_UPDATE_DATA_MARKER = "__BATCH_DATA_START__"
 
-# Keep update/delete limited to the original supported objects for now.
-UPDATE_DELETE_SUPPORTED_OBJECTS = ["Lead", "Account", "Contact", "Opportunity"]
+# Update/delete now mirrors create: every chat-creatable object can also be
+# updated/deleted. Lookups resolve via IDENTIFIER_FIELDS below.
+UPDATE_DELETE_SUPPORTED_OBJECTS = [
+    "Lead",
+    "Account",
+    "Contact",
+    "Opportunity",
+    "Activity",
+    "Contract",
+    "Subscription",
+    "Option",
+    "Tenant",
+    "Knowledge",
+]
 
 REQUIRED_FIELDS: Dict[str, List[str]] = {
     "Lead": ["first_name", "last_name"],
@@ -212,7 +227,317 @@ def standard_record_agent(user, action, user_message, session_data):
     return {"message": "⚠️ Unsupported action for standard records."}
 
 
+def _apply_activity_defaults(user, user_message: str, data: dict) -> None:
+    """Fill sensible defaults for an Activity create request so it succeeds immediately.
+
+    Derives the subject + a related Opportunity/Contact from any referenced Account,
+    defaults the type/status, and marks the request completed.
+    """
+    fields = data.setdefault("fields", {})
+
+    account_ref = (
+        fields.get("account")
+        or fields.get("Account")
+        or fields.get("account__c")
+    )
+    if not account_ref:
+        match = re.search(
+            r"(?:for|on|with)\s+(?:the\s+)?(?:account)\s+(.+?)(?:\s+please)?$",
+            user_message.strip(),
+            re.IGNORECASE,
+        )
+        if match:
+            account_ref = match.group(1).strip()
+
+    subject_name = "Activity"
+    if account_ref:
+        try:
+            account = _find_record("Account", account_ref)
+        except Exception:
+            account = None
+        if account:
+            subject_name = getattr(account, "name", None) or subject_name
+            if not (fields.get("opportunity") or fields.get("contact") or fields.get("lead")):
+                opp = account.opportunities.first() if hasattr(account, "opportunities") else None
+                if opp is not None:
+                    fields["opportunity"] = getattr(opp, "name", None) or str(opp)
+                else:
+                    contact = account.contacts.first() if hasattr(account, "contacts") else None
+                    if contact is not None:
+                        fields["contact"] = getattr(contact, "email", None) or getattr(contact, "contactId", None) or str(contact)
+
+    # If the LLM used the account reference as the subject, replace it with a real one.
+    current_subject = str(fields.get("subject") or "").strip()
+    if account_ref:
+        ref_variants = {
+            str(account_ref).strip().lower(),
+            subject_name.lower(),
+            f"account {str(account_ref).strip().lower()}",
+        }
+        if not current_subject or current_subject.lower() in ref_variants:
+            fields["subject"] = f"Follow-up: {subject_name}"
+    elif not current_subject:
+        fields["subject"] = "Follow-up: Activity"
+
+    if not fields.get("activity_type"):
+        fields["activity_type"] = "call"
+    if not fields.get("status"):
+        fields["status"] = "not_started"
+
+
+def _try_fast_activity_create(user, user_message: str) -> Optional[Dict[str, object]]:
+    """Deterministically create an Activity for an explicitly named Account (no LLM)."""
+    match = re.match(
+        r"^(?:create|add|log|schedule)\s+(?:an?\s+)?activity\s+for\s+(?:the\s+)?account\s+(.+)$",
+        user_message.strip(),
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    data: Dict[str, object] = {"object": "Activity", "fields": {}}
+    _apply_activity_defaults(user, f"for account {match.group(1).strip()}", data)
+
+    success, message, record_payload = _persist_record(user, "Activity", data["fields"])  # type: ignore[arg-type]
+    if not success:
+        return {"message": message or "⚠️ Could not create the activity."}
+
+    response: Dict[str, object] = {
+        "message": f"{SUCCESS_ICON} Created Activity '{record_payload['label']}'.",
+        "hiddenMessage": False,
+    }
+    try:
+        from agents.utils.record_agent.handle_helpers import serialize_record
+        from agents.utils.analytics_agent.handle_helpers import get_object_metadata
+
+        activity = Activity.objects.get(pk=record_payload.get("id"))
+        metadata = get_object_metadata("Activity") or {}
+        response["single_record"] = serialize_record(
+            activity,
+            "Activity",
+            None,
+            metadata.get("custom_fields") or [],
+            user=user,
+        )
+    except Exception:
+        logger.exception("Failed to attach Activity form (fast path)")
+    return response
+
+
+# Objects where we can detect an existing record by a natural key before creating.
+# value = ordered candidate field names to compare (iexact) from the create payload.
+_DUPLICATE_KEY_FIELDS = {
+    "Account": ["name"],
+    "Tenant": ["name"],
+    "Contact": ["email", "phone"],
+    "Lead": ["email", "phone"],
+    "Opportunity": ["name"],
+}
+
+
+def _friendly_label(record) -> str:
+    parts = [
+        getattr(record, "first_name", None),
+        getattr(record, "last_name", None),
+    ]
+    full_name = " ".join(str(p) for p in parts if p).strip()
+    return (
+        full_name
+        or getattr(record, "name", None)
+        or getattr(record, "email", None)
+        or getattr(record, "title", None)
+        or str(record)
+    )
+
+
+def _check_create_duplicate(object_name: str, fields: Dict[str, object]) -> Optional[Dict[str, object]]:
+    """Return the first existing record that matches the create payload's natural key."""
+    key_fields = _DUPLICATE_KEY_FIELDS.get(object_name)
+    if not key_fields:
+        return None
+    model = {
+        "Account": Account,
+        "Tenant": Tenant,
+        "Contact": Contact,
+        "Lead": Lead,
+        "Opportunity": Opportunity,
+    }.get(object_name)
+    if model is None:
+        return None
+
+    queryset = model.objects.all()
+    matched_filter = None
+    matched_key = None
+    for key in key_fields:
+        value = fields.get(key) or fields.get(key.title()) or fields.get(key.upper())
+        if not value:
+            continue
+        candidate = {f"{key}__iexact": str(value).strip()}
+        # Opportunities only match when they belong to the same account, to avoid
+        # blocking legitimately repeated names across different accounts.
+        if object_name == "Opportunity":
+            account_value = fields.get("account") or fields.get("Account")
+            if account_value:
+                account = _find_record("Account", account_value)
+                if account is None:
+                    continue
+                candidate["account"] = account
+            else:
+                continue
+        if queryset.filter(**candidate).exists():
+            matched_filter = candidate
+            matched_key = key
+            break
+
+    if matched_filter is None:
+        return None
+
+    record = queryset.filter(**matched_filter).first()
+    if record is None:
+        return None
+    label = _friendly_label(record)
+    id_field = _id_field_for_object(object_name)
+    identifier = getattr(record, id_field, None) if hasattr(record, id_field) else getattr(record, "pk", None)
+    return {
+        "object": object_name,
+        "key": matched_key,
+        "label": label,
+        "identifier": identifier,
+        "record_id": getattr(record, "pk", None),
+    }
+
+
+def _auto_unique_name(model, base_name: str) -> str:
+    """Return f'{base_name} 2' / '3' ... (first name not already used)."""
+    existing = set(str(n).strip().lower() for n in model.objects.values_list("name", flat=True) if n)
+    candidate = base_name
+    counter = 2
+    while candidate.strip().lower() in existing:
+        candidate = f"{base_name} {counter}"
+        counter += 1
+    return candidate
+
+
+def resolve_duplicate_confirmation(user, user_message, session_data):
+    """Handle the user's reply to a duplicate-creation prompt.
+
+    Returns a response dict to CONSUME the message (use / create-new / cancel), or
+    None when the message is not a decision (pending state is cleared so normal
+    routing continues).
+    """
+    pending = (session_data.get("state") or {}).get("duplicate_confirmation")
+    if not pending:
+        return None
+    session_data.setdefault("state", {}).pop("duplicate_confirmation", None)
+
+    object_name = str(pending.get("object") or "")
+    fields = dict(pending.get("fields") or {})
+    label = str(pending.get("label") or "")
+    identifier = pending.get("identifier")
+    record_id = pending.get("record_id")
+
+    model = {"Account": Account, "Tenant": Tenant, "Contact": Contact, "Lead": Lead, "Opportunity": Opportunity}.get(object_name)
+    text = extract_current_request(user_message).strip().rstrip(".!? ")
+    lowered = text.lower()
+
+    # --- Cancel ---------------------------------------------------------
+    if lowered in ("cancel", "no", "skip", "stop", "abort", "nevermind", "never mind", "no thanks", "don't", "do not") or lowered.startswith(
+        ("cancel ", "no thanks", "nevermind", "never mind")
+    ):
+        return {"message": "🛑 Cancelled. No new record was created."}
+
+    # --- Use the existing record ----------------------------------------
+    looks_like_use = lowered in ("use it", "use", "use the existing", "use existing", "use that", "use this", "yes", "yep", "yeah", "open it", "show it", "show me it")
+    looks_like_use = looks_like_use or lowered.startswith(("use ", "yes ", "open it", "show it"))
+    if not looks_like_use and identifier is not None:
+        looks_like_use = lowered == str(identifier).lower() or lowered == label.lower()
+    if looks_like_use:
+        try:
+            from agents.utils.record_agent.handle_helpers import get_single_record_payload
+            _, payload = get_single_record_payload(user, {"object": object_name, "record_id": record_id})
+            if payload:
+                return {
+                    "message": f"{SUCCESS_ICON} Using existing {object_name}: <b>{label}</b>.",
+                    "single_record": payload,
+                }
+        except Exception:
+            logger.exception("Failed to load existing record for duplicate confirmation")
+        return {"message": f"{SUCCESS_ICON} Using existing {object_name}: <b>{label}</b>."}
+
+    # --- Create a new record (possibly with a modified name) ------------
+    new_name = re.sub(
+        r"^(create|new|a new one|instead|as|named|called|it|please|yes|use)\s+",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip(" ,:;-")
+    if not new_name or new_name.lower() == label.lower() or new_name.lower() in ("a new one", "one"):
+        if model is not None and "name" in (fields or {}):
+            base = str(fields.get("name") or label or f"New {object_name}")
+            new_name = _auto_unique_name(model, base)
+        else:
+            new_name = f"{label} 2"
+
+    if "name" in fields:
+        fields["name"] = new_name
+    # Email/phone duplicates: don't re-create; treat as use? Keep simple: name-based objects handled above.
+    success, message, record_payload = _persist_record(user, object_name, fields)
+    if not success:
+        return {"message": message or f"⚠️ Could not create the {object_name}."}
+
+    _remember_active_record(session_data, object_name, record_payload)
+    response = {"message": f"{SUCCESS_ICON} Created {object_name} '{record_payload['label']}'."}
+    try:
+        from agents.utils.record_agent.handle_helpers import serialize_record
+        from agents.utils.analytics_agent.handle_helpers import get_object_metadata
+
+        created = model.objects.get(pk=record_payload.get("id")) if model else None
+        if created is not None:
+            metadata = get_object_metadata(object_name) or {}
+            response["single_record"] = serialize_record(
+                created, object_name, None, metadata.get("custom_fields") or [], user=user
+            )
+    except Exception:
+        logger.exception("Failed to attach created record form after duplicate resolution")
+    return response
+
+
+def _remember_active_record(session_data, object_name, record_payload):
+    """Make a freshly created record the session's 'active record' so generic
+    follow-ups ('show the lead', 'open it') can open it without re-asking."""
+    try:
+        from agents.record_agent import _set_active_record
+
+        _set_active_record(
+            session_data,
+            {
+                "object": object_name,
+                "record_id": record_payload.get("id") or record_payload.get("record_id"),
+                "record_label": object_name,
+                "record_value": record_payload.get("label"),
+            },
+        )
+    except Exception:
+        pass
+
+
+def _remember_active_from_response(session_data, response):
+    single = (response or {}).get("single_record")
+    if isinstance(single, dict):
+        _remember_active_record(
+            session_data,
+            single.get("object"),
+            {"id": single.get("record_id"), "label": single.get("record_value")},
+        )
+
+
 def _create_standard_records(user, user_message, session_data):
+    # Fast path: "create an activity for account X" — no LLM, ~instant.
+    fast_result = _try_fast_activity_create(user, extract_current_request(user_message))
+    if fast_result is not None:
+        _remember_active_from_response(session_data, fast_result)
+        return fast_result
+
     _refresh_allowed_fields()
     current_state, previous_summary = get_session_context("create_standard_record", session_data)
 
@@ -226,6 +551,15 @@ def _create_standard_records(user, user_message, session_data):
         return {"message": "⚠️ I couldn’t understand which record you want to create."}
 
     create_requests = llm_result.get("create_standard_record", [])
+
+    # Fill sensible defaults for Activities so "create an activity for X" works
+    # immediately (no clarification loop), then show the editable form.
+    for req in create_requests:
+        data = req.get("data") or {}
+        if str(data.get("object") or "").lower() == "activity":
+            _apply_activity_defaults(user, user_message, data)
+            req["completed"] = True
+
     completed_requests = [req for req in create_requests if req.get("completed")]
     remaining_requests = [req for req in create_requests if not req.get("completed")]
 
@@ -241,6 +575,30 @@ def _create_standard_records(user, user_message, session_data):
             ),
             "session_summary": llm_result.get("summary"),
         }
+
+    # 🔍 Duplicate detector: for a single create request, if a record with the same
+    # natural key (name/email/phone) already exists, ask before creating.
+    if len(completed_requests) == 1:
+        dup_data = completed_requests[0].get("data") or {}
+        dup_object = str(dup_data.get("object") or "")
+        dup_fields = dict(dup_data.get("fields") or {})
+        existing = _check_create_duplicate(dup_object, dup_fields)
+        if existing is not None:
+            existing["fields"] = dup_fields
+            id_display = existing.get("identifier")
+            question = (
+                f"⚠️ I found an existing {dup_object} named <b>“{existing['label']}”</b>"
+                + (f" (id: {id_display})" if id_display else "")
+                + ".<br><br>Do you want to <b>use it</b> — reply “use it” — or create a new one? "
+                f"I can name it “{existing['label']} 2” if you’d like, or tell me a different name. "
+                "Reply “cancel” to skip."
+            )
+            session_data.setdefault("state", {})
+            session_data["state"]["duplicate_confirmation"] = existing
+            return {
+                "message": question,
+                "session_summary": llm_result.get("summary"),
+            }
 
     created_records = []
     errors = []
@@ -268,24 +626,45 @@ def _create_standard_records(user, user_message, session_data):
         success, message, record_payload = _persist_record(user, obj_name, fields)
         if success:
             created_records.append(record_payload)
+            _remember_active_record(session_data, obj_name, record_payload)
         else:
             errors.append(message)
 
     message_parts = []
     if created_records:
         success_lines = [
-            f"{SUCCESS_ICON} Created {item['object']} '{item['label']}' (id: {item['id']})."
+            f"{SUCCESS_ICON} Created {item['object']} '{item['label']}'."
             for item in created_records
         ]
         message_parts.append("<br>".join(success_lines))
     if errors:
         message_parts.append("<br>".join(errors))
 
-    return {
+    response = {
         "message": "<br>".join(message_parts) if message_parts else "",
         "session_summary": llm_result.get("summary"),
         "hiddenMessage": False,
     }
+
+    # If a single Activity was created, attach the editable form so the UI shows it right away.
+    if created_records and len(created_records) == 1 and created_records[0].get("object") == "Activity":
+        try:
+            from agents.utils.record_agent.handle_helpers import serialize_record
+            from agents.utils.analytics_agent.handle_helpers import get_object_metadata
+
+            activity = Activity.objects.get(pk=created_records[0].get("id"))
+            metadata = get_object_metadata("Activity") or {}
+            response["single_record"] = serialize_record(
+                activity,
+                "Activity",
+                None,
+                metadata.get("custom_fields") or [],
+                user=user,
+            )
+        except Exception:
+            logger.exception("Failed to attach Activity form after create")
+
+    return response
 
 
 def _bulk_create_standard_records(user, object_name: str, requests: List[dict]) -> Tuple[List[dict], List[str]]:
@@ -419,6 +798,10 @@ def _build_bulk_lead_instance(user, fields: Dict[str, object], custom_map: Dict[
         phone=fields.get("phone") or "",
         leadId=fields.get("leadId") or generate_agentcpq_id(),
         source=fields.get("source") or "",
+        company=fields.get("company") or fields.get("company_name") or "",
+        title=fields.get("title") or "",
+        rating=fields.get("rating") or "warm",
+        website=fields.get("website") or None,
         status=status or Lead.STATUS_CHOICES[0][0],
         notes=notes,
         assigned_to=fields.get("assigned_to") or "",
@@ -526,7 +909,7 @@ def _update_standard_records(user, user_message, session_data):
     message_parts = []
     if updated_records:
         success_lines = [
-            f"{SUCCESS_ICON} Updated {item['object']} '{item['label']}' (id: {item['id']})."
+            f"{SUCCESS_ICON} Updated {item['object']} '{item['label']}'."
             for item in updated_records
         ]
         message_parts.append("<br>".join(success_lines))
@@ -541,6 +924,34 @@ def _update_standard_records(user, user_message, session_data):
 
 
 def _delete_standard_records(user, user_message, session_data):
+    # Confirmation phase: a pending delete exists and the user confirmed it.
+    pending_delete = session_data.get("pending_delete")
+    if isinstance(pending_delete, dict):
+        session_data.pop("pending_delete", None)
+        deleted = []
+        errors = []
+        for req in pending_delete.get("requests") or []:
+            success, message, payload = _persist_delete(user, req.get("object"), req.get("identifier"))
+            if success:
+                deleted.append(payload)
+            else:
+                errors.append(message)
+
+        message_parts = []
+        if deleted:
+            deleted_lines = [
+                f"{SUCCESS_ICON} Deleted {item['object']} '{item['label']}'."
+                for item in deleted
+            ]
+            message_parts.append("<br>".join(deleted_lines))
+        if errors:
+            message_parts.append("<br>".join(errors))
+
+        return {
+            "message": "<br>".join(message_parts) if message_parts else "",
+            "hiddenMessage": False,
+        }
+
     _refresh_allowed_fields()
     current_state, previous_summary = get_session_context("delete_standard_record", session_data)
 
@@ -570,29 +981,28 @@ def _delete_standard_records(user, user_message, session_data):
             "session_summary": llm_result.get("summary"),
         }
 
-    deleted = []
-    errors = []
+    # Destructive operation: ask for confirmation before deleting.
+    requests = []
+    labels = []
     for req in completed_requests:
         obj_name = (req.get("data") or {}).get("object")
         identifier = (req.get("data") or {}).get("identifier")
-        success, message, payload = _persist_delete(user, obj_name, identifier)
-        if success:
-            deleted.append(payload)
-        else:
-            errors.append(message)
+        requests.append({"object": obj_name, "identifier": identifier})
+        record = _find_record(obj_name, identifier)
+        label = _record_payload(obj_name, record).get("label") if record is not None else None
+        labels.append(label or identifier or obj_name)
 
-    message_parts = []
-    if deleted:
-        deleted_lines = [
-            f"{SUCCESS_ICON} Deleted {item['object']} '{item['label']}' (id: {item['id']})."
-            for item in deleted
-        ]
-        message_parts.append("<br>".join(deleted_lines))
-    if errors:
-        message_parts.append("<br>".join(errors))
+    session_data["pending_delete"] = {"requests": requests}
+    if len(labels) == 1:
+        target = f"{requests[0]['object']} '{labels[0]}'"
+    else:
+        target = f"{len(labels)} records"
 
     return {
-        "message": "<br>".join(message_parts) if message_parts else "",
+        "message": (
+            f"⚠️ Delete {target}? This can't be undone. "
+            "Reply <strong>yes</strong> to delete or <strong>cancel</strong> to keep it."
+        ),
         "session_summary": llm_result.get("summary"),
         "hiddenMessage": False,
     }
@@ -659,7 +1069,8 @@ Return only JSON.
     tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
     logger.info("💰 Standard-record LLM estimate → tokens: %s | approx cost: $%.6f", tokens_used, cost_est)
 
-    response = client.chat.completions.create(
+    response = chat_json(
+        client,
         model=OPENAI_MODEL,
         messages=messages,
         temperature=0.2,
@@ -1041,7 +1452,8 @@ Return only JSON.
     tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
     logger.info("💰 Standard-record update LLM estimate → tokens: %s | approx cost: $%.6f", tokens_used, cost_est)
 
-    response = client.chat.completions.create(
+    response = chat_json(
+        client,
         model=OPENAI_MODEL,
         messages=messages,
         temperature=0.2,
@@ -1132,7 +1544,8 @@ Return only JSON.
     tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
     logger.info("💰 Standard-record delete LLM estimate → tokens: %s | approx cost: $%.6f", tokens_used, cost_est)
 
-    response = client.chat.completions.create(
+    response = chat_json(
+        client,
         model=OPENAI_MODEL,
         messages=messages,
         temperature=0.2,
@@ -1307,12 +1720,32 @@ def _persist_delete(user, object_name: str, identifier: str) -> Tuple[bool, str,
     return True, "", payload
 
 
+# Per-object natural lookup fields, used to resolve a record by identifier.
+# Kept consistent with the single-record ("show") lookup so update/delete resolve
+# records the same way. All entries are scalar fields (no FKs).
+IDENTIFIER_FIELDS: Dict[str, List[str]] = {
+    "Lead": ["email", "phone", "leadId", "external_id", "first_name", "last_name"],
+    "Account": ["name", "accid", "external_id"],
+    "Contact": ["email", "contactId", "external_id", "first_name", "last_name"],
+    "Opportunity": ["name", "oppid", "external_id"],
+    "Activity": ["subject", "activityid", "external_id"],
+    "Contract": ["external_id"],
+    "Subscription": ["public_id", "external_id"],
+    "Option": ["group_name"],
+    "Tenant": ["name", "tenant_id", "domain", "contact_email"],
+    "Knowledge": ["title", "tags"],
+}
+
+
 def _id_field_for_object(object_name: str) -> str:
     return {
         "Lead": "leadId",
         "Account": "accid",
         "Contact": "contactId",
         "Opportunity": "oppid",
+        "Activity": "activityid",
+        "Subscription": "public_id",
+        "Tenant": "tenant_id",
     }.get(object_name, "id")
 
 
@@ -1333,56 +1766,44 @@ def _find_record_candidates(object_name: str, identifier: str) -> List[object]:
 
     qs = model.objects.all()
 
-    # Prefer strict identifiers first
-    id_field = _id_field_for_object(object_name)
-
     # 1) Numeric PK
     try:
         return list(qs.filter(pk=int(raw))[:5])
     except Exception:
         pass
 
-    # 2) Custom id field (accid/leadId/contactId/oppid)
-    try:
-        if hasattr(model, id_field):
-            found = list(qs.filter(**{id_field: raw})[:5])
-            if found:
-                return found
-    except Exception:
-        pass
+    lookup_fields = IDENTIFIER_FIELDS.get(object_name, [])
 
-    # 3) External id where available
-    try:
-        if hasattr(model, "external_id"):
-            found = list(qs.filter(external_id=raw)[:5])
-            if found:
-                return found
-    except Exception:
-        pass
-
-    # 4) Email for Lead/Contact
-    if object_name in {"Lead", "Contact"}:
+    # 2) Exact (case-insensitive) matches on natural identifier fields
+    for field in lookup_fields:
         try:
-            found = list(qs.filter(email__iexact=raw)[:5])
-            if found:
-                return found
+            found = list(qs.filter(**{f"{field}__iexact": raw})[:5])
         except Exception:
-            pass
+            continue
+        if found:
+            return found
 
-    # 5) Name / partial name
-    if hasattr(model, "name"):
+    # 3) Partial (icontains) matches
+    for field in lookup_fields:
         try:
-            found = list(qs.filter(name__iexact=raw)[:5])
-            if found:
-                return found
+            found = list(qs.filter(**{f"{field}__icontains": raw})[:5])
         except Exception:
-            pass
-        try:
-            return list(qs.filter(name__icontains=raw)[:5])
-        except Exception:
-            return []
+            continue
+        if found:
+            return found
 
-    # 6) Lead full name search
+    # 4) Lead phone digit normalization
+    if object_name == "Lead":
+        digits = "".join(ch for ch in raw if ch.isdigit())
+        if digits:
+            try:
+                found = list(qs.filter(phone__icontains=digits)[:5])
+                if found:
+                    return found
+            except Exception:
+                pass
+
+    # 5) Lead full-name search (first + last split)
     if object_name == "Lead":
         try:
             parts = raw.split()
@@ -1502,6 +1923,18 @@ def _apply_updates(user, object_name: str, record, fields: Dict[str, object]) ->
 
         field_obj = record._meta.get_field(key)
         if not getattr(field_obj, "editable", True):
+            continue
+
+        # ForeignKey: resolve the related record by identifier (id / name / SKU / ...).
+        if isinstance(field_obj, ForeignKey):
+            if value in (None, ""):
+                if getattr(field_obj, "null", False):
+                    setattr(record, key, None)
+                continue
+            related = _resolve_related_instance(field_obj.related_model, value)
+            if related is None:
+                raise ValueError(f"Related record for '{key}' not found with value '{value}'.")
+            setattr(record, key, related)
             continue
 
         if field_obj.get_internal_type() in {"DecimalField"}:
@@ -1982,6 +2415,65 @@ def _find_account(value) -> Optional[Account]:
         return Account.objects.filter(name__icontains=str(value)).first()
     except Exception:
         return None
+
+
+def _resolve_related_instance(related_model, value):
+    """Resolve a related model instance by identifier (numeric id, name, SKU, etc.)."""
+    if value in (None, ""):
+        return None
+    raw = str(value).strip()
+
+    # 1) Numeric primary key
+    try:
+        return related_model.objects.get(pk=int(raw))
+    except Exception:
+        pass
+
+    # 2) Natural identifier fields (case-insensitive exact match)
+    for field in (
+        "name",
+        "sku",
+        "external_id",
+        "subject",
+        "title",
+        "email",
+        "phone",
+        "username",
+        "custom_identifier",
+        "prdid",
+        "qteid",
+        "public_id",
+        "accid",
+        "leadId",
+        "contactId",
+        "oppid",
+    ):
+        if not hasattr(related_model, field):
+            continue
+        try:
+            found = related_model.objects.filter(**{f"{field}__iexact": raw}).first()
+        except Exception:
+            continue
+        if found:
+            return found
+
+    return None
+
+
+def _find_quote(value) -> Optional[Quote]:
+    return _resolve_related_instance(Quote, value) if value else None
+
+
+def _find_quote_line(value) -> Optional[QuoteLine]:
+    return _resolve_related_instance(QuoteLine, value) if value else None
+
+
+def _find_product(value) -> Optional[Product]:
+    return _resolve_related_instance(Product, value) if value else None
+
+
+def _find_contract(value) -> Optional[Contract]:
+    return _resolve_related_instance(Contract, value) if value else None
 
 
 def _resolve_user(value) -> Optional[User]:

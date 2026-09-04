@@ -68,8 +68,10 @@ def _llm_semantic_match(local_fields, crm_fields):
     except Exception:
         return {}
 
-    model = os.getenv("FIELD_MAPPING_LLM_MODEL", "gpt-4o-mini")
-    client = openai.OpenAI(api_key=openai_key)
+    from agents.llm import get_llm_client, get_model
+
+    model = os.getenv("FIELD_MAPPING_LLM_MODEL", get_model("structured"))
+    client = get_llm_client()
 
     crm_payload = [
         {"name": f.get("name"), "label": f.get("label")}

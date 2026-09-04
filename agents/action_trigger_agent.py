@@ -16,6 +16,7 @@ from .utils.action_trigger.handle_helpers import handle_create_action_trigger
 
 # General Helpers
 from .utils.action_trigger.general_helpers import get_action_triggers_details, action_trigger_creation_type_with_llm, get_cpq_model_schema
+from .utils.action_trigger.general_helpers import _is_lead_conversion_request, build_lead_conversion_trigger_response
 
 def action_trigger_agent(user, action, user_message, session_data):
 
@@ -33,6 +34,11 @@ def create_action_trigger(user, user_message, session_data):
     """Create action trigger"""
 
     logging.info("🔧 Creating action trigger...\n\n")
+
+    # 📋 Deterministic: "convert lead(s) → Account + Contact + Opportunity when Qualified"
+    if _is_lead_conversion_request(user_message):
+        logging.info("Do NOT use GPT (lead conversion trigger)\n")
+        return build_lead_conversion_trigger_response(user, user_message)
 
     current_state, previous_summary = get_session_context("create_action_trigger", session_data)
 

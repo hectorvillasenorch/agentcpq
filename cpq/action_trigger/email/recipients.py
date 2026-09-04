@@ -10,7 +10,23 @@ def resolve_recipients(recipients_def, instance, context):
     emails |= _resolve_fields(recipients_def.get("fields", []), instance, context)
     emails |= set(recipients_def.get("external", []))
 
-    return {e for e in emails if e}
+    emails = {e for e in emails if e}
+    return _filter_email_opted_out(emails)
+
+
+def _filter_email_opted_out(emails):
+    """Drop any recipient whose Lead/Contact has opted out of email (compliance)."""
+    if not emails:
+        return emails
+    from cpq.models import Lead, Contact
+
+    opted_out = set(
+        Lead.objects.filter(email__in=emails, email_opt_out=True).values_list("email", flat=True)
+    )
+    opted_out |= set(
+        Contact.objects.filter(email__in=emails, email_opt_out=True).values_list("email", flat=True)
+    )
+    return {e for e in emails if e not in opted_out}
 
 
 def _resolve_users(usernames):

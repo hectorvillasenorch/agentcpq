@@ -69,10 +69,9 @@ def _create_forecast_opportunity(account, subscription, base_opportunity, settin
 
 def _create_forecast_quote(subscription, opportunity, settings_obj):
     end_date = subscription.end_date
-    name = f"Forecast-{subscription.id}-{end_date:%Y%m%d}"
 
+    # Quote name is auto-assigned as Q-##### by the Quote model.
     quote = Quote.objects.create(
-        name=name,
         account=opportunity.account,
         opportunity=opportunity,
         status="Forecast",

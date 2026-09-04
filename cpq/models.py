@@ -261,8 +261,29 @@ class Lead(models.Model):
     email = models.EmailField(blank=True)
     leadId = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     source = models.CharField(max_length=100, blank=True, help_text="e.g., Website, Referral, LinkedIn")
+    company = models.CharField(max_length=255, blank=True, help_text="Company the lead works for.")
+    title = models.CharField(max_length=100, blank=True, help_text="Job title.")
+    rating = models.CharField(
+        max_length=20,
+        choices=(("hot", "Hot"), ("warm", "Warm"), ("cold", "Cold")),
+        default="warm",
+        blank=True,
+        help_text="Lead quality/priority.",
+    )
+    website = models.URLField(blank=True, null=True, help_text="Company website.")
     contact = models.ForeignKey('Contact', on_delete=models.SET_NULL, null=True, blank=True, related_name='leads')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
+    converted_at = models.DateTimeField(null=True, blank=True, help_text="When this lead was converted.")
+    converted_account = models.ForeignKey(
+        'Account', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='converted_leads', help_text="The Account created when this lead was converted."
+    )
+    converted_opportunity = models.ForeignKey(
+        'Opportunity', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='converted_leads', help_text="The Opportunity created when this lead was converted."
+    )
+    do_not_call = models.BooleanField(default=False, help_text="Compliance: suppress phone outreach.")
+    email_opt_out = models.BooleanField(default=False, help_text="Compliance: suppress email outreach.")
     notes = models.TextField(blank=True)
     assigned_to = models.CharField(max_length=100, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_leads')
@@ -340,6 +361,8 @@ class Contact(models.Model):
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='contacts')
     contactId = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     is_primary = models.BooleanField(default=False)
+    do_not_call = models.BooleanField(default=False, help_text="Compliance: suppress phone outreach.")
+    email_opt_out = models.BooleanField(default=False, help_text="Compliance: suppress email outreach.")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -391,6 +414,23 @@ class Opportunity(models.Model):
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="opportunities")
     amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
     stage = models.CharField(max_length=50, default=default_opportunity_stage)
+    # Renewal metrics
+    nacv = models.DecimalField(
+        max_digits=14, decimal_places=2, blank=True, null=True,
+        help_text="New Annual Contract Value of the renewal (from the renewal quote).",
+    )
+    renewal_baseline = models.DecimalField(
+        max_digits=14, decimal_places=2, blank=True, null=True,
+        help_text="Value of the expiring contract/deal this renewal replaces.",
+    )
+    renews_opportunity = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="renewals",
+        help_text="The original opportunity this renewal opportunity replaces.",
+    )
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_opportunities')
     expected_close_date = models.DateField(
@@ -664,13 +704,18 @@ class Quote(models.Model):
         if not self.qteid:
             self.qteid = generate_agentcpq_id()
 
+        # 🔒 Canonical quote naming: always Q-##### (e.g. Q-00001, Q-00034).
+        # New quotes are always named sequentially from their id (any provided
+        # name is ignored); updates that carry a free-form name are normalized.
+        if not is_new and self.name and not re.fullmatch(r"Q-\d{5}", self.name):
+            self.name = f"Q-{self.pk:05d}"
+
         if is_new:
             # Solo guardar sin lógica extra, evitar conflictos con force_insert
             super().save(*args, **kwargs)
 
-            # ✅ Generar nombre basado en ID si no existe aún
-            if not self.name:
-                self.name = f"Q-{self.id:05d}"
+            # ✅ Nombre canónico basado en el ID: Q-##### (ignora cualquier nombre libre)
+            self.name = f"Q-{self.id:05d}"
 
             # Actualizar campos dependientes y volver a guardar
             self.update_tax()
@@ -2498,6 +2543,27 @@ class ActionTrigger(models.Model):
         help_text=_("Lower number = higher priority. Triggers run in ascending priority order.")
     )
 
+    # --- Scheduling (for EMAIL reminders) ---
+    schedule_type = models.CharField(
+        max_length=20,
+        choices=(
+            ("immediate", "Immediate"),
+            ("offset", "Relative to a record date"),
+            ("date", "Specific date/time"),
+        ),
+        default="immediate",
+        blank=True,
+        help_text=_("When to deliver the email. 'immediate' sends on the event; 'offset' sends N days before/after a record date; 'date' sends at a fixed date/time."),
+    )
+    schedule_config = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=_(
+            "For 'offset': {\"date_field\": \"expiration_date\", \"offset_days\": -7} (negative = before). "
+            "For 'date': {\"send_at\": \"2026-09-15T09:00:00\"}."
+        ),
+    )
+
     created_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -2615,6 +2681,44 @@ class ScheduledTask(models.Model):
         self.last_error = error_text
         self.status = "failed"
         self.save(update_fields=["attempts", "last_error", "status", "updated_at"])
+
+
+class ScheduledEmail(models.Model):
+    """Queued email reminder produced by a scheduled ActionTrigger EMAIL action.
+
+    The trigger engine enqueues one of these (instead of sending immediately) when
+    the trigger has schedule_type != 'immediate'. A scheduler later delivers it at
+    ``send_at`` by re-resolving the instance + re-running the EMAIL action.
+    """
+
+    trigger = models.ForeignKey(
+        "ActionTrigger",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="scheduled_emails",
+    )
+    instance_model = models.CharField(max_length=100, help_text="e.g. 'cpq.Opportunity'")
+    instance_id = models.BigIntegerField()
+    action = models.JSONField(default=dict, help_text="The EMAIL action dict to execute at send time.")
+    send_at = models.DateTimeField()
+    status = models.CharField(
+        max_length=20,
+        choices=(("pending", "Pending"), ("sent", "Sent"), ("failed", "Failed")),
+        default="pending",
+    )
+    attempts = models.IntegerField(default=0)
+    last_error = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["status", "send_at"])]
+        verbose_name = "Scheduled Email"
+        verbose_name_plural = "Scheduled Emails"
+
+    def __str__(self):
+        return f"ScheduledEmail (send_at={self.send_at}, status={self.status})"
 
 
 class CustomAction(models.Model):

@@ -208,12 +208,22 @@ function updateAgentsEmptyState() {
   const chatBox = document.getElementById("chat-box");
   const inputField = document.getElementById("user-input");
   const emptyState = document.getElementById("chat-empty-state");
+  const inputContainer = document.querySelector(".chat-input-container");
   if (!chatContainer || !chatBox || !inputField || !emptyState) return;
 
   const hasMessages = Boolean(chatBox.querySelector(".chat-message, .chat-text"));
   const hasInput = inputField.value.trim().length > 0;
   const dismissed = document.documentElement.dataset.agentsEmptyDismissed === "true";
   const shouldShow = !hasMessages && !dismissed;
+
+  // Embed the input bar in the greeting container when empty; pin it to the bottom once messages exist.
+  if (inputContainer) {
+    const shell = emptyState.querySelector(".chat-empty-shell");
+    const target = shouldShow && shell ? shell : chatContainer;
+    if (inputContainer.parentNode !== target) {
+      target.appendChild(inputContainer);
+    }
+  }
 
   chatContainer.classList.toggle("is-empty", shouldShow);
   document.body.classList.toggle("is-chat-empty", shouldShow);
@@ -646,6 +656,7 @@ function setupChatListeners() {
 
   const inputField = document.getElementById("user-input");
   const button = document.getElementById("send-btn");
+  const chatBox = document.getElementById("chat-box");
 
   if (!inputField || !button) {
       console.error("Chat input or button not found!");
@@ -671,6 +682,28 @@ function setupChatListeners() {
 
   inputField.addEventListener("input", autosize);
   autosize();
+
+  if (chatBox && chatBox.dataset.quickReplyBound !== "true") {
+    chatBox.dataset.quickReplyBound = "true";
+    chatBox.addEventListener("click", (event) => {
+      const trigger = event.target.closest("[data-chat-reply]");
+      if (!trigger) return;
+      event.preventDefault();
+
+      const reply = String(trigger.dataset.chatReply || "").trim();
+      if (!reply) return;
+
+      inputField.value = reply;
+      inputField.dispatchEvent(new Event("input", { bubbles: true }));
+
+      const shouldSend = String(trigger.dataset.chatSend || "").toLowerCase() === "true";
+      if (shouldSend) {
+        sendMessage();
+      } else {
+        inputField.focus();
+      }
+    });
+  }
 
   console.log("Chat listeners attached.");
 }

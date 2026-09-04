@@ -19,6 +19,7 @@ from dateutil.relativedelta import relativedelta
 from django.contrib.contenttypes.models import ContentType
 
 from cpq.permissions import apply_partner_access_filter, partner_label_for_user
+from agents.streaming import emit as stream_emit
 from cpq.models import (
     Product,
     Lead,
@@ -129,8 +130,11 @@ def resolve_metrics_object_name(raw_object: str) -> str | None:
     lowered = cleaned.lower()
     lowered = re.sub(r"\b(do|did|does)\s+(i|we|you)\s+have\b", "", lowered)
     lowered = re.sub(r"\b(i|we|you)\s+have\b", "", lowered)
-    lowered = re.sub(r"\b(my|our|your|the)\b", "", lowered)
+    lowered = re.sub(r"\b(my|our|your|the|a|an)\b", "", lowered)
     lowered = re.sub(r"\b(total|overall|currently|right\s+now|in\s+total)\b", "", lowered)
+    # Strip "list of X" / "list X" / "X records" phrasing so the object resolves.
+    lowered = re.sub(r"\b(list\s+of|list|all\s+the|all)\b", "", lowered)
+    lowered = re.sub(r"\brecords?\b", "", lowered)
     lowered = re.sub(r"\s+", " ", lowered).strip()
     if lowered:
         cleaned = lowered
@@ -140,12 +144,19 @@ def resolve_metrics_object_name(raw_object: str) -> str | None:
         "deals": "Opportunity",
         "opp": "Opportunity",
         "opps": "Opportunity",
+        "oppty": "Opportunity",
+        "opptys": "Opportunity",
+        "oppties": "Opportunity",
         "opportunity": "Opportunity",
         "opportunities": "Opportunity",
         "company": "Account",
         "companies": "Account",
         "customer": "Account",
         "customers": "Account",
+        "acct": "Account",
+        "accts": "Account",
+        "prod": "Product",
+        "prods": "Product",
     }
     alias_target = alias_map.get(cleaned.lower())
     if alias_target and get_object_metadata(alias_target):
@@ -406,6 +417,8 @@ def handle_show_metrics(user, completed_metrics):
         record_count = len(serialized)
 
         results[object_name] = serialized
+        # Stream rows to the client (no-op outside a streaming request).
+        stream_emit("rows", {"object": object_name, "rows": serialized})
         response_message += f"📊 Retrieved {record_count} {display_name}(s).<br>"
 
     return response_message, results, object_labels
@@ -466,6 +479,13 @@ def _apply_date_range(qs, date_field, range_key):
     elif range_key == "this_month":
         start = now_dt.replace(day=1)
         end = (start + relativedelta(months=1)) - timedelta(days=1)
+    elif range_key == "this_week":
+        start = now_dt - timedelta(days=now_dt.weekday())
+        end = now_dt
+    elif range_key == "last_week":
+        start_this_week = now_dt - timedelta(days=now_dt.weekday())
+        start = start_this_week - timedelta(days=7)
+        end = start_this_week
     elif range_key in {"this_quarter", "current_quarter"}:
         start, end = _quarter_bounds(now_dt.date(), quarter_offset=0)
     elif range_key in {"last_quarter", "previous_quarter"}:
@@ -988,6 +1008,11 @@ def execute_aggregate(qs, aggregate_def, model, object_name, custom_object=None,
                 label = str(label)
                 if lookup_labels:
                     label = lookup_labels.get(label, label)
+                elif not group_custom_field:
+                    # Show picklist labels (e.g. Opportunity stage "closedwon" → "Closed Won").
+                    friendly = _choice_label(model, group_field_name, label)
+                    if friendly is not None:
+                        label = friendly
             val = entry.get("value")
             series.append({
                 "period": label,
@@ -1690,6 +1715,63 @@ def serialize_value(value):
     return value
 
 
+def _choice_label(model, field_name: str, value):
+    """Return the human label for a picklist/choice value (e.g. 'closedwon' → 'Closed Won').
+
+    Returns None when the field is not a choice/picklist or the value has no label,
+    so callers keep the raw value as a fallback.
+    """
+    if value is None or isinstance(value, (list, dict, bool)):
+        return None
+    try:
+        field_obj = model._meta.get_field(field_name)
+    except Exception:
+        return None
+    # FKs / relations are rendered separately (as readable names) — skip here.
+    if getattr(field_obj, "is_relation", False):
+        return None
+    try:
+        choices = getattr(field_obj, "choices", None)
+        if choices:
+            label = dict(choices).get(value)
+            if label is not None:
+                return label
+    except Exception:
+        pass
+    # App-managed picklists stored outside the model (e.g. Opportunity.stage lives
+    # in the OpportunityStage table / picklist defaults).
+    try:
+        from cpq.models import picklist_choices
+
+        choices = picklist_choices(model.__name__, field_name)
+        if choices:
+            label = dict(choices).get(value)
+            if label is not None:
+                return label
+    except Exception:
+        pass
+    return None
+
+
+# Identifier-ish fields used to resolve a lookup value to a readable display name
+# (the stored value may be a PK, an external id like accid/oppid, or a natural key).
+_LOOKUP_IDENTIFIER_ATTRS = (
+    "accid", "oppid", "leadId", "contactId", "qteid", "prdid", "activityid",
+    "tenant_id", "external_id", "record_id", "custom_identifier",
+    "name", "email", "phone", "sku", "username", "first_name", "last_name",
+)
+
+
+def _lookup_keys_for(obj):
+    """All string keys (PK + identifier fields) that can reference ``obj``."""
+    keys = {str(obj.pk)}
+    for attr in _LOOKUP_IDENTIFIER_ATTRS:
+        value = getattr(obj, attr, None)
+        if value is not None and str(value) != "":
+            keys.add(str(value))
+    return keys
+
+
 def serialize_custom_records(qs, custom_object, custom_fields):
     field_names = [field.name for field in custom_fields]
     field_lookup = {field.name: field for field in custom_fields}
@@ -1815,15 +1897,25 @@ def serialize_custom_records(qs, custom_object, custom_fields):
                 try:
                     ids.append(int(str(raw)))
                 except (TypeError, ValueError):
-                    continue
+                    # Non-numeric value (e.g. an accid) — keep it for identifier matching.
+                    ids.append(str(raw))
             else:
                 ids.append(str(raw))
         if not ids:
             continue
         display_map = {}
         try:
-            for obj in model.objects.filter(pk__in=ids):
-                display_map[str(obj.pk)] = _format_lookup_display(obj)
+            # Match by PK *or* any identifier field (accid, name, email, …) so
+            # stored lookup values like an account's accid resolve to a readable name.
+            model_fields = {f.name for f in model._meta.get_fields()}
+            lookup_q = Q(pk__in=[i for i in ids if isinstance(i, int)])
+            for attr in _LOOKUP_IDENTIFIER_ATTRS:
+                if attr in model_fields:
+                    lookup_q |= Q(**{f"{attr}__in": ids})
+            for obj in model.objects.filter(lookup_q):
+                display = _format_lookup_display(obj)
+                for key in _lookup_keys_for(obj):
+                    display_map[key] = display
         except Exception:
             display_map = {}
         model_display_map[model] = display_map
@@ -1915,5 +2007,9 @@ def safe_serialize_queryset(qs, model_name, custom_object=None, custom_fields=No
                 value = related_list
 
             record[field_name] = serialize_value(value)
+            # Show picklist labels (e.g. Opportunity stage "closedwon" → "Closed Won").
+            label = _choice_label(obj.__class__, field_name, value)
+            if label is not None:
+                record[field_name] = label
         serialized.append(record)
     return serialized

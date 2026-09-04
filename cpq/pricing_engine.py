@@ -1,4 +1,4 @@
-from decimal import Decimal, ROUND_DOWN, ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_UP
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_UP
 
 from django.db.models import Q
 from django.utils import timezone
@@ -60,8 +60,8 @@ def resolve_unit_price(product, quantity, currency=None, uom=None, as_of_date=No
         return None
 
     try:
-        qty = int(quantity or 0)
-    except (TypeError, ValueError):
+        qty = int(Decimal(str(quantity or 0)))
+    except (TypeError, ValueError, InvalidOperation):
         qty = 0
 
     row = (

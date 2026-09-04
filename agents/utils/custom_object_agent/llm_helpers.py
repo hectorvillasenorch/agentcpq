@@ -11,13 +11,14 @@ from ..prompts_helpers.system_prompt_helpers import make_system_prompt
 # Agents Helpers
 from ..agents_utils import clean_llm_json
 
+from agents.llm import chat_json, get_llm_client, get_model
+
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-3.5-turbo"
-#OPENAI_MODEL = "gpt-4"
+OPENAI_MODEL = get_model("structured")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = get_llm_client()
 
 # FUNCTION TO EXTRACT CUSTOM OBJECTS DETAILS (CREATE_CUSTOM_OBJECT)
 def extract_custom_objects(user_message, previous_summary):
@@ -25,10 +26,19 @@ def extract_custom_objects(user_message, previous_summary):
 
     system_prompt, temperature = make_system_prompt("custom_object_agent", "create", "extract_custom_objects", previous_summary)
 
+    # Fallback when the DB prompt hasn't been seeded yet — keep the LLM output well-formed.
+    if not system_prompt or not system_prompt.strip():
+        system_prompt = (
+            "You extract the custom object(s) to create from the user's request. "
+            "Return a JSON array of objects, each with exactly two keys: "
+            "\"label\" (the object name) and \"description\" (a short description, or an empty string if none).\n"
+            "Example: [{\"label\": \"POV\", \"description\": \"Proof of Value\"}]"
+        )
+
     user_prompt = user_message
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -40,20 +50,32 @@ def extract_custom_objects(user_message, previous_summary):
         raw_response = response.choices[0].message.content.strip()
         logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
 
-        # ✅ Ensure valid JSON response
-        try:
-            extracted_updates = json.loads(raw_response)
-            if isinstance(extracted_updates, list) and all("label" in p and "description" in p for p in extracted_updates):
-                return extracted_updates
-            else:
-                logging.warning("⚠️ GPT response is not in expected format.")
-                return None
-        except json.JSONDecodeError:
-            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
+        extracted = clean_llm_json(raw_response)
+        if not isinstance(extracted, (dict, list)):
+            logging.warning("⚠️ GPT response is not in expected format.")
             return None
 
+        # Normalize: accept a single object (dict) and label/name variants.
+        items = extracted if isinstance(extracted, list) else [extracted]
+        normalized = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            label = item.get("label") or item.get("name") or item.get("Name")
+            if not label or not str(label).strip():
+                continue
+            normalized.append({
+                "label": str(label).strip(),
+                "description": item.get("description") or "",
+            })
+
+        if normalized:
+            return normalized
+        logging.warning("⚠️ GPT response is not in expected format.")
+        return None
+
     except Exception as e:
-        logging.error(f"❌ Error extracting discount details: {str(e)}")
+        logging.error(f"❌ Error extracting custom objects: {str(e)}")
         return None
 
 # FUNCTION TO EXTRACT CUSTOM OBJECTS UPDATES (UPDATE_CUSTOM_OBJECT)
@@ -62,12 +84,25 @@ def extract_custom_objects_updates(user_message, custom_objects):
 
     system_prompt, temperature = make_system_prompt("custom_object_agent", "update", "extract_custom_objects_updates")
 
-    system_prompt += "Here are the current custom objects: " + custom_objects
+    # Fallback when the DB prompt hasn't been seeded yet.
+    if not system_prompt or not system_prompt.strip():
+        system_prompt = (
+            "You extract custom object updates from the user's request. "
+            "Return a JSON array of objects, each with \"label\" (the object name) "
+            "and \"updates\" (an array of {\"field\", \"value\"} pairs describing the changes).\n"
+            "Example: [{\"label\": \"POV\", \"updates\": [{\"field\": \"description\", \"value\": \"New description\"}]}]"
+        )
+
+    if hasattr(custom_objects, "values_list"):
+        custom_objects_str = ", ".join(str(v) for v in custom_objects)
+    else:
+        custom_objects_str = str(custom_objects)
+    system_prompt += "\nHere are the current custom objects: " + custom_objects_str
 
     user_prompt = user_message
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -80,16 +115,28 @@ def extract_custom_objects_updates(user_message, custom_objects):
         logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
 
         # ✅ Ensure valid JSON response
-        try:
-            extracted_updates = json.loads(raw_response)
-            if isinstance(extracted_updates, list) and all("label" in p and "updates" in p for p in extracted_updates):
-                return extracted_updates
-            else:
-                logging.warning("⚠️ GPT response is not in expected format.")
-                return None
-        except json.JSONDecodeError:
-            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
+        extracted = clean_llm_json(raw_response)
+        if not isinstance(extracted, (dict, list)):
+            logging.warning("⚠️ GPT response is not in expected format.")
             return None
+
+        items = extracted if isinstance(extracted, list) else [extracted]
+        normalized = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            label = item.get("label") or item.get("name") or item.get("Name")
+            if not label:
+                continue
+            updates = item.get("updates") or item.get("fields") or item.get("values") or []
+            if isinstance(updates, dict):
+                updates = [{"field": k, "value": v} for k, v in updates.items()]
+            normalized.append({"label": str(label), "updates": updates})
+
+        if normalized:
+            return normalized
+        logging.warning("⚠️ GPT response is not in expected format.")
+        return None
 
     except Exception as e:
         logging.error(f"❌ Error extracting custom objects details: {str(e)}")
@@ -148,7 +195,7 @@ def extract_custom_objects_deletes(user_message, custom_objects):
     """
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "Extract custom objects details to create."},
@@ -267,7 +314,7 @@ def extract_custom_fields(user_message, custom_objects):
     """
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "Extract custom objects details to create."},
@@ -311,7 +358,7 @@ def extract_custom_fields_updates(user_message, custom_objects, custom_fields, p
     user_prompt = user_message
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -403,7 +450,7 @@ def extract_custom_fields_deletes(user_message, custom_objects, custom_fields):
     """
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "Extract custom objects details to create."},
@@ -561,7 +608,7 @@ def extract_custom_object_data(user_message, custom_objects_data, custom_objects
     """
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "Extract custom objects details to create."},
@@ -595,6 +642,15 @@ def extract_custom_records_updates(user_message, record_identifiers, custom_obje
 
     system_prompt, temperature = make_system_prompt("custom_object_agent", "update", "extract_custom_records_updates")
 
+    # Fallback when the DB prompt hasn't been seeded yet — keep the LLM output well-formed.
+    if not system_prompt or not system_prompt.strip():
+        system_prompt = (
+            "You extract custom record updates from the user's request. "
+            "Return a JSON array of objects, each with \"record_identifier\" (the record to update) "
+            "and \"values\" (an array of {\"field\", \"value\"} pairs matching the object's field names).\n"
+            "Example: [{\"record_identifier\": \"POV-00003\", \"values\": [{\"field\": \"status__c\", \"value\": \"In Progress\"}]}]"
+        )
+
     system_prompt += "The list of available custom objects and their fields is the following:" + json.dumps(custom_objects_data, indent=2)
     system_prompt += "List of object names you can use:" + (", ".join(custom_objects_names) if isinstance(custom_objects_names, list) else str(custom_objects_names))
     system_prompt += "List of the current record identifiers:" + (", ".join(record_identifiers) if isinstance(record_identifiers, list) else str(record_identifiers))
@@ -602,7 +658,7 @@ def extract_custom_records_updates(user_message, record_identifiers, custom_obje
     user_prompt = user_message
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -614,17 +670,35 @@ def extract_custom_records_updates(user_message, record_identifiers, custom_obje
         raw_response = response.choices[0].message.content.strip()
         logging.info(f"\n\n🔍 Raw GPT Response: {raw_response}\n\n")
 
-        # ✅ Ensure valid JSON response
-        try:
-            extracted_updates = json.loads(raw_response)
-            if isinstance(extracted_updates, list) and all("record_identifier" in p and "values" in p for p in extracted_updates):
-                return extracted_updates
-            else:
-                logging.warning("⚠️ GPT response is not in expected format.")
-                return None
-        except json.JSONDecodeError:
-            logging.error(f"❌ GPT returned invalid JSON: {raw_response}")
+        extracted = clean_llm_json(raw_response)
+        if not isinstance(extracted, (dict, list)):
+            logging.warning("⚠️ GPT response is not in expected format.")
             return None
+
+        # Normalize: accept a single object, and "fields" as an alias of "values".
+        items = extracted if isinstance(extracted, list) else [extracted]
+        normalized = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            rid = item.get("record_identifier") or item.get("identifier") or item.get("record_id")
+            if not rid:
+                continue
+            raw_values = item.get("values") or item.get("fields") or []
+            values = []
+            if isinstance(raw_values, dict):
+                for key, val in raw_values.items():
+                    values.append({"field": key, "value": val})
+            elif isinstance(raw_values, list):
+                for entry in raw_values:
+                    if isinstance(entry, dict) and entry.get("field"):
+                        values.append(entry)
+            normalized.append({"record_identifier": str(rid), "values": values})
+
+        if normalized:
+            return normalized
+        logging.warning("⚠️ GPT response is not in expected format.")
+        return None
 
     except Exception as e:
         logging.error(f"❌ Error extracting custom records details: {str(e)}")
@@ -678,7 +752,7 @@ def extract_custom_records_deletes(user_message, record_identifiers):
     """
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "Extract custom objects details to create."},

@@ -11,6 +11,8 @@ from agents.utils.record_agent.handle_helpers import get_single_record_payload
 
 class RecordAgentHelperTests(TestCase):
     def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_superuser(username="helperadmin", email="h@h.com", password="pw")
         self.account = Account.objects.create(
             name="Acme Corp",
             industry="Technology",
@@ -20,7 +22,7 @@ class RecordAgentHelperTests(TestCase):
 
     def test_get_single_record_payload_success(self):
         message, payload = get_single_record_payload(
-            user=None,
+            user=self.user,
             request_payload={"object": "Account", "identifier": "Acme Corp"},
         )
 
@@ -53,7 +55,7 @@ class RecordAgentHelperTests(TestCase):
 class RecordAgentUpdateTests(TestCase):
     def setUp(self):
         User = get_user_model()
-        self.user = User.objects.create_user(username="tester", password="secret")
+        self.user = User.objects.create_superuser(username="tester", email="t@t.com", password="secret")
         self.account = Account.objects.create(
             name="Acme Corp",
             industry="Technology",
@@ -83,7 +85,7 @@ class RecordAgentUpdateTests(TestCase):
         }
 
         response = update_single_record_from_ui(
-            self.user.username,
+            self.user,
             f"Update Record: {json.dumps(payload)}",
             session_data={},
         )
@@ -136,7 +138,7 @@ class RecordAgentUpdateTests(TestCase):
         }
 
         response = update_single_record_from_ui(
-            self.user.username,
+            self.user,
             f"Update Record: {json.dumps(payload)}",
             session_data={},
         )

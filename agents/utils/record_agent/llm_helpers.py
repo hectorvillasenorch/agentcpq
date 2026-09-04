@@ -11,12 +11,14 @@ from cpq.models import CustomObject
 from ..agents_utils import clean_llm_json
 from ..orchestrator.context_handle_helpers import estimate_cost
 
+from agents.llm import chat_json, get_llm_client, get_model
+
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_MODEL = get_model("structured")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = get_llm_client()
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +138,8 @@ Return JSON following the schema.
         cost_est,
     )
 
-    response = client.chat.completions.create(
+    response = chat_json(
+        client,
         model=OPENAI_MODEL,
         messages=messages,
         temperature=0.2,

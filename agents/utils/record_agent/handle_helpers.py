@@ -260,9 +260,87 @@ def serialize_record(record: Model, object_name: str, custom_object, custom_fiel
     return _serialize_record(record, object_name, custom_object, custom_fields, user=user)
 
 
+def build_related_records(record: Model, model_name: str) -> List[Dict[str, object]]:
+    """Build related-record sections (Opportunities, Activities, Quotes, …) for the detail form."""
+    from django.db.models import Q
+    from cpq.models import Activity, Contract, Quote, QuoteLine, Subscription
+
+    related: List[Dict[str, object]] = []
+
+    def _row(obj, extra: Optional[Dict[str, object]] = None) -> Dict[str, object]:
+        row: Dict[str, object] = {
+            "id": getattr(obj, "id", None),
+            "name": getattr(obj, "name", None) or getattr(obj, "subject", None) or str(obj),
+        }
+        if extra:
+            row.update(extra)
+        return row
+
+    def _add(label: str, object_key: str, rows: Iterable[Dict[str, object]]) -> None:
+        rows = list(rows)
+        if rows:
+            related.append({"object": object_key, "label": label, "records": rows})
+
+    def _activities(queryset, limit: int = 15):
+        return [
+            _row(a, {"type": a.get_activity_type_display() if a.activity_type else "", "status": a.get_status_display() if a.status else ""})
+            for a in queryset[:limit]
+        ]
+
+    def _quotes(queryset, limit: int = 15):
+        return [
+            _row(q, {"status": q.status or "", "net": str(q.net_amount) if q.net_amount is not None else ""})
+            for q in queryset[:limit]
+        ]
+
+    if model_name == "Account":
+        _add("Opportunities", "Opportunity", [
+            _row(o, {"stage": o.stage or "", "amount": str(o.amount) if o.amount is not None else ""})
+            for o in record.opportunities.all()[:15]
+        ])
+        acts = Activity.objects.filter(Q(opportunity__account=record) | Q(contact__account=record)).distinct().order_by("-created_at")
+        _add("Activities", "Activity", _activities(acts))
+        _add("Quotes", "Quote", _quotes(record.quotes.all()))
+
+    elif model_name == "Opportunity":
+        if getattr(record, "account_id", None):
+            _add("Account", "Account", [_row(record.account)])
+        _add("Activities", "Activity", _activities(record.activities.all()))
+        _add("Quotes", "Quote", _quotes(record.quotes.all()))
+        _add("Contracts", "Contract", [_row(c) for c in record.contracts.all()[:15]])
+
+    elif model_name == "Contact":
+        if getattr(record, "account_id", None):
+            _add("Account", "Account", [_row(record.account)])
+        _add("Activities", "Activity", _activities(record.activities.all()))
+        if getattr(record, "account_id", None):
+            _add("Opportunities", "Opportunity", [
+                _row(o, {"stage": o.stage or "", "amount": str(o.amount) if o.amount is not None else ""})
+                for o in record.account.opportunities.all()[:15]
+            ])
+
+    elif model_name == "Lead":
+        _add("Activities", "Activity", _activities(record.activities.all()))
+
+    elif model_name == "Quote":
+        _add("Quote Lines", "QuoteLine", [
+            _row(l, {
+                "quantity": l.quantity,
+                "unit_price": str(l.unit_price) if l.unit_price is not None else "",
+                "line_total": str(l.subtotal) if getattr(l, "subtotal", None) is not None else "",
+            })
+            for l in record.quote_lines.all()[:20]
+        ])
+        _add("Subscriptions", "Subscription", [_row(s) for s in record.subscriptions.all()[:15]])
+
+    elif model_name == "Contract":
+        _add("Subscriptions", "Subscription", [_row(s) for s in record.subscriptions.all()[:15]])
+
+    return related
+
+
 def _serialize_record(record: Model, object_name: str, custom_object, custom_fields, *, user=None) -> Dict[str, object]:
     """Build a normalized payload for front-end rendering."""
-
     model_name = record.__class__.__name__
     display_label = getattr(custom_object, "label", None) or object_name
     content_type = ContentType.objects.get_for_model(record.__class__)
@@ -296,7 +374,7 @@ def _serialize_record(record: Model, object_name: str, custom_object, custom_fie
         "record_value": primary_value,
         "record_id": getattr(record, "id", None),
         "fields": all_fields,
-        "related": [],
+        "related": build_related_records(record, model_name),
         "is_custom_object": bool(custom_object),
         "layout": layout,
     }
@@ -388,6 +466,15 @@ def _collect_standard_fields(record: Model, model_name: str) -> List[Dict[str, o
 
         options = _get_field_options(field_obj, record, model_name=model_name, field_name=field_name)
 
+        # For lookup fields, expose the target object so the UI can offer a search
+        # combobox instead of a flat list of all possible parents.
+        lookup_target = None
+        if isinstance(field_obj, ForeignKey) and data_type == "lookup":
+            try:
+                lookup_target = field_obj.related_model.__name__
+            except Exception:
+                lookup_target = None
+
         rows.append(
             {
                 "name": field_name,
@@ -399,6 +486,7 @@ def _collect_standard_fields(record: Model, model_name: str) -> List[Dict[str, o
                 "is_custom": False,
                 "field_id": None,
                 "options": options,
+                "lookup_target": lookup_target,
                 "is_multiline": isinstance(field_obj, TextField),
                 "is_editable": is_editable and data_type != "related",
             }
@@ -471,6 +559,7 @@ def _collect_custom_fields(record: Model, custom_fields: Iterable, *, content_ty
         raw_value = _coerce_custom_raw_value(stored_value, field.data_type)
         formatted_value = _format_custom_display_value(raw_value, field.data_type, field=field)
         options = field.options or []
+        lookup_target = None
         if (field.data_type or "").lower() == "lookup":
             # Populate options from lookup_model if not already provided
             if not options:
@@ -479,6 +568,11 @@ def _collect_custom_fields(record: Model, custom_fields: Iterable, *, content_ty
             if raw_value and not any(opt.get("value") == raw_value for opt in options if isinstance(opt, dict)):
                 label = _resolve_custom_lookup_label(field, raw_value) or str(raw_value)
                 options = [{"value": raw_value, "label": label}] + options
+            try:
+                lookup_model = _resolve_lookup_model_path(getattr(field, "lookup_model", None), field_name=getattr(field, "name", None))
+                lookup_target = lookup_model.__name__ if lookup_model is not None else None
+            except Exception:
+                lookup_target = None
 
         rows.append(
             {
@@ -491,6 +585,7 @@ def _collect_custom_fields(record: Model, custom_fields: Iterable, *, content_ty
                 "is_custom": True,
                 "field_id": field.id,
                 "options": options,
+                "lookup_target": lookup_target,
                 "is_multiline": (field.data_type or "").lower() in {"textarea"},
                 "is_editable": True,
             }
@@ -787,6 +882,27 @@ def _get_custom_lookup_options(field, limit: int = 200):
         if label:
             options.append({"value": getattr(obj, "pk", None), "label": label})
     return options
+
+
+def _friendly_label_for_record(record) -> str:
+    """Human label for any model instance (used by the lookup search endpoint)."""
+    try:
+        parts = [
+            str(getattr(record, "first_name", "") or "").strip(),
+            str(getattr(record, "last_name", "") or "").strip(),
+        ]
+        full_name = " ".join(p for p in parts if p).strip()
+        return (
+            full_name
+            or str(getattr(record, "name", "") or "")
+            or str(getattr(record, "title", "") or "")
+            or str(getattr(record, "email", "") or "")
+            or str(getattr(record, "subject", "") or "")
+            or str(getattr(record, "custom_identifier", "") or "")
+            or str(record)
+        )
+    except Exception:
+        return str(record)
 
 
 def _resolve_custom_lookup_label(field, raw_value):

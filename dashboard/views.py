@@ -27,6 +27,7 @@ import hashlib
 from datetime import date, timedelta
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.clickjacking import xframe_options_exempt
+from django.views.decorators.csrf import csrf_exempt
 from django.utils.dateparse import parse_date
 from django.utils import timezone
 from django.db.models import Sum
@@ -362,6 +363,13 @@ def dashboard(request):
     view = request.GET.get("view", "agents")
     if view == "setup":
         return redirect("cpq:admin_integrations")
+    if view == "agents":
+        # The chat is now served by the React SPA — preserve session deep-links.
+        spa_url = reverse("agents_spa")
+        session_id = request.GET.get("session_id")
+        if session_id:
+            spa_url = f"{spa_url}?session_id={session_id}"
+        return redirect(spa_url)
     object_name = request.GET.get("object_name")
     session_id = request.GET.get("session_id")
     user = request.user
@@ -548,6 +556,7 @@ def dashboard(request):
 
 
 @login_required
+@csrf_exempt
 @require_POST
 def update_chat_session_title(request, session_id):
     try:
@@ -567,6 +576,7 @@ def update_chat_session_title(request, session_id):
 
 
 @login_required
+@csrf_exempt
 @require_POST
 def delete_chat_session(request, session_id):
     chat_session = get_object_or_404(ChatSession, session_id=session_id, user=request.user)

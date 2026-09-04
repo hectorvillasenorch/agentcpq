@@ -5,68 +5,140 @@
 <style>
   .tabs {
     position: relative;
-    overflow-x: auto;
-    overflow-y: hidden;
-    height: 48px;
+    display: flex;
+    gap: 2px;
     width: 100%;
-    background-color: #182640;
-    margin: 0 0 14px;
-    white-space: nowrap;
-    border-radius: 14px;
+    background: transparent;
+    margin: 0 0 18px;
+    white-space: normal;
+    border-radius: 0;
+    border-bottom: 1px solid #e2e8f0;
+    height: auto;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .tabs .tab {
+    display: inline-block;
+    text-align: left;
+    line-height: normal;
+    height: auto;
+    padding: 0;
+    margin: 0;
+    text-transform: none;
+    flex: none;
   }
 
   .tabs .tab a {
-    color: rgba(255, 255, 255, 0.92) !important;
-    font-weight: 700;
-    letter-spacing: 0.01em;
+    display: inline-flex;
+    align-items: center;
+    padding: 9px 14px;
+    color: #64748b !important;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    border-radius: 0;
+  }
+
+  .tabs .tab a:hover {
+    color: #0f172a !important;
+    background: transparent !important;
   }
 
   .tabs .tab a.active {
-    background: rgba(255, 255, 255, 0.12);
+    color: #4662c9 !important;
+    border-bottom-color: #4662c9;
+    background: transparent !important;
   }
 
   .rules-table {
     width: 100%;
     border-collapse: collapse;
     overflow: hidden;
-    border-radius: 14px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
     background: #ffffff;
+    font-size: 13px;
   }
 
   .rules-table th,
   .rules-table td {
-    padding: 10px 12px;
-    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-    font-size: 0.92rem;
+    padding: 9px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 13px;
     text-align: left;
     vertical-align: middle;
   }
 
   .rules-table thead th {
     background: #f8fafc;
-    font-weight: 900;
-    color: #0f172a;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+
+  .rules-table tbody tr:last-child td {
+    border-bottom: none;
   }
 
   .rules-table tbody tr:hover {
-    background: rgba(24, 39, 64, 0.03);
+    background: #f8fafc;
+  }
+
+  .rules-empty {
+    padding: 48px 16px;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 13px;
+  }
+
+  #add-rule-btn {
+    height: 36px;
+    padding: 0 14px;
+    font-size: 13px;
+    border-radius: 8px;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  #add-rule-btn .material-icons {
+    font-size: 16px;
   }
 
   .rule-action-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 10px;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(24, 39, 64, 0.08);
-    border: 1px solid rgba(24, 39, 64, 0.12);
-    color: #182740;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    color: #475569;
   }
 
   .rule-action-btn:hover {
-    background: rgba(24, 39, 64, 0.14);
+    background: #e2e8f0;
+    color: #0f172a;
+  }
+
+  .rules-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 4px;
+  }
+
+  .rule-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
   }
 </style>
 <div class="cpq-page">
@@ -77,13 +149,9 @@
         Rules Management
       </h1>
       <p class="cpq-page-subtitle">
-        Configure validation, inclusion, and exclusion rules. Behavior and data are unchanged.
+        Configure validation, inclusion, and exclusion rules for records and quotes.
       </p>
     </div>
-    <span class="cpq-pill">
-      <span class="material-icons" style="font-size:18px;">tune</span>
-      Rules
-    </span>
   </div>
 
   {% if not company %}
@@ -95,7 +163,7 @@
     </div>
   {% else %}
 
-  <ul class="tabs cpq-panel" style="padding: 0;">
+  <ul class="tabs">
     {% for rule_type in rules_by_type %}
       <li class="tab col s2">
         <a href="#tab-{{ rule_type }}" {% if forloop.first %}class="active"{% endif %}>
@@ -106,25 +174,25 @@
   </ul>
 
   <div class="cpq-panel">
-      <div id="rule-type-titles">
-        {% for rule_type in rules_by_type %}
-          <span id="title-{{ rule_type }}"
-                class="card-title rule-title grey-text text-darken-3"
-                style="display: {% if forloop.first %}block{% else %}none{% endif %}; font-size:1.2rem; font-family:'Euclid Circular A',sans-serif; font-weight:800; margin-bottom:12px;">
-            {{ rule_type|title }} Rules
-          </span>
-        {% endfor %}
+      <div class="rules-panel-header">
+        <div id="rule-type-titles">
+          {% for rule_type in rules_by_type %}
+            <span id="title-{{ rule_type }}"
+                  class="rule-title"
+                  style="display: {% if forloop.first %}block{% else %}none{% endif %};">
+              {{ rule_type|title }} Rules
+            </span>
+          {% endfor %}
+        </div>
+        <a id="add-rule-btn"
+           href="{% url 'cpq:create_business_rule' %}?type={% for rule_type in rules_by_type %}{% if forloop.first %}{{ rule_type }}{% endif %}{% endfor %}"
+           class="cpq-btn cpq-btn--primary">
+          <i class="material-icons" aria-hidden="true">add</i>
+          New Rule
+        </a>
       </div>
       {% for rule_type, rules in rules_by_type.items %}
         <div id="tab-{{ rule_type }}" class="col s12" style="{% if not forloop.first %}display: none;{% endif %}; position: relative;">
-
-          <!-- ➕ BOTÓN FLOTANTE para agregar regla -->
-          <a href="{% url 'cpq:create_business_rule' %}?type={{ rule_type }}"
-            class="btn-floating halfway-fab waves-effect waves-light tooltipped"
-            data-tooltip="Add {{ rule_type|title }} Rule"
-            style="background-color: {{ company.secondary_color }};">
-            <i class="material-icons" style="color: white;">add</i>
-          </a>
 
           <table class="rules-table">
             <thead>
@@ -152,7 +220,7 @@
                   </td>
                 </tr>
               {% empty %}
-                <tr><td colspan="6">No rules for this type.</td></tr>
+                <tr><td colspan="6" class="rules-empty">No rules for this type yet.</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -165,6 +233,8 @@
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     const tabLinks = document.querySelectorAll('.tabs .tab a');
+    const addBtn = document.getElementById('add-rule-btn');
+    const createUrl = "{% url 'cpq:create_business_rule' %}";
 
     tabLinks.forEach(link => {
       link.addEventListener('click', function (e) {
@@ -192,6 +262,11 @@
         const title = document.getElementById(`title-${ruleType}`);
         if (title) {
           title.style.display = 'block';
+        }
+
+        // Point the New Rule button at the active tab's rule type
+        if (addBtn) {
+          addBtn.setAttribute('href', createUrl + '?type=' + ruleType);
         }
 
         // Manage active class

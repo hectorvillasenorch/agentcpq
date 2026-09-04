@@ -1,6 +1,7 @@
 from django.db.models import Sum, F
 import json
 import os
+import copy
 import openai
 import logging
 import re
@@ -23,6 +24,7 @@ from .utils.analytics_agent.llm_helpers import extract_metrics_with_llm, generat
 
 # Handle Helpers
 from .utils.analytics_agent.handle_helpers import handle_show_metrics, get_object_metadata, resolve_metrics_object_name
+from .utils.orchestrator.context_handle_helpers import extract_current_request
 
 # Windows Context Helpers
 from .utils.session_context_helpers.session_context_helpers import get_session_context
@@ -176,6 +178,76 @@ def _parse_basic_list_request(user_message):
     }
 
 
+_SUMMARY_OBJECT_MAP = (
+    (r"\bopportunit", "Opportunity"),
+    (r"\bdeals?\b", "Opportunity"),
+    (r"\baccount", "Account"),
+    (r"\bleads?\b", "Lead"),
+    (r"\bcontact", "Contact"),
+    (r"\bquote", "Quote"),
+    (r"\bproduct", "Product"),
+    (r"\bactivit", "Activity"),
+    (r"\bcontract", "Contract"),
+    (r"\bsubscription", "Subscription"),
+    (r"\btenant", "Tenant"),
+    (r"\boption", "Option"),
+    (r"\bknowledge", "Knowledge"),
+)
+
+
+def _object_from_summary(summary):
+    if not summary:
+        return None
+    for pattern, obj in _SUMMARY_OBJECT_MAP:
+        if re.search(pattern, str(summary), re.IGNORECASE):
+            return obj
+    return None
+
+
+def _parse_followup_list_request(user_message, last_object, previous_summary):
+    """Resolve a context-dependent follow-up like 'list all 5' / 'show them'.
+
+    Uses the object resolved on the previous metrics turn (stored in session state),
+    falling back to scanning the previous summary.
+    """
+    if not user_message:
+        return None
+    text = str(user_message).strip().lower()
+
+    # If the user named an object explicitly, let the other parsers/LLM handle it.
+    if re.search(
+        r"\b(opportunit|account|lead|contact|quote|product|activit|contract|subscription|tenant|option|knowledge|bundle|record)\w*\b",
+        text,
+    ):
+        return None
+
+    # Must be a bare list/show follow-up.
+    if not re.search(r"\b(list|show|display|view|get|give|see|pull)\b", text):
+        return None
+    if len(text.split()) > 8:
+        return None
+
+    resolved = last_object or _object_from_summary(previous_summary)
+    if not resolved:
+        return None
+
+    limit = 10
+    m = re.search(r"\b(\d+)\b", text)
+    if m:
+        try:
+            limit = int(m.group(1))
+        except ValueError:
+            limit = 10
+
+    return {
+        "object": resolved,
+        "method": "read",
+        "conditions": [],
+        "sort": {"field": "created_at", "order": "desc"},
+        "limit": limit,
+    }
+
+
 def _parse_revenue_request(user_message):
     if not user_message:
         return None
@@ -212,6 +284,10 @@ def _extract_range_key(user_message: str) -> str | None:
         return "this_year"
     if re.search(r"\bthis month\b", lowered):
         return "this_month"
+    if re.search(r"\bthis week\b", lowered):
+        return "this_week"
+    if re.search(r"\blast week\b", lowered):
+        return "last_week"
     if re.search(r"\blast month\b", lowered):
         return "last_month"
     if re.search(r"\blast 90 days\b", lowered):
@@ -261,18 +337,58 @@ def _parse_pipeline_forecast_request(user_message):
 def _parse_count_metrics_request(user_message):
     if not user_message:
         return None
-    match = _COUNT_METRICS_RE.match(user_message)
-    if not match:
+    if not re.search(r"\b(how\s+many|count|number\s+of)\b", user_message, re.IGNORECASE):
         return None
-    object_raw = match.group("object")
-    resolved_object = _resolve_metrics_object_name(object_raw)
+
+    text = user_message.strip()
+    # Strip the count phrasing + range/stage noise to isolate the object.
+    stripped = re.sub(
+        r"\b(how\s+many|count|number\s+of)\b",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    range_key = _extract_range_key(text)
+
+    stage = None
+    if re.search(r"\bclosed\s+won\b|\bwon\b", text, re.IGNORECASE):
+        stage = "closedwon"
+    elif re.search(r"\bclosed\s+lost\b|\blost\b", text, re.IGNORECASE):
+        stage = "closedlost"
+    elif re.search(r"\bopen\b", text, re.IGNORECASE):
+        stage = "open"
+
+    for noise in (
+        r"\bthis (week|month|quarter|year)\b",
+        r"\blast (week|month|quarter|year)\b",
+        r"\byear to date\b|\bytd\b",
+        r"\b(closed\s+won|closed\s+lost|won|lost|open)\b",
+        r"\b(that\s+are|which\s+are|that\s+were|which\s+were|were|are|got|get|have\s+been|has\s+been)\b",
+        r"\b(records?|deals?)\b",
+    ):
+        stripped = re.sub(noise, " ", stripped, flags=re.IGNORECASE)
+
+    object_raw = " ".join(stripped.split()).strip(" ,")
+    resolved_object = None
+    for pat, obj in _SUMMARY_OBJECT_MAP:
+        if re.search(pat, object_raw, re.IGNORECASE):
+            resolved_object = obj
+            break
+    if not resolved_object:
+        resolved_object = _resolve_metrics_object_name(object_raw)
     if not resolved_object:
         return None
-    range_key = _extract_range_key(user_message)
+
+    conditions = []
+    if stage == "open":
+        conditions = [{"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost"]}]
+    elif stage:
+        conditions = [{"field": "stage", "operator": "equals", "value": stage}]
+
     return {
         "object": resolved_object,
         "method": "read",
-        "conditions": [],
+        "conditions": conditions,
         "sort": None,
         "limit": 100,
         "aggregate": {
@@ -285,6 +401,210 @@ def _parse_count_metrics_request(user_message):
         },
     }
 
+
+_CATEGORICAL_TIME_WORDS = {
+    "month", "months", "week", "weeks", "day", "days", "quarter", "quarters",
+    "year", "years", "weekly", "monthly", "daily", "quarterly",
+}
+_GROUPBY_STOPWORDS = {
+    "records", "deals", "all", "the", "this", "last", "next", "current", "that",
+    "which", "recent", "recently", "top", "latest", "me", "my", "by",
+}
+
+
+def _parse_groupby_field_request(user_message):
+    """Resolve categorical groupings like 'how many accounts group by region'.
+
+    Accepts ANY standard field or custom field name/label — the backend resolves
+    and validates the actual field (and reports a friendly error if it doesn't exist).
+    """
+    if not user_message:
+        return None
+    text = user_message.strip()
+
+    field = None
+    # "group(ed) by <field>" — allow multi-word custom field labels.
+    m = re.search(r"\bgroup(?:ed)?\s+by\s+([a-z_]+(?:\s+[a-z_]+){0,2})", text, re.IGNORECASE)
+    if m:
+        field = m.group(1).strip().lower()
+    else:
+        # "accounts by <field>" / "leads by source" — single token.
+        m2 = re.search(r"\bby\s+([a-z_]+)\b", text, re.IGNORECASE)
+        if m2:
+            cand = m2.group(1).lower()
+            if cand not in _CATEGORICAL_TIME_WORDS and cand not in _GROUPBY_STOPWORDS:
+                field = cand
+
+    if not field:
+        return None
+    if field in _CATEGORICAL_TIME_WORDS:
+        return None
+
+    # Friendly aliases for fields users name differently than the model (Account has `state`, not `region`).
+    _FIELD_ALIASES = {"region": "state", "territory": "state"}
+    field = _FIELD_ALIASES.get(field, field)
+
+    is_amount = bool(re.search(r"\b(amount|revenue|sum|total|value|forecast)\b", text, re.IGNORECASE))
+
+    object_name = None
+    for pat, obj in _SUMMARY_OBJECT_MAP:
+        if re.search(pat, text, re.IGNORECASE):
+            object_name = obj
+            break
+    if not object_name:
+        object_name = "Opportunity" if is_amount else None
+    if not object_name:
+        return None
+
+    stage = None
+    if re.search(r"\bclosed\s+won\b|\bwon\b", text, re.IGNORECASE):
+        stage = "closedwon"
+    elif re.search(r"\bclosed\s+lost\b|\blost\b", text, re.IGNORECASE):
+        stage = "closedlost"
+
+    conditions = [{"field": "stage", "operator": "equals", "value": stage}] if stage else []
+
+    return {
+        "object": object_name,
+        "method": "read",
+        "conditions": conditions,
+        "sort": None,
+        "limit": 100,
+        "aggregate": {
+            "function": "sum" if is_amount else "count",
+            "field": "amount" if is_amount else "id",
+            "group_by": "field",
+            "group_field": field,
+            "date_field": "created_at",
+            "range": _extract_range_key(text),
+        },
+    }
+
+
+def _parse_grouped_metrics_request(user_message):
+    """Resolve time-bucketed aggregations deterministically, e.g.:
+
+    - "opportunity amount by month"        → sum(amount) by month (closed won)
+    - "sum of amount by month"             → sum(amount) by month
+    - "revenue by month"                   → sum(amount) by month
+    - "how many opportunities by month"    → count by month
+    - "average deal amount by quarter"     → avg(amount) by quarter
+    """
+    if not user_message:
+        return None
+    text = str(user_message).strip().lower()
+    if not re.search(r"\b(by|per|grouped\s+by|monthly|weekly|daily|quarterly)\b", text):
+        return None
+
+    bucket = None
+    if re.search(r"\bmonthly\b|\bmonths?\b", text):
+        bucket = "month"
+    elif re.search(r"\bweekly\b|\bweeks?\b", text):
+        bucket = "week"
+    elif re.search(r"\bdaily\b|\bdays?\b", text):
+        bucket = "day"
+    elif re.search(r"\bquarterly\b|\bquarters?\b", text):
+        bucket = "quarter"
+    if not bucket:
+        return None
+
+    is_count = bool(re.search(r"\b(count|how\s+many|number\s+of)\b", text))
+    is_avg = bool(re.search(r"\b(average|avg|mean)\b", text))
+    is_amount = bool(re.search(r"\b(amount|revenue|sum|total|sales|value|forecast|expected\s+revenue)\b", text))
+    if not (is_count or is_avg or is_amount):
+        # "opportunities by month" (no metric word) → count
+        is_count = True
+
+    object_name = None
+    for pat, obj in _SUMMARY_OBJECT_MAP:
+        if re.search(pat, text):
+            object_name = obj
+            break
+    if object_name is None:
+        object_name = "Opportunity" if (is_amount or is_avg) else None
+    if not object_name:
+        return None
+
+    # Stage filter (explicit), then sensible defaults.
+    stage = None
+    if re.search(r"\bclosed\s+won\b|\bwon\b", text):
+        stage = "closedwon"
+    elif re.search(r"\bclosed\s+lost\b|\blost\b", text):
+        stage = "closedlost"
+    elif re.search(r"\bopen\b", text):
+        stage = "open"
+    if stage is None and object_name == "Opportunity" and is_amount:
+        # "revenue / amount" implies closed-won revenue.
+        stage = "closedwon"
+
+    conditions = []
+    if stage == "open":
+        conditions = [{"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost"]}]
+    elif stage:
+        conditions = [{"field": "stage", "operator": "equals", "value": stage}]
+
+    if is_avg:
+        function = "avg"
+    elif is_count:
+        function = "count"
+    else:
+        function = "sum"
+
+    if function == "count":
+        field = "id"
+    elif object_name == "Opportunity":
+        field = "amount"
+    else:
+        field = "amount"
+
+    date_field = "expected_close_date" if (object_name == "Opportunity" and function == "sum") else "created_at"
+
+    return {
+        "object": object_name,
+        "method": "read",
+        "conditions": conditions,
+        "sort": None,
+        "limit": 100,
+        "aggregate": {
+            "function": function,
+            "field": field,
+            "group_by": bucket,
+            "group_field": None,
+            "date_field": date_field,
+            "range": _extract_range_key(user_message),
+        },
+    }
+
+
+def _parse_followup_stage_filter(user_message, last_request):
+    """Apply a follow-up filter like 'yes, only closed won' to a pending grouped metric."""
+    if not user_message or not last_request:
+        return None
+    if not isinstance(last_request.get("aggregate"), dict):
+        return None
+    text = str(user_message).strip().lower().rstrip(".!? ")
+    if not re.search(r"\b(closed\s+won|closed\s+lost|won|lost|open|all|pipeline)\b", text):
+        return None
+
+    stage = None
+    if re.search(r"\bclosed\s+won\b|\bwon\b", text):
+        stage = "closedwon"
+    elif re.search(r"\bclosed\s+lost\b|\blost\b", text):
+        stage = "closedlost"
+    elif re.search(r"\bopen\b", text):
+        stage = "open"
+    # "all" → drop any stage filter.
+
+    new_request = copy.deepcopy(last_request)
+    new_conditions = [c for c in new_request.get("conditions", []) if str(c.get("field", "")).lower() != "stage"]
+    if stage == "open":
+        new_conditions.append({"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost"]})
+    elif stage:
+        new_conditions.append({"field": "stage", "operator": "equals", "value": stage})
+    new_request["conditions"] = new_conditions
+    return new_request
+
+
 def show_metrics(user, user_message, session_data):
     """
     Handles metrics display requests for system objects.
@@ -293,23 +613,39 @@ def show_metrics(user, user_message, session_data):
     """
     logging.info("🔧 Showing metrics...\n\n")
 
+    # Deterministic parsers below are regex-anchored; operate on the raw request.
+    user_message = extract_current_request(user_message)
+
     write_action = _detect_misrouted_standard_write_action(user_message)
     if write_action:
         from .standard_record_agent import standard_record_agent
         return standard_record_agent(user, write_action, user_message, session_data)
 
+    current_state, previous_summary = get_session_context("show_metrics", session_data)
+    session_data.setdefault("state", {})
+    last_object = session_data["state"].get("last_metrics_object")
+
     direct_request = (
-        _parse_revenue_request(user_message)
+        _parse_grouped_metrics_request(user_message)
+        or _parse_groupby_field_request(user_message)
+        or _parse_revenue_request(user_message)
         or _parse_pipeline_forecast_request(user_message)
         or _parse_count_metrics_request(user_message)
         or _parse_direct_metrics_request(user_message)
         or _parse_latest_metrics_request(user_message)
         or _parse_basic_list_request(user_message)
+        or _parse_followup_list_request(user_message, last_object, previous_summary)
     )
     if direct_request:
         response_message, results, object_labels = handle_show_metrics(user, [direct_request])
+        session_data["state"]["last_metrics_object"] = direct_request["object"]
+        session_data["state"]["last_metrics_request"] = direct_request
         display_label = object_labels.get(direct_request["object"], direct_request["object"])
-        message = f"📊 Showing latest {display_label} records."
+        # Aggregates (sum/count/avg …) carry their own human message; list reads use the generic one.
+        if isinstance(direct_request.get("aggregate"), dict):
+            message = response_message.strip() or f"📊 {display_label} metrics."
+        else:
+            message = f"📊 Showing latest {display_label} records."
         if results:
             return {
                 "message": message,
@@ -321,8 +657,20 @@ def show_metrics(user, user_message, session_data):
             return {"message": response_message}
         return {"message": message}
 
-
-    current_state, previous_summary = get_session_context("show_metrics", session_data)
+    # Follow-up stage/filter answers ("yes, only closed won") applied to the last grouped metric.
+    followup_request = _parse_followup_stage_filter(user_message, session_data["state"].get("last_metrics_request"))
+    if followup_request:
+        response_message, results, object_labels = handle_show_metrics(user, [followup_request])
+        session_data["state"]["last_metrics_request"] = followup_request
+        session_data["state"]["last_metrics_object"] = followup_request["object"]
+        if results:
+            return {
+                "message": response_message.strip() or "📊 Updated metrics.",
+                "retrieved_records": results,
+                "object_labels": object_labels,
+                "hiddenMessage": True,
+            }
+        return {"message": response_message}
 
 
     # --- Initial LLM call to extract quote line updates ---
@@ -351,6 +699,16 @@ def show_metrics(user, user_message, session_data):
             "message": llm_result["agent_message"],
             "session_summary": llm_result["summary"]
         }
+
+    # Remember the resolved object so follow-up turns ("list all 5") can use it.
+    for metric in completed_metrics:
+        obj = metric.get("object")
+        if obj:
+            canonical = _resolve_metrics_object_name(obj)
+            if canonical:
+                session_data["state"]["last_metrics_object"] = canonical
+                session_data["state"]["last_metrics_request"] = metric
+            break
 
     response_message, results, object_labels = handle_show_metrics(user, completed_metrics)
 

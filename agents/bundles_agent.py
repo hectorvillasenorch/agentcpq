@@ -20,10 +20,12 @@ from .utils.bundles_agent.llm_helpers import extract_bundle_components, extract_
 # Record Helpers
 from .utils.bundles_agent.record_helpers import handle_bundle_components, handle_delete_options_from_quote, handle_option_updates
 
+from agents.llm import get_model
+
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-3.5-turbo"
+OPENAI_MODEL = get_model("structured")
 
 
 def _user_is_admin(user) -> bool:

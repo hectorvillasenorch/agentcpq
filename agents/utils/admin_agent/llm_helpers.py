@@ -7,13 +7,14 @@ from agents.models import AgentPrompt
 # System Prompt Helpers
 from ..prompts_helpers.system_prompt_helpers import make_system_prompt
 
+from agents.llm import chat_json, get_llm_client, get_model
+
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4o-mini"
-#OPENAI_MODEL = "gpt-4"
+OPENAI_MODEL = get_model("structured")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = get_llm_client()
 
 def extract_validation_rules(user_message):
     """Uses GPT to extract description, rule type, target type, priority, error_message and conditions for Validations Rules."""
@@ -211,7 +212,7 @@ def extract_validation_rules(user_message):
     user_prompt = user_message
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "You are a CPQ assistant. Extract structured business rules from the user message."},
@@ -268,7 +269,7 @@ def extract_inclusion_rules(user_message, current_state, previous_summary=None):
         {"role": "user", "content": user_prompt}
     ]
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages,
         temperature=temperature
@@ -417,7 +418,7 @@ def extract_exclusion_rules(user_message, current_state, previous_summary=None):
         {"role": "user", "content": user_prompt}
     ]
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages,
         temperature=1
@@ -473,7 +474,7 @@ def extract_rules_details_to_render(user_message, current_state, previous_summar
     user_prompt = user_message
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -518,7 +519,7 @@ def extract_rule_updates(user_message, current_state, previous_summary=None):
     user_prompt = user_message
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -555,7 +556,7 @@ def extract_rule_deletes(user_message):
     user_prompt = user_message
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -593,7 +594,7 @@ def extract_custom_object_updates(user_message):
     user_prompt = user_message
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "Extract structured updates details for rules."},
@@ -715,7 +716,7 @@ def extract_email_alert_details(user, user_message, custom_objects, users):
     """
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "Extract structured email alert details from user message."},
@@ -784,7 +785,7 @@ def extract_email_alert_updates(user, user_message, custom_objects, users):
     user_prompt = user_message
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -906,7 +907,7 @@ def extract_email_alerts_deletes(user_message):
     """
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "Extract structured email alert deletions from user message."},

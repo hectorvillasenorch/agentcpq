@@ -33,6 +33,7 @@ from .models import (
     Knowledge,
     Contract, 
     ScheduledTask,
+    ScheduledEmail,
     ActionTrigger,
     EmailAlert,
     CustomAction,
@@ -386,6 +387,13 @@ class ScheduledTaskAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
         fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
         return [(None, {'fields': fields})]
 admin.site.register(ScheduledTask, ScheduledTaskAdmin)
+
+
+@admin.register(ScheduledEmail)
+class ScheduledEmailAdmin(admin.ModelAdmin):
+    list_display = ("trigger", "instance_model", "instance_id", "send_at", "status", "attempts", "updated_at")
+    list_filter = ("status",)
+    search_fields = ("instance_model", "instance_id")
 
 
 class QuoteAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):

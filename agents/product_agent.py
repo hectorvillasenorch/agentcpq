@@ -12,10 +12,11 @@ from decimal import Decimal
 
 from .utils.orchestrator.context_handle_helpers import estimate_cost
 
+from agents.llm import get_llm_client, get_model
+
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-#OPENAI_MODEL = "gpt-3.5-turbo"
-OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_MODEL = get_model("structured")
 logger = logging.getLogger(__name__)
 
 # Import context handle function
@@ -103,7 +104,7 @@ def create_product(user, user_message, session_data):
 def extract_sku_from_message(user_message):
     """Extract SKU from user input using GPT."""
     try:
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        client = get_llm_client()
 
         prompt = f"""
         Extract the SKU from the following user message. If no SKU is found, return "MISSING_SKU".
@@ -125,7 +126,7 @@ def extract_sku_from_message(user_message):
         """
 
         response = client.chat.completions.create(
-            model="gpt-4",
+            model=get_model("reasoning"),
             messages=[{"role": "user", "content": prompt}]
         )
 
@@ -313,7 +314,7 @@ def update_product_record(user,updated_product_details):
 def gpt_modify_product_details(user_message, product_details):
     """Use GPT to modify product details based on user request."""
     try:
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        client = get_llm_client()
 
         prompt = f"""
         Modify the following product details based on the user's request.
@@ -328,7 +329,7 @@ def gpt_modify_product_details(user_message, product_details):
         """
 
         response = client.chat.completions.create(
-            model="gpt-4",
+            model=get_model("reasoning"),
             messages=[{"role": "user", "content": prompt}]
         )
 

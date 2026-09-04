@@ -14,12 +14,14 @@ from django.apps import apps
 
 from cpq.models import CustomObject
 
+from agents.llm import chat_json, get_llm_client, get_model
+
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_MODEL = get_model("structured")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = get_llm_client()
 
 
 def get_action_triggers_details(action_triggers):
@@ -73,6 +75,7 @@ def get_action_triggers_details(action_triggers):
             reordered_actions.append(action)
 
         trigger_details.append({
+            "id": trigger.id,
             "name": trigger.name,
             "description": trigger.description,
             "event_type": trigger.event_type,
@@ -188,7 +191,7 @@ def action_trigger_creation_type_with_llm(user_message):
     # -----------------------------------------------------
     # ✅ LLM CALL
     # -----------------------------------------------------
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
@@ -246,3 +249,93 @@ def get_cpq_model_schema():
         }
 
     return schema
+
+
+# ---------------------------------------------------------------------------
+# Lead → Account + Contact + Opportunity conversion trigger
+# ---------------------------------------------------------------------------
+
+LEAD_CONVERSION_EVENT_TYPE = {"object_name": "lead", "action": "update"}
+LEAD_CONVERSION_CONDITIONS = {
+    "logic": "AND",
+    "items": [
+        {
+            "alias": None,
+            "source": {"object": "lead", "field_name": "status"},
+            "operator": "==",
+            "target": {"type": "static", "value": "qualified"},
+        }
+    ],
+}
+LEAD_CONVERSION_ACTIONS = [
+    {"operation": "CREATE", "mode": "lead_conversion", "target": "account"}
+]
+LEAD_CONVERSION_DESCRIPTION = (
+    "Auto-convert a Lead into Account, Contact and Opportunity when the Lead becomes Qualified."
+)
+
+
+def _is_lead_conversion_request(user_message: str) -> bool:
+    text = (user_message or "").lower()
+    if "lead" not in text:
+        return False
+    if not re.search(r"\b(convert|conversion|converted)\b", text):
+        return False
+    if not re.search(r"\b(account|contact|opportunit)\b", text):
+        return False
+    return True
+
+
+def create_lead_conversion_trigger(user):
+    """Create (or refresh) the single active lead-conversion trigger. Returns (trigger, created)."""
+    existing = None
+    for t in ActionTrigger.objects.filter(active=True):
+        for a in (t.actions or []):
+            if isinstance(a, dict) and (a.get("mode") or "").lower() == "lead_conversion":
+                existing = t
+                break
+        if existing:
+            break
+
+    if existing:
+        existing.event_type = LEAD_CONVERSION_EVENT_TYPE
+        existing.conditions = LEAD_CONVERSION_CONDITIONS
+        existing.actions = LEAD_CONVERSION_ACTIONS
+        existing.description = LEAD_CONVERSION_DESCRIPTION
+        existing.schedule_type = "immediate"
+        existing.save()
+        return existing, False
+
+    max_number = 0
+    for name in ActionTrigger.objects.filter(name__startswith="AT-").values_list("name", flat=True):
+        m = re.match(r"AT-(\d+)", name)
+        if m:
+            max_number = max(max_number, int(m.group(1)))
+
+    trigger = ActionTrigger.objects.create(
+        name=f"AT-{max_number + 1:03d}",
+        description=LEAD_CONVERSION_DESCRIPTION,
+        event_type=LEAD_CONVERSION_EVENT_TYPE,
+        conditions=LEAD_CONVERSION_CONDITIONS,
+        actions=LEAD_CONVERSION_ACTIONS,
+        active=True,
+        created_by=user,
+        schedule_type="immediate",
+    )
+    return trigger, True
+
+
+def build_lead_conversion_trigger_response(user, user_message):
+    trigger, created = create_lead_conversion_trigger(user)
+    details = get_action_triggers_details([trigger])
+    verb = "created" if created else "already active and refreshed"
+    message = (
+        f"✅ Lead conversion automation {verb}.<br>"
+        "When a Lead's status is set to <b>Qualified</b>, it will automatically create an "
+        "<b>Account</b>, a linked <b>Contact</b>, and an <b>Opportunity</b>, and mark the Lead as <b>Converted</b>."
+    )
+    return {
+        "message": message,
+        "action_triggers_details": details,
+        "hiddenMessage": "True",
+    }

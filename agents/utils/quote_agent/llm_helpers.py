@@ -18,13 +18,14 @@ from ..agents_utils import clean_llm_json
 from cpq.models import Opportunity
 from .db_helpers import find_product_and_normalize_variables
 
+from agents.llm import chat_json, get_llm_client, get_model
+
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4o-mini"
-# OPENAI_MODEL = "gpt-4"
+OPENAI_MODEL = get_model("structured")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = get_llm_client()
 
 from ..orchestrator.context_handle_helpers import estimate_cost
 from ..message_formatters import format_message_with_standard_icons, INFO_ICON, SUCCESS_ICON, ERROR_ICON, WARNING_ICON
@@ -133,7 +134,7 @@ def extract_quote_details_with_llm(user_message, current_state, previous_summary
     tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 FIRST LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages,
         temperature=1
@@ -250,7 +251,7 @@ def generate_final_create_quote_message(quote, db_results, previous_summary, pro
     tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages_for_llm,
         temperature=0.7,
@@ -358,7 +359,7 @@ def extract_products_to_add_with_llm(user_message, current_state, previous_summa
     tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 FIRST LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages,
         temperature=1
@@ -486,7 +487,7 @@ def extract_quote_line_items_to_delete(user_message):
     """
 
     try:
-        response = client.chat.completions.create(
+        response = chat_json(client,
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "Extract the SKU or NAME mentioned in the user's request."},
@@ -597,7 +598,7 @@ def _extract_quote_line_to_delete_with_llm_legacy(user_message, current_state, p
     tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 FIRST LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages,
         temperature=1
@@ -753,7 +754,7 @@ def generate_final_add_product_to_quote_message(completed_products, db_results, 
     tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages_for_llm,
         temperature=0.7,
@@ -879,7 +880,7 @@ def extract_quote_line_updates_with_llm(user_message, current_state, previous_su
     tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages,
         temperature=0.8
@@ -971,7 +972,7 @@ def generate_final_update_line_items_message(completed_updates, db_results, rema
     tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages_for_llm,
         temperature=0.7,
@@ -1142,7 +1143,7 @@ def extract_quote_updates_with_llm(user_message, current_state, previous_summary
     tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 FIRST LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages,
         temperature=1
@@ -1248,7 +1249,7 @@ def generate_final_quote_updates_message(completed_quote_updates, db_results, re
     tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages_for_llm,
         temperature=0.7,
@@ -1376,7 +1377,7 @@ def extract_quote_line_to_delete_with_llm(user_message, current_state, previous_
     tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 FIRST LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages,
         temperature=1
@@ -1472,7 +1473,7 @@ def generate_final_delete_quote_lines_message(completed_quote_lines, db_results,
     tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
-    response = client.chat.completions.create(
+    response = chat_json(client,
         model=OPENAI_MODEL,
         messages=messages_for_llm,
         temperature=0.7,

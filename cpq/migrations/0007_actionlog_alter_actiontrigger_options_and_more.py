@@ -6,6 +6,15 @@ from django.conf import settings
 from django.db import migrations, models
 
 
+def _column_exists(connection, table_name, column_name):
+    with connection.cursor() as cursor:
+        try:
+            columns = connection.introspection.get_table_description(cursor, table_name)
+        except Exception:
+            return False
+    return any(c.name == column_name for c in columns)
+
+
 def create_actionlog_table_if_missing(apps, schema_editor):
     """
     Safely create the cpq_actionlog table only if it doesn't already exist.
@@ -78,21 +87,12 @@ def drop_actiontrigger_legacy_columns(apps, schema_editor):
     Prevents migration failures on environments where columns were removed manually.
     """
     def drop_column_if_exists(table_name, column_name):
-        with schema_editor.connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT COUNT(*)
-                FROM information_schema.columns
-                WHERE table_schema = DATABASE()
-                  AND table_name = %s
-                  AND column_name = %s
-                """,
-                [table_name, column_name],
-            )
-            if cursor.fetchone()[0]:
-                cursor.execute(
-                    f"ALTER TABLE `{table_name}` DROP COLUMN `{column_name}`"
-                )
+        if not _column_exists(schema_editor.connection, table_name, column_name):
+            return
+        schema_editor.execute(
+            f"ALTER TABLE {schema_editor.quote_name(table_name)} "
+            f"DROP COLUMN {schema_editor.quote_name(column_name)}"
+        )
 
     for col in ["action", "action_params", "object_name", "trigger"]:
         drop_column_if_exists("cpq_actiontrigger", col)
@@ -115,19 +115,8 @@ def add_actiontrigger_field_if_missing(apps, schema_editor, field_name, field):
     field.set_attributes_from_name(field_name)
     column_name = field.column
 
-    with schema_editor.connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT COUNT(*)
-            FROM information_schema.columns
-            WHERE table_schema = DATABASE()
-              AND table_name = %s
-              AND column_name = %s
-            """,
-            [table_name, column_name],
-        )
-        if cursor.fetchone()[0]:
-            return
+    if _column_exists(schema_editor.connection, table_name, column_name):
+        return
 
     schema_editor.add_field(ActionTrigger, field)
 

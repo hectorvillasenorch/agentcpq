@@ -36,3 +36,13 @@ staticfiles/
 
 /media/*
 !/media/img/
+
+# Local rollback backups
+.ui_backup_*/
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Local dev settings
+agentcpq/settings_local.py

@@ -72,6 +72,63 @@ def get_recent_messages(message_history, max_messages=4):
     recent = message_history[-max_messages:]
     return recent
 
+
+def build_conversation_context(session_data, current_user_message="", max_turns=4):
+    """
+    Build a labeled conversation context from message_history so executing
+    agents know what was asked/replied in previous turns (e.g. "add 5 seats"
+    after "create a quote for Acme Labs").
+
+    Returns a string like:
+
+        PREVIOUS CONVERSATION:
+        User: create a quote for Acme Labs
+        Assistant: Quote Q-00001 created for Acme Labs
+
+        CURRENT REQUEST: add 5 seats
+
+    Returns the raw `current_user_message` (unchanged) when there is no history,
+    so agents always receive a usable message.
+    """
+    history = session_data.get("message_history", [])
+    if not isinstance(history, list) or not history:
+        return current_user_message
+
+    recent = history[-(max_turns * 2):]
+    lines = []
+    for msg in recent:
+        sender = msg.get("sender", "user")
+        text = str(msg.get("message", "")).strip()
+        if not text or text.startswith("[Could not extract"):
+            continue
+        role = "User" if sender == "user" else "Assistant"
+        # Keep each turn compact so context stays small and focused.
+        lines.append(f"{role}: {text[:600]}")
+
+    if not lines:
+        return current_user_message
+
+    context = "\n".join(lines)
+    if current_user_message:
+        return f"PREVIOUS CONVERSATION:\n{context}\n\nCURRENT REQUEST: {current_user_message}"
+    return f"PREVIOUS CONVERSATION:\n{context}"
+
+
+def extract_current_request(user_message):
+    """Return just the CURRENT REQUEST portion of an augmented message.
+
+    Deterministic parsers (regex-anchored) must operate on the raw request, not
+    on the conversation-context prefix. If the message was augmented, this
+    strips everything before the last "CURRENT REQUEST:" marker.
+    """
+    if not user_message:
+        return user_message
+    marker = "CURRENT REQUEST:"
+    idx = user_message.rfind(marker)
+    if idx != -1:
+        return user_message[idx + len(marker):].strip()
+    return user_message
+
 # update message history on session_data
 def update_message_history(session_data, user_message, agent_message):
     """

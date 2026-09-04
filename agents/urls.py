@@ -1,12 +1,34 @@
 from django.urls import path
-from .views import chat_with_gpt, upload_quote_attachment, single_record_layout, list_record_layout, batch_schema, batch_map, log_agent_message
+from .views import (
+    chat_with_gpt,
+    chat_with_gpt_stream,
+    upload_quote_attachment,
+    single_record_layout,
+    list_record_layout,
+    batch_schema,
+    batch_map,
+    log_agent_message,
+    agents_spa,
+    chat_sessions_api,
+    chat_messages_api,
+    search_products,
+    search_records,
+    update_action_trigger,
+)
 
 urlpatterns = [
     path("chat/", chat_with_gpt, name="chat_with_gpt"),
+    path("chat/stream/", chat_with_gpt_stream, name="chat_with_gpt_stream"),
     path("upload-attachment/", upload_quote_attachment, name="upload_quote_attachment"),
     path("single-record-layout/", single_record_layout, name="single_record_layout"),
     path("list-record-layout/", list_record_layout, name="list_record_layout"),
     path("batch-schema/", batch_schema, name="batch_schema"),
     path("batch-map/", batch_map, name="batch_map"),
     path("log-message/", log_agent_message, name="log_agent_message"),
+    path("spa/", agents_spa, name="agents_spa"),
+    path("api/sessions/", chat_sessions_api, name="chat_sessions_api"),
+    path("api/messages/", chat_messages_api, name="chat_messages_api"),
+    path("api/search-products/", search_products, name="search_products"),
+    path("api/search-records/", search_records, name="search_records"),
+    path("api/action-trigger/<int:trigger_id>/update/", update_action_trigger, name="update_action_trigger"),
 ]

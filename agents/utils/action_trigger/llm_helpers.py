@@ -11,12 +11,14 @@ from django.contrib.auth.models import Group
 
 from cpq.models import CustomObject
 
+from agents.llm import chat_json, get_llm_client, get_model
+
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_MODEL = get_model("structured")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = get_llm_client()
 
 
 # ---------------------------------------------------------
@@ -2027,7 +2029,8 @@ def extract_action_triggers_with_llm(user, user_message, current_state, previous
     # -----------------------------------------------------
     # LLM CALL
     # -----------------------------------------------------
-    response = client.chat.completions.create(
+    response = chat_json(
+        client,
         model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},

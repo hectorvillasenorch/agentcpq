@@ -4,6 +4,15 @@ import django.db.models.deletion
 from django.db import migrations, models
 
 
+def _column_exists(connection, table_name, column_name):
+    with connection.cursor() as cursor:
+        try:
+            columns = connection.introspection.get_table_description(cursor, table_name)
+        except Exception:
+            return False
+    return any(c.name == column_name for c in columns)
+
+
 def ensure_contract_opportunity_column(apps, schema_editor):
     Opportunity = apps.get_model("cpq", "Opportunity")
     Contract = apps.get_model("cpq", "Contract")
@@ -25,19 +34,8 @@ def ensure_contract_opportunity_column(apps, schema_editor):
     opportunity_field = Contract._meta.get_field("opportunity")
     opportunity_column = opportunity_field.column
 
-    with schema_editor.connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT COUNT(*)
-            FROM information_schema.columns
-            WHERE table_schema = DATABASE()
-              AND table_name = %s
-              AND column_name = %s
-            """,
-            [contract_table, opportunity_column],
-        )
-        if cursor.fetchone()[0]:
-            return
+    if _column_exists(schema_editor.connection, contract_table, opportunity_column):
+        return
 
     # Add as nullable to avoid failures for existing Contract rows (if any).
     field = models.ForeignKey(

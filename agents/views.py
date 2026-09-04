@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import threading
 import uuid
 import openai
 
@@ -9,7 +10,7 @@ from django.contrib.auth.models import User
 from django.core.files.storage import default_storage
 from django.db import connection
 from django.db.utils import OperationalError, ProgrammingError
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.template.context_processors import csrf
 from django.utils import timezone
@@ -21,9 +22,12 @@ from dotenv import load_dotenv
 from agents.models import ChatMessage, ChatSession, SingleRecordLayout
 from cpq.action_trigger.signal_controls import set_skip_signals
 from agents.standard_record_agent import MODEL_MAP, EXTRA_FIELDS, _refresh_allowed_fields
+from agents.llm import chat_json, get_llm_client, get_model
+from agents.streaming import StreamSink, set_sink
 from cpq.models import CustomField, CustomObject
 from agents.knowledge_agent import resolve_knowledge_video_request
-from cpq.models import Quote, QuotePendingAttachment
+from cpq.models import Quote, QuotePendingAttachment, Product
+from django.db.models import Q
 
 
 from .orchestrator import handle_user_request  # or orchestrate_request if needed
@@ -42,8 +46,8 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4"
-OPENAI_BATCH_MODEL = os.getenv("OPENAI_BATCH_MODEL", "gpt-4o-mini")
+OPENAI_MODEL = get_model("reasoning")
+OPENAI_BATCH_MODEL = os.getenv("OPENAI_BATCH_MODEL", get_model("structured"))
 
 
 def _build_batch_schema_objects():
@@ -200,6 +204,7 @@ def _handle_pending_action(pending_action, user_message, session_data):
 
 
 @csrf_exempt
+@login_required
 def chat_with_gpt(request):
     """API endpoint to process user messages and route them based on AI-determined intent."""
 
@@ -323,6 +328,230 @@ def chat_with_gpt(request):
     request.session["session_data"] = session_data
 
     return JsonResponse({"response": ai_response})
+
+
+@csrf_exempt
+@login_required
+def chat_with_gpt_stream(request):
+    """SSE endpoint that streams agent progress (LLM tokens + list rows).
+
+    Mirrors the essential session setup of ``chat_with_gpt``, then runs the
+    orchestrator on a worker thread while streaming events to the client:
+      - ``token``: an incremental piece of LLM-generated text
+      - ``rows``:  a serialized record list (object + rows)
+      - ``done``:  the final orchestrator response
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method. Use POST."}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        user_message = data.get("message", "").strip()
+        custom_session_id = data.get("session_id")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format."}, status=400)
+
+    if not user_message:
+        return JsonResponse({"error": "Message cannot be empty."}, status=400)
+
+    # --- Load session data (same as chat_with_gpt) ---
+    session_data = request.session.get("session_data", {})
+    if custom_session_id:
+        session_data["session_id"] = custom_session_id
+    elif session_data.get("session_id"):
+        session_data = {}
+        request.session["session_data"] = session_data
+
+    if "session_id" not in session_data:
+        user_obj = User.objects.get(username=request.user.username)
+        new_chat_session = ChatSession.objects.create(
+            session_id=str(uuid.uuid4()),
+            user=user_obj,
+            title=user_message[:30],
+        )
+        session_data["session_id"] = str(new_chat_session.session_id)
+        request.session["session_data"] = session_data
+
+    sink = StreamSink()
+    result_holder: dict = {}
+
+    def _worker():
+        set_sink(sink)
+        try:
+            ai_response = handle_user_request(request.user.username, user_message, session_data)
+            result_holder["response"] = ai_response
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Stream orchestrator error: %s", exc, exc_info=True)
+            result_holder["error"] = str(exc)
+        finally:
+            set_sink(None)
+            sink.finish()
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+
+    def _events():
+        def _default(o):
+            if hasattr(o, "pk"):
+                return o.pk
+            if hasattr(o, "isoformat"):
+                return o.isoformat()
+            try:
+                return str(o)
+            except Exception:  # noqa: BLE001
+                return repr(o)
+
+        try:
+            while True:
+                item = sink.q.get()
+                if item is None:
+                    break
+                yield (
+                    f"event: {item['event']}\n"
+                    f"data: {json.dumps(item['data'], ensure_ascii=False, default=_default)}\n\n"
+                )
+            # Worker finished — persist session, then report the final result.
+            try:
+                request.session["session_data"] = session_data
+                request.session.save()
+            except Exception:  # noqa: BLE001
+                pass
+            if result_holder.get("error"):
+                yield (
+                    "event: error\n"
+                    f"data: {json.dumps({'message': result_holder['error']})}\n\n"
+                )
+            else:
+                yield (
+                    "event: done\n"
+                    f"data: {json.dumps({'response': result_holder.get('response')}, ensure_ascii=False, default=_default)}\n\n"
+                )
+        except GeneratorExit:
+            pass
+
+    response = StreamingHttpResponse(_events(), content_type="text/event-stream")
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"
+    return response
+
+
+@csrf_exempt
+@login_required
+def search_products(request):
+    """Search products by name or SKU for the quote line editor's add-line picker."""
+    q = (request.GET.get("q") or "").strip()
+    if not q:
+        return JsonResponse({"products": []})
+    products = Product.objects.filter(Q(name__icontains=q) | Q(sku__icontains=q))[:10]
+    data = [
+        {
+            "id": p.id,
+            "name": p.name,
+            "sku": p.sku,
+            "price": str(p.price),
+            "is_subscription": bool(p.is_subscription),
+        }
+        for p in products
+    ]
+    return JsonResponse({"products": data})
+
+
+@csrf_exempt
+@login_required
+def update_action_trigger(request, trigger_id):
+    """Update an existing ActionTrigger (name/description/event_type/conditions/actions/active)."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed."}, status=405)
+
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+
+    from cpq.models import ActionTrigger
+
+    try:
+        trigger = ActionTrigger.objects.get(pk=trigger_id)
+    except ActionTrigger.DoesNotExist:
+        return JsonResponse({"error": "Action trigger not found."}, status=404)
+
+    if "name" in body and str(body.get("name") or "").strip():
+        trigger.name = str(body["name"]).strip()
+    if "description" in body:
+        trigger.description = body.get("description") or ""
+    if "event_type" in body:
+        trigger.event_type = body["event_type"]
+    if "conditions" in body:
+        trigger.conditions = body["conditions"]
+    if "actions" in body:
+        trigger.actions = body["actions"]
+    if "active" in body:
+        trigger.active = bool(body["active"])
+
+    try:
+        trigger.full_clean()
+        trigger.save()
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    from .utils.action_trigger.general_helpers import get_action_triggers_details
+
+    details = get_action_triggers_details([trigger])
+    return JsonResponse({"trigger": details[0] if details else None})
+
+
+@csrf_exempt
+@login_required
+def search_records(request):
+    """Search records of an object by name/email/etc. for lookup-field comboboxes."""
+    object_name = (request.GET.get("object") or "").strip()
+    q = (request.GET.get("q") or "").strip()
+    if not object_name or not q:
+        return JsonResponse({"results": []})
+
+    from agents.utils.analytics_agent.handle_helpers import get_object_metadata
+    from agents.utils.record_agent.handle_helpers import _friendly_label_for_record
+
+    metadata = get_object_metadata(object_name)
+    if not metadata:
+        # User-like targets (Owner / Created By / Assigned To) search by email+username.
+        if object_name == "User":
+            from django.contrib.auth import get_user_model
+
+            users = get_user_model().objects.filter(Q(email__icontains=q) | Q(username__icontains=q))[:8]
+            return JsonResponse(
+                {
+                    "results": [
+                        {"value": str(u.pk), "label": u.get_full_name() or u.email or u.username}
+                        for u in users
+                    ]
+                }
+            )
+        return JsonResponse({"results": []})
+
+    model = metadata["model"]
+    custom_object = metadata["custom_object"]
+    queryset = model.objects.all()
+    if custom_object is not None:
+        queryset = queryset.filter(object_type=custom_object)
+
+    field_names = {f.name for f in model._meta.get_fields()}
+    search_filter = Q()
+    for key in ("name", "title", "subject", "email", "username", "company", "company_name", "sku", "phone", "domain", "custom_identifier"):
+        if key in field_names:
+            search_filter |= Q(**{f"{key}__icontains": q})
+    if "first_name" in field_names or "last_name" in field_names:
+        search_filter |= Q(first_name__icontains=q) | Q(last_name__icontains=q)
+    if not search_filter:
+        return JsonResponse({"results": []})
+
+    limit = min(int(request.GET.get("limit", 8)), 25)
+    results = []
+    for record in queryset.filter(search_filter).distinct()[:limit]:
+        label = _friendly_label_for_record(record)
+        if label:
+            results.append({"value": str(getattr(record, "pk", "")), "label": str(label)})
+    return JsonResponse({"results": results})
 
 
 @csrf_exempt
@@ -497,9 +726,10 @@ def batch_map(request):
 
     mapped_headers = [None for _ in headers]
     if OPENAI_API_KEY:
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        client = get_llm_client()
         try:
-            response = client.chat.completions.create(
+            response = chat_json(
+                client,
                 model=OPENAI_BATCH_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -674,3 +904,53 @@ def upload_quote_attachment(request):
         "message": "Attachment uploaded successfully.",
         "attachment": response_attachment,
     }, status=201)
+
+
+@login_required
+def agents_spa(request):
+    """Serve the React chat SPA shell."""
+    return render(request, "agents_spa.html")
+
+
+@csrf_exempt
+@login_required
+def chat_sessions_api(request):
+    """GET /agents/api/sessions/ → the user's chat sessions (newest first)."""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    sessions = ChatSession.objects.filter(user=request.user).order_by("-created_at")
+    data = [
+        {
+            "session_id": s.session_id,
+            "title": s.title or "Untitled Session",
+            "created_at": s.created_at.isoformat(),
+        }
+        for s in sessions
+    ]
+    return JsonResponse({"sessions": data})
+
+
+@csrf_exempt
+@login_required
+def chat_messages_api(request):
+    """GET /agents/api/messages/?session_id=... → messages for a session."""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    session_id = request.GET.get("session_id")
+    if not session_id:
+        return JsonResponse({"error": "session_id is required"}, status=400)
+    try:
+        session = ChatSession.objects.get(session_id=session_id, user=request.user)
+    except ChatSession.DoesNotExist:
+        return JsonResponse({"error": "session not found"}, status=404)
+    messages = ChatMessage.objects.filter(session=session).order_by("timestamp")
+    data = [
+        {
+            "sender": m.sender,
+            "content": m.content,
+            "timestamp": m.timestamp.isoformat(),
+            "hidden": m.hiddenMessage,
+        }
+        for m in messages
+    ]
+    return JsonResponse({"messages": data})

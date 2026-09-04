@@ -2,194 +2,201 @@
 {% block title %}Custom Fields - AgentCPQ{% endblock %}
 
 {% block content %}
-  
-<div class="card-panel white" style="border:1px solid #e0e0e0;border-radius:10px;">
-
-
-<div class="max-w-4xl mx-auto py-10">
-  <h4 class="text-center text-xl font-semibold text-orange-600 mb-6">
-      Create New Custom Field
-  </h4>
-
-  <form method="post"
-        action="{% url 'cpq:create_custom_field' object_name %}"
-        class="bg-white shadow rounded-2xl p-8 space-y-6">
-    {% csrf_token %}
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <!-- Label -->
-      <div>
-        {{ form.label.label_tag }}
-        {{ form.label }}
-      </div>
-
-      <!-- API Name -->
-      <div>
-        {{ form.name.label_tag }}
-        {{ form.name }}
-      </div>
-
-      <!-- CRM (pick-list) -->
-      <div>
-        {{ form.crm.label_tag }}
-        {{ form.crm }}
-      </div>
-
-     <!-- Object Type -->
-      <div>
-        {{ form.object_type.label_tag }}
-        {{ form.object_type }}
-      </div>
-
-      <!--
-      ject (optional) -->
-      <div>
-        {{ form.custom_object.label_tag }}
-        {{ form.custom_object }}
-      </div>
-
-      <!-- Data Type -->
-      <div>
-        <label for="id_data_type" class="block text-sm font-medium text-gray-700">Data Type</label>
-        <select id="id_data_type" name="data_type" class="w-full mt-1 border rounded-lg p-2">
-          <option value="text">Text</option>
-          <option value="number">Number</option>
-          <option value="currency">Currency</option>
-          <option value="percent">Percent</option>
-          <option value="date">Date</option>
-          <option value="boolean">Boolean</option>
-          <option value="dropdown">Dropdown</option>
-          <option value="textarea">Text Area</option>
-          <option value="lookup">Look Up</option>
-        </select>
-      </div>
-
-      <!-- Dropdown Options (hidden by default) -->
-      <div id="dropdown-options-field" style="display:none;" class="mt-4">
-        <label class="block text-sm font-medium text-gray-700">Dropdown Options</label>
-        <div id="options-container" class="space-y-2 mt-2">
-          <!-- Aquí se insertarán inputs dinámicamente -->
+  <div class="cpq-form-page">
+    <div class="cpq-form-wrapper">
+      <div class="cpq-form-card">
+        <div class="cpq-form-card__header">
+          <p class="cpq-form-card__eyebrow">Metadata Management</p>
+          <h4 class="cpq-form-card__title">Create New Custom Field</h4>
+          <p class="cpq-form-card__subtitle">Add a new attribute to {{ object_name }}. Labels and API references keep your org consistent.</p>
         </div>
-        <button type="button" id="add-option" class="btn-small orange darken-2 white-text mt-2">
-          + Add Option
-        </button>
+
+        {% if form.non_field_errors %}
+          <div class="cpq-form-alert" role="alert">
+            {% for error in form.non_field_errors %}
+              <p>{{ error }}</p>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <form method="post"
+              action="{% url 'cpq:create_custom_field' object_name %}"
+              class="cpq-form" novalidate>
+          {% csrf_token %}
+
+          <div class="cpq-form-grid">
+            <div class="cpq-form-field">
+              {{ form.label.label_tag }}
+              {{ form.label }}
+              {% for error in form.label.errors %}
+                <p class="cpq-form-error">{{ error }}</p>
+              {% endfor %}
+            </div>
+
+            <div class="cpq-form-field">
+              {{ form.name.label_tag }}
+              {{ form.name }}
+              <p class="cpq-form-help">Auto-generated from the label (e.g. Priority → priority__c).</p>
+              {% for error in form.name.errors %}
+                <p class="cpq-form-error">{{ error }}</p>
+              {% endfor %}
+            </div>
+
+            <div class="cpq-form-field">
+              {{ form.crm.label_tag }}
+              {{ form.crm }}
+              {% for error in form.crm.errors %}
+                <p class="cpq-form-error">{{ error }}</p>
+              {% endfor %}
+            </div>
+
+            <div class="cpq-form-field">
+              {{ form.object_type.label_tag }}
+              {{ form.object_type }}
+              {% for error in form.object_type.errors %}
+                <p class="cpq-form-error">{{ error }}</p>
+              {% endfor %}
+            </div>
+
+            <div class="cpq-form-field">
+              {{ form.custom_object.label_tag }}
+              {{ form.custom_object }}
+              <p class="cpq-form-help">Optional for custom object fields.</p>
+              {% for error in form.custom_object.errors %}
+                <p class="cpq-form-error">{{ error }}</p>
+              {% endfor %}
+            </div>
+
+            <div class="cpq-form-field">
+              <label for="id_data_type" class="cpq-label">Data Type</label>
+              <select id="id_data_type" name="data_type" class="cpq-input">
+                <option value="text">Text</option>
+                <option value="number">Number</option>
+                <option value="currency">Currency</option>
+                <option value="percent">Percent</option>
+                <option value="date">Date</option>
+                <option value="boolean">Boolean</option>
+                <option value="dropdown">Dropdown</option>
+                <option value="textarea">Text Area</option>
+                <option value="lookup">Look Up</option>
+              </select>
+            </div>
+
+            <div id="lookup-model-field" class="cpq-form-field" style="display: none;">
+              {{ form.lookup_model.label_tag }}
+              {{ form.lookup_model }}
+              {% for error in form.lookup_model.errors %}
+                <p class="cpq-form-error">{{ error }}</p>
+              {% endfor %}
+            </div>
+
+            <div class="cpq-form-field cpq-form-field--checkbox">
+              <label class="cpq-checkbox">
+                {{ form.required }}
+                <span>{{ form.required.label }}</span>
+              </label>
+              {% for error in form.required.errors %}
+                <p class="cpq-form-error">{{ error }}</p>
+              {% endfor %}
+            </div>
+
+            <div id="dropdown-options-field" class="cpq-form-field cpq-form-field--full" style="display: none;">
+              <label class="cpq-label">Dropdown Options</label>
+              <div id="options-container" class="cpq-option-list"></div>
+              <button type="button" id="add-option" class="cpq-btn cpq-btn--secondary">
+                <span class="material-icons" aria-hidden="true">add</span>
+                Add Option
+              </button>
+            </div>
+          </div>
+
+          <div class="cpq-form-footer">
+            <div class="cpq-form-footer__actions">
+              <a href="{% url 'cpq:custom_fields' %}?object_name={{ object_name|urlencode }}"
+                 class="cpq-btn cpq-btn--ghost">Cancel</a>
+              <button class="cpq-btn cpq-btn--primary" type="submit">
+                Save
+              </button>
+            </div>
+          </div>
+        </form>
       </div>
-
-
-     <div id="lookup-model-field" style="display: none;">
-      <label for="id_lookup_model" class="block text-sm font-medium text-gray-700">Lookup Model</label>
-        {{ form.lookup_model }}
-      </div>
-
-      <!-- Required -->
-      <div class="flex items-center space-x-2">
-        <label>
-          {{ form.required }}
-          <span class="text-sm">Required</span>
-        </label>
-      </div>
-
     </div>
+  </div>
 
-    <div class="flex justify-end space-x-4 pt-6">
-      <a href="{% url 'cpq:custom_fields' %}" class="px-4 py-2 text-gray-600">Cancel</a>
-      <button class="btn orange darken-2 white-text" type="submit">
-        Save
-      </button>
-    </div>
-  </form>
-</div>
-</div>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      // Auto-generate API name from label
+      const labelInput = document.getElementById("id_label");
+      const nameInput = document.getElementById("id_name");
 
+      if (labelInput && nameInput) {
+        labelInput.addEventListener("input", function () {
+          const raw = labelInput.value;
+          const formatted = raw.trim()
+                               .toLowerCase()
+                               .replace(/\s+/g, "_")
+                               .replace(/[^\w]/g, "") + "__c";
+          nameInput.value = formatted;
+        });
+      }
 
+      const dataTypeSelect = document.getElementById('id_data_type');
+      const lookupField = document.getElementById('lookup-model-field');
+      const dropdownField = document.getElementById('dropdown-options-field');
+      const optionsContainer = document.getElementById('options-container');
+      const addOptionBtn = document.getElementById('add-option');
 
-<script>
+      function toggleLookupField() {
+        if (!lookupField) return;
+        lookupField.style.display = dataTypeSelect.value === 'lookup' ? 'block' : 'none';
+      }
 
-  document.addEventListener('DOMContentLoaded', function () {
-    // Init materialize selects
-    const selects = document.querySelectorAll('select');
-    M.FormSelect.init(selects);
+      function toggleDropdownField() {
+        if (!dropdownField || !optionsContainer) return;
+        if (dataTypeSelect.value === 'dropdown') {
+          dropdownField.style.display = 'block';
+        } else {
+          dropdownField.style.display = 'none';
+          optionsContainer.innerHTML = '';
+        }
+      }
 
-    // Poner 'active' solo en labels de inputs que NO sean checkboxes
-    const inputs = document.querySelectorAll('input, select, textarea');
-    inputs.forEach(input => {
-      if (input.type === 'checkbox') return; // 🚫 saltar checkboxes
-      const label = document.querySelector(`label[for="${input.id}"]`);
-      if (label) label.classList.add('active');
+      function addOptionInput(value = '') {
+        if (!optionsContainer) return;
+        const wrapper = document.createElement('div');
+        wrapper.classList.add('cpq-option-row');
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.name = 'options[]';
+        input.value = value;
+        input.classList.add('cpq-input');
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.classList.add('cpq-option-remove');
+        removeBtn.innerHTML = '<span class="material-icons" aria-hidden="true">close</span>';
+        removeBtn.setAttribute('aria-label', 'Remove option');
+        removeBtn.addEventListener('click', () => wrapper.remove());
+
+        wrapper.appendChild(input);
+        wrapper.appendChild(removeBtn);
+        optionsContainer.appendChild(wrapper);
+      }
+
+      if (dataTypeSelect) {
+        dataTypeSelect.addEventListener('change', () => {
+          toggleLookupField();
+          toggleDropdownField();
+        });
+        toggleLookupField();
+        toggleDropdownField();
+      }
+
+      if (addOptionBtn) {
+        addOptionBtn.addEventListener('click', () => addOptionInput());
+      }
     });
-
-    // Auto-generate API name from label
-    const labelInput = document.getElementById("id_label");
-    const nameInput = document.getElementById("id_name");
-
-    if (labelInput && nameInput) {
-      labelInput.addEventListener("input", function () {
-        const raw = labelInput.value;
-        const formatted = raw.trim()
-                             .toLowerCase()
-                             .replace(/\s+/g, "_")
-                             .replace(/[^\w]/g, "") + "__c";
-        nameInput.value = formatted;
-      });
-    }
-  });
-
-  document.addEventListener('DOMContentLoaded', function () {
-    const dataTypeSelect = document.getElementById('id_data_type');
-    const lookupField = document.getElementById('lookup-model-field');
-
-    function toggleLookupField() {
-      if (dataTypeSelect.value === 'lookup') {
-        lookupField.style.display = 'block';
-      } else {
-        lookupField.style.display = 'none';
-      }
-    }
-
-    dataTypeSelect.addEventListener('change', toggleLookupField);
-    toggleLookupField();  // Run on load in case "lookup" is pre-selected
-  });
-
-  document.addEventListener('DOMContentLoaded', function () {
-    const dataTypeSelect = document.getElementById('id_data_type');
-    const dropdownField = document.getElementById('dropdown-options-field');
-    const optionsContainer = document.getElementById('options-container');
-    const addOptionBtn = document.getElementById('add-option');
-
-    function toggleDropdownField() {
-      if (dataTypeSelect.value === 'dropdown') {
-        dropdownField.style.display = 'block';
-      } else {
-        dropdownField.style.display = 'none';
-        optionsContainer.innerHTML = ''; // limpiar si cambia de tipo
-      }
-    }
-
-    function addOptionInput(value = '') {
-      const wrapper = document.createElement('div');
-      wrapper.classList.add('flex', 'items-center', 'space-x-2');
-
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.name = 'options[]';  // Django recibirá lista con request.POST.getlist("options[]")
-      input.value = value;
-      input.classList.add('border', 'rounded-lg', 'p-2', 'flex-1');
-
-      const removeBtn = document.createElement('button');
-      removeBtn.type = 'button';
-      removeBtn.textContent = 'x';
-      removeBtn.classList.add('btn-small', 'red', 'white-text');
-      removeBtn.onclick = () => wrapper.remove();
-
-      wrapper.appendChild(input);
-      wrapper.appendChild(removeBtn);
-      optionsContainer.appendChild(wrapper);
-    }
-
-    addOptionBtn.addEventListener('click', () => addOptionInput());
-
-    dataTypeSelect.addEventListener('change', toggleDropdownField);
-    toggleDropdownField(); // ejecutar al cargar la página
-  });
-</script>
+  </script>
 {% endblock %}

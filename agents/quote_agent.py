@@ -61,13 +61,14 @@ from .utils.quote_agent.handle_helpers import handle_products_to_add, handle_quo
 
 from .utils.message_formatters import format_quote_outcome_message
 
+from agents.llm import get_llm_client, get_model
+
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-3.5-turbo"
-# OPENAI_MODEL = "gpt-4"
+OPENAI_MODEL = get_model("structured")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = get_llm_client()
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,9 @@ def quote_agent(user, action, user_message, session_data):
         "ShowQuoteNotes": show_quote_notes, #CONTEXT READY
         "GenerateQuoteDocument": generate_quote_pdf, #CONTEXT READY
         "UpdateQuoteLineFromUI": update_quote_line_from_ui, # NO NEED CONTEXT
-        "UpdateQuoteFromUI": update_quote_from_ui # NO NEED CONTEXT
+        "UpdateQuoteFromUI": update_quote_from_ui, # NO NEED CONTEXT
+        "DeleteQuoteLineFromUI": delete_quote_line_from_ui, # NO NEED CONTEXT
+        "AddProductToQuoteFromUI": add_product_to_quote_from_ui, # NO NEED CONTEXT
         # "ProvideDates": provide_dates,
     }
 
@@ -544,7 +547,8 @@ def update_quote_line(user, user_message, session_data):
 
     return {
         "message": dynamic_message,
-        "session_summary": updated_summary
+        "session_summary": updated_summary,
+        "update_details": get_quote_details(quote),
     }
 
 #< ----------------- UPDATE QUOTE -------------------- >
@@ -752,6 +756,129 @@ def delete_quote_line(user, user_message, session_data):
         "temporaryMessage": True,
         "iterations": index
     }
+
+
+def delete_quote_line_from_ui(user, user_message, session_data):
+    """Deterministic delete of a quote line from the UI (no LLM).
+
+    Message format: ``Delete Quote Line: {"quote": "<name>", "sku": "<sku>"}``
+    """
+    logging.info("🗑️ Deleting quote line from front-end UI...")
+    try:
+        payload_data = None
+        if user_message.startswith("Delete Quote Line:"):
+            json_str = user_message.replace("Delete Quote Line:", "", 1).strip()
+            try:
+                payload_data = json.loads(json_str)
+            except Exception:
+                payload_data = None
+
+        if not isinstance(payload_data, dict):
+            return {"message": "⚠️ Invalid delete request."}
+
+        quote_id = payload_data.get("quote_id")
+        quote_name = payload_data.get("quote") or payload_data.get("quote_name")
+        sku = payload_data.get("sku") or payload_data.get("name")
+
+        quote = None
+        if quote_id:
+            quote = Quote.objects.filter(id=quote_id).first()
+        elif quote_name:
+            quote = Quote.objects.filter(name=quote_name).first()
+        if quote is None:
+            quote = get_active_quote(user_message, session_data)
+            if isinstance(quote, dict) and "message" in quote:
+                return quote
+
+        if not sku:
+            return {"message": "⚠️ No product SKU was provided."}
+
+        try:
+            product = Product.objects.get(sku=sku)
+        except Product.DoesNotExist:
+            return {"message": f"⚠️ Product '{sku}' is not registered."}
+
+        try:
+            quote_line = QuoteLine.objects.get(quote=quote, product=product, is_bundle_child=False)
+        except QuoteLine.DoesNotExist:
+            return {"message": f"⚠️ The quote line with SKU {sku} does not exist in quote {quote.name}."}
+
+        quote_line.delete()
+        log_action_usage("DeleteQuoteLine", user, "Quote", quote.name)
+        set_active_quote_to_session_data(session_data, quote)
+        quote.save()
+
+        return {
+            "message": f"{SUCCESS_ICON} The quote line with SKU {sku} was successfully deleted from quote <b>{quote.name}</b>.",
+            "update_details": get_quote_details(quote),
+            "temporaryMessage": True,
+        }
+    except Exception as e:
+        logging.error("Delete quote line from UI error: %s", e, exc_info=True)
+        return {"message": f"⚠️ Something went wrong deleting the quote line: {e}."}
+
+
+def add_product_to_quote_from_ui(user, user_message, session_data):
+    """Deterministic add of a quote line from the UI (no LLM).
+
+    Message format: ``Add Product To Quote: {"quote": "<name>", "sku": "<sku>", "quantity": 1}``
+    """
+    logging.info("🛒 Adding quote line from front-end UI...")
+    try:
+        payload_data = None
+        if user_message.startswith("Add Product To Quote:"):
+            json_str = user_message.replace("Add Product To Quote:", "", 1).strip()
+            try:
+                payload_data = json.loads(json_str)
+            except Exception:
+                payload_data = None
+
+        if not isinstance(payload_data, dict):
+            return {"message": "⚠️ Invalid add request."}
+
+        quote_id = payload_data.get("quote_id")
+        quote_name = payload_data.get("quote") or payload_data.get("quote_name")
+        sku = payload_data.get("sku") or payload_data.get("name")
+
+        quote = None
+        if quote_id:
+            quote = Quote.objects.filter(id=quote_id).first()
+        elif quote_name:
+            quote = Quote.objects.filter(name=quote_name).first()
+        if quote is None:
+            quote = get_active_quote(user_message, session_data)
+            if isinstance(quote, dict) and "message" in quote:
+                return quote
+
+        if not sku:
+            return {"message": "⚠️ No product SKU or name was provided."}
+
+        product_data = {
+            "sku": payload_data.get("sku"),
+            "name": payload_data.get("name"),
+            "quantity": payload_data.get("quantity", 1),
+            "discount_type": payload_data.get("discount_type"),
+            "discount_value": payload_data.get("discount_value", 0),
+            "term": payload_data.get("term"),
+        }
+
+        result = handle_products_to_add(user, [product_data], quote, allow_updates=True)
+        quote.save()
+        set_active_quote_to_session_data(session_data, quote)
+
+        successful = [e for e in result if e.get("status") == "success"]
+        if not successful:
+            err = (result[0].get("error") if result else "") or "could not add that product."
+            return {"message": f"{WARNING_ICON} {err}", "quote_details": get_quote_details(quote)}
+
+        return {
+            "message": f"{SUCCESS_ICON} Added to quote <b>{quote.name}</b>.",
+            "quote_details": get_quote_details(quote),
+            "temporaryMessage": True,
+        }
+    except Exception as e:
+        logging.error("Add product to quote from UI error: %s", e, exc_info=True)
+        return {"message": f"⚠️ Something went wrong adding the quote line: {e}."}
 
 #< ----------------- DELETE QUOTE -------------------- >
 
@@ -1010,7 +1137,7 @@ def update_quote_line_from_ui(user, user_message, session_data):
                             quote_line=line,
                         )
                 except Exception as exc:
-                    logging.warning(" XXXXXXXXXXXXXXXX Inclusion rules post-quote-line-update failed: %s", exc)
+                    logging.warning("Inclusion rules post-quote-line-update failed: %s", exc)
 
                 return {
                     "message": response.get("message"),
@@ -1080,7 +1207,7 @@ def update_quote_from_ui(user,user_message, session_data):
                     for line in quote.quote_lines.filter(is_bundle_parent=True):
                         check_inclusion_rules_for_quote_level(user, "quote_line", "inclusion", quote, line.product, skip_existing=True)
                 except Exception as exc:
-                    logging.warning("XXXXXXXXXXXXXXXXXXXXXX Inclusion rules post-update failed: %s", exc)
+                    logging.warning("Inclusion rules post-update failed: %s", exc)
 
                 return {
                     "message": "✅ Quote updated successfully.",

@@ -1,0 +1,8 @@
+{% extends "admin/index.html" %}
+{% load i18n admin_reorder %}
+
+{% block content %}
+  {% with app_list=app_list|move_apps_to_end:"cpq" %}
+    {{ block.super }}
+  {% endwith %}
+{% endblock %}

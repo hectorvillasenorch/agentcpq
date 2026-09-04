@@ -5,8 +5,12 @@
 
 {% block extrastyle %}
   {{ block.super }}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'css/agentcpq_admin.css' %}">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
 {% endblock %}
 
 {% block extrahead %}
@@ -68,6 +72,11 @@
       const isCpqChangeList =
         document.body.classList.contains("app-cpq") &&
         document.body.classList.contains("change-list");
+      const isAuthUserChangeList =
+        document.body.classList.contains("app-auth") &&
+        document.body.classList.contains("model-user") &&
+        document.body.classList.contains("change-list");
+      const useInlineTopObjectTools = isCpqChangeList || isAuthUserChangeList;
 
       if (changelistSearch) {
         changelistSearch.classList.add("admin-search-fullwidth");
@@ -77,7 +86,13 @@
         bulkActions.classList.add("admin-bulk-actions");
       }
 
-      if (isCpqChangeList && objectTools && resultsBlock && resultsBlock.parentNode) {
+      if (isAuthUserChangeList) {
+        document.querySelectorAll("#changelist-form .actions button[name='index']").forEach(function (btn) {
+          btn.removeAttribute("title");
+        });
+      }
+
+      if (useInlineTopObjectTools && objectTools && resultsBlock && resultsBlock.parentNode) {
         resultsBlock.parentNode.insertBefore(objectTools, resultsBlock);
         objectTools.classList.remove("object-tools-in-toolbar");
         objectTools.classList.add("object-tools-inline-top");
@@ -172,7 +187,8 @@
       {% if tenant_logo_url %}
         <img src="{{ tenant_logo_url }}" class="admin-brand-logo" alt="Company Logo">
       {% else %}
-        <img src="{% static 'img/logo-small.png' %}" class="admin-brand-logo" alt="AgentCPQ">
+        <img src="{% static 'img/agentcpq-chat-icon-sm.png' %}" class="admin-brand-logo" alt="AgentCPQ">
+        <span class="admin-brand-word">AgentCPQ</span>
       {% endif %}
     </a>
   </h1>

@@ -10,12 +10,35 @@ from ..models import (
     Opportunity,
     ScheduledTask,
     CPQSettings,
+    OpportunityStage,
     default_opportunity_stage,
+    DEFAULT_OPPORTUNITY_STAGE_KEY,
 )
 from django.db import transaction
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
+# Terminal stages a *newly created* opportunity should never start in.
+_TERMINAL_STAGES = {"closedwon", "closedlost", "closed"}
+
+
+def _open_stage_for_new_opportunity():
+    """Return an OPEN (pipeline) stage for a new opportunity.
+
+    Falls back away from the configured default if it ever points at a terminal
+    stage, so renewal opportunities always begin in the pipeline — never won/lost.
+    """
+    stage = default_opportunity_stage()
+    if stage in _TERMINAL_STAGES:
+        open_stage = (
+            OpportunityStage.objects.exclude(key__in=_TERMINAL_STAGES)
+            .order_by("sort_order", "id")
+            .values_list("key", flat=True)
+            .first()
+        )
+        return open_stage or DEFAULT_OPPORTUNITY_STAGE_KEY
+    return stage
 
 def _is_renewal_opportunity(opportunity):
     name = (getattr(opportunity, "name", "") or "").strip().lower()
@@ -113,6 +136,16 @@ def create_contract_after_closed_won(opportunity):
                 status="Cancelled"
             )
 
+    # A renewal opportunity replaces the contract of the opportunity it renews.
+    if _is_renewal_opportunity(opportunity):
+        source = getattr(opportunity, "renews_opportunity", None)
+        if source is not None:
+            source_contracts = Contract.objects.filter(opportunity=source, contract_status="Active")
+            Contract.objects.filter(pk__in=source_contracts.values_list("pk", flat=True)).update(
+                contract_status="Renewed"
+            )
+            Subscription.objects.filter(contract__in=source_contracts).update(status="Deprecated")
+
     contract = Contract.objects.create(
         opportunity=opportunity,
         start_date=tomorrow,
@@ -151,7 +184,16 @@ def create_contract_after_closed_won(opportunity):
     else:
         contract.end_date = tomorrow + relativedelta(months=12)
     contract.save()
-    
+
+    # Final signed value → NACV / Amount (renewals: this is the new annual contract value).
+    # Raw UPDATE (no signals) so the closed-won trigger does not re-fire on itself.
+    Opportunity.objects.filter(pk=opportunity.pk).update(
+        nacv=quote.net_amount,
+        amount=quote.net_amount,
+    )
+    opportunity.nacv = quote.net_amount
+    opportunity.amount = quote.net_amount
+
     return
 
 def make_opportunity_renewal(opportunity):
@@ -204,6 +246,9 @@ def make_opportunity_renewal(opportunity):
 
             existing_renewal = Opportunity.objects.filter(name=renewal_name, account=account).first()
             if existing_renewal:
+                if not existing_renewal.renews_opportunity_id:
+                    existing_renewal.renews_opportunity = opportunity
+                    existing_renewal.save(update_fields=["renews_opportunity"])
                 if existing_renewal.expected_close_date != expected_close_date:
                     existing_renewal.expected_close_date = expected_close_date
                     existing_renewal.save(update_fields=["expected_close_date"])
@@ -219,22 +264,17 @@ def make_opportunity_renewal(opportunity):
                 name=renewal_name,
                 account=account,
                 amount=original_quote.net_amount,
-                stage=default_opportunity_stage(),
+                stage=_open_stage_for_new_opportunity(),
                 owner=opportunity.owner,
                 expected_close_date=expected_close_date,
                 created_by=user,
                 hs_deal_id=None,
+                nacv=original_quote.net_amount,
+                renewal_baseline=original_quote.net_amount,
+                renews_opportunity=opportunity,
             )
 
-        # 2. Determine the new quote name
-        last_quote = Quote.objects.filter(name__startswith="Q-").order_by("-name").first()
-        if last_quote:
-            match = re.search(r"Q-(\d+)", last_quote.name)
-            next_number = int(match.group(1)) + 1 if match else 1
-        else:
-            next_number = 1
-
-        new_quote_name = f"Q-{next_number:05d}"  # Ej: Q-00033
+        # 2. (Quote name is auto-assigned as Q-##### by the Quote model on save.)
 
         # 3. Calculate expiration date (timezone aware)
         first_contract = opportunity.contracts.first()
@@ -252,7 +292,6 @@ def make_opportunity_renewal(opportunity):
 
         # 4. Create a new quote (copy of the original)
         renewal_quote = Quote.objects.create(
-            name=new_quote_name,
             account=account,
             opportunity=renewal_opp,
             subtotal=original_quote.subtotal,
@@ -304,7 +343,15 @@ def make_opportunity_renewal(opportunity):
 
         renewal_quote.save()
 
-        # 6. Update opportunity with the new quote
+        # 6. Update opportunity with the new quote + refresh renewal metrics (NACV tracks the renewal quote)
+        Opportunity.objects.filter(pk=renewal_opp.pk).update(
+            nacv=renewal_quote.net_amount,
+            amount=renewal_quote.net_amount,
+            primary_quote_id=renewal_quote.pk,
+        )
+        renewal_opp.nacv = renewal_quote.net_amount
+        renewal_opp.amount = renewal_quote.net_amount
+        renewal_opp.primary_quote = renewal_quote
 
         logger.info(f"✅ Renewal {renewal_opp.name} created with Quote {renewal_quote.name}")
         _push_renewal_to_salesforce(renewal_opp, renewal_quote)

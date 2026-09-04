@@ -5,8 +5,17 @@ from django.test import TestCase
 from django.utils.timezone import now
 from decimal import Decimal
 
-from cpq.models import Account, AccessPolicy, Opportunity, Product, RecordAccessGrant
+from cpq.models import (
+    Account,
+    AccessPolicy,
+    Opportunity,
+    PricingTierRow,
+    PricingTierTable,
+    Product,
+    RecordAccessGrant,
+)
 from cpq.permissions import apply_partner_access_filter, partner_can_access_record
+from cpq.pricing_engine import resolve_unit_price
 
 
 class RecordAccessPolicyTests(TestCase):
@@ -148,3 +157,27 @@ class OpportunityDefaultsTests(TestCase):
         )
 
         self.assertEqual(opportunity.expected_close_date, expected_date)
+
+
+class PricingEngineTests(TestCase):
+    def setUp(self):
+        user = User.objects.create_user(username="pricing-user", password="test123")
+        self.product = Product.objects.create(
+            name="Tiered Plan", sku="TIER-001", price=Decimal("50.00"), created_by=user
+        )
+        self.table = PricingTierTable.objects.create(product=self.product, is_active=True)
+        self.row = PricingTierRow.objects.create(
+            pricing_table=self.table,
+            min_quantity=1,
+            max_quantity=100,
+            unit_price=Decimal("50.00"),
+        )
+
+    def test_fractional_string_quantity_does_not_crash(self):
+        self.assertEqual(resolve_unit_price(self.product, "2.5"), Decimal("50.00"))
+
+    def test_integer_quantity_resolves(self):
+        self.assertEqual(resolve_unit_price(self.product, 50), Decimal("50.00"))
+
+    def test_unparseable_quantity_returns_none(self):
+        self.assertIsNone(resolve_unit_price(self.product, "abc"))

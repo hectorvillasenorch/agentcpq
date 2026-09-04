@@ -11,6 +11,7 @@ from django.db import transaction
 from django.db.models import Model
 from django.contrib.contenttypes.models import ContentType
 from datetime import datetime, date
+from django.utils.dateparse import parse_date, parse_datetime
 from decimal import Decimal
 import re
 
@@ -1140,6 +1141,12 @@ class TriggerEngine:
         right = self._normalize_value(right)
         return left, right
 
+    @staticmethod
+    def _canonical_text(value: str) -> str:
+        """Lowercase and strip spaces/underscores/dashes so picklist keys and labels
+        ('Closed Won', 'closed won', 'closedwon') compare equal."""
+        return re.sub(r"[\s_\-]+", "", value).casefold()
+
     # -------------------------------------------------------------------------
     # ✅ COMPARADOR NORMALIZADO (BLINDA TODO EL ENGINE)
     # -------------------------------------------------------------------------
@@ -1148,10 +1155,21 @@ class TriggerEngine:
         left, right = self._normalize_pair(left, right)
 
         if operator in ("==", "="):
-            return left == right
+            if left == right:
+                return True
+            # Picklist-tolerant equality: "Closed Won", "closed won" and "closedwon"
+            # are all the same stage. Only applies to plain strings (dates, numbers
+            # and booleans are already normalized by _normalize_value).
+            if isinstance(left, str) and isinstance(right, str):
+                return self._canonical_text(left) == self._canonical_text(right)
+            return False
 
         if operator == "!=":
-            return left != right
+            if left != right:
+                return True
+            if isinstance(left, str) and isinstance(right, str):
+                return self._canonical_text(left) != self._canonical_text(right)
+            return False
 
         if operator == ">":
             try:
@@ -1231,6 +1249,14 @@ class TriggerEngine:
             # ==================================================================
             if op == "CREATE" and mode == "closed_won_contract":
                 result = self._handle_closed_won_contract(action, instance)
+                results.append({"action": action, "status": "ok", "result": result})
+                continue
+
+            # ==================================================================
+            # ✅ Convert Lead → Account + Contact + Opportunity (custom mode)
+            # ==================================================================
+            if op == "CREATE" and mode == "lead_conversion":
+                result = self._handle_lead_conversion(action, instance)
                 results.append({"action": action, "status": "ok", "result": result})
                 continue
 
@@ -2365,6 +2391,75 @@ class TriggerEngine:
             logger.exception("❌ Closed Won contract creation failed: %s", exc)
             return {"created": False, "error": str(exc)}
 
+    def _handle_lead_conversion(self, action, instance):
+        """Convert a Lead → Account + Contact + Opportunity (idempotent).
+
+        Fired when a Lead's status becomes 'qualified'. Creates the three linked
+        records, links them to the lead, and marks the lead 'converted'.
+        """
+        from cpq.models import Account, Contact, Opportunity
+        from django.utils import timezone
+
+        if self._normalize_model_name(instance.__class__.__name__) != "lead":
+            return {"converted": False, "reason": "unsupported_instance"}
+
+        # Idempotency: never convert the same lead twice.
+        if instance.status == "converted" or instance.contact_id:
+            return {"converted": False, "reason": "already_converted"}
+
+        full_name = f"{instance.first_name or ''} {instance.last_name or ''}".strip()
+        company = (instance.company or "").strip()
+        account_name = company or full_name or f"Lead {instance.leadId or instance.pk}"
+        email = (instance.email or "").strip()
+
+        try:
+            account = Account.objects.create(
+                name=account_name,
+                owner=getattr(instance, "owner", None),
+                website=getattr(instance, "website", None) or None,
+            )
+
+            contact = Contact.objects.filter(email=email).first() if email else None
+            if contact is None:
+                contact = Contact.objects.create(
+                    account=account,
+                    first_name=instance.first_name or "",
+                    last_name=instance.last_name or "",
+                    email=email or f"{instance.leadId or instance.pk}@converted.local",
+                    phone=instance.phone or "",
+                    company=company,
+                    job_title=instance.title or "",
+                    do_not_call=bool(getattr(instance, "do_not_call", False)),
+                    email_opt_out=bool(getattr(instance, "email_opt_out", False)),
+                )
+
+            opportunity = Opportunity.objects.create(
+                name=full_name or company or account_name,
+                account=account,
+                owner=getattr(instance, "owner", None),
+            )
+
+            instance.contact = contact
+            instance.status = "converted"
+            instance.converted_at = timezone.now()
+            instance.converted_account = account
+            instance.converted_opportunity = opportunity
+            setattr(instance, "_skip_trigger", True)
+            instance.save(update_fields=["contact", "status", "converted_at", "converted_account", "converted_opportunity", "updated_at"])
+
+            return {
+                "converted": True,
+                "account": account.name,
+                "account_id": account.pk,
+                "contact": str(contact),
+                "contact_id": contact.pk,
+                "opportunity": opportunity.name,
+                "opportunity_id": opportunity.pk,
+            }
+        except Exception as exc:
+            logger.exception("❌ Lead conversion failed: %s", exc)
+            return {"converted": False, "error": str(exc)}
+
     def _handle_delete(self, action, instance, context):
         """
         ✅ DELETE con soporte de filtros dinámicos y recalculo automático de Quote si se afectan QuoteLine.
@@ -2513,11 +2608,77 @@ class TriggerEngine:
         }
 
     def _handle_email(self, action, instance, context):
-        return execute_email_action(
+        trigger = context.get("_trigger")
+        schedule_type = getattr(trigger, "schedule_type", None) or "immediate"
+        schedule_config = getattr(trigger, "schedule_config", None) or {}
+
+        if schedule_type == "immediate":
+            return execute_email_action(action=action, instance=instance, context=context)
+
+        send_at = self._compute_scheduled_send_at(schedule_type, schedule_config, instance)
+        if send_at is None:
+            logger.warning(
+                "⚠️ Trigger '%s' has schedule_type=%s but the send time could not be computed; "
+                "email NOT sent (config=%s, instance=%s)",
+                getattr(trigger, "name", "?"), schedule_type, schedule_config, instance.__class__.__name__,
+            )
+            return {"scheduled": False, "reason": "unable to compute schedule send time"}
+
+        from cpq.models import ScheduledEmail
+
+        ScheduledEmail.objects.create(
+            trigger=trigger,
+            instance_model=getattr(instance._meta, "label", instance.__class__.__name__),
+            instance_id=instance.pk,
             action=action,
-            instance=instance,
-            context=context,
+            send_at=send_at,
+            status="pending",
         )
+        return {"scheduled": True, "send_at": send_at.isoformat()}
+
+    def _compute_scheduled_send_at(self, schedule_type, schedule_config, instance):
+        """Return the datetime an email should be delivered, or None if uncomputable."""
+        from datetime import datetime, date, timedelta
+        from django.utils import timezone
+
+        try:
+            if schedule_type == "date":
+                raw = (schedule_config or {}).get("send_at")
+                if not raw:
+                    return None
+                if isinstance(raw, datetime):
+                    dt = raw
+                elif isinstance(raw, date):
+                    dt = datetime.combine(raw, datetime.min.time())
+                elif isinstance(raw, str):
+                    dt = parse_datetime(raw) or (
+                        datetime.combine(parse_date(raw), datetime.min.time()) if parse_date(raw) else None
+                    )
+                else:
+                    return None
+                if dt is None:
+                    return None
+                return timezone.make_aware(dt) if timezone.is_naive(dt) else dt
+
+            if schedule_type == "offset":
+                cfg = schedule_config or {}
+                date_field = cfg.get("date_field")
+                offset_days = int(cfg.get("offset_days", 0) or 0)
+                base = getattr(instance, date_field, None) if date_field else None
+                if base is None:
+                    return None
+                if isinstance(base, datetime):
+                    target = base
+                elif isinstance(base, date):
+                    target = datetime.combine(base, datetime.min.time())
+                else:
+                    return None
+                target = target + timedelta(days=offset_days)
+                return timezone.make_aware(target) if timezone.is_naive(target) else target
+        except Exception:
+            logger.exception("Failed to compute scheduled send time")
+            return None
+        return None
 
     def _handle_webhook(self, action, instance, context):
         return {"webhook": True}
