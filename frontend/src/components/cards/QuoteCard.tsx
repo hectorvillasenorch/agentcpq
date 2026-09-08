@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { sendQuoteLineAction, searchProducts, type ProductSuggestion } from "../../lib/api";
+import { sendQuoteLineAction, searchProducts, refreshQuoteDetails, type ProductSuggestion } from "../../lib/api";
 import { formatDate, formatDateTime } from "../../lib/format";
 
 interface QuoteLineItem {
@@ -112,6 +112,45 @@ export default function QuoteCard({
     setQuote(q);
     setItems(q.line_items || []);
   };
+
+  // If the Opportunity/Account behind this quote is renamed elsewhere, silently
+  // refresh just the meta (never clobber in-progress line edits).
+  useEffect(() => {
+    const quoteId = payload.quote_id ?? quote.quote_id;
+    if (quoteId == null) return;
+    const oppId = quote.opportunity_id ?? payload.opportunity_id;
+    const accId = quote.account_id ?? payload.account_id;
+    const onChanged = (e: Event) => {
+      const det = (e as CustomEvent).detail as { object?: string; id?: unknown } | undefined;
+      if (!det) return;
+      const changedThisQuote =
+        (det.object === "Opportunity" && oppId != null && String(det.id) === String(oppId)) ||
+        (det.object === "Account" && accId != null && String(det.id) === String(accId)) ||
+        (det.object === "Quote" && String(det.id) === String(quoteId));
+      if (!changedThisQuote) return;
+      refreshQuoteDetails(quoteId).then((fresh) => {
+        if (!fresh) return;
+        const meta: Record<string, unknown> = {};
+        for (const k of [
+          "quote_name",
+          "account",
+          "account_id",
+          "opportunity",
+          "opportunity_id",
+          "status",
+          "status_value",
+          "expiration_date",
+          "created_at",
+        ]) {
+          if (fresh[k] !== undefined) meta[k] = fresh[k];
+        }
+        setQuote((prev) => ({ ...prev, ...meta }));
+      });
+    };
+    window.addEventListener("cpq:record-changed", onChanged);
+    return () => window.removeEventListener("cpq:record-changed", onChanged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payload.quote_id, payload.opportunity_id, payload.account_id]);
 
   const runAction = async (message: string) => {
     setBusy(true);

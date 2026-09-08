@@ -127,10 +127,21 @@ def quote_agent(user, action, user_message, session_data):
 
 #< ----------------- CREATE A QUOTE -------------------- >
 
+def _stream_status(text: str) -> None:
+    """Emit a lightweight progress line to the SSE stream (no-op when not streaming)."""
+    try:
+        from agents.streaming import emit as _stream_emit
+        _stream_emit("token", {"content": text})
+    except Exception:
+        pass
+
+
 def create_quote(user,user_message, session_data):
     """Handles quote creation while preserving context."""
     # 🧠 Make the session context
     #session_context = make_session_context(user, "CreateQuote", "quote_agent", session_data, user_message)
+
+    _stream_status("Reading your request…\n")
 
     current_state, previous_summary = get_session_context("create_quote", session_data)
 
@@ -262,18 +273,13 @@ def create_quote(user,user_message, session_data):
             approval_suffix="",
         )
 
-        dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_create_quote_message(
-            quote=extracted_details,
-            db_results=result,
-            previous_summary=llm_result["summary"],
-            formatted_message=formatted_message,
-        )
-
+        # ⚡ No extra LLM "final polish" call here — formatted_message is already
+        # the deterministic, structured summary (was overwriting the LLM output anyway).
         formatted_message = _ensure_success_icon(formatted_message)
 
         return {
             "message": formatted_message,
-            "session_summary": updated_summary,
+            "session_summary": llm_result["summary"],
         }
 
     # In case the quote is created with any products
@@ -291,6 +297,7 @@ def create_quote(user,user_message, session_data):
     result.append("{INFO_ICON} Products provided in initial quote creation.")
 
     # ✅ Save quote products
+    _stream_status("Creating your quote and adding products…\n")
     try:
         result = handle_products_to_add(user, extracted_products, quote, allow_updates=False)
     except Exception as exc:
@@ -368,19 +375,13 @@ def create_quote(user,user_message, session_data):
 
     result.append(response_message)
 
-    dynamic_message, updated_summary, tokens_used_final, cost_final = generate_final_create_quote_message(
-        quote=extracted_details,
-        db_results=result,
-        previous_summary=llm_result["summary"],
-        formatted_message=response_message,
-    )
-
+    # ⚡ No extra LLM "final polish" call here — response_message is already the
+    # deterministic structured summary (the LLM output was overwritten below anyway).
     dynamic_message = response_message
-
 
     return {
         "message": _ensure_success_icon(dynamic_message),
-        "session_summary": updated_summary,
+        "session_summary": llm_result["summary"],
     }
 
 
@@ -390,6 +391,8 @@ def add_product_to_quote(user, user_message, session_data):
     """Handles adding multiple products to an existing quote."""
 
     logging.info("🔄 Adding product(s) to existing quote...")
+
+    _stream_status("Finding those products in your catalog…\n")
 
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)
@@ -483,6 +486,8 @@ def update_quote_line(user, user_message, session_data):
 
     logging.info("🔧 Updating quote line...\n\n")
 
+    _stream_status("Reading your line changes…\n")
+
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)
 
@@ -557,6 +562,8 @@ def update_quote(user, user_message, session_data):
     """Updates only the modified fields in quote lines."""
 
     logging.info("🔧 Updating quote...\n\n")
+
+    _stream_status("Reading the changes…\n")
 
     # ✅ Looking for active quote
     quote = get_active_quote(user_message, session_data)

@@ -46,6 +46,28 @@ export async function fetchSingleRecord(object: string, recordId: string | numbe
   return data.single_record;
 }
 
+/** Fresh quote-details (editor) payload — used to refresh an open quote card after
+ *  a related record (Opportunity/Account) was renamed elsewhere. */
+export async function refreshQuoteDetails(quoteId: string | number): Promise<Record<string, unknown> | null> {
+  try {
+    const data = await request<Record<string, unknown>>(
+      `/agents/api/quote-details/?quote_id=${encodeURIComponent(String(quoteId))}`
+    );
+    return data && typeof data === "object" ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Browser-level "a record was updated somewhere" event for stale-card refreshes. */
+export function dispatchRecordChanged(object: string, id: string | number): void {
+  try {
+    window.dispatchEvent(new CustomEvent("cpq:record-changed", { detail: { object, id } }));
+  } catch {
+    /* no-op */
+  }
+}
+
 export async function renameSession(sessionId: string, title: string): Promise<void> {
   await request<{ title: string }>(
     `/dashboard/chat/session/${encodeURIComponent(sessionId)}/title/`,

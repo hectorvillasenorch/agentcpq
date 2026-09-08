@@ -97,13 +97,31 @@ def get_or_create_account_and_opportunity(user, extracted_details, session_data)
 
         # 🧠 Caso 1: El account ya tiene oportunidades, pero el usuario no indicó ninguna
         if existing_opps.exists():
-            opp_names = [opp.name for opp in existing_opps]
+            # Only OPEN (pipeline) opportunities are candidates for a new quote —
+            # closed/won/lost deals should never be reused silently.
+            _terminal_stages = {"closedwon", "closedlost", "closed"}
+            open_opps = [
+                opp for opp in existing_opps
+                if str(opp.stage or "").strip().lower() not in _terminal_stages
+            ]
+
+            # ⚡ Efficiency: exactly one open opportunity -> use it automatically (saves a whole LLM turn).
+            if len(open_opps) == 1:
+                opportunity = open_opps[0]
+                session_data["opportunity"] = opportunity.name
+                logging.info(
+                    f"⚡ Auto-selected the only open opportunity '{opportunity.name}' for account '{account_name}'."
+                )
+                return account, opportunity, None
+
+            candidates = open_opps if open_opps else list(existing_opps)
+            opp_names = [opp.name for opp in candidates]
             opp_list_html = "<br>".join([f"• {name}" for name in opp_names])
 
             # 🔢 Buscar el número más alto existente con el patrón Opportunity {account_name}__N
             base_name = f"Opportunity {account_name}"
             max_num = 0
-            for name in opp_names:
+            for name in (opp.name for opp in existing_opps):
                 if name == base_name:
                     max_num = max(max_num, 1)
                 elif name.startswith(base_name + "__"):
@@ -120,13 +138,13 @@ def get_or_create_account_and_opportunity(user, extracted_details, session_data)
 
             opportunity_message = (
                 f"{INFO_ICON} An attempt was made to create a quote for the account {account_name}, "
-                f"but this account already has existing opportunities:<br>"
+                f"but this account has more than one open opportunity:<br>"
                 f"{opp_list_html}<br><br>"
                 f"Would you like to use one of these opportunities, "
                 f"create a new one named <b>{suggested_opportunity_name}</b>, "
                 f"or specify a custom opportunity name?"
             )
-        
+
             return account, suggested_opportunity_name, opportunity_message
 
         # 🧠 Caso 2: El account no tiene oportunidades → crear una por defecto

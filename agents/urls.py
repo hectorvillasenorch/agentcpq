@@ -14,6 +14,7 @@ from .views import (
     search_products,
     search_records,
     update_action_trigger,
+    quote_details_api,
 )
 
 urlpatterns = [
@@ -31,4 +32,5 @@ urlpatterns = [
     path("api/search-products/", search_products, name="search_products"),
     path("api/search-records/", search_records, name="search_records"),
     path("api/action-trigger/<int:trigger_id>/update/", update_action_trigger, name="update_action_trigger"),
+    path("api/quote-details/", quote_details_api, name="quote_details_api"),
 ]

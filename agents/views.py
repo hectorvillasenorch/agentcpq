@@ -437,6 +437,29 @@ def chat_with_gpt_stream(request):
 
 @csrf_exempt
 @login_required
+def quote_details_api(request):
+    """Lightweight JSON endpoint: fresh quote details (editor payload) for a quote id.
+
+    Lets the SPA silently refresh an open quote card after a related record
+    (e.g. the Opportunity) was renamed, instead of showing a stale snapshot.
+    """
+    quote_id = request.GET.get("quote_id") or request.GET.get("id")
+    if not quote_id:
+        return JsonResponse({"error": "quote_id is required."}, status=400)
+    try:
+        from agents.utils.quote_agent.general_helpers import get_quote_details
+        from cpq.models import Quote as _Quote
+
+        quote = _Quote.objects.select_related("account", "opportunity").get(pk=quote_id)
+        return JsonResponse(get_quote_details(quote), safe=False)
+    except _Quote.DoesNotExist:
+        return JsonResponse({"error": "Quote not found."}, status=404)
+    except Exception as exc:  # noqa: BLE001
+        return JsonResponse({"error": str(exc)}, status=500)
+
+
+@csrf_exempt
+@login_required
 def search_products(request):
     """Search products by name or SKU for the quote line editor's add-line picker."""
     q = (request.GET.get("q") or "").strip()

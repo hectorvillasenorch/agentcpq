@@ -19,7 +19,14 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { fetchSingleRecord, saveSingleRecordLayout, saveSingleRecordUpdate, searchRecords, type RecordSearchResult } from "../../lib/api";
+import {
+  fetchSingleRecord,
+  saveSingleRecordLayout,
+  saveSingleRecordUpdate,
+  searchRecords,
+  dispatchRecordChanged,
+  type RecordSearchResult,
+} from "../../lib/api";
 import { formatDate, formatDateTime } from "../../lib/format";
 
 interface RecordField {
@@ -103,10 +110,12 @@ function EditableField({
   field,
   payload,
   sessionId,
+  onSaved,
 }: {
   field: RecordField;
   payload: SingleRecordPayload;
   sessionId?: string | null;
+  onSaved?: () => void;
 }) {
   const [value, setValue] = useState(initialValue(field));
   const [status, setStatus] = useState<SaveStatus>("idle");
@@ -132,8 +141,10 @@ function EditableField({
       sessionId ?? undefined
     )
       .then((res) => {
-        setStatus(res.failedFields && res.failedFields.length ? "error" : "saved");
+        const ok = !(res.failedFields && res.failedFields.length);
+        setStatus(ok ? "saved" : "error");
         window.setTimeout(() => setStatus((s) => (s === "saved" ? "idle" : s)), 1800);
+        if (ok) onSaved?.();
       })
       .catch(() => setStatus("error"));
   };
@@ -520,6 +531,7 @@ function RelatedRecords({
   depth = 0,
   ancestors = [],
   currentKey,
+  onChildUpdated,
 }: {
   sections: RelatedRecordSection[];
   sessionId?: string | null;
@@ -527,6 +539,7 @@ function RelatedRecords({
   depth?: number;
   ancestors?: Array<{ object?: string; id?: string | number }>;
   currentKey?: { object?: string; id?: string | number };
+  onChildUpdated?: () => void;
 }) {
   const [expanded, setExpanded] = useState<{
     object: string;
@@ -622,6 +635,7 @@ function RelatedRecords({
               isAdmin={isAdmin}
               depth={depth + 1}
               ancestors={currentKey ? [...ancestors, currentKey] : ancestors}
+              onChildUpdated={onChildUpdated}
             />
           ) : (
             <div className="text-[12px] text-muted-foreground">Loading…</div>
@@ -638,17 +652,46 @@ export default function SingleRecordCard({
   isAdmin,
   depth = 0,
   ancestors = [],
+  onChildUpdated,
 }: {
   payload: SingleRecordPayload;
   sessionId?: string | null;
   isAdmin?: boolean;
   depth?: number;
   ancestors?: Array<{ object?: string; id?: string | number }>;
+  onChildUpdated?: () => void;
 }) {
-  const Icon = objectIcon(payload.object);
-  const title = payload.record_value != null ? String(payload.record_value) : "Record";
-  const eyebrow = payload.display_label || payload.object || "Record";
-  const recordKey = `${payload.object ?? ""}:${payload.record_id ?? ""}`;
+  // Live payload — re-fetched after local/child edits so labels (e.g. the quote's
+  // Opportunity name) never stay stale when a related record was renamed.
+  const [live, setLive] = useState<SingleRecordPayload>(payload);
+  useEffect(() => setLive(payload), [payload]);
+
+  const refreshSelf = useCallback(() => {
+    const obj = payload.object;
+    const rid = payload.record_id;
+    if (!obj || rid === undefined || rid === null || String(rid) === "") return;
+    fetchSingleRecord(obj, String(rid))
+      .then((r) => {
+        if (r) setLive(r as SingleRecordPayload);
+      })
+      .catch(() => {});
+  }, [payload.object, payload.record_id]);
+
+  // A record changed somewhere under (or inside) this card → refresh this card,
+  // notify ancestors, and broadcast so other open cards (e.g. a quote editor)
+  // can update too.
+  const notifyChanged = useCallback(() => {
+    refreshSelf();
+    if (payload.object && payload.record_id != null) {
+      dispatchRecordChanged(payload.object, payload.record_id);
+    }
+    onChildUpdated?.();
+  }, [refreshSelf, payload.object, payload.record_id, onChildUpdated]);
+
+  const Icon = objectIcon(live.object);
+  const title = live.record_value != null ? String(live.record_value) : "Record";
+  const eyebrow = live.display_label || live.object || "Record";
+  const recordKey = `${live.object ?? ""}:${live.record_id ?? ""}`;
 
   const [layout, setLayout] = useState<{ order: string[]; hidden: string[] }>({
     order: payload.layout?.order || [],
@@ -657,7 +700,7 @@ export default function SingleRecordCard({
   const [showLayout, setShowLayout] = useState(false);
 
   const hiddenSet = new Set(layout.hidden);
-  const allFields = (payload.fields || []).filter((f) => !isDbId(f.name) && !hiddenSet.has(fieldKey(f)));
+  const allFields = (live.fields || []).filter((f) => !isDbId(f.name) && !hiddenSet.has(fieldKey(f)));
 
   const orderIndex = new Map(layout.order.map((k, i) => [k, i]));
   const sorted = [...allFields].sort((a, b) => {
@@ -676,7 +719,13 @@ export default function SingleRecordCard({
     const readOnly = field.is_editable === false || isSystemField(field.name);
     if (readOnly) return <ReadOnlyValue key={fieldKey(field) || i} field={field} />;
     return (
-      <EditableField key={fieldKey(field) || i} field={field} payload={payload} sessionId={sessionId} />
+      <EditableField
+        key={fieldKey(field) || i}
+        field={field}
+        payload={live}
+        sessionId={sessionId}
+        onSaved={notifyChanged}
+      />
     );
   };
 
@@ -721,22 +770,23 @@ export default function SingleRecordCard({
         )}
       </div>
 
-      {payload.related && payload.related.length > 0 && depth < 2 && (
+      {live.related && live.related.length > 0 && depth < 2 && (
         <div className="px-4 pb-4">
           <RelatedRecords
-            sections={payload.related}
+            sections={live.related}
             sessionId={sessionId}
             isAdmin={isAdmin}
             ancestors={ancestors}
-            currentKey={{ object: payload.object, id: payload.record_id }}
+            currentKey={{ object: live.object, id: live.record_id }}
+            onChildUpdated={notifyChanged}
           />
         </div>
       )}
 
       {showLayout && (
         <LayoutModal
-          object={payload.object || "Record"}
-          fields={payload.fields || []}
+          object={live.object || "Record"}
+          fields={live.fields || []}
           order={layout.order}
           hidden={layout.hidden}
           onClose={() => setShowLayout(false)}
