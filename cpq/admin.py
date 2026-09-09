@@ -417,9 +417,32 @@ admin.site.register(ScheduledTask, ScheduledTaskAdmin)
 
 @admin.register(ScheduledEmail)
 class ScheduledEmailAdmin(admin.ModelAdmin):
-    list_display = ("trigger", "instance_model", "instance_id", "send_at", "status", "attempts", "updated_at")
+    list_display = ("_subject", "_to", "instance_model", "instance_id", "send_at", "status", "attempts", "updated_at")
     list_filter = ("status",)
-    search_fields = ("instance_model", "instance_id")
+    date_hierarchy = "send_at"
+    search_fields = ("instance_model", "instance_id", "last_error")
+    actions = ("cancel_selected",)
+
+    @admin.display(description="Subject")
+    def _subject(self, obj):
+        try:
+            return (obj.action or {}).get("email", {}).get("subject", {}).get("value", "")
+        except Exception:
+            return ""
+
+    @admin.display(description="To")
+    def _to(self, obj):
+        try:
+            recipients = (obj.action or {}).get("email", {}).get("recipients", {})
+            externals = recipients.get("external") or []
+            return ", ".join(str(e) for e in externals)
+        except Exception:
+            return ""
+
+    @admin.action(description="Cancel selected (mark sent — no delivery)")
+    def cancel_selected(self, request, queryset):
+        updated = queryset.filter(status="pending").update(status="sent", last_error="Cancelled manually in admin")
+        self.message_user(request, f"Cancelled {updated} pending reminder(s); they will not be sent.")
 
 
 class QuoteAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
