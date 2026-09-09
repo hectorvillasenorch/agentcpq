@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple
 
 import openai
 from django.contrib.auth import get_user_model
-from django.db.models import ForeignKey
+from django.db.models import ForeignKey, Q
 from django.utils.dateparse import parse_date
 from dotenv import load_dotenv
 
@@ -981,6 +981,35 @@ def _delete_standard_records(user, user_message, session_data):
             "hiddenMessage": False,
         }
 
+    # 🧠 Deterministic "delete product <id>" — bypass the LLM here: Product isn't
+    # a supported chat object, so the extraction LLM used to guess the type
+    # (e.g. 'Option') and then claim the record wasn't found.
+    try:
+        from agents.utils.orchestrator.context_handle_helpers import extract_current_request
+        _raw_msg = (extract_current_request(user_message) or user_message)
+    except Exception:
+        _raw_msg = user_message
+    _lower_msg = str(_raw_msg).strip().lower()
+    if re.match(r"^(please\s+)?delete\s+(?:the\s+)?product(?:\s+record)?\b", _lower_msg):
+        _m_id = re.search(r"product(?:\s+record)?\s+([0-9A-Za-z_.@-]+)", str(_raw_msg).strip(), re.IGNORECASE)
+        _identifier = _m_id.group(1) if _m_id else ""
+        if not _identifier:
+            return {"message": "⚠️ Which Product do you want to delete? Include its prdid, SKU, or name."}
+        _product = _find_product(_identifier)
+        if _product is None:
+            return {"message": f"⚠️ No Product found matching '{_identifier}' (checked prdid, SKU, and name)."}
+        session_data["pending_delete"] = {
+            "requests": [{"object": "Product", "identifier": _product.prdid or str(_product.pk)}]
+        }
+        return {
+            "message": (
+                f"⚠️ Delete Product '<b>{_product.name}</b>' ({_product.prdid})? This can't be undone. "
+                "Reply <strong>yes</strong> to delete or <strong>cancel</strong> to keep it."
+            ),
+            "session_summary": "User wants to delete a Product; waiting for confirmation.",
+            "hiddenMessage": False,
+        }
+
     _refresh_allowed_fields()
     current_state, previous_summary = get_session_context("delete_standard_record", session_data)
 
@@ -1017,8 +1046,12 @@ def _delete_standard_records(user, user_message, session_data):
         obj_name = (req.get("data") or {}).get("object")
         identifier = (req.get("data") or {}).get("identifier")
         requests.append({"object": obj_name, "identifier": identifier})
-        record = _find_record(obj_name, identifier)
-        label = _record_payload(obj_name, record).get("label") if record is not None else None
+        if obj_name == "Product":
+            record = _find_product(identifier)
+            label = record.name if record is not None else None
+        else:
+            record = _find_record(obj_name, identifier)
+            label = _record_payload(obj_name, record).get("label") if record is not None else None
         labels.append(label or identifier or obj_name)
 
     session_data["pending_delete"] = {"requests": requests}
@@ -1719,7 +1752,67 @@ def _persist_update(user, object_name: str, identifier: str, fields: Dict[str, o
     return True, "", _record_payload(object_name, record)
 
 
+def _find_product(value) -> Optional["Product"]:
+    """Resolve a Product by numeric pk, prdid, SKU, external_id, or name."""
+    if value is None or str(value).strip() == "":
+        return None
+    from cpq.models import Product
+
+    raw = str(value).strip()
+    try:
+        pk_candidate = int(raw)
+    except (TypeError, ValueError):
+        pk_candidate = None
+    if pk_candidate is not None:
+        product = Product.objects.filter(pk=pk_candidate).first()
+        if product is not None:
+            return product
+    q = Q()
+    for field in ("prdid", "sku", "external_id", "name"):
+        q |= Q(**{f"{field}__iexact": raw})
+    product = Product.objects.filter(q).first()
+    if product is not None:
+        return product
+    return Product.objects.filter(name__icontains=raw).first()
+
+
+def _product_delete_error(record) -> Optional[str]:
+    """Refuse to delete a Product that anything references (delete cascades)."""
+    refs = [
+        ("quote line", getattr(record, "quote_lines").count()),
+        ("subscription", getattr(record, "subscriptions").count()),
+        ("bundle option", getattr(record, "options").count()),
+        ("pricing rule", getattr(record, "pricing_rules").count() + getattr(record, "related_rules").count()),
+        ("asset", getattr(record, "assets").count()),
+        ("pricebook entry", getattr(record, "pricebook_entries").count()),
+        ("usage record", getattr(record, "usage_records").count()),
+    ]
+    used = [(name, n) for name, n in refs if n]
+    if not used:
+        return None
+    detail = ", ".join(f"{n} {name}(s)" for name, n in used)
+    return (
+        f"⚠️ Can't delete Product '{record.name}' — it's referenced by {detail}. "
+        "Delete/archive those records first, or set the product inactive instead."
+    )
+
+
 def _persist_delete(user, object_name: str, identifier: str) -> Tuple[bool, str, Dict[str, object]]:
+    if object_name == "Product":
+        if not identifier:
+            return False, "⚠️ Missing product identifier.", {}
+        record = _find_product(identifier)
+        if record is None:
+            return False, f"⚠️ Product '{identifier}' not found.", {}
+        refuse = _product_delete_error(record)
+        if refuse:
+            return False, refuse, {}
+        payload = {"object": "Product", "label": record.name, "id": record.pk}
+        try:
+            record.delete()
+            return True, "", payload
+        except Exception as exc:
+            return False, f"⚠️ Failed to delete Product: {exc}", {}
     if object_name not in UPDATE_DELETE_SUPPORTED_OBJECTS:
         return False, f"⚠️ Unsupported object '{object_name}'.", {}
     if not identifier:
