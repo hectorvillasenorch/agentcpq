@@ -68,7 +68,7 @@ def _llm_semantic_match(local_fields, crm_fields):
     except Exception:
         return {}
 
-    from agents.llm import get_llm_client, get_model
+    from agents.llm import get_llm_client, get_model, temperature_supported
 
     model = os.getenv("FIELD_MAPPING_LLM_MODEL", get_model("structured"))
     client = get_llm_client()
@@ -90,9 +90,10 @@ def _llm_semantic_match(local_fields, crm_fields):
     }
 
     try:
+        _create_kwargs = {"temperature": 0} if temperature_supported(model) else {}
         response = client.chat.completions.create(
             model=model,
-            temperature=0,
+            **_create_kwargs,
             messages=[
                 {"role": "system", "content": "You are a strict JSON generator."},
                 {"role": "user", "content": json.dumps(prompt)},

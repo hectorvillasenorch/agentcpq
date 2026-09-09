@@ -20,7 +20,7 @@ from agentcpq.intelligence.lead_intelligence_agent import (
 )
 from agents.standard_record_agent import standard_record_agent
 from dotenv import load_dotenv
-from agents.llm import get_llm_client, get_model, chat_stream
+from agents.llm import get_llm_client, get_model, chat_stream, temperature_supported
 from agents.models import ChatSession, ChatMessage
 from functools import lru_cache
 
@@ -616,10 +616,11 @@ def orchestrate_request(user, user_message, session_data):
     logging.info(f"\n\n💰 ORCHESTRATOR - Estimated tokens: {tokens}, approx cost: ${est_cost:.6f}\n\n")
 
     try:
+        _create_kwargs = {"temperature": 0} if temperature_supported(OPENAI_MODEL) else {}
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=messages,
-            temperature=0
+            **_create_kwargs
         )
 
         raw_decision = response.choices[0].message.content.strip()

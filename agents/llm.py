@@ -110,6 +110,23 @@ def _ensure_json_hint(messages):
     return adjusted
 
 
+def temperature_supported(model: str | None) -> bool:
+    """Whether the model accepts an explicit ``temperature``.
+
+    OpenAI's reasoning line (gpt-5 family, o1/o3/o4/…) only allows the default
+    temperature (1) and rejects any explicit value with a 400. DeepSeek and
+    older chat models (gpt-4o*, gpt-4.1*) accept it.
+    """
+    m = str(model or "").lower()
+    return not (
+        m.startswith("gpt-5")
+        or m.startswith("o1")
+        or m.startswith("o3")
+        or m.startswith("o4")
+        or m.startswith("o5")
+    )
+
+
 def chat_json(client, model, messages, temperature=0.2, **kwargs):
     """``chat.completions.create`` constrained to emit valid JSON.
 
@@ -117,7 +134,10 @@ def chat_json(client, model, messages, temperature=0.2, **kwargs):
     unless disabled via ``LLM_JSON_MODE``. Keep ``clean_llm_json`` as a parser
     fallback on the result regardless.
     """
-    kwargs.setdefault("temperature", temperature)
+    if temperature_supported(model):
+        kwargs.setdefault("temperature", temperature)
+    else:
+        kwargs.pop("temperature", None)  # reasoning models reject explicit temperature
     if json_mode_enabled():
         kwargs["response_format"] = {"type": "json_object"}
         messages = _ensure_json_hint(messages)
@@ -134,7 +154,10 @@ def chat_stream(client, model, messages, temperature=0.2, **kwargs):
     """
     from .streaming import get_sink, emit
 
-    kwargs.setdefault("temperature", temperature)
+    if temperature_supported(model):
+        kwargs.setdefault("temperature", temperature)
+    else:
+        kwargs.pop("temperature", None)  # reasoning models reject explicit temperature
     sink = get_sink()
     if sink is None:
         return client.chat.completions.create(model=model, messages=messages, **kwargs)
