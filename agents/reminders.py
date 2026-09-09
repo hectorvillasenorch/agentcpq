@@ -54,7 +54,7 @@ def reminder_enabled_text() -> str:
 
 
 def looks_like_reminder(user_message: str) -> bool:
-    return bool(re.match(r"^(?:please\s+)?remind\s+me\b", (user_message or "").strip(), re.IGNORECASE))
+    return bool(re.match(r"^(?:please\s+)?remind\s*me\b", (user_message or "").strip(), re.IGNORECASE))
 
 
 def _parse_time_of_day(text: str) -> dtime:
@@ -188,7 +188,7 @@ def create_one_off_reminder(user, user_message: str, session_data: dict) -> dict
 
     text = (user_message or "").strip()
     # normalize: drop the leading 'remind me'
-    after = re.sub(r"^(?:please\s+)?remind\s+me\b", "", text, flags=re.IGNORECASE).strip(" .,;:-")
+    after = re.sub(r"^(?:please\s+)?remind\s*me\b", "", text, flags=re.IGNORECASE).strip(" .,;:-")
 
     # find 'to <task>' boundary — the task is everything from 'to ' onward
     to_match = re.search(r"\bto\s+(.+)$", after, re.IGNORECASE)

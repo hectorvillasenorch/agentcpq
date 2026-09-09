@@ -138,22 +138,23 @@ def handle_user_request(user,user_message, session_data):
     normalized_message = user_message.strip().lower()
 
     # 🧠 One-off reminders: "remind me <when> to <task>" (no event needed —
-    # scheduled straight into the email outbox).
-    if user_message.startswith("Remind me") or normalized_message.startswith("remind me"):
-        try:
-            from agents.reminders import looks_like_reminder, create_one_off_reminder
+    # scheduled straight into the email outbox). Accepts "remindme" (no space).
+    from agents.reminders import looks_like_reminder
 
-            if looks_like_reminder(user_message):
-                logging.info("Do NOT use GPT (one-off reminder)\n")
-                reminder_response = create_one_off_reminder(user, user_message, session_data)
-                reminder_response["routing_trace"] = ["deterministic → Reminder"]
-                reminder_response["session_id"] = session_data.get("session_id")
-                reminder_response["chat_sessions"] = list(
-                    ChatSession.objects.filter(user=user).order_by("-created_at").values(
-                        "session_id", "title", "created_at"
-                    )
+    if looks_like_reminder(user_message):
+        try:
+            from agents.reminders import create_one_off_reminder
+
+            logging.info("Do NOT use GPT (one-off reminder)\n")
+            reminder_response = create_one_off_reminder(user, user_message, session_data)
+            reminder_response["routing_trace"] = ["deterministic → Reminder"]
+            reminder_response["session_id"] = session_data.get("session_id")
+            reminder_response["chat_sessions"] = list(
+                ChatSession.objects.filter(user=user).order_by("-created_at").values(
+                    "session_id", "title", "created_at"
                 )
-                return reminder_response
+            )
+            return reminder_response
         except Exception:
             logging.exception("Reminder handler failed")
 
