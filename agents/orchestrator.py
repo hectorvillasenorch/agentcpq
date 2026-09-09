@@ -1131,6 +1131,22 @@ def _infer_product_action(user_message: str) -> str | None:
     if not user_message:
         return None
     lowered = user_message.lower()
+    # Never hijack structured UI payloads (they carry their own routing and use
+    # record_id + JSON; 'product'/'update' inside the JSON must not route here).
+    if lowered.startswith(
+        (
+            "update record:",
+            "update quote:",
+            "update quote line:",
+            "delete quote:",
+            "delete quote line:",
+            "add product to quote:",
+            "update bundle option:",
+            "delete bundle option:",
+            "delete bundle component from quote:",
+        )
+    ):
+        return None
     if re.search(r"\b(quote|bundle|option|pdf|line)\b", lowered):
         return None
     if not re.search(r"\bproduct(s)?\b", lowered):
