@@ -2407,10 +2407,19 @@ class TriggerEngine:
         if instance.status == "converted" or instance.contact_id:
             return {"converted": False, "reason": "already_converted"}
 
+        from django.utils import timezone as _tz
+
         full_name = f"{instance.first_name or ''} {instance.last_name or ''}".strip()
         company = (instance.company or "").strip()
-        account_name = company or full_name or f"Lead {instance.leadId or instance.pk}"
         email = (instance.email or "").strip()
+
+        # Company should drive the Account name. If the lead somehow has no company,
+        # fall back to the email domain (only when it looks corporate), then the name.
+        _domain = (email.split("@")[1].strip().lower() if "@" in email and email.split("@")[1].strip() else "")
+        _personal = {"gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "aol.com",
+                     "icloud.com", "me.com", "protonmail.com", "proton.me", "pm.me", "mail.com"}
+        _domain_name = _domain if _domain and _domain not in _personal else ""
+        account_name = company or _domain_name or full_name or f"Lead {instance.leadId or instance.pk}"
 
         try:
             account = Account.objects.create(
@@ -2433,8 +2442,11 @@ class TriggerEngine:
                     email_opt_out=bool(getattr(instance, "email_opt_out", False)),
                 )
 
+            # Opportunity name follows the company, not the person:
+            #   "Acme Corp - September 2026"
+            _month_year = _tz.now().strftime("%B %Y")
             opportunity = Opportunity.objects.create(
-                name=full_name or company or account_name,
+                name=f"{account_name} - {_month_year}",
                 account=account,
                 owner=getattr(instance, "owner", None),
             )

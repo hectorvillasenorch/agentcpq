@@ -798,6 +798,19 @@ def _build_bulk_lead_instance(user, fields: Dict[str, object], custom_map: Dict[
     def _has_cf(key: str) -> bool:
         return key and key.lower() in custom_map
 
+    # The extraction LLM sometimes reports the employer under company/company_name,
+    # but other times under organization/org/account — normalize them all here so
+    # the company is actually persisted (and used later at lead conversion).
+    _full = f"{fields.get('first_name') or ''} {fields.get('last_name') or ''}".strip().lower()
+    _company = ""
+    for key in ("company", "company_name", "organization", "org", "account"):
+        val = str(fields.get(key) or "").strip()
+        if val and val.lower() != _full:
+            _company = val
+            break
+    if _company:
+        fields["company"] = _company
+
     for key in ("company", "company_name"):
         if fields.get(key) and not _has_cf(key):
             extras.append(f"Company: {fields.get(key)}")
