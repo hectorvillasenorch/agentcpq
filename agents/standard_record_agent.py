@@ -632,10 +632,26 @@ def _create_standard_records(user, user_message, session_data):
 
     message_parts = []
     if created_records:
-        success_lines = [
-            f"{SUCCESS_ICON} Created {item['object']} '{item['label']}'."
-            for item in created_records
-        ]
+        success_lines = []
+        for item in created_records:
+            line = f"{SUCCESS_ICON} Created {item['object']} '{item['label']}'."
+            rid = item.get("id") or item.get("record_id")
+            obj_name = str(item.get("object") or "")
+            if rid and obj_name in ("Lead", "Contact"):
+                try:
+                    from agents.standard_record_agent import MODEL_MAP
+                    rec_model = MODEL_MAP.get(obj_name)
+                    rec = rec_model.objects.filter(pk=rid).first() if rec_model else None
+                    if rec is not None:
+                        present = [f"{k}: {getattr(rec, k)}" for k in ("email", "phone") if getattr(rec, k, None)]
+                        missing = [k for k in ("email", "phone") if not getattr(rec, k, None)]
+                        if present:
+                            line += " " + " · ".join(present)
+                        if missing:
+                            line += f" ⚠️ (no {', '.join(missing)} saved — reply with the missing value(s) and I'll update the {obj_name.lower()})"
+                except Exception:
+                    pass
+            success_lines.append(line)
         message_parts.append("<br>".join(success_lines))
     if errors:
         message_parts.append("<br>".join(errors))

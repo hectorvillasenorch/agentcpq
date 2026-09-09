@@ -189,6 +189,59 @@ def handle_user_request(user,user_message, session_data):
             )
             return dup_response
 
+    # 🧠 "did you create it?" — answer truthfully from the ACTUAL saved row,
+    # never from an LLM guess. (A lead was once reported as created with an
+    # email/phone that were never persisted.)
+    if re.match(
+        r"^(did you (?:actually )?(?:create|save)|were you able to (?:create|save)|"
+        r"did (?:the |a |that |my )?[a-z ]*(?:get )?created|did it (?:get )?(?:create|save)|"
+        r"did you do it|is it created|did you make it)",
+        normalized_message,
+    ):
+        ar = session_data.get("active_record")
+        if isinstance(ar, dict) and ar.get("object") and ar.get("record_id"):
+            try:
+                from agents.standard_record_agent import MODEL_MAP
+                from agents.utils.message_formatters import SUCCESS_ICON
+                rec_model = MODEL_MAP.get(str(ar["object"]))
+                rec = rec_model.objects.filter(pk=ar["record_id"]).first() if rec_model else None
+                if rec is not None:
+                    label = getattr(rec, "name", None) or getattr(rec, "first_name", None) or str(rec)
+                    label = f"{getattr(rec, 'first_name', '')} {getattr(rec, 'last_name', '')}".strip() or label
+                    parts = [f"{SUCCESS_ICON} Yes — {ar['object']} '<b>{label}</b>' was created."]
+                    obj_low = str(ar["object"]).lower()
+                    if obj_low in ("lead", "contact"):
+                        present = [f"{k}: {getattr(rec, k)}" for k in ("email", "phone") if getattr(rec, k, None)]
+                        missing = [k for k in ("email", "phone") if not getattr(rec, k, None)]
+                        if present:
+                            parts.append(" · ".join(present))
+                        if missing:
+                            parts.append(
+                                f"⚠️ Heads-up: no {', '.join(missing)} was saved — "
+                                f"share the missing value(s) and I'll update the {obj_low}."
+                            )
+                    return {
+                        "message": "<br>".join(parts),
+                        "routing_trace": ["deterministic → create_confirmation"],
+                        "session_id": session_data.get("session_id"),
+                        "chat_sessions": list(
+                            ChatSession.objects.filter(user=user).order_by("-created_at").values(
+                                "session_id", "title", "created_at"
+                            )
+                        ),
+                    }
+            except Exception as exc:
+                logging.warning("create_confirmation lookup failed: %s", exc)
+        return {
+            "message": (
+                "Honest answer: I don't see any record created in this session yet. "
+                "Tell me what to create (e.g. \"create lead Jane Doe, email jane@corp.com\") "
+                "and I'll make it, then confirm what was actually saved."
+            ),
+            "routing_trace": ["deterministic → create_confirmation"],
+            "session_id": session_data.get("session_id"),
+        }
+
     # 🧠 Pending create_quote flow: user selecting an opportunity
     if session_data.get("state", {}).get("create_quote"):
         wants_opportunity_selection = (
