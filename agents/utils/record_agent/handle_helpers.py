@@ -1044,8 +1044,13 @@ def _deserialize_input_value(field_obj: Field, new_value, data_type: Optional[st
     if new_value in ("", None):
         if getattr(field_obj, "null", False):
             return None
-        if isinstance(field_obj, (DJBooleanField, DJDateField, DJDateTimeField)):
+        if isinstance(field_obj, DJBooleanField):
             return None
+        # Required (non-null) date/datetime columns can't be cleared.
+        if isinstance(field_obj, DJDateTimeField):
+            raise ValueError("This date/time field is required and can't be cleared.")
+        if isinstance(field_obj, DJDateField):
+            raise ValueError("This date field is required and can't be cleared.")
         return ""
 
     inferred_type = data_type or _infer_data_type(field_obj, new_value)
@@ -1060,17 +1065,31 @@ def _deserialize_input_value(field_obj: Field, new_value, data_type: Optional[st
             return False
         raise ValueError(f"Invalid boolean value '{new_value}'.")
 
-    if isinstance(field_obj, DJDateField) or inferred_type == "date":
-        parsed = parse_date(str(new_value))
-        if parsed is None:
-            raise ValueError(f"Invalid date value '{new_value}'. Expected YYYY-MM-DD.")
-        return parsed
-
+    # ⚠️ DateTimeField subclasses DateField in Django — check datetime FIRST so
+    # ISO datetime values (…T10:30, +00:00) are parsed, not rejected as "date".
     if isinstance(field_obj, DJDateTimeField) or inferred_type == "datetime":
         parsed_dt = parse_datetime(str(new_value))
-        if parsed_dt is None:
-            raise ValueError(f"Invalid datetime value '{new_value}'. Expected ISO format.")
-        return parsed_dt
+        if parsed_dt is not None:
+            return parsed_dt
+        # Accept a bare date on a datetime field (midnight).
+        parsed_date_only = parse_date(str(new_value))
+        if parsed_date_only is not None:
+            from datetime import datetime as _dt, time as _time
+
+            return _dt.combine(parsed_date_only, _time.min)
+        raise ValueError(
+            f"Invalid datetime value '{new_value}'. Expected ISO format like 2026-09-30 or 2026-09-30T10:30:00."
+        )
+
+    if isinstance(field_obj, DJDateField) or inferred_type == "date":
+        parsed = parse_date(str(new_value))
+        if parsed is not None:
+            return parsed
+        # Tolerate a full datetime sent to a date-only field (take the date part).
+        parsed_dt = parse_datetime(str(new_value))
+        if parsed_dt is not None:
+            return parsed_dt.date()
+        raise ValueError(f"Invalid date value '{new_value}'. Expected YYYY-MM-DD.")
 
     if isinstance(field_obj, DJDecimalField):
         try:
