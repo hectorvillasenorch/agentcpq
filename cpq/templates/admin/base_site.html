@@ -9,6 +9,33 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'css/agentcpq_admin.css' %}">
+  <style>
+    /* Brand lockup: always the AgentCPQ icon + wordmark, sized to read cleanly.
+       (The tenant logo used to render here squeezed into a 20px box — invisible.) */
+    #header #branding,
+    #header #branding h1#site-name.admin-branding,
+    #header #branding .admin-brand-link {
+      display: flex !important;
+      align-items: center !important;
+      gap: 10px !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    #header #branding .admin-brand-logo {
+      height: 28px !important;
+      width: 28px !important;
+      max-width: none !important;
+      object-fit: contain !important;
+    }
+    #header #branding .admin-brand-word,
+    #header #branding h1#site-name.admin-branding a {
+      font-size: 17px !important;
+      font-weight: 600 !important;
+      color: #0f172a !important;
+      letter-spacing: 0 !important;
+      line-height: 1 !important;
+    }
+  </style>
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
 {% endblock %}
@@ -184,12 +211,8 @@
     {% else %}
       <a href="{% url 'admin:login' %}" class="admin-brand-link">
     {% endif %}
-      {% if tenant_logo_url %}
-        <img src="{{ tenant_logo_url }}" class="admin-brand-logo" alt="Company Logo">
-      {% else %}
-        <img src="{% static 'img/agentcpq-chat-icon-sm.png' %}" class="admin-brand-logo" alt="AgentCPQ">
-        <span class="admin-brand-word">AgentCPQ</span>
-      {% endif %}
+      <img src="{% static 'img/agentcpq-chat-icon-sm.png' %}" class="admin-brand-logo" alt="AgentCPQ">
+      <span class="admin-brand-word">AgentCPQ</span>
     </a>
   </h1>
 {% endblock %}
