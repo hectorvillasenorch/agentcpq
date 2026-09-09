@@ -267,6 +267,32 @@ class PartnerProfileAdmin(admin.ModelAdmin):
 
 
 
+class LeadSourceFilter(admin.SimpleListFilter):
+    """Filter leads by their free-text `source` field (Website, Referral, …).
+
+    Django can't natively list-filter a plain CharField, so this lists the
+    distinct non-empty source values actually present in the database.
+    """
+
+    title = "Source"
+    parameter_name = "lead_source"
+
+    def lookups(self, request, model_admin):
+        values = (
+            model_admin.model.objects.exclude(source="")
+            .exclude(source__isnull=True)
+            .order_by("source")
+            .values_list("source", flat=True)
+            .distinct()
+        )
+        return [(value, value) for value in values]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(source__iexact=self.value())
+        return queryset
+
+
 class LeadAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     readonly_fields = ['related_activities']
 
@@ -338,8 +364,8 @@ class LeadAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
         fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']] + ['related_activities']
         return [(None, {'fields': fields})]
     
-    search_fields = ['first_name', 'last_name', 'email']
-    list_filter = ['status', 'created_at']
+    search_fields = ['first_name', 'last_name', 'email', 'source', 'company']
+    list_filter = ['status', LeadSourceFilter, 'created_at']
 
     list_display = ('first_name','last_name', 'phone', 'email', 'status', 'assigned_to', 'created_at_js', 'updated_at_js')
 admin.site.register(Lead, LeadAdmin)
