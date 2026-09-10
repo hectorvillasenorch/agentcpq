@@ -374,8 +374,8 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
                     f"⚠️ Heads up! A custom field named <strong>{name}</strong> already exists on the "
                     f"{object_type} object (type: {existing_field.data_type}"
                     + (f"; options: {existing_opts}" if existing_opts else "")
-                    + "). To change it, reply for example: <i>"
-                    f"update custom field {name} options to: {', '.join(options) if isinstance(options, list) and options else 'A, B'}"
+                    + "). To change its values, reply for example: <i>"
+                    f"update custom field {name} options to: A, B, C"
                     "</i>. Or choose a different name to create a new field.<br><br>"
                 )
                 continue
