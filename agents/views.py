@@ -26,7 +26,7 @@ from agents.llm import chat_json, get_llm_client, get_model
 from agents.streaming import StreamSink, set_sink
 from cpq.models import CustomField, CustomObject
 from agents.knowledge_agent import resolve_knowledge_video_request
-from cpq.models import Quote, QuotePendingAttachment, Product
+from cpq.models import Account, Activity, Contact, Lead, Opportunity, Quote, QuotePendingAttachment, Product
 from django.db.models import Q
 
 
@@ -456,6 +456,103 @@ def quote_details_api(request):
         return JsonResponse({"error": "Quote not found."}, status=404)
     except Exception as exc:  # noqa: BLE001
         return JsonResponse({"error": str(exc)}, status=500)
+
+
+@csrf_exempt
+@login_required
+def create_activity_for_record(request):
+    """Create an Activity already linked to the record open in the chat record form.
+
+    POST JSON: {object, record_id, subject, activity_type, status, due_date, notes}
+    Lead/Opportunity/Contact link directly; Account links via its newest opportunity
+    (or contact), since Activity has no direct account FK.
+    """
+    import json as _json
+    from django.utils.dateparse import parse_date
+
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required."}, status=405)
+
+    try:
+        payload = _json.loads(request.body.decode("utf-8") or "{}")
+    except ValueError:
+        return JsonResponse({"error": "Invalid JSON payload."}, status=400)
+
+    object_name = str(payload.get("object") or "").strip()
+    record_id = payload.get("record_id")
+    subject = str(payload.get("subject") or "").strip()
+    activity_type = str(payload.get("activity_type") or "call").strip()
+    status = str(payload.get("status") or "not_started").strip()
+    due_date = parse_date(str(payload.get("due_date"))) if payload.get("due_date") else None
+    notes = str(payload.get("notes") or "").strip()
+
+    if not object_name or record_id in (None, ""):
+        return JsonResponse({"error": "object and record_id are required."}, status=400)
+    if not subject:
+        return JsonResponse({"error": "subject is required."}, status=400)
+    if activity_type not in dict(Activity.ACTIVITY_TYPE_CHOICES):
+        return JsonResponse({"error": f"Invalid activity_type '{activity_type}'."}, status=400)
+    if status not in dict(Activity.STATUS_CHOICES):
+        return JsonResponse({"error": f"Invalid status '{status}'."}, status=400)
+
+    link_field = None
+    link_value = None
+    linked_note = ""
+
+    try:
+        if object_name == "Lead":
+            link_field, link_value = "lead", Lead.objects.get(pk=record_id)
+        elif object_name == "Opportunity":
+            link_field, link_value = "opportunity", Opportunity.objects.get(pk=record_id)
+        elif object_name == "Contact":
+            link_field, link_value = "contact", Contact.objects.get(pk=record_id)
+        elif object_name == "Account":
+            account = Account.objects.get(pk=record_id)
+            opp = account.opportunities.order_by("-id").first()
+            if opp is not None:
+                link_field, link_value = "opportunity", opp
+                linked_note = f" (linked to Opportunity '{opp.name}')"
+            else:
+                contact = account.contacts.order_by("-id").first()
+                if contact is None:
+                    return JsonResponse(
+                        {"error": "This Account has no opportunity or contact to attach an activity to yet."},
+                        status=400,
+                    )
+                link_field, link_value = "contact", contact
+                linked_note = f" (linked to Contact '{contact}')"
+        else:
+            return JsonResponse({"error": f"Activities can't be linked directly to {object_name}."}, status=400)
+    except (Lead.DoesNotExist, Opportunity.DoesNotExist, Contact.DoesNotExist, Account.DoesNotExist):
+        return JsonResponse({"error": f"{object_name} not found."}, status=404)
+
+    try:
+        activity = Activity.objects.create(
+            subject=subject,
+            activity_type=activity_type,
+            status=status,
+            due_date=due_date,
+            notes=notes,
+            created_by=request.user,
+            **{link_field: link_value},
+        )
+    except Exception as exc:  # noqa: BLE001
+        return JsonResponse({"error": f"Failed to create activity: {exc}"}, status=500)
+
+    from agents.utils.record_agent.handle_helpers import serialize_record
+    from agents.utils.analytics_agent.handle_helpers import get_object_metadata
+
+    metadata = get_object_metadata("Activity") or {}
+    record_payload = serialize_record(
+        activity, "Activity", None, metadata.get("custom_fields") or [], user=request.user
+    )
+    return JsonResponse(
+        {
+            "success": True,
+            "message": f"✅ Activity '{subject}' created{linked_note}.",
+            "single_record": record_payload,
+        }
+    )
 
 
 @csrf_exempt

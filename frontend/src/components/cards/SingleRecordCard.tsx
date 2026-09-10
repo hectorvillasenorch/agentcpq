@@ -4,6 +4,7 @@ import {
   Archive,
   Box,
   Building2,
+  CalendarPlus,
   Check,
   ChevronDown,
   ChevronUp,
@@ -28,6 +29,10 @@ import {
   type RecordSearchResult,
 } from "../../lib/api";
 import { formatDate, formatDateTime } from "../../lib/format";
+import { ActivityQuickForm } from "./ActivityQuickForm";
+
+/** Objects an Activity can be linked to (Account links through its opportunity/contact). */
+const ACTIVITY_RELATED_OBJECTS = new Set(["Lead", "Opportunity", "Contact", "Account"]);
 
 interface RecordField {
   name?: string;
@@ -698,6 +703,9 @@ export default function SingleRecordCard({
     hidden: payload.layout?.hidden || [],
   });
   const [showLayout, setShowLayout] = useState(false);
+  const [showActivityForm, setShowActivityForm] = useState(false);
+  const [createdActivity, setCreatedActivity] = useState<unknown>(null);
+  const [activityToast, setActivityToast] = useState<string>("");
 
   const hiddenSet = new Set(layout.hidden);
   const allFields = (live.fields || []).filter((f) => !isDbId(f.name) && !hiddenSet.has(fieldKey(f)));
@@ -738,18 +746,51 @@ export default function SingleRecordCard({
           <span className="mr-1 text-muted-foreground">:</span>
           <span>{title}</span>
         </span>
-        {isAdmin && (
-          <button
-            type="button"
-            onClick={() => setShowLayout(true)}
-            className="ml-auto flex shrink-0 items-center gap-1 rounded-md border border-border bg-white px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-            title="Edit layout"
-          >
-            <Settings2 size={13} />
-            Layout
-          </button>
-        )}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {ACTIVITY_RELATED_OBJECTS.has(String(live.object || "")) && !showActivityForm && (
+            <button
+              type="button"
+              onClick={() => setShowActivityForm(true)}
+              className="flex items-center gap-1 rounded-md border border-border bg-white px-2 py-1 text-[11px] font-medium text-[#3B62D9] hover:bg-[#F3F6FE]"
+              title="Log an activity on this record"
+            >
+              <CalendarPlus size={13} />
+              Log activity
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowLayout(true)}
+              className="flex items-center gap-1 rounded-md border border-border bg-white px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+              title="Edit layout"
+            >
+              <Settings2 size={13} />
+              Layout
+            </button>
+          )}
+        </div>
       </div>
+
+      {showActivityForm && live.record_id != null && (
+        <ActivityQuickForm
+          object={String(live.object || "")}
+          recordId={live.record_id as string | number}
+          recordLabel={title}
+          onCancel={() => setShowActivityForm(false)}
+          onCreated={(payload, message) => {
+            setShowActivityForm(false);
+            setCreatedActivity(payload);
+            setActivityToast(message);
+          }}
+        />
+      )}
+
+      {activityToast && (
+        <div className="border-b border-[#EDEEF1] bg-[#F0FDF4] px-4 py-2 text-[12px] text-[#166534]">
+          {activityToast}
+        </div>
+      )}
 
       <div className="p-4">
         {normalFields.length === 0 && systemFields.length === 0 ? (
@@ -769,6 +810,21 @@ export default function SingleRecordCard({
           </>
         )}
       </div>
+
+      {createdActivity ? (
+        <div className="px-4 pb-4">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Activity just logged
+          </div>
+          <SingleRecordCard
+            payload={createdActivity as SingleRecordPayload}
+            sessionId={sessionId}
+            isAdmin={isAdmin}
+            depth={depth + 1}
+            ancestors={recordKey ? [...ancestors, { object: live.object, id: live.record_id }] : ancestors}
+          />
+        </div>
+      ) : null}
 
       {live.related && live.related.length > 0 && depth < 2 && (
         <div className="px-4 pb-4">

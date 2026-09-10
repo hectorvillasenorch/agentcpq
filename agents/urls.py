@@ -13,6 +13,7 @@ from .views import (
     chat_messages_api,
     search_products,
     search_records,
+    create_activity_for_record,
     update_action_trigger,
     quote_details_api,
 )
@@ -30,6 +31,7 @@ urlpatterns = [
     path("api/sessions/", chat_sessions_api, name="chat_sessions_api"),
     path("api/messages/", chat_messages_api, name="chat_messages_api"),
     path("api/search-products/", search_products, name="search_products"),
+    path("api/create-activity/", create_activity_for_record, name="create_activity_for_record"),
     path("api/search-records/", search_records, name="search_records"),
     path("api/action-trigger/<int:trigger_id>/update/", update_action_trigger, name="update_action_trigger"),
     path("api/quote-details/", quote_details_api, name="quote_details_api"),

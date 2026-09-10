@@ -75,6 +75,26 @@ export async function renameSession(sessionId: string, title: string): Promise<v
   );
 }
 
+export interface ActivityDraft {
+  subject: string;
+  activity_type: string;
+  status: string;
+  due_date?: string;
+  notes?: string;
+}
+
+/** Creates an Activity already linked to the record open in the chat form. */
+export async function createActivity(
+  object: string,
+  recordId: string | number,
+  draft: ActivityDraft
+): Promise<{ success?: boolean; message?: string; single_record?: unknown; error?: string }> {
+  return request<{ success?: boolean; message?: string; single_record?: unknown; error?: string }>(
+    "/agents/api/create-activity/",
+    { method: "POST", body: JSON.stringify({ object, record_id: recordId, ...draft }) }
+  );
+}
+
 export async function saveSingleRecordLayout(
   object: string,
   order: string[],
