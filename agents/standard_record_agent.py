@@ -1896,8 +1896,13 @@ def _find_record_candidates(object_name: str, identifier: str) -> List[object]:
 
     lookup_fields = IDENTIFIER_FIELDS.get(object_name, [])
 
+    # ⚠️ ID-like fields must win over display fields: a record whose *name* happens
+    # to equal an id (junk row) must never shadow the record with that actual id.
+    id_like = [f for f in lookup_fields if f.lower().endswith("id") or f in {"sku", "public_id"}]
+    ordered_fields = id_like + [f for f in lookup_fields if f not in id_like]
+
     # 2) Exact (case-insensitive) matches on natural identifier fields
-    for field in lookup_fields:
+    for field in ordered_fields:
         try:
             found = list(qs.filter(**{f"{field}__iexact": raw})[:5])
         except Exception:
@@ -1906,7 +1911,7 @@ def _find_record_candidates(object_name: str, identifier: str) -> List[object]:
             return found
 
     # 3) Partial (icontains) matches
-    for field in lookup_fields:
+    for field in ordered_fields:
         try:
             found = list(qs.filter(**{f"{field}__icontains": raw})[:5])
         except Exception:
