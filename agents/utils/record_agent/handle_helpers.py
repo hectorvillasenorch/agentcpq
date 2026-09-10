@@ -213,6 +213,11 @@ def _find_record(
     model_name = model.__name__
     lookup_candidates.extend(DEFAULT_LOOKUPS.get(model_name, []))
 
+    # ID-like fields must be tried before display fields: a junk row whose *name*
+    # happens to contain an id must never shadow the record with that actual id.
+    _id_like = [f for f in lookup_candidates if f.lower().endswith("id") or f in {"sku", "public_id"}]
+    lookup_candidates = _id_like + [f for f in lookup_candidates if f not in _id_like]
+
     for field in lookup_candidates:
         field_obj: Optional[Field] = None
         try:
