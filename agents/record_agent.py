@@ -392,15 +392,16 @@ def show_record_activities(user, user_message, session_data):
         re.IGNORECASE,
     )
     target_text = (match.group(1) if match else text).strip()
-    # Normalize common abbreviations so "Opp 123", "acct", "oppty" resolve.
+    # Normalize abbreviations AND typos ("Opp", "oppty", "opportuntiy", "acct")
+    # by accepting any word that starts with the known prefix.
     for pattern, canonical in (
-        (r"\bopp(?:ty|s|ties|ty|s)?\b", "Opportunity"),
-        (r"\bopportunit\w*\b", "Opportunity"),
-        (r"\baccts?\b", "Account"),
-        (r"\baccounts?\b", "Account"),
-        (r"\bleads?\b", "Lead"),
-        (r"\bcontacts?\b", "Contact"),
-        (r"\bquotes?\b", "Quote"),
+        (r"\bopp[a-z]*\b", "Opportunity"),
+        (r"\bacct[a-z]*\b", "Account"),
+        (r"\baccount[a-z]*\b", "Account"),
+        (r"\blead[a-z]*\b", "Lead"),
+        (r"\bcontact[a-z]*\b", "Contact"),
+        (r"\bquote[a-z]*\b", "Quote"),
+        (r"\bcustomer[a-z]*\b", "Account"),
     ):
         target_text = re.sub(pattern, canonical, target_text, flags=re.IGNORECASE)
     target_text = target_text.strip()
