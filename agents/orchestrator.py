@@ -317,6 +317,25 @@ def handle_user_request(user,user_message, session_data):
         )
         return response
 
+    # 🧠 Shortcut: "show all activities for <object> <id/name>" → activities table.
+    # Must run BEFORE the single-record shortcut so "activities" isn't treated as a record.
+    activities_match = re.match(
+        r"^(?:(?:can\s+you\s+)?(?:show|list|view|display|get|find|open)\s+)?(?:me\s+)?(?:all\s+|the\s+|any\s+|my\s+)?"
+        r"activi\w*\s+(?:for|of|on|related\s+to|linked\s+to)\s+.+$",
+        user_message.strip(),
+        re.IGNORECASE,
+    )
+    if activities_match:
+        logging.info("Do NOT use GPT (record activities → ShowRecordActivities)\n")
+        response = orchestrate_request_trigger(
+            user, user_message, session_data, decision="ShowRecordActivities"
+        )
+        response["routing_trace"] = ["deterministic → ShowRecordActivities"]
+        response["chat_sessions"] = list(
+            ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at")
+        )
+        return response
+
     # 🧠 Shortcut: "show details for <object> <name>" → compact text summary
     # (Name, Amount, Close Date, Stage, Account…) with an eye icon to expand the form.
     details_match = re.match(
@@ -1624,6 +1643,7 @@ def get_action_map():
         # Record detail cards
         "ShowSingleRecord": record_agent,
         "ShowRecordSummary": record_agent,
+        "ShowRecordActivities": record_agent,
         "UpdateSingleRecordFromUI": record_agent,
 
         # Approval-related actions handled by dealdesk_agent

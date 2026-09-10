@@ -131,6 +131,7 @@ def record_agent(user, action, user_message, session_data):
         "ShowSingleRecord": show_single_record,
         "UpdateSingleRecordFromUI": update_single_record_from_ui,
         "ShowRecordSummary": show_record_summary,
+        "ShowRecordActivities": show_record_activities,
     }
 
     handler = action_map.get(action)
@@ -373,6 +374,112 @@ def _parse_object_identifier(text: str) -> Tuple[Optional[str], Optional[str]]:
     except Exception:
         pass
     return None, None
+
+
+def show_record_activities(user, user_message, session_data):
+    """List the Activities linked to a record ("show all activities for Opportunity <id>").
+
+    Works for the objects an Activity can link to: Lead, Opportunity, Contact and
+    Account (through its opportunities/contacts). Renders as a table card.
+    """
+    from .utils.orchestrator.context_handle_helpers import extract_current_request
+
+    text = extract_current_request(user_message).strip()
+    match = re.match(
+        r"^(?:(?:can\s+you\s+)?(?:show|list|view|display|get|find|open)\s+)?(?:me\s+)?(?:all\s+|the\s+|any\s+|my\s+)?"
+        r"activi\w*\s+(?:for|of|on|related\s+to|linked\s+to)\s+(.+)$",
+        text,
+        re.IGNORECASE,
+    )
+    target_text = (match.group(1) if match else text).strip()
+    # Normalize common abbreviations so "Opp 123", "acct", "oppty" resolve.
+    for pattern, canonical in (
+        (r"\bopp(?:ty|s|ties|ty|s)?\b", "Opportunity"),
+        (r"\bopportunit\w*\b", "Opportunity"),
+        (r"\baccts?\b", "Account"),
+        (r"\baccounts?\b", "Account"),
+        (r"\bleads?\b", "Lead"),
+        (r"\bcontacts?\b", "Contact"),
+        (r"\bquotes?\b", "Quote"),
+    ):
+        target_text = re.sub(pattern, canonical, target_text, flags=re.IGNORECASE)
+    target_text = target_text.strip()
+
+    object_name, identifier = _parse_object_identifier(target_text)
+    if identifier:
+        # Drop filler words users put before the id: "with id = 0004…", "number 12", "the 0004…"
+        previous = None
+        while identifier and identifier != previous:
+            previous = identifier
+            identifier = re.sub(
+                r"^(?:with|the|is|id|ids|number|no\.?|named|called|for)\b[\s:=#-]*",
+                "",
+                identifier,
+                flags=re.IGNORECASE,
+            ).strip(" ,:=#-")
+    if not object_name or not identifier:
+        return {
+            "message": (
+                "Tell me which record, e.g. \"show all activities for Opportunity 0004ACPQJTXKLIW7GC\" "
+                "or \"show activities for lead Jane Doe\"."
+            )
+        }
+
+    supported = {"Lead": "lead", "Opportunity": "opportunity", "Contact": "contact"}
+    if object_name not in supported and object_name != "Account":
+        return {"message": f"⚠️ Activities can't be linked directly to {object_name}."}
+
+    # Resolve the target record with the shared finder used by show/update/delete.
+    from agents.standard_record_agent import _find_record, _find_record_candidates
+
+    record = _find_record(object_name, identifier)
+    if record is None:
+        candidates = _find_record_candidates(object_name, identifier)
+        if candidates:
+            listing = ", ".join(f"{c} (id: {getattr(c, 'pk', '')})" for c in candidates[:5])
+            return {"message": f"⚠️ Multiple {object_name} match '{identifier}': {listing}. Use a unique id."}
+        return {"message": f"⚠️ No {object_name} found matching '{identifier}'."}
+
+    from cpq.models import Activity
+    from django.db.models import Q
+
+    if object_name == "Account":
+        qs = Activity.objects.filter(Q(opportunity__account=record) | Q(contact__account=record)).distinct()
+    else:
+        qs = Activity.objects.filter(**{supported[object_name]: record})
+
+    qs = qs.order_by("-created_at")[:50]
+
+    from .utils.analytics_agent.handle_helpers import safe_serialize_queryset
+
+    rows = safe_serialize_queryset(qs, "Activity") or []
+    type_labels = dict(Activity.ACTIVITY_TYPE_CHOICES)
+    status_labels = dict(Activity.STATUS_CHOICES)
+    for row in rows:
+        if isinstance(row, dict):
+            if "activity_type" in row:
+                row["activity_type"] = type_labels.get(row["activity_type"], row["activity_type"])
+            if "status" in row:
+                row["status"] = status_labels.get(row["status"], row["status"])
+            notes = row.get("notes")
+            if isinstance(notes, str) and len(notes) > 80:
+                row["notes"] = notes[:77] + "…"
+
+    label = getattr(record, "name", None) or str(record)
+    if not rows:
+        return {
+            "message": (
+                f"No activities yet for {object_name} '<b>{label}</b>'. "
+                "Open the record form and use <b>Log activity</b> to add one."
+            )
+        }
+
+    return {
+        "message": f"📋 Showing {len(rows)} activity(s) for {object_name} '<b>{label}</b>'.",
+        "retrieved_records": {"Activity": rows},
+        "object_labels": {"Activity": "Activities"},
+        "hiddenMessage": True,
+    }
 
 
 def show_record_summary(user, user_message, session_data):
