@@ -390,7 +390,11 @@ export default function RecordsTable({
       </div>
       {expanded && (
         <div className="border-t border-[#EDEEF1] p-3">
-          <SingleRecordCard payload={expanded.record as never} sessionId={sessionId} />
+          <SingleRecordCard
+            key={`${expanded.object}:${(expanded.record as { record_id?: string | number } | null)?.record_id ?? "new"}`}
+            payload={expanded.record as never}
+            sessionId={sessionId}
+          />
         </div>
       )}
     </div>

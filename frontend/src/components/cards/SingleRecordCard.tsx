@@ -128,6 +128,13 @@ function EditableField({
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
+  // React reuses the same field component when another record is opened (same field
+  // name → same key), so the input would otherwise keep the previous record's value.
+  useEffect(() => {
+    if (status === "saving") return;
+    setValue(initialValue(field));
+  }, [field.name, field.raw_value, field.value, field.display_value, status]);
+
   const commit = (next: string) => {
     if (!payload.object || !payload.record_id) return;
     setStatus("saving");
