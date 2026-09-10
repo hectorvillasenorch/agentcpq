@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CalendarPlus, Eye, Link2, Settings2, Table as TableIcon, Trash2 } from "lucide-react";
 import { autoFormatDate } from "../../lib/format";
 import SingleRecordCard from "./SingleRecordCard";
@@ -171,6 +171,7 @@ export default function RecordsTable({
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [listLayout, setListLayout] = useState<{ order: string[]; hidden: string[] }>({ order: [], hidden: [] });
   const [showListLayout, setShowListLayout] = useState(false);
+  const expandedRef = useRef<HTMLDivElement | null>(null);
 
   const metrics: any[] = Array.isArray(data?.metrics) ? data.metrics : [];
   if (metrics.length > 0) {
@@ -235,6 +236,17 @@ export default function RecordsTable({
       cancelled = true;
     };
   }, [title]);
+
+  // When a row's form opens, bring it into view so the user doesn't have to scroll.
+  useEffect(() => {
+    if (!expanded) return;
+    const node = expandedRef.current;
+    if (!node) return;
+    const id = window.requestAnimationFrame(() => {
+      node.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [expanded]);
 
   const rowId = (row: Row): string | number | null | undefined =>
     (row.id ?? row.record_id ?? row.pkid) as string | number | null | undefined;
@@ -389,7 +401,7 @@ export default function RecordsTable({
         </table>
       </div>
       {expanded && (
-        <div className="border-t border-[#EDEEF1] p-3">
+        <div ref={expandedRef} className="scroll-mt-24 border-t border-[#EDEEF1] p-3">
           <SingleRecordCard
             key={`${expanded.object}:${(expanded.record as { record_id?: string | number } | null)?.record_id ?? "new"}`}
             payload={expanded.record as never}
