@@ -355,10 +355,28 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
                 )
 
              # Check if custom field exists for this specific custom object
-            if CustomField.objects.filter(name=name, object_type=object_type).exists():
+            existing_field = CustomField.objects.filter(name=name, object_type=object_type).first()
+            if existing_field:
+                existing_opts = ""
+                if existing_field.options:
+                    try:
+                        opts = existing_field.options
+                        if isinstance(opts, (list, tuple)):
+                            existing_opts = ", ".join(str(o) for o in opts)
+                        elif isinstance(opts, str):
+                            import json as _json
+
+                            parsed = _json.loads(opts)
+                            existing_opts = ", ".join(str(o) for o in parsed) if isinstance(parsed, list) else str(parsed)
+                    except Exception:
+                        existing_opts = str(existing_field.options)
                 response_message += (
-                    f"⚠️ Heads up! A custom field named <strong>{name}</strong> already exists for {object_type} standard object. "
-                    "Please choose a different name for this new field.<br><br>"
+                    f"⚠️ Heads up! A custom field named <strong>{name}</strong> already exists on the "
+                    f"{object_type} object (type: {existing_field.data_type}"
+                    + (f"; options: {existing_opts}" if existing_opts else "")
+                    + "). To change it, reply for example: <i>"
+                    f"update custom field {name} options to: {', '.join(options) if isinstance(options, list) and options else 'A, B'}"
+                    "</i>. Or choose a different name to create a new field.<br><br>"
                 )
                 continue
 

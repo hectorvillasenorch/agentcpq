@@ -164,6 +164,79 @@ def delete_custom_object(user, user_message, session_data):
         "temporaryMessage": True
         }
 
+_PICKLIST_TYPES = {"picklist", "select", "dropdown", "dropdownlist", "choice", "choices", "multipicklist"}
+
+
+def _parse_custom_field_request(text: str):
+    """Deterministic parse of "create custom field ... Name: X, Type: Picklist {a, b}".
+
+    Used as a fallback when the LLM extraction fails, so simple field requests
+    always work. Returns a dict shaped like the LLM output, or None.
+    """
+    import re as _re
+
+    if not text or "custom field" not in text.lower():
+        return None
+
+    # object: "... in the Account object" / "... on the custom object Foo"
+    object_type = None
+    custom_object = None
+    m_obj = _re.search(
+        r"\b(?:in|on|for|to)\s+(?:the\s+)?(?:custom\s+object\s+)?([A-Za-z][\w ]*?)\s+(?:custom\s+object|object)\b",
+        text,
+        _re.IGNORECASE,
+    )
+    if m_obj:
+        value = m_obj.group(1).strip()
+        if value.lower() not in {"custom", "standard", "new", "a", "an"}:
+            if value.endswith("__c"):
+                custom_object = value
+            else:
+                object_type = value
+    m_co = _re.search(r"\bcustom\s+object\s+([A-Za-z][\w]*)(__c)?\b", text, _re.IGNORECASE)
+    if m_co and not object_type:
+        custom_object = m_co.group(1) + ("__c" if not m_co.group(1).endswith("__c") else "")
+
+    # label: "Name: Customer Type"
+    label = None
+    for pattern in (r"\bname\s*[:\-]\s*([^,;\n]+)", r"\b(?:field\s+)?(?:called|named)\s+([^,;\n]+)"):
+        m = _re.search(pattern, text, _re.IGNORECASE)
+        if m:
+            candidate = m.group(1).strip().strip('"\'')
+            candidate = _re.sub(r"\s*\(.*$", "", candidate).strip()
+            if candidate:
+                label = candidate
+                break
+    if not label:
+        return None
+
+    # data type: "Type: Picklist"
+    data_type = "text"
+    m_type = _re.search(r"\btype\s*[:\-]\s*([A-Za-z ]+)", text, _re.IGNORECASE)
+    if m_type:
+        raw_type = m_type.group(1).strip().split()[0].lower()
+        data_type = "dropdown" if raw_type in _PICKLIST_TYPES else raw_type
+    if data_type in _PICKLIST_TYPES:
+        data_type = "dropdown"
+
+    # options: "{ Customer, Prospect, ... }" or "[...]" or "(...)"
+    options = None
+    m_opts = _re.search(r"[{(\[]([^})\]]+)[})\]]", text)
+    if m_opts:
+        options = [opt.strip().strip('"\'') for opt in m_opts.group(1).split(",") if opt.strip()]
+    if data_type == "dropdown" and not options:
+        return None
+
+    return {
+        "label": label,
+        "data_type": data_type,
+        "object_type": object_type,
+        "custom_object": custom_object,
+        "options": options,
+        "required": False,
+    }
+
+
 def create_custom_field(user, user_message, session_data):
     """Create custom object"""
     # 🧠 Make the session context
@@ -176,6 +249,14 @@ def create_custom_field(user, user_message, session_data):
 
     # ✅ Extract custom object details with LLM
     extracted_custom_fields = extract_custom_fields(user_message, custom_objects)
+
+    if not extracted_custom_fields:
+        # Deterministic fallback: many simple requests beat the LLM's JSON parsing
+        # ("Name: X, Type: Picklist {a, b}") — never fail them.
+        fallback = _parse_custom_field_request(user_message)
+        if fallback:
+            logging.info("🔧 Using deterministic custom-field parse fallback: %s", fallback)
+            extracted_custom_fields = [fallback]
 
     if not extracted_custom_fields:
         return {
