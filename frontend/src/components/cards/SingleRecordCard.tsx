@@ -758,17 +758,15 @@ export default function SingleRecordCard({
               Log activity
             </button>
           )}
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={() => setShowLayout(true)}
-              className="flex items-center gap-1 rounded-md border border-border bg-white px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-              title="Edit layout"
-            >
-              <Settings2 size={13} />
-              Layout
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setShowLayout(true)}
+            className="flex items-center gap-1 rounded-md border border-border bg-white px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+            title="Edit this object's form layout"
+          >
+            <Settings2 size={13} />
+            Layout
+          </button>
         </div>
       </div>
 

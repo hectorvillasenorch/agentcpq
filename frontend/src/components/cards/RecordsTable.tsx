@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState } from "react";
-import { CalendarPlus, Eye, Link2, Table as TableIcon, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CalendarPlus, Eye, Link2, Settings2, Table as TableIcon, Trash2 } from "lucide-react";
 import { autoFormatDate } from "../../lib/format";
 import SingleRecordCard from "./SingleRecordCard";
-import { fetchSingleRecord } from "../../lib/api";
+import { ListLayoutEditor } from "./ListLayoutEditor";
+import { fetchListLayout, fetchSingleRecord } from "../../lib/api";
 
 type Row = Record<string, any>;
 
@@ -168,6 +169,8 @@ export default function RecordsTable({
   const data = (payload || {}) as any;
   const [expanded, setExpanded] = useState<{ object: string; record: unknown } | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [listLayout, setListLayout] = useState<{ order: string[]; hidden: string[] }>({ order: [], hidden: [] });
+  const [showListLayout, setShowListLayout] = useState(false);
 
   const metrics: any[] = Array.isArray(data?.metrics) ? data.metrics : [];
   if (metrics.length > 0) {
@@ -199,12 +202,39 @@ export default function RecordsTable({
     return <JsonFallback payload={data} />;
   }
 
-  const columns = Object.keys(rows[0]).filter(
+  const baseColumns = Object.keys(rows[0]).filter(
     (k) => !k.startsWith("_") && !SKIP_COLUMNS.has(k) && !k.endsWith("_id")
   );
+  // Apply the user's saved column layout (order + hidden) for this object.
+  const orderIndex = new Map(listLayout.order.map((k, i) => [k, i]));
+  const columns = [...baseColumns]
+    .filter((k) => !listLayout.hidden.includes(k))
+    .sort((a, b) => {
+      const ai = orderIndex.get(a);
+      const bi = orderIndex.get(b);
+      if (ai === undefined && bi === undefined) return 0;
+      if (ai === undefined) return 1;
+      if (bi === undefined) return -1;
+      return ai - bi;
+    });
   if (columns.length === 0) {
     return <JsonFallback payload={data} />;
   }
+
+  // Load the saved list layout whenever this card's object changes.
+  useEffect(() => {
+    let cancelled = false;
+    fetchListLayout(title)
+      .then((res) => {
+        if (!cancelled) setListLayout({ order: res.order || [], hidden: res.hidden || [] });
+      })
+      .catch(() => {
+        /* non-fatal */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [title]);
 
   const rowId = (row: Row): string | number | null | undefined =>
     (row.id ?? row.record_id ?? row.pkid) as string | number | null | undefined;
@@ -245,8 +275,30 @@ export default function RecordsTable({
     <div className="overflow-hidden rounded-lg border border-[#EDEEF1]">
       <div className="flex items-center gap-1.5 border-b border-[#EDEEF1] px-4 py-2 text-[12px] font-medium text-muted-foreground">
         <TableIcon size={13} />
-        {displayTitle} · {rows.length}
+        <span className="truncate">
+          {displayTitle} · {rows.length}
+        </span>
+        <button
+          type="button"
+          onClick={() => setShowListLayout(true)}
+          className="ml-auto flex shrink-0 items-center gap-1 rounded-md border border-border bg-white px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+          title={`Edit ${displayTitle} list columns`}
+        >
+          <Settings2 size={13} />
+          Layout
+        </button>
       </div>
+
+      {showListLayout && (
+        <ListLayoutEditor
+          object={title}
+          columns={baseColumns}
+          initialOrder={listLayout.order}
+          initialHidden={listLayout.hidden}
+          onClose={() => setShowListLayout(false)}
+          onSaved={(order: string[], hidden: string[]) => setListLayout({ order, hidden })}
+        />
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-[14px]">
           <thead>

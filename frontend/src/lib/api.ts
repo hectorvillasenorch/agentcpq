@@ -95,6 +95,21 @@ export async function createActivity(
   );
 }
 
+export async function fetchListLayout(
+  object: string
+): Promise<{ order: string[]; hidden: string[] }> {
+  return request<{ order: string[]; hidden: string[] }>(
+    `/agents/list-record-layout/?object=${encodeURIComponent(object)}`
+  );
+}
+
+export async function saveListLayout(object: string, order: string[], hidden: string[]): Promise<void> {
+  await request("/agents/list-record-layout/", {
+    method: "POST",
+    body: JSON.stringify({ object, order, hidden }),
+  });
+}
+
 export async function saveSingleRecordLayout(
   object: string,
   order: string[],
