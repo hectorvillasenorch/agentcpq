@@ -352,39 +352,27 @@ def _display_object_label(obj_name: str) -> str:
 
 
 def _parse_object_identifier(text: str) -> Tuple[Optional[str], Optional[str]]:
-    """Extract '<Object> <identifier>' from free text like 'opportunity Cloud Migration Sprint'."""
-    for obj_name in _FAST_OBJECT_NAMES:
-        obj_match = re.search(rf"\b{re.escape(obj_name)}\b", text, re.IGNORECASE)
-        if obj_match:
-            identifier = (text[: obj_match.start()] + " " + text[obj_match.end() :]).strip(" ,:-")
-            return obj_name, identifier
-    # Custom objects: match by API name or label (e.g. "pov__c" or "POV").
-    try:
-        from cpq.models import CustomObject
+    """Extract '<Object> <identifier>' tolerating typos/abbreviations.
 
-        for custom in CustomObject.objects.all():
-            for keyword in (custom.name, custom.label):
-                if not keyword:
-                    continue
-                obj_match = re.search(rf"\b{re.escape(keyword)}\b", text, re.IGNORECASE)
-                if obj_match:
-                    identifier = (text[: obj_match.start()] + " " + text[obj_match.end() :]).strip(" ,:-")
-                    if identifier:
-                        return custom.name, identifier
-    except Exception:
-        pass
-    return None, None
+    Delegates to the central understanding layer so every record path (single record,
+    details summary, activities, follow-ups) resolves objects the same way.
+    """
+    from .utils.object_understanding import parse_object_identifier as _central_parse
+
+    return _central_parse(text, object_names=_FAST_OBJECT_NAMES)
 
 
 def show_record_activities(user, user_message, session_data):
-    """List the Activities linked to a record ("show all activities for Opportunity <id>").
+    """List Activities linked to a record ("show all activities for Opportunity <id|name>").
 
-    Works for the objects an Activity can link to: Lead, Opportunity, Contact and
-    Account (through its opportunities/contacts). Renders as a table card.
+    Works for Lead, Opportunity, Contact and Account (via its opportunities/contacts).
+    Object words are resolved through the central typo-tolerant parser.
     """
     from .utils.orchestrator.context_handle_helpers import extract_current_request
 
-    text = extract_current_request(user_message).strip()
+    from .utils.object_understanding import normalize_text
+
+    text = normalize_text(extract_current_request(user_message)).strip()
     match = re.match(
         r"^(?:(?:can\s+you\s+)?(?:show|list|view|display|get|find|open)\s+)?(?:me\s+)?(?:all\s+|the\s+|any\s+|my\s+)?"
         r"activi\w*\s+(?:for|of|on|related\s+to|linked\s+to)\s+(.+)$",
@@ -392,36 +380,12 @@ def show_record_activities(user, user_message, session_data):
         re.IGNORECASE,
     )
     target_text = (match.group(1) if match else text).strip()
-    # Normalize abbreviations AND typos ("Opp", "oppty", "opportuntiy", "acct")
-    # by accepting any word that starts with the known prefix.
-    for pattern, canonical in (
-        (r"\bopp[a-z]*\b", "Opportunity"),
-        (r"\bacct[a-z]*\b", "Account"),
-        (r"\baccount[a-z]*\b", "Account"),
-        (r"\blead[a-z]*\b", "Lead"),
-        (r"\bcontact[a-z]*\b", "Contact"),
-        (r"\bquote[a-z]*\b", "Quote"),
-        (r"\bcustomer[a-z]*\b", "Account"),
-    ):
-        target_text = re.sub(pattern, canonical, target_text, flags=re.IGNORECASE)
-    target_text = target_text.strip()
 
     object_name, identifier = _parse_object_identifier(target_text)
-    if identifier:
-        # Drop filler words users put before the id: "with id = 0004…", "number 12", "the 0004…"
-        previous = None
-        while identifier and identifier != previous:
-            previous = identifier
-            identifier = re.sub(
-                r"^(?:with|the|is|id|ids|number|no\.?|named|called|for)\b[\s:=#-]*",
-                "",
-                identifier,
-                flags=re.IGNORECASE,
-            ).strip(" ,:=#-")
     if not object_name or not identifier:
         return {
             "message": (
-                "Tell me which record, e.g. \"show all activities for Opportunity 0004ACPQJTXKLIW7GC\" "
+                "Tell me which record, e.g. \"show activities for Opportunity 0004ACPQJTXKLIW7GC\" "
                 "or \"show activities for lead Jane Doe\"."
             )
         }
@@ -430,7 +394,6 @@ def show_record_activities(user, user_message, session_data):
     if object_name not in supported and object_name != "Account":
         return {"message": f"⚠️ Activities can't be linked directly to {object_name}."}
 
-    # Resolve the target record with the shared finder used by show/update/delete.
     from agents.standard_record_agent import _find_record, _find_record_candidates
 
     record = _find_record(object_name, identifier)
@@ -491,7 +454,9 @@ def show_record_summary(user, user_message, session_data):
     # conversation-context prefix injected by orchestrate_request_trigger.
     from .utils.orchestrator.context_handle_helpers import extract_current_request
 
-    text = extract_current_request(user_message).strip()
+    from .utils.object_understanding import normalize_text
+
+    text = normalize_text(extract_current_request(user_message)).strip()
     match = re.match(
         r"^(?:(?:can\s+you\s+)?(?:show|display|view|get|give|open)\s+)?(?:me\s+)?(?:the\s+)?details\s+(?:about|for|of|on)\s+(.+)$",
         text,

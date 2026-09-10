@@ -556,9 +556,14 @@ def _create_standard_records(user, user_message, session_data):
     # immediately (no clarification loop), then show the editable form.
     for req in create_requests:
         data = req.get("data") or {}
-        if str(data.get("object") or "").lower() == "activity":
+        obj_lower = str(data.get("object") or "").lower()
+        if obj_lower == "activity":
             _apply_activity_defaults(user, user_message, data)
             req["completed"] = True
+        elif obj_lower == "lead":
+            # Deterministic fallback: the extractor often misses the employer in
+            # "create lead for company X" — pull it out of the message text.
+            _fill_lead_company_from_text(user_message, data)
 
     completed_requests = [req for req in create_requests if req.get("completed")]
     remaining_requests = [req for req in create_requests if not req.get("completed")]
@@ -625,6 +630,8 @@ def _create_standard_records(user, user_message, session_data):
         fields = req["data"].get("fields") or {}
         success, message, record_payload = _persist_record(user, obj_name, fields)
         if success:
+            if obj_name == "Lead":
+                _enforce_lead_company_after_create(user_message, record_payload)
             created_records.append(record_payload)
             _remember_active_record(session_data, obj_name, record_payload)
         else:
@@ -785,6 +792,50 @@ def _bulk_save_custom_fields(records_with_fields: List[Tuple[object, Dict[str, o
 
     if values:
         CustomFieldValue.objects.bulk_create(values, batch_size=BULK_CREATE_BATCH_SIZE)
+
+
+def _enforce_lead_company_after_create(user_message: str, record_payload: Dict[str, object]) -> None:
+    """Guarantee the employer lands on the Lead when the message says "company X"."""
+    try:
+        lead_id = (record_payload or {}).get("id")
+        if not lead_id:
+            return
+        lead = Lead.objects.filter(pk=lead_id).first()
+        if lead is None or (lead.company or "").strip():
+            return
+        data = {"object": "Lead", "fields": {}}
+        _fill_lead_company_from_text(user_message, data)
+        company = (data.get("fields") or {}).get("company")
+        if company:
+            lead.company = str(company)
+            lead.save(update_fields=["company"])
+    except Exception:
+        logger.debug("post-create lead company enforcement failed", exc_info=True)
+
+
+def _fill_lead_company_from_text(user_message: str, data: Dict[str, object]) -> None:
+    """Set data['fields']['company'] from phrases like "for company Acme Corp"."""
+    try:
+        fields = data.setdefault("fields", {})  # type: ignore[arg-type]
+        if not isinstance(fields, dict):
+            return
+        if fields.get("company") or fields.get("company_name"):
+            return
+        from agents.utils.orchestrator.context_handle_helpers import extract_current_request
+
+        text = extract_current_request(user_message) or user_message
+        match = re.search(
+            r"\b(?:for|at|from|with)\s+(?:the\s+)?(?:company|org(?:anization|anisation)?|employer)\s+"
+            r"([^,;]+?)(?=\s*(?:,|;|$|\bcontact\b|\be-?mail\b|\bphone\b|\bmobile\b))",
+            text or "",
+            re.IGNORECASE,
+        )
+        if match:
+            company = match.group(1).strip(" .")
+            if company:
+                fields["company"] = company
+    except Exception:
+        logger.debug("lead company fallback failed", exc_info=True)
 
 
 def _build_bulk_lead_instance(user, fields: Dict[str, object], custom_map: Dict[str, CustomField]) -> Tuple[Optional[Lead], str]:

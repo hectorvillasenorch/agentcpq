@@ -137,6 +137,20 @@ def handle_user_request(user,user_message, session_data):
     message = user_message.lower()
     normalized_message = user_message.strip().lower()
 
+    # Typo/abbreviation-tolerant copy of the message used ONLY for routing decisions
+    # ("opportuntiy", "shwo", "activites"…). Handlers still receive the raw message so
+    # identifiers/names keep their exact spelling.
+    try:
+        from agents.utils.object_understanding import normalize_text as _normalize_text
+
+        fuzzy_message = _normalize_text(user_message)
+    except Exception:
+        fuzzy_message = user_message
+
+    # Handlers get the normalized copy: identifiers are preserved (tokens with digits
+    # are never rewritten), but typo'd verbs/objects are corrected for the LLM too.
+    dispatch_message = fuzzy_message or user_message
+
     # 🧠 One-off reminders: "remind me <when> to <task>" (no event needed —
     # scheduled straight into the email outbox). Accepts "remindme" (no space).
     from agents.reminders import looks_like_reminder
@@ -165,7 +179,7 @@ def handle_user_request(user,user_message, session_data):
         lowered = normalized_message
         if any(phrase in lowered for phrase in ("submit anyway", "force submit", "submit now", "confirm submit", "proceed to submit")):
             logging.info("Do NOT use GPT (pending deal desk submission confirmation)\n")
-            return orchestrate_request_trigger(user, user_message, session_data, decision="SubmitForApproval")
+            return orchestrate_request_trigger(user, dispatch_message, session_data, decision="SubmitForApproval")
         if any(phrase in lowered for phrase in ("cancel submission", "cancel", "stop", "nevermind", "never mind")):
             session_data.pop("dealdesk_pending_submission", None)
             return {
@@ -184,7 +198,7 @@ def handle_user_request(user,user_message, session_data):
         cancel_phrases = ("no", "n", "cancel", "stop", "never mind", "nevermind", "keep", "keep it", "abort", "don't delete", "do not delete")
         if lowered in confirm_phrases or lowered.startswith("yes ") or lowered.startswith("confirm ") or lowered.startswith("go ahead"):
             logging.info("Do NOT use GPT (pending standard-record delete confirmation)\n")
-            return orchestrate_request_trigger(user, user_message, session_data, decision="DeleteStandardRecord")
+            return orchestrate_request_trigger(user, dispatch_message, session_data, decision="DeleteStandardRecord")
         if lowered in cancel_phrases or lowered.startswith("no ") or lowered.startswith("cancel ") or lowered.startswith("stop "):
             session_data.pop("pending_delete", None)
             return {
@@ -217,7 +231,7 @@ def handle_user_request(user,user_message, session_data):
         r"^(did you (?:actually )?(?:create|save)|were you able to (?:create|save)|"
         r"did (?:the |a |that |my )?[a-z ]*(?:get )?created|did it (?:get )?(?:create|save)|"
         r"did you do it|is it created|did you make it)",
-        normalized_message,
+        (fuzzy_message or user_message).strip().lower(),
     ):
         ar = session_data.get("active_record")
         if isinstance(ar, dict) and ar.get("object") and ar.get("record_id"):
@@ -272,7 +286,7 @@ def handle_user_request(user,user_message, session_data):
         )
         if wants_opportunity_selection:
             logging.info("Do NOT use GPT (pending create_quote opportunity selection)\n")
-            return orchestrate_request_trigger(user, user_message, session_data, decision="CreateQuote")
+            return orchestrate_request_trigger(user, dispatch_message, session_data, decision="CreateQuote")
 
     # 🧠 Shortcut manual: "use opportunity <name>" → CreateQuote (opportunity selection
     # for a quote). Handles the case where the pending state was already cleared.
@@ -281,7 +295,7 @@ def handle_user_request(user,user_message, session_data):
         or re.search(r"use\s+.*\boppor", user_message, re.IGNORECASE)
     ):
         logging.info("Do NOT use GPT (opportunity selection for quote)\n")
-        return orchestrate_request_trigger(user, user_message, session_data, decision="CreateQuote")
+        return orchestrate_request_trigger(user, dispatch_message, session_data, decision="CreateQuote")
 
     # 🧠 Pending single-record flow (follow-up identifier)
     pending_single_record = session_data.get("state", {}).get("show_single_record")
@@ -293,13 +307,13 @@ def handle_user_request(user,user_message, session_data):
         )
         if not looks_like_new_action:
             logging.info("Do NOT use GPT (pending show_single_record follow-up)\n")
-            return orchestrate_request_trigger(user, user_message, session_data, decision="ShowSingleRecord")
+            return orchestrate_request_trigger(user, dispatch_message, session_data, decision="ShowSingleRecord")
 
     # 🧠 Shortcut manual: product create/update → product_agent (never standard record)
-    product_action = _infer_product_action(user_message)
+    product_action = _infer_product_action(fuzzy_message)
     if product_action:
         logging.info("Do NOT use GPT (deterministic product action)\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision=product_action)
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision=product_action)
         response["routing_trace"] = [f"deterministic → {product_action}"]
         response["chat_sessions"] = list(
             ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at")
@@ -307,10 +321,10 @@ def handle_user_request(user,user_message, session_data):
         return response
 
     # 🧠 Shortcut manual: custom object schema CRUD (create/update/delete the object itself)
-    custom_object_schema_action = _infer_custom_object_schema_action(user_message)
+    custom_object_schema_action = _infer_custom_object_schema_action(fuzzy_message)
     if custom_object_schema_action:
         logging.info("Do NOT use GPT (deterministic custom object schema action)\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision=custom_object_schema_action)
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision=custom_object_schema_action)
         response["routing_trace"] = [f"deterministic → {custom_object_schema_action}"]
         response["chat_sessions"] = list(
             ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at")
@@ -322,7 +336,7 @@ def handle_user_request(user,user_message, session_data):
     activities_match = re.match(
         r"^(?:(?:can\s+you\s+)?(?:show|list|view|display|get|find|open)\s+)?(?:me\s+)?(?:all\s+|the\s+|any\s+|my\s+)?"
         r"activi\w*\s+(?:for|of|on|related\s+to|linked\s+to)\s+.+$",
-        user_message.strip(),
+        fuzzy_message.strip(),
         re.IGNORECASE,
     )
     if activities_match:
@@ -340,12 +354,12 @@ def handle_user_request(user,user_message, session_data):
     # (Name, Amount, Close Date, Stage, Account…) with an eye icon to expand the form.
     details_match = re.match(
         r"^(?:(?:can\s+you\s+)?(?:show|display|view|get|give|open)\s+)?(?:me\s+)?(?:the\s+)?details\s+(?:about|for|of|on)\s+(.+)$",
-        user_message.strip(),
+        fuzzy_message.strip(),
         re.IGNORECASE,
     )
     if details_match:
         logging.info("Do NOT use GPT (record details → ShowRecordSummary)\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowRecordSummary")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="ShowRecordSummary")
         response["routing_trace"] = ["deterministic → ShowRecordSummary"]
         response["chat_sessions"] = list(
             ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at")
@@ -361,7 +375,7 @@ def handle_user_request(user,user_message, session_data):
     )
     if related_records_match:
         logging.info("Do NOT use GPT (related records → ShowSingleRecord)\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowSingleRecord")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="ShowSingleRecord")
         response["routing_trace"] = ["deterministic → ShowSingleRecord"]
         response["chat_sessions"] = list(
             ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at")
@@ -378,9 +392,9 @@ def handle_user_request(user,user_message, session_data):
         (re.compile(r"^(?:auto(?:matically)?\s+)?convert\s+(?:the\s+)?leads?\b", re.IGNORECASE), "CreateActionTrigger"),
     )
     for pattern, decision in trigger_intent_patterns:
-        if pattern.match(user_message.strip()):
+        if pattern.match(fuzzy_message.strip()):
             logging.info("Do NOT use GPT (deterministic %s)\n", decision)
-            response = orchestrate_request_trigger(user, user_message, session_data, decision=decision)
+            response = orchestrate_request_trigger(user, dispatch_message, session_data, decision=decision)
             response["routing_trace"] = [f"deterministic → {decision}"]
             response["chat_sessions"] = list(
                 ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at")
@@ -404,7 +418,7 @@ def handle_user_request(user,user_message, session_data):
         return response
 
     # 🧠 Shortcut manual: deterministic quote line-item actions (add / remove)
-    quote_action_decision = _infer_quote_action_decision(user_message)
+    quote_action_decision = _infer_quote_action_decision(fuzzy_message)
     if quote_action_decision:
         logging.info("Do NOT use GPT\n")
         response = orchestrate_request_trigger(
@@ -422,92 +436,92 @@ def handle_user_request(user,user_message, session_data):
     # 🧠 Shortcut manual: "show details" (defaults to quote details)
     if normalized_message in {"show details", "show detail", "show quote details", "show quote detail"}:
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowQuoteDetails")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="ShowQuoteDetails")
 
     # 🧠 Shortcut manual: lead intelligence dashboard
-    elif matches_lead_intelligence_trigger(user_message):
+    elif matches_lead_intelligence_trigger(fuzzy_message):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowLeadDashboard")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="ShowLeadDashboard")
 
     # 🧠 Shortcut manual: "show quote details for <quote_id>"
     elif user_message.lower().startswith("show quote details for "):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user,user_message, session_data, decision="ShowQuoteDetails")
+        response = orchestrate_request_trigger(user,dispatch_message, session_data, decision="ShowQuoteDetails")
     # 🧠 Shortcut manual: "show quote details <quote_id>"
     elif user_message.lower().startswith("show quote details "):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowQuoteDetails")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="ShowQuoteDetails")
 
     # 🧠 Shortcut manual: "show quote Q-00002" / "show the quote Q-00002"
     elif re.search(r"\b(?:show|view|open|display)\s+(?:the\s+)?quote\s+Q-\d+", user_message, re.IGNORECASE):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowQuoteDetails")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="ShowQuoteDetails")
 
     # 🧠 Shortcut manual: "show metrics: ..."
     elif normalized_message.startswith("show metrics:"):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowMetrics")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="ShowMetrics")
 
     # 🧠 Shortcut manual: list/all/latest metrics phrasing
-    elif _should_shortcut_to_metrics(user_message):
+    elif _should_shortcut_to_metrics(fuzzy_message):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowMetrics")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="ShowMetrics")
 
     # 🧠 Shortcut manual: singular object should be single-record
-    elif _should_shortcut_to_single_record(user_message):
+    elif _should_shortcut_to_single_record(fuzzy_message):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="ShowSingleRecord")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="ShowSingleRecord")
 
     # 🧠 Shortcut manual: "Update Quote Line:"
     elif user_message.startswith("Update Quote Line:"):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="UpdateQuoteLineFromUI")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="UpdateQuoteLineFromUI")
 
     # 🧠 Shortcut manual: "Delete Quote Line:"
     elif user_message.startswith("Delete Quote Line:"):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="DeleteQuoteLineFromUI")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="DeleteQuoteLineFromUI")
 
     # 🧠 Shortcut manual: "Add Product To Quote:"
     elif user_message.startswith("Add Product To Quote:"):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="AddProductToQuoteFromUI")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="AddProductToQuoteFromUI")
 
     # 🧠 Shortcut manual: explicit create quote phrases
     elif "create a quote" in message or "create the quote" in message:
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="CreateQuote")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="CreateQuote")
 
     elif user_message.startswith("Update Bundle Option:"):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="UpdateBundleOption")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="UpdateBundleOption")
 
     elif user_message.startswith("Update Quote:"):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="UpdateQuoteFromUI")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="UpdateQuoteFromUI")
 
     elif user_message.startswith("Update Record:"):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="UpdateSingleRecordFromUI")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="UpdateSingleRecordFromUI")
 
     # 🧠 Shortcut manual: Add product option to bundle (avoid misrouting to quote)
     elif re.search(r"\badd\s+(?:product\s+)?option\b.*\bbundle\b", user_message, re.IGNORECASE):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="AddProductToBundle")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="AddProductToBundle")
 
     # 🧠 Shortcut manual: "generate pdf"
     elif any(message.startswith(trigger) for trigger in trigger_phrases):
         logging.info("Do NOT use GPT\n")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="GenerateQuoteDocument")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="GenerateQuoteDocument")
 
     else:
         logging.info("USE GPT\n")
-        response = orchestrate_request(user, user_message, session_data)
+        response = orchestrate_request(user, dispatch_message, session_data)
 
     response["chat_sessions"] = list(ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at"))
     return response
 
-def orchestrate_request(user, user_message, session_data):
+def orchestrate_request(user, dispatch_message, session_data):
     session_context = {
         k: str(v) for k, v in session_data.items()
         if isinstance(v, (str, int, float, list, dict))
@@ -555,7 +569,7 @@ def orchestrate_request(user, user_message, session_data):
     # 🔹 Shortcut for clear how-to requests before hitting the LLM
     if _should_shortcut_to_knowledge(user_message):
         logging.info("🔀 Shortcutting to KnowledgeLookup based on heuristic match")
-        response = orchestrate_request_trigger(user, user_message, session_data, decision="KnowledgeLookup")
+        response = orchestrate_request_trigger(user, dispatch_message, session_data, decision="KnowledgeLookup")
         response["routing_trace"] = ["deterministic → KnowledgeLookup"]
         return response
 
@@ -738,12 +752,12 @@ def orchestrate_request(user, user_message, session_data):
                 decision = standard_write_decision
 
         # 🔒 Guard: singular requests should open single-record, not metrics list
-        if decision == "ShowMetrics" and _should_shortcut_to_single_record(user_message):
+        if decision == "ShowMetrics" and _should_shortcut_to_single_record(fuzzy_message):
             logging.info("Guarding against metrics for singular record; rerouting to ShowSingleRecord.")
             decision = "ShowSingleRecord"
 
         # 🔒 Guard: plural/list requests should go to metrics, not single-record
-        if decision == "ShowSingleRecord" and _should_shortcut_to_metrics(user_message):
+        if decision == "ShowSingleRecord" and _should_shortcut_to_metrics(fuzzy_message):
             logging.info("Guarding against single-record for list request; rerouting to ShowMetrics.")
             decision = "ShowMetrics"
 
