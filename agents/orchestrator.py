@@ -521,7 +521,7 @@ def handle_user_request(user,user_message, session_data):
     response["chat_sessions"] = list(ChatSession.objects.filter(user=user).order_by("-created_at").values("session_id", "title", "created_at"))
     return response
 
-def orchestrate_request(user, dispatch_message, session_data):
+def orchestrate_request(user, user_message, session_data):
     session_context = {
         k: str(v) for k, v in session_data.items()
         if isinstance(v, (str, int, float, list, dict))
