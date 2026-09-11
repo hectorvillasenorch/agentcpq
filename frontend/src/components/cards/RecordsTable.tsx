@@ -390,7 +390,22 @@ export default function RecordsTable({
                     }
                     return (
                       <td key={c} className={cellClass}>
-                        {cellText}
+                        {(() => {
+                          const raw = row[c];
+                          const url = typeof raw === "string" && /^https?:\/\//i.test(raw.trim());
+                          if (!url) return cellText;
+                          return (
+                            <a
+                              href={raw.trim()}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-medium text-primary hover:underline"
+                              title={raw.trim()}
+                            >
+                              Open
+                            </a>
+                          );
+                        })()}
                       </td>
                     );
                   })}

@@ -9,6 +9,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  ExternalLink,
   Eye,
   EyeOff,
   FileText,
@@ -105,6 +106,32 @@ function isSystemField(name?: string): boolean {
   if (!name) return false;
   const n = name.toLowerCase();
   return n.endsWith("_id") || n === "accid" || n === "created_at" || n === "updated_at";
+}
+
+/** True when a field holds something we can open as a link (http(s) or www.). */
+function looksLikeUrl(value: string): boolean {
+  const v = (value || "").trim();
+  return /^https?:\/\//i.test(v) || /^www\.[\w.-]+\.[a-z]{2,}/i.test(v);
+}
+
+function hrefFor(value: string): string {
+  const v = (value || "").trim();
+  if (/^https?:\/\//i.test(v)) return v;
+  if (/^www\./i.test(v)) return `https://${v}`;
+  return v;
+}
+
+/** Compact display for a link value (host + last path segment). */
+function linkLabel(value: string): string {
+  const v = (value || "").trim();
+  try {
+    const url = new URL(hrefFor(v));
+    const parts = url.pathname.split("/").filter(Boolean);
+    const tail = parts.length > 0 ? parts[parts.length - 1] : "";
+    return tail ? `${url.hostname}/…/${tail}` : url.hostname;
+  } catch {
+    return v;
+  }
 }
 
 function initialValue(field: RecordField): string {
@@ -310,7 +337,21 @@ function EditableField({
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-[11px] text-muted-foreground">{field.label || field.name}</span>
+        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          {field.label || field.name}
+          {looksLikeUrl(value) && (
+            <a
+              href={hrefFor(value)}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-0.5 text-[10px] font-medium text-primary hover:underline"
+              title="Open link in a new tab"
+            >
+              <ExternalLink size={11} />
+              Open
+            </a>
+          )}
+        </span>
         {status === "saving" && <span className="text-[10px] text-muted-foreground">Saving…</span>}
         {status === "saved" && (
           <span className="flex items-center gap-0.5 text-[10px] text-[#00c000]">
@@ -333,7 +374,20 @@ function ReadOnlyValue({ field }: { field: RecordField }) {
     <div>
       <div className="mb-1 text-[11px] text-muted-foreground">{field.label || field.name}</div>
       <div className="break-words rounded-md border border-[#EDEEF1] bg-[#F7F8FA] px-2.5 py-2 text-[13px] text-foreground">
-        {display || "—"}
+        {display && looksLikeUrl(display) ? (
+          <a
+            href={hrefFor(display)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 break-all font-medium text-primary hover:underline"
+            title={display}
+          >
+            <ExternalLink size={12} className="shrink-0" />
+            {linkLabel(display)}
+          </a>
+        ) : (
+          display || "—"
+        )}
       </div>
     </div>
   );
