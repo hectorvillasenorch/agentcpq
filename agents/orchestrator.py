@@ -149,7 +149,22 @@ def handle_user_request(user,user_message, session_data):
 
     # Handlers get the normalized copy: identifiers are preserved (tokens with digits
     # are never rewritten), but typo'd verbs/objects are corrected for the LLM too.
-    dispatch_message = fuzzy_message or user_message
+    # EXCEPT structured UI payloads — normalizing their JSON would corrupt values.
+    _ui_payload_prefixes = (
+        "update record:",
+        "update quote:",
+        "update quote line:",
+        "delete quote:",
+        "delete quote line:",
+        "add product to quote:",
+        "update bundle option:",
+        "delete bundle option:",
+        "delete bundle component from quote:",
+    )
+    if user_message.strip().lower().startswith(_ui_payload_prefixes):
+        dispatch_message = user_message
+    else:
+        dispatch_message = fuzzy_message or user_message
 
     # 🧠 One-off reminders: "remind me <when> to <task>" (no event needed —
     # scheduled straight into the email outbox). Accepts "remindme" (no space).

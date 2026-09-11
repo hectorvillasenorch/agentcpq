@@ -158,7 +158,14 @@ def normalize_text(text: str, *, include_intents: bool = True) -> str:
             return canonical
         return best
 
-    return _token_re.sub(replace_token, text)
+    # Protect quoted segments (JSON payloads from the record forms): only the
+    # unquoted parts of the message get normalized.
+    segments = re.split(r'("[^"]*")', text)
+    normalized_segments = [
+        seg if index % 2 == 1 else _token_re.sub(replace_token, seg)
+        for index, seg in enumerate(segments)
+    ]
+    return "".join(normalized_segments)
 
 
 def find_object(text: str) -> Optional[str]:
