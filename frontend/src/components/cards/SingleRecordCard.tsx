@@ -707,11 +707,28 @@ function RelatedRecords({
                           {String(row.name ?? "—")}
                         </button>
                       </td>
-                      {cols.map((c) => (
-                        <td key={c} className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-                          {fmt(c, row[c])}
-                        </td>
-                      ))}
+                      {cols.map((c) => {
+                        const raw = row[c];
+                        const text = fmt(c, raw);
+                        const isUrl = typeof raw === "string" && /^https?:\/\//i.test(raw.trim());
+                        return (
+                          <td key={c} className="max-w-[320px] truncate px-3 py-2 text-muted-foreground">
+                            {isUrl ? (
+                              <a
+                                href={raw.trim()}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-primary hover:underline"
+                                title={raw.trim()}
+                              >
+                                {text}
+                              </a>
+                            ) : (
+                              text
+                            )}
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })}
