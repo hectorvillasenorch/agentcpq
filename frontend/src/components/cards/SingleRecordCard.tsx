@@ -161,10 +161,46 @@ function EditableField({
       .catch(() => setStatus("error"));
   };
 
+  // Values are NOT saved while typing: we commit when the field loses focus
+  // (blur) or when the user presses Enter. Selects save immediately on change.
+  const lastCommitted = useRef(initialValue(field));
+  const blurTimer = useRef<number | undefined>(undefined);
+  const skipBlurCommit = useRef(false);
+
   const onChange = (next: string) => {
     setValue(next);
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => commit(next), 800);
+  };
+
+  const commitIfChanged = (next: string) => {
+    if (next === lastCommitted.current) return;
+    lastCommitted.current = next;
+    commit(next);
+  };
+
+  const onBlurCommit = () => {
+    if (skipBlurCommit.current) {
+      skipBlurCommit.current = false;
+      return;
+    }
+    commitIfChanged(value);
+  };
+
+  const onSelect = (next: string) => {
+    setValue(next);
+    commitIfChanged(next);
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+    // Blur right after committing (the blur handler must not save again).
+    skipBlurCommit.current = true;
+    commitIfChanged(value);
+    (event.target as HTMLElement).blur();
+    window.clearTimeout(blurTimer.current);
+    blurTimer.current = window.setTimeout(() => {
+      skipBlurCommit.current = false;
+    }, 300);
   };
 
   const dataType = (field.data_type || "text").toLowerCase();
@@ -174,7 +210,7 @@ function EditableField({
   let control: React.ReactNode;
   if (dataType === "boolean") {
     control = (
-      <select className={inputClass} value={value} onChange={(e) => onChange(e.target.value)}>
+      <select className={inputClass} value={value} onChange={(e) => onSelect(e.target.value)} onBlur={onBlurCommit}>
         <option value="">Unset</option>
         <option value="true">Yes</option>
         <option value="false">No</option>
@@ -182,27 +218,52 @@ function EditableField({
     );
   } else if (dataType === "date") {
     control = (
-      <input type="date" className={inputClass} value={value} onChange={(e) => onChange(e.target.value)} />
+      <input type="date" className={inputClass} value={value} onChange={(e) => onChange(e.target.value)} onBlur={onBlurCommit} onKeyDown={onKeyDown} />
     );
   } else if (dataType === "datetime") {
     control = (
-      <input type="datetime-local" className={inputClass} value={value} onChange={(e) => onChange(e.target.value)} />
+      <input
+        type="datetime-local"
+        className={inputClass}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlurCommit}
+        onKeyDown={onKeyDown}
+      />
     );
   } else if (dataType === "number") {
     control = (
-      <input type="number" step="any" className={inputClass} value={value} onChange={(e) => onChange(e.target.value)} />
+      <input
+        type="number"
+        step="any"
+        className={inputClass}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlurCommit}
+        onKeyDown={onKeyDown}
+      />
     );
   } else if (dataType === "lookup" && field.lookup_target) {
     // Lookup/relation fields get a search-as-you-type combobox (find the right
     // Account, Contact, Opportunity…) instead of a giant picklist dropdown.
-    control = <LookupFieldControl field={field} value={value} onChange={onChange} inputClass={inputClass} />;
+    control = (
+      <LookupFieldControl
+        field={field}
+        value={value}
+        onChange={(next: string) => {
+          setValue(next);
+          commitIfChanged(next);
+        }}
+        inputClass={inputClass}
+      />
+    );
   } else if (
     dataType === "choice" ||
     dataType === "lookup" ||
     (Array.isArray(field.options) && field.options.length > 0)
   ) {
     control = (
-      <select className={inputClass} value={value} onChange={(e) => onChange(e.target.value)}>
+      <select className={inputClass} value={value} onChange={(e) => onSelect(e.target.value)} onBlur={onBlurCommit}>
         <option value="">—</option>
         {(field.options || []).map((opt, i) => {
           // Options arrive as strings (picklist: ["Planned", "In Progress", …]) or
@@ -220,11 +281,25 @@ function EditableField({
     );
   } else if (field.is_multiline) {
     control = (
-      <textarea rows={3} className={`${inputClass} resize-y`} value={value} onChange={(e) => onChange(e.target.value)} />
+      <textarea
+        rows={3}
+        className={`${inputClass} resize-y`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlurCommit}
+        onKeyDown={onKeyDown}
+      />
     );
   } else {
     control = (
-      <input type="text" className={inputClass} value={value} onChange={(e) => onChange(e.target.value)} />
+      <input
+        type="text"
+        className={inputClass}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlurCommit}
+        onKeyDown={onKeyDown}
+      />
     );
   }
 
