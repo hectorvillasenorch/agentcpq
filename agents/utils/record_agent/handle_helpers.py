@@ -354,8 +354,6 @@ def _configured_related_section(record: Model, model_name: str, cfg) -> Optional
         record_ids = list(
             CustomFieldValue.objects.filter(field=field, value__in=list(parent_keys)).values_list("record_id", flat=True)
         )
-        if not record_ids:
-            return None
 
         custom_fields = list(CustomField.objects.filter(custom_object=custom_target))
         fields_by_id = {f.id: f for f in custom_fields}
@@ -389,12 +387,11 @@ def _configured_related_section(record: Model, model_name: str, cfg) -> Optional
                         label = str(val)
                         break
             rows.append({"id": rec.id, "name": label or f"{custom_target.label or custom_target.name} {rec.id}"})
-        if not rows:
-            return None
         return {
             "object": custom_target.name,
             "label": cfg.label or custom_target.label or custom_target.name,
             "records": rows,
+            "configured": True,
         }
 
     # ---------- standard object (Quote, Activity, Contract, …) ----------
@@ -421,10 +418,8 @@ def _configured_related_section(record: Model, model_name: str, cfg) -> Optional
             row["type"] = obj.get_activity_type_display() if hasattr(obj, "get_activity_type_display") else ""
             row["status"] = obj.get_status_display() if hasattr(obj, "get_status_display") else ""
         rows.append(row)
-    if not rows:
-        return None
     plural = cfg.label or (related_name if related_name.endswith("s") else f"{related_name}s")
-    return {"object": related_name, "label": plural, "records": rows}
+    return {"object": related_name, "label": plural, "records": rows, "configured": True}
 
 
 def build_related_records(record: Model, model_name: str) -> List[Dict[str, object]]:

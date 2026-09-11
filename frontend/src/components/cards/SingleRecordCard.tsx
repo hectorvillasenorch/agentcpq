@@ -66,6 +66,8 @@ export interface RelatedRecordSection {
   object?: string;
   label?: string;
   records?: RelatedRecordRow[];
+  /** True for sections configured in Admin → Object Related Sections. */
+  configured?: boolean;
 }
 
 export interface RelatedRecordRow {
@@ -683,6 +685,11 @@ function RelatedRecords({
             <div className="border-b border-[#EDEEF1] bg-[#F7F8FA] px-3 py-1.5 text-[12px] font-semibold text-foreground">
               {sec.label || sec.object} · {(sec.records || []).length}
             </div>
+            {(sec.records || []).length === 0 ? (
+              <div className="px-3 py-2 text-[12px] text-muted-foreground">
+                No {sec.label || sec.object} linked yet.
+              </div>
+            ) : (
             <table className="w-full text-left text-[13px]">
               <tbody>
                 {(sec.records || []).map((row, i) => {
@@ -710,6 +717,7 @@ function RelatedRecords({
                 })}
               </tbody>
             </table>
+            )}
           </div>
         ))}
       </div>
