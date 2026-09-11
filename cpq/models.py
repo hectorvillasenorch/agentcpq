@@ -2821,3 +2821,50 @@ class DomainEvent(models.Model):
 
     def __str__(self):
         return f"{self.event_type} ({self.created_at:%Y-%m-%d %H:%M:%S})"
+
+class ObjectRelationConfig(models.Model):
+    """Configure which related records show on an object's form in the chat UI.
+
+    Example: parent_object="Opportunity", related_object="pov__c" → the Opportunity
+    form shows a "POV" section listing the POV records linked to that opportunity.
+    """
+
+    parent_object = models.CharField(
+        max_length=100,
+        help_text="Object whose form shows the section (e.g. Opportunity, Account, or a custom object like pov__c).",
+    )
+    related_object = models.CharField(
+        max_length=100,
+        help_text="Related object to list in that form (e.g. pov__c, Quote, Activity, Contract).",
+    )
+    link_field = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text=(
+            "Field on the related object that points to the parent record "
+            "(e.g. opportunity__c for a custom object, 'opportunity' for quotes). "
+            "Leave blank to auto-detect."
+        ),
+    )
+    label = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Section title shown in the form (defaults to the related object's label).",
+    )
+    position = models.PositiveIntegerField(default=100, help_text="Order of the section in the form (lower = earlier).")
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_object_relations"
+    )
+
+    class Meta:
+        verbose_name = "Object Related Section"
+        verbose_name_plural = "Object Related Sections"
+        ordering = ["parent_object", "position", "id"]
+        unique_together = [("parent_object", "related_object", "link_field")]
+
+    def __str__(self):
+        return f"{self.parent_object} → {self.related_object}"

@@ -265,6 +265,168 @@ def serialize_record(record: Model, object_name: str, custom_object, custom_fiel
     return _serialize_record(record, object_name, custom_object, custom_fields, user=user)
 
 
+_STANDARD_LINK_FIELDS = {
+    # (related_object, parent_object) → field on the related object pointing at the parent
+    ("Quote", "Opportunity"): "opportunity",
+    ("Quote", "Account"): "account",
+    ("Contract", "Opportunity"): "opportunity",
+    ("Activity", "Opportunity"): "opportunity",
+    ("Activity", "Lead"): "lead",
+    ("Activity", "Contact"): "contact",
+    ("Activity", "Account"): "account",
+    ("Subscription", "Quote"): "quote",
+    ("Subscription", "Contract"): "contract",
+    ("QuoteLine", "Quote"): "quote",
+    ("Knowledge", "Account"): "account",
+}
+
+
+_RELATED_MODEL_PATHS = {
+    "Lead": "cpq.Lead",
+    "Account": "cpq.Account",
+    "Contact": "cpq.Contact",
+    "Opportunity": "cpq.Opportunity",
+    "Quote": "cpq.Quote",
+    "QuoteLine": "cpq.QuoteLine",
+    "Product": "cpq.Product",
+    "Activity": "cpq.Activity",
+    "Contract": "cpq.Contract",
+    "Subscription": "cpq.Subscription",
+    "Option": "cpq.Option",
+    "Tenant": "cpq.Tenant",
+    "Knowledge": "cpq.Knowledge",
+}
+
+
+def _related_model(name: str):
+    from django.apps import apps
+
+    path = _RELATED_MODEL_PATHS.get(name)
+    if not path:
+        return None
+    try:
+        return apps.get_model(path)
+    except Exception:
+        return None
+
+
+def _custom_object_by_name(name: str):
+    from cpq.models import CustomObject
+
+    if not name:
+        return None
+    obj = CustomObject.objects.filter(name__iexact=name).first()
+    if obj is None:
+        obj = CustomObject.objects.filter(label__iexact=name).first()
+    return obj
+
+
+def _configured_related_section(record: Model, model_name: str, cfg) -> Optional[Dict[str, object]]:
+    """Build one configured related-records section (used by build_related_records)."""
+    from cpq.models import CustomField, CustomFieldValue, CustomRecord
+
+    related_name = (cfg.related_object or "").strip()
+    if not related_name:
+        return None
+
+    # ---------- custom object (pov__c) ----------
+    custom_target = _custom_object_by_name(related_name)
+    if custom_target is not None:
+        link_field = (cfg.link_field or "").strip()
+        if not link_field:
+            # auto-detect: a lookup custom field on that object pointing at the parent
+            parent_model = model_name.lower()
+            candidates = CustomField.objects.filter(custom_object=custom_target, lookup_model__isnull=False).exclude(lookup_model="")
+            for candidate in candidates:
+                lookup_model = (candidate.lookup_model or "").split(".")[-1].lower()
+                if lookup_model == parent_model:
+                    link_field = candidate.name
+                    break
+        if not link_field:
+            return None
+
+        field = CustomField.objects.filter(custom_object=custom_target, name=link_field).first()
+        if field is None:
+            return None
+
+        parent_keys = {str(getattr(record, "pk", "")), str(getattr(record, "name", "") or "")}
+        parent_keys.discard("")
+        record_ids = list(
+            CustomFieldValue.objects.filter(field=field, value__in=list(parent_keys)).values_list("record_id", flat=True)
+        )
+        if not record_ids:
+            return None
+
+        custom_fields = list(CustomField.objects.filter(custom_object=custom_target))
+        fields_by_id = {f.id: f for f in custom_fields}
+        # Prefer a name-ish field (name/title/subject, or a field *labelled* "Name").
+        _name_ish = ("name", "title", "subject", "label")
+        name_field = next(
+            (f for f in custom_fields if (f.name or "").lower().rstrip("__c") in _name_ish),
+            None,
+        )
+        if name_field is None:
+            name_field = next(
+                (f for f in custom_fields if (getattr(f, "label", "") or "").strip().lower() in _name_ish),
+                None,
+            )
+
+        rows = []
+        for rec in CustomRecord.objects.filter(id__in=record_ids)[:15]:
+            values = {
+                v.field_id: v.value
+                for v in CustomFieldValue.objects.filter(record=rec)
+                if v.field_id in fields_by_id
+            }
+            label = ""
+            if name_field is not None:
+                label = str(values.get(name_field.id) or "")
+            if not label:
+                # Fall back to the first readable (text-like) value, else "POV 12".
+                for f in custom_fields:
+                    val = values.get(f.id)
+                    if val and len(str(val)) < 60 and any(ch.isalpha() for ch in str(val)):
+                        label = str(val)
+                        break
+            rows.append({"id": rec.id, "name": label or f"{custom_target.label or custom_target.name} {rec.id}"})
+        if not rows:
+            return None
+        return {
+            "object": custom_target.name,
+            "label": cfg.label or custom_target.label or custom_target.name,
+            "records": rows,
+        }
+
+    # ---------- standard object (Quote, Activity, Contract, …) ----------
+    model = _related_model(related_name)
+    if model is None:
+        return None
+    link_field = (cfg.link_field or "").strip() or _STANDARD_LINK_FIELDS.get((related_name, model_name), "")
+    if not link_field or not hasattr(model, link_field):
+        return None
+    try:
+        qs = model.objects.filter(**{link_field: record}).order_by("-pk")[:15]
+    except Exception:
+        return None
+    rows = []
+    for obj in qs:
+        row = {
+            "id": getattr(obj, "id", None),
+            "name": getattr(obj, "name", None) or getattr(obj, "subject", None) or str(obj),
+        }
+        if related_name == "Quote":
+            row["status"] = getattr(obj, "status", "") or ""
+            row["net"] = str(obj.net_amount) if getattr(obj, "net_amount", None) is not None else ""
+        elif related_name == "Activity":
+            row["type"] = obj.get_activity_type_display() if hasattr(obj, "get_activity_type_display") else ""
+            row["status"] = obj.get_status_display() if hasattr(obj, "get_status_display") else ""
+        rows.append(row)
+    if not rows:
+        return None
+    plural = cfg.label or (related_name if related_name.endswith("s") else f"{related_name}s")
+    return {"object": related_name, "label": plural, "records": rows}
+
+
 def build_related_records(record: Model, model_name: str) -> List[Dict[str, object]]:
     """Build related-record sections (Opportunities, Activities, Quotes, …) for the detail form."""
     from django.db.models import Q
@@ -340,6 +502,27 @@ def build_related_records(record: Model, model_name: str) -> List[Dict[str, obje
 
     elif model_name == "Contract":
         _add("Subscriptions", "Subscription", [_row(s) for s in record.subscriptions.all()[:15]])
+
+    # ------------------------------------------------------------------
+    # Configured sections (Admin → Object Related Sections):
+    # e.g. Opportunity form showing POV records linked via opportunity__c.
+    # ------------------------------------------------------------------
+    try:
+        from cpq.models import ObjectRelationConfig
+
+        configs = ObjectRelationConfig.objects.filter(
+            parent_object__iexact=model_name, is_active=True
+        ).order_by("position", "id")
+        existing_keys = {(section.get("object") or "").lower() for section in related}
+        for cfg in configs:
+            if (cfg.related_object or "").lower() in existing_keys:
+                continue
+            section = _configured_related_section(record, model_name, cfg)
+            if section:
+                related.append(section)
+                existing_keys.add((section.get("object") or "").lower())
+    except Exception:
+        logger.debug("configured related sections failed", exc_info=True)
 
     return related
 

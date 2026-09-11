@@ -16,6 +16,7 @@ from .models import (
     Account,
     Activity,
     CustomObject,
+    ObjectRelationConfig,
     CustomObjectPermission,
     AccessPolicy,
     RecordAccessGrant,
@@ -1441,3 +1442,69 @@ def _apply_default_cpq_list_filters():
 
 _apply_default_cpq_search_fields()
 _apply_default_cpq_list_filters()
+
+# ---------------------------------------------------------------------------
+# Object Related Sections — choose which related records show on an object's form
+# ---------------------------------------------------------------------------
+STANDARD_OBJECT_CHOICES = [
+    "Lead", "Account", "Contact", "Opportunity", "Quote", "QuoteLine",
+    "Product", "Activity", "Contract", "Subscription", "Option", "Tenant", "Knowledge",
+]
+
+
+class ObjectRelationConfigForm(forms.ModelForm):
+    """Friendly dropdowns: standard objects + custom objects (by API name)."""
+
+    class Meta:
+        model = ObjectRelationConfig
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        try:
+            custom_names = list(
+                CustomObject.objects.order_by("label").values_list("name", "label")
+            )
+        except Exception:
+            custom_names = []
+
+        choices = [(name, name) for name in STANDARD_OBJECT_CHOICES]
+        choices += [(name, f"{label} ({name})" if label and label != name else name) for name, label in custom_names]
+
+        self.fields["parent_object"] = forms.ChoiceField(
+            choices=choices, help_text=ObjectRelationConfig._meta.get_field("parent_object").help_text
+        )
+        self.fields["related_object"] = forms.ChoiceField(
+            choices=choices, help_text=ObjectRelationConfig._meta.get_field("related_object").help_text
+        )
+        # Suggest the lookup fields that point at the parent (custom objects only).
+        link_help = ObjectRelationConfig._meta.get_field("link_field").help_text
+        candidate_fields = [
+            f"{name} — {label}"
+            for name, label in CustomField.objects.filter(lookup_model__startswith="cpq.")
+            .values_list("name", "label")[:50]
+        ]
+        self.fields["link_field"] = forms.CharField(
+            required=False,
+            help_text=link_help + (
+                ("  Known lookups: " + ", ".join(candidate_fields[:12])) if candidate_fields else ""
+            ),
+        )
+        if self.instance and self.instance.pk:
+            self.fields["parent_object"].initial = self.instance.parent_object
+            self.fields["related_object"].initial = self.instance.related_object
+
+
+@admin.register(ObjectRelationConfig)
+class ObjectRelationConfigAdmin(admin.ModelAdmin):
+    form = ObjectRelationConfigForm
+    list_display = ("parent_object", "related_object", "link_field", "label", "position", "is_active")
+    list_editable = ("label", "position", "is_active")
+    list_filter = ("parent_object", "related_object", "is_active")
+    search_fields = ("parent_object", "related_object", "label", "link_field")
+    ordering = ("parent_object", "position")
+
+    def save_model(self, request, obj, form, change):
+        if not obj.created_by_id:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
