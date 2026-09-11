@@ -14,6 +14,8 @@ from .views import (
     search_products,
     search_records,
     create_activity_for_record,
+    related_record_fields,
+    create_related_record,
     update_action_trigger,
     quote_details_api,
 )
@@ -32,6 +34,8 @@ urlpatterns = [
     path("api/messages/", chat_messages_api, name="chat_messages_api"),
     path("api/search-products/", search_products, name="search_products"),
     path("api/create-activity/", create_activity_for_record, name="create_activity_for_record"),
+    path("api/related-fields/", related_record_fields, name="related_record_fields"),
+    path("api/create-related-record/", create_related_record, name="create_related_record"),
     path("api/search-records/", search_records, name="search_records"),
     path("api/action-trigger/<int:trigger_id>/update/", update_action_trigger, name="update_action_trigger"),
     path("api/quote-details/", quote_details_api, name="quote_details_api"),

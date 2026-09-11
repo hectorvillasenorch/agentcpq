@@ -359,10 +359,14 @@ def _configured_related_section(record: Model, model_name: str, cfg) -> Optional
         fields_by_id = {f.id: f for f in custom_fields}
         # Prefer a name-ish field (name/title/subject, or a field *labelled* "Name").
         _name_ish = ("name", "title", "subject", "label")
-        name_field = next(
-            (f for f in custom_fields if (f.name or "").lower().rstrip("__c") in _name_ish),
-            None,
-        )
+
+        def _is_name_ish(field) -> bool:
+            key = (field.name or "").lower().removesuffix("__c")
+            if key in _name_ish:
+                return True
+            return any(token in key for token in ("name", "title", "subject"))
+
+        name_field = next((f for f in custom_fields if _is_name_ish(f)), None)
         if name_field is None:
             name_field = next(
                 (f for f in custom_fields if (getattr(f, "label", "") or "").strip().lower() in _name_ish),

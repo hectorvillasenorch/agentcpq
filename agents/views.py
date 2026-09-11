@@ -458,6 +458,224 @@ def quote_details_api(request):
         return JsonResponse({"error": str(exc)}, status=500)
 
 
+def _resolve_related_link_field(parent_object: str, related_object: str) -> str:
+    """Which field on the related object points at the parent (config → auto-detect)."""
+    from cpq.models import CustomField, CustomObject, ObjectRelationConfig
+
+    cfg = (
+        ObjectRelationConfig.objects.filter(
+            parent_object__iexact=parent_object, related_object__iexact=related_object
+        )
+        .order_by("position")
+        .first()
+    )
+    if cfg and (cfg.link_field or "").strip():
+        return cfg.link_field.strip()
+
+    custom = CustomObject.objects.filter(name__iexact=related_object).first()
+    if custom is not None:
+        for candidate in CustomField.objects.filter(custom_object=custom, data_type="lookup").exclude(lookup_model=""):
+            model = (candidate.lookup_model or "").split(".")[-1]
+            if model.lower() == parent_object.lower():
+                return candidate.name
+        return ""
+    # standard objects: known relation map
+    return {
+        ("Quote", "Opportunity"): "opportunity",
+        ("Quote", "Account"): "account",
+        ("Contract", "Opportunity"): "opportunity",
+        ("Activity", "Opportunity"): "opportunity",
+        ("Activity", "Lead"): "lead",
+        ("Activity", "Contact"): "contact",
+        ("Activity", "Account"): "account",
+        ("Subscription", "Quote"): "quote",
+        ("Subscription", "Contract"): "contract",
+        ("QuoteLine", "Quote"): "quote",
+    }.get((related_object, parent_object), "")
+
+
+@csrf_exempt
+@login_required
+def related_record_fields(request):
+    """Field definitions for the 'add related record' form (custom objects + Activity)."""
+    from cpq.models import CustomField, CustomObject
+
+    parent_object = (request.GET.get("parent_object") or "").strip()
+    related_object = (request.GET.get("related_object") or "").strip()
+    if not parent_object or not related_object:
+        return JsonResponse({"error": "parent_object and related_object are required."}, status=400)
+
+    link_field = _resolve_related_link_field(parent_object, related_object)
+    custom = CustomObject.objects.filter(name__iexact=related_object).first()
+
+    if custom is not None:
+        fields = []
+        for field in CustomField.objects.filter(custom_object=custom).order_by("id"):
+            is_link = field.name == link_field
+            fields.append(
+                {
+                    "name": field.name,
+                    "label": field.label or field.name,
+                    "data_type": field.data_type or "text",
+                    "options": field.options or [],
+                    "is_link": is_link,
+                    "required": bool(field.required),
+                }
+            )
+        return JsonResponse(
+            {
+                "related_type": "custom",
+                "object": custom.name,
+                "label": custom.label,
+                "link_field": link_field,
+                "fields": fields,
+            }
+        )
+
+    if related_object == "Activity":
+        return JsonResponse(
+            {
+                "related_type": "standard",
+                "object": "Activity",
+                "label": "Activity",
+                "link_field": link_field,
+                "fields": [
+                    {"name": "subject", "label": "Subject", "data_type": "text", "options": [], "required": True},
+                    {
+                        "name": "activity_type",
+                        "label": "Type",
+                        "data_type": "dropdown",
+                        "options": ["call", "email", "meeting", "task"],
+                        "required": True,
+                    },
+                    {
+                        "name": "status",
+                        "label": "Status",
+                        "data_type": "dropdown",
+                        "options": ["not_started", "in_progress", "completed", "deferred"],
+                        "required": False,
+                    },
+                    {"name": "due_date", "label": "Due date", "data_type": "date", "options": [], "required": False},
+                    {"name": "notes", "label": "Notes", "data_type": "textarea", "options": [], "required": False},
+                ],
+            }
+        )
+
+    return JsonResponse({"error": f"Adding {related_object} records from the form isn't supported yet."}, status=400)
+
+
+@csrf_exempt
+@login_required
+def create_related_record(request):
+    """Create a record of the configured related object, already linked to the parent."""
+    import json as _json
+
+    from django.contrib.contenttypes.models import ContentType
+    from django.utils.dateparse import parse_date
+
+    from cpq.models import CustomField, CustomFieldValue, CustomObject, CustomRecord
+
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required."}, status=405)
+    try:
+        payload = _json.loads(request.body.decode("utf-8") or "{}")
+    except ValueError:
+        return JsonResponse({"error": "Invalid JSON payload."}, status=400)
+
+    parent_object = str(payload.get("parent_object") or "").strip()
+    parent_id = payload.get("parent_id")
+    related_object = str(payload.get("related_object") or "").strip()
+    values = payload.get("values") or {}
+    if not parent_object or parent_id in (None, "") or not related_object:
+        return JsonResponse({"error": "parent_object, parent_id and related_object are required."}, status=400)
+    if not isinstance(values, dict):
+        return JsonResponse({"error": "values must be an object."}, status=400)
+
+    link_field_name = _resolve_related_link_field(parent_object, related_object)
+    custom = CustomObject.objects.filter(name__iexact=related_object).first()
+
+    # ---------- custom object (POV, G-Drive Documentation, …) ----------
+    if custom is not None:
+        if not link_field_name:
+            return JsonResponse(
+                {"error": f"No link field found from {related_object} to {parent_object}. Set it in Admin → Object Related Sections."},
+                status=400,
+            )
+        record = CustomRecord.objects.create(object_type=custom)
+        ctype = ContentType.objects.get_for_model(CustomRecord)
+        fields_by_name = {f.name: f for f in CustomField.objects.filter(custom_object=custom)}
+
+        link_field = fields_by_name.get(link_field_name)
+        if link_field is None:
+            record.delete()
+            return JsonResponse({"error": f"Link field '{link_field_name}' not found on {related_object}."}, status=400)
+
+        def _store(field, raw):
+            if raw in (None, ""):
+                return
+            text = str(raw).strip()
+            if not text:
+                return
+            if (field.data_type or "").lower() == "date":
+                parsed = parse_date(text)
+                if parsed is None:
+                    raise ValueError(f"Invalid date '{text}' for {field.label or field.name}.")
+                text = parsed.isoformat()
+            CustomFieldValue.objects.create(
+                field=field, record=record, content_type=ctype, object_id=record.id, value=text
+            )
+
+        try:
+            for name, raw in values.items():
+                field = fields_by_name.get(name)
+                if field is None or field.name == link_field_name:
+                    continue
+                _store(field, raw)
+            # the link back to the parent (store the pk, matching the form's convention)
+            CustomFieldValue.objects.create(
+                field=link_field, record=record, content_type=ctype, object_id=record.id, value=str(parent_id)
+            )
+        except ValueError as exc:
+            CustomFieldValue.objects.filter(record=record).delete()
+            record.delete()
+            return JsonResponse({"error": str(exc)}, status=400)
+
+        from agents.utils.record_agent.handle_helpers import serialize_record
+
+        custom_fields = list(CustomField.objects.filter(custom_object=custom))
+        record_payload = serialize_record(record, custom.name, custom, custom_fields, user=request.user)
+        return JsonResponse(
+            {
+                "success": True,
+                "message": f"✅ {custom.label or custom.name} created and linked.",
+                "single_record": record_payload,
+            }
+        )
+
+    # ---------- Activity (reuse the existing activity endpoint logic) ----------
+    if related_object == "Activity":
+        proxy = create_activity_for_record.__wrapped__ if hasattr(create_activity_for_record, "__wrapped__") else None  # noqa: F841
+        from django.http import QueryDict
+
+        activity_payload = {
+            "object": parent_object,
+            "record_id": parent_id,
+            "subject": values.get("subject") or "",
+            "activity_type": values.get("activity_type") or "call",
+            "status": values.get("status") or "not_started",
+            "due_date": values.get("due_date") or None,
+            "notes": values.get("notes") or "",
+        }
+        fake_request = request
+        fake_request._body = _json.dumps(activity_payload).encode()  # noqa: SLF001
+        return create_activity_for_record(fake_request)
+
+    return JsonResponse(
+        {"error": f"Adding {related_object} records from the form isn't supported yet. Try chat: \"create a {related_object.lower()} for {parent_object} …\"."},
+        status=400,
+    )
+
+
 @csrf_exempt
 @login_required
 def create_activity_for_record(request):

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Archive,
   Box,
+  Plus,
   Building2,
   CalendarPlus,
   Check,
@@ -30,6 +31,7 @@ import {
 } from "../../lib/api";
 import { formatDate, formatDateTime } from "../../lib/format";
 import { ActivityQuickForm } from "./ActivityQuickForm";
+import { AddRelatedRecordModal } from "./AddRelatedRecordModal";
 
 /** Objects an Activity can be linked to (Account links through its opportunity/contact). */
 const ACTIVITY_RELATED_OBJECTS = new Set(["Lead", "Opportunity", "Contact", "Account"]);
@@ -621,6 +623,7 @@ function RelatedRecords({
   ancestors = [],
   currentKey,
   onChildUpdated,
+  onAdd,
 }: {
   sections: RelatedRecordSection[];
   sessionId?: string | null;
@@ -629,6 +632,7 @@ function RelatedRecords({
   ancestors?: Array<{ object?: string; id?: string | number }>;
   currentKey?: { object?: string; id?: string | number };
   onChildUpdated?: () => void;
+  onAdd?: (object: string, label?: string) => void;
 }) {
   const [expanded, setExpanded] = useState<{
     object: string;
@@ -682,8 +686,21 @@ function RelatedRecords({
       <div className="space-y-3">
         {sections.map((sec) => (
           <div key={sec.object || sec.label} className="overflow-hidden rounded-lg border border-[#EDEEF1]">
-            <div className="border-b border-[#EDEEF1] bg-[#F7F8FA] px-3 py-1.5 text-[12px] font-semibold text-foreground">
-              {sec.label || sec.object} · {(sec.records || []).length}
+            <div className="flex items-center gap-2 border-b border-[#EDEEF1] bg-[#F7F8FA] px-3 py-1.5 text-[12px] font-semibold text-foreground">
+              <span className="truncate">
+                {sec.label || sec.object} · {(sec.records || []).length}
+              </span>
+              {onAdd && sec.object && (
+                <button
+                  type="button"
+                  onClick={() => onAdd(sec.object as string, sec.label)}
+                  className="ml-auto flex shrink-0 items-center gap-1 rounded border border-border bg-white px-1.5 py-0.5 text-[11px] font-medium text-[#3B62D9] hover:bg-[#F3F6FE]"
+                  title={`Add ${sec.label || sec.object}`}
+                >
+                  <Plus size={12} />
+                  Add
+                </button>
+              )}
             </div>
             {(sec.records || []).length === 0 ? (
               <div className="px-3 py-2 text-[12px] text-muted-foreground">
@@ -813,6 +830,8 @@ export default function SingleRecordCard({
   const [showActivityForm, setShowActivityForm] = useState(false);
   const [createdActivity, setCreatedActivity] = useState<unknown>(null);
   const [activityToast, setActivityToast] = useState<string>("");
+  const [addRelated, setAddRelated] = useState<{ object: string; label?: string } | null>(null);
+  const [showAddMenu, setShowAddMenu] = useState(false);
 
   const hiddenSet = new Set(layout.hidden);
   const allFields = (live.fields || []).filter((f) => !isDbId(f.name) && !hiddenSet.has(fieldKey(f)));
@@ -865,6 +884,36 @@ export default function SingleRecordCard({
               Log activity
             </button>
           )}
+          {(live.related || []).length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowAddMenu((v) => !v)}
+                className="flex items-center gap-1 rounded-md border border-border bg-white px-2 py-1 text-[11px] font-medium text-[#3B62D9] hover:bg-[#F3F6FE]"
+                title="Add a related record to this one"
+              >
+                <Plus size={13} />
+                Add related
+              </button>
+              {showAddMenu && (
+                <div className="absolute right-0 z-30 mt-1 w-56 overflow-hidden rounded-md border border-border bg-white py-1 shadow-lg">
+                  {(live.related || []).map((sec) => (
+                    <button
+                      key={sec.object || sec.label}
+                      type="button"
+                      onClick={() => {
+                        setShowAddMenu(false);
+                        if (sec.object) setAddRelated({ object: sec.object, label: sec.label });
+                      }}
+                      className="block w-full truncate px-3 py-1.5 text-left text-[12px] text-foreground hover:bg-[#F7F8FA]"
+                    >
+                      {sec.label || sec.object}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <button
             type="button"
             onClick={() => setShowLayout(true)}
@@ -887,6 +936,23 @@ export default function SingleRecordCard({
             setShowActivityForm(false);
             setCreatedActivity(payload);
             setActivityToast(message);
+          }}
+        />
+      )}
+
+      {addRelated && live.record_id != null && (
+        <AddRelatedRecordModal
+          parentObject={String(live.object || "")}
+          parentId={live.record_id as string | number}
+          parentLabel={title}
+          relatedObject={addRelated.object}
+          sectionLabel={addRelated.label}
+          onClose={() => setAddRelated(null)}
+          onCreated={(payload, message) => {
+            setAddRelated(null);
+            setCreatedActivity(payload);
+            setActivityToast(message);
+            refreshSelf();
           }}
         />
       )}

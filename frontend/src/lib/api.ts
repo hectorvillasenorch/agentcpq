@@ -75,6 +75,47 @@ export async function renameSession(sessionId: string, title: string): Promise<v
   );
 }
 
+export interface RelatedFieldDef {
+  name: string;
+  label: string;
+  data_type: string;
+  options?: unknown[];
+  is_link?: boolean;
+  required?: boolean;
+}
+
+export interface RelatedFieldsResponse {
+  related_type: "custom" | "standard";
+  object: string;
+  label: string;
+  link_field: string;
+  fields: RelatedFieldDef[];
+  error?: string;
+}
+
+/** Field definitions for the "add related record" form of a related object. */
+export async function fetchRelatedFields(
+  parentObject: string,
+  relatedObject: string
+): Promise<RelatedFieldsResponse> {
+  return request<RelatedFieldsResponse>(
+    `/agents/api/related-fields/?parent_object=${encodeURIComponent(parentObject)}&related_object=${encodeURIComponent(relatedObject)}`
+  );
+}
+
+/** Creates a record of the related object, already linked to the parent record. */
+export async function createRelatedRecord(
+  parentObject: string,
+  parentId: string | number,
+  relatedObject: string,
+  values: Record<string, string>
+): Promise<{ success?: boolean; message?: string; single_record?: unknown; error?: string }> {
+  return request("/agents/api/create-related-record/", {
+    method: "POST",
+    body: JSON.stringify({ parent_object: parentObject, parent_id: parentId, related_object: relatedObject, values }),
+  });
+}
+
 export interface ActivityDraft {
   subject: string;
   activity_type: string;
