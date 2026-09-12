@@ -87,6 +87,12 @@ _STOPWORDS = {
     "discounts", "tax", "taxes", "net", "gross", "month", "months", "week",
     "weeks", "day", "days", "year", "years", "quarter", "quarters", "stage",
     "stages", "status", "industry", "close", "date", "dates", "owner",
+    # Operators / query words (must never be fuzzy-rewritten into object names,
+    # e.g. "contain" → "contractline__c").
+    "contain", "contains", "containing", "equals", "equal", "greater", "less",
+    "than", "start", "starts", "starting", "ends", "ending", "before", "after",
+    "where", "within", "between", "over", "under", "above", "below", "named",
+    "called", "having", "matching", "matches",
 }
 
 _token_re = re.compile(r"[A-Za-z][A-Za-z\-']*")
@@ -155,6 +161,10 @@ def normalize_text(text: str, *, include_intents: bool = True) -> str:
         if not candidates:
             return token
         best = candidates[0]
+        # Never fuzzy-match into a custom-object api name (e.g. 'contain' ~
+        # 'contractline__c'); those are only matched exactly.
+        if best.lower().endswith("__c"):
+            return token
         # Guard against false positives: accept fuzzy matches that keep the first
         # letter (shwo→show, deatils→details, accout→account) or are very close.
         if best[0] != lowered[0] and best != lowered:
