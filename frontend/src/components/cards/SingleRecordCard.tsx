@@ -983,12 +983,12 @@ export default function SingleRecordCard({
     <div data-record-key={recordKey} className="overflow-hidden rounded-lg border border-[#EDEEF1]">
       <div className="flex items-center gap-2 border-b border-[#EDEEF1] bg-[#F7F8FA] px-4 py-2.5">
         <Icon size={14} className="shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+        <span className="min-w-0 flex-1 truncate text-[16px] font-medium text-foreground">
           <span className="font-semibold">{eyebrow}</span>
           <span className="mr-1 text-muted-foreground">:</span>
           <span>{title}</span>
           {metaLine.length > 0 && (
-            <span className="block truncate text-[11px] font-normal text-muted-foreground">
+            <span className="block truncate text-[13px] font-normal text-muted-foreground">
               {metaLine.map((m, i) => (
                 <span key={i}>
                   {i > 0 && <span className="mx-1.5 text-muted-foreground/50">·</span>}
