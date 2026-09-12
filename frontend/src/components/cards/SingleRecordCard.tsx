@@ -872,8 +872,70 @@ export default function SingleRecordCard({
   }, [refreshSelf, payload.object, payload.record_id, onChildUpdated]);
 
   const Icon = objectIcon(live.object);
-  const title = live.record_value != null ? String(live.record_value) : "Record";
   const eyebrow = live.display_label || live.object || "Record";
+
+  // Object-specific header: "Lead: First Last" with a contextual meta line
+  // (Stage · Amount · Close date for opportunities, Q# · Net · Status for
+  // quotes, email/phone for contacts, …).
+  const fieldValue = (name: string): string => {
+    const f = (live.fields || []).find((x) => x.name === name);
+    if (!f) return "";
+    const v = f.display_value ?? f.raw_value ?? f.value;
+    if (v === null || v === undefined) return "";
+    const text = String(v).trim();
+    if (text === "" || text === "None" || text === "null") return "";
+    return text;
+  };
+
+  const fmtMoney = (n: string): string => {
+    if (!n) return "";
+    const num = Number(n);
+    if (Number.isNaN(num)) return n;
+    return num.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+  };
+
+  const headerInfo = (() => {
+    const object = String(live.object || "");
+    const objLower = object.toLowerCase();
+    const date = (v: string) => (v ? formatDate(v) : "");
+
+    if (object === "Lead") {
+      const name = [fieldValue("first_name"), fieldValue("last_name")].filter(Boolean).join(" ").trim();
+      const meta = [fieldValue("email"), fieldValue("phone")].filter(Boolean);
+      return { title: name || fieldValue("leadId") || "Lead", meta };
+    }
+    if (object === "Contact") {
+      const name = [fieldValue("first_name"), fieldValue("last_name")].filter(Boolean).join(" ").trim();
+      const meta = [fieldValue("email"), fieldValue("phone")].filter(Boolean);
+      return { title: name || fieldValue("contactId") || "Contact", meta };
+    }
+    if (object === "Opportunity") {
+      const meta = [fieldValue("stage"), fmtMoney(fieldValue("amount")), date(fieldValue("expected_close_date") || fieldValue("close_date"))].filter(Boolean);
+      return { title: fieldValue("name") || fieldValue("oppid") || "Opportunity", meta };
+    }
+    if (object === "Account") {
+      return { title: fieldValue("name") || fieldValue("accid") || "Account", meta: [] as string[] };
+    }
+    if (object === "Quote") {
+      const discount = (() => {
+        const pct = fieldValue("discount_percentage");
+        const amt = fieldValue("discount_amount");
+        if (pct && pct !== "0" && pct !== "0.00") return `${pct}% off`;
+        if (amt && amt !== "0" && amt !== "0.00") return `-${fmtMoney(amt)}`;
+        return "";
+      })();
+      const meta = [fmtMoney(fieldValue("net_amount")), discount, fieldValue("status")].filter(Boolean);
+      return { title: fieldValue("name") || fieldValue("qteid") || "Quote", meta };
+    }
+    if (objLower.includes("quote") && objLower !== "quote") {
+      // QuoteLine / other quote-ish objects
+      return { title: fieldValue("name") || "Record", meta: [] as string[] };
+    }
+    return { title: live.record_value != null ? String(live.record_value) : "Record", meta: [] as string[] };
+  })();
+
+  const title = headerInfo.title;
+  const metaLine = headerInfo.meta;
   const recordKey = `${live.object ?? ""}:${live.record_id ?? ""}`;
 
   const [layout, setLayout] = useState<{ order: string[]; hidden: string[] }>({
@@ -921,10 +983,20 @@ export default function SingleRecordCard({
     <div data-record-key={recordKey} className="overflow-hidden rounded-lg border border-[#EDEEF1]">
       <div className="flex items-center gap-2 border-b border-[#EDEEF1] bg-[#F7F8FA] px-4 py-2.5">
         <Icon size={14} className="shrink-0 text-muted-foreground" />
-        <span className="min-w-0 truncate text-[13px] font-medium text-foreground">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
           <span className="font-semibold">{eyebrow}</span>
           <span className="mr-1 text-muted-foreground">:</span>
           <span>{title}</span>
+          {metaLine.length > 0 && (
+            <span className="block truncate text-[11px] font-normal text-muted-foreground">
+              {metaLine.map((m, i) => (
+                <span key={i}>
+                  {i > 0 && <span className="mx-1.5 text-muted-foreground/50">·</span>}
+                  {m}
+                </span>
+              ))}
+            </span>
+          )}
         </span>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {ACTIVITY_RELATED_OBJECTS.has(String(live.object || "")) && !showActivityForm && (
