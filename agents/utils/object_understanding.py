@@ -79,6 +79,14 @@ _STOPWORDS = {
     "the", "for", "all", "me", "of", "on", "in", "to", "and", "with", "from",
     "my", "any", "at", "by", "is", "are", "was", "were", "be", "it", "this",
     "that", "a", "an", "please", "can", "you", "could", "would", "id", "ids",
+    # Metric / finance / report words must never be fuzzy-rewritten into object
+    # names (e.g. "amount" → "Account", "value" → "Value"...).
+    "amount", "amounts", "revenue", "total", "totals", "sum", "sums", "average",
+    "averages", "avg", "mean", "forecast", "value", "values", "count", "counts",
+    "number", "numbers", "price", "prices", "quantity", "quantities", "discount",
+    "discounts", "tax", "taxes", "net", "gross", "month", "months", "week",
+    "weeks", "day", "days", "year", "years", "quarter", "quarters", "stage",
+    "stages", "status", "industry", "close", "date", "dates", "owner",
 }
 
 _token_re = re.compile(r"[A-Za-z][A-Za-z\-']*")

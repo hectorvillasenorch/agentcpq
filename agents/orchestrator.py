@@ -537,6 +537,10 @@ def handle_user_request(user,user_message, session_data):
     return response
 
 def orchestrate_request(user, user_message, session_data):
+    # Typo-normalized copy used by the routing guards inside the classifier.
+    from agents.utils.object_understanding import normalize_text as _normalize_text
+
+    fuzzy_message = _normalize_text(user_message) or user_message
     session_context = {
         k: str(v) for k, v in session_data.items()
         if isinstance(v, (str, int, float, list, dict))

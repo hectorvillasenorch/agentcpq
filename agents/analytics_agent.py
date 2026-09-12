@@ -178,6 +178,73 @@ def _parse_basic_list_request(user_message):
     }
 
 
+_FILTERED_LIST_RE = re.compile(
+    r"^(?:can\s+you\s+)?(?:show|list|display|get|find|give\s+me)\s+"
+    r"(?:me\s+)?(?:the\s+|all\s+|my\s+)?"
+    r"(?P<object>[A-Za-z][\w\s]*?)\s+"
+    r"(?:that|where|with)\s+"
+    r"(?P<field>[A-Za-z][\w\s]*?)\s+"
+    r"(?P<operator>contains?|equals?|is|starts?\s+with|ends?\s+with)\s+"
+    r"(?P<value>.+)$",
+    re.IGNORECASE,
+)
+
+_FIELD_SINGULAR = {
+    "names": "name",
+    "skus": "sku",
+    "amounts": "amount",
+    "stages": "stage",
+    "statuses": "status",
+    "types": "type",
+    "categories": "category",
+    "industries": "industry",
+    "emails": "email",
+    "phones": "phone",
+    "prices": "price",
+}
+
+
+def _parse_filtered_list_request(user_message):
+    """'show products that names contain SympleOps' → filtered Product list."""
+    if not user_message:
+        return None
+    match = _FILTERED_LIST_RE.match(user_message.strip())
+    if not match:
+        return None
+
+    resolved_object = _resolve_metrics_object_name(match.group("object").strip())
+    if not resolved_object:
+        return None
+
+    field = match.group("field").strip().lower().rstrip(".")
+    field = _FIELD_SINGULAR.get(field, field)
+
+    op_raw = " ".join(match.group("operator").lower().split())
+    operator = {
+        "contains": "contains",
+        "contain": "contains",
+        "equals": "equals",
+        "equal": "equals",
+        "is": "equals",
+        "starts with": "starts_with",
+        "ends with": "ends_with",
+    }.get(op_raw)
+    if operator is None:
+        return None
+
+    value = match.group("value").strip().strip("'\"").rstrip(".")
+    if not value:
+        return None
+
+    return {
+        "object": resolved_object,
+        "method": "read",
+        "conditions": [{"field": field, "operator": operator, "value": value}],
+        "sort": {"field": "created_at", "order": "desc"},
+        "limit": 100,
+    }
+
+
 _SUMMARY_OBJECT_MAP = (
     (r"\bopportunit", "Opportunity"),
     (r"\bdeals?\b", "Opportunity"),
@@ -626,7 +693,8 @@ def show_metrics(user, user_message, session_data):
     last_object = session_data["state"].get("last_metrics_object")
 
     direct_request = (
-        _parse_grouped_metrics_request(user_message)
+        _parse_filtered_list_request(user_message)
+        or _parse_grouped_metrics_request(user_message)
         or _parse_groupby_field_request(user_message)
         or _parse_revenue_request(user_message)
         or _parse_pipeline_forecast_request(user_message)
