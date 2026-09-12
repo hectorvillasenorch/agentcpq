@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { MessageSquare, Pencil, Plus, Settings, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Settings, Trash2 } from "lucide-react";
 import type { ChatSession } from "../lib/types";
 
 interface SidebarProps {
@@ -29,6 +29,21 @@ function formatRelative(iso: string): string {
 export default function Sidebar({ sessions, activeId, onSelect, onNew, onDelete, onRename, isAdmin }: SidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem("agentcpq.sidebarCollapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("agentcpq.sidebarCollapsed", collapsed ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [collapsed]);
 
   const startEdit = (s: ChatSession) => {
     setEditingId(s.session_id);
@@ -41,6 +56,63 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onDelete,
     setEditingId(null);
   };
 
+  if (collapsed) {
+    return (
+      <aside className="flex h-full w-14 shrink-0 flex-col items-center gap-2 border-r border-border bg-background py-4">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <img src="/static/img/agentcpq-chat-icon-white.png" alt="AgentCPQ" className="h-5 w-5 object-contain" />
+        </div>
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          aria-label="Expand sidebar"
+          title="Expand sidebar"
+          className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <PanelLeftOpen size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={onNew}
+          aria-label="New chat"
+          title="New chat"
+          className="mt-1 rounded-lg border border-border bg-white p-2 text-foreground transition-colors hover:bg-muted"
+        >
+          <Plus size={15} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          aria-label="Show conversations"
+          title={`${sessions.length} conversation(s)`}
+          className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <MessageSquare size={16} />
+        </button>
+        <div className="mt-auto flex flex-col items-center gap-2">
+          {isAdmin && (
+            <a
+              href="/cpq/admin/custom-fields/"
+              aria-label="Admin"
+              title="Admin"
+              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Settings size={16} />
+            </a>
+          )}
+          <a
+            href="/logout/"
+            aria-label="Sign out"
+            title="Sign out"
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <span className="block h-5 w-5 rounded-full bg-muted" />
+          </a>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-background">
       <div className="flex items-center gap-2.5 px-5 pb-4 pt-5">
@@ -48,6 +120,15 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onDelete,
           <img src="/static/img/agentcpq-chat-icon-white.png" alt="AgentCPQ" className="h-5 w-5 object-contain" />
         </div>
         <div className="text-[15px] font-semibold tracking-tight">AgentCPQ</div>
+        <button
+          type="button"
+          onClick={() => setCollapsed(true)}
+          aria-label="Collapse sidebar"
+          title="Collapse sidebar"
+          className="ml-auto rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <PanelLeftClose size={16} />
+        </button>
       </div>
 
       <div className="px-3 pb-3">
