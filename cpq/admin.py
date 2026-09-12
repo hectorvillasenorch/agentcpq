@@ -118,8 +118,22 @@ class DynamicCustomFieldAdmin(admin.ModelAdmin):
 @admin.register(CustomObject)
 class CustomObjectAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(CustomObject, crm="AgentCPQ", object_type="CustomObject")
-    list_display = ('name', 'label', 'description', 'created_by', 'created_at_js')  # Adjust as needed
-    search_fields = ("name", "label")
+    list_display = ("label", "name", "fields_count", "record_count", "show_in_sidebar", "created_by", "created_at_js")
+    list_filter = ("show_in_sidebar",)
+    search_fields = ("name", "label", "description")
+    ordering = ("label",)
+    list_per_page = 50
+
+    @admin.display(description="Fields")
+    def fields_count(self, obj):
+        return obj.custom_fields.count()
+
+    @admin.display(description="Records")
+    def record_count(self, obj):
+        try:
+            return obj.records.count()
+        except Exception:
+            return "—"
 
 
 @admin.register(CustomObjectPermission)
@@ -209,7 +223,9 @@ class GroupAdmin(DjangoGroupAdmin):
 class CustomFieldAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = get_dynamic_form(CustomField, crm="AgentCPQ", object_type="CustomField")
     list_display = ("label", "name", "data_type", "object_type", "custom_object", "created_by", "created_at_js")
+    list_filter = ("data_type", "object_type", "custom_object")
     search_fields = ("label", "name", "object_type", "crm", "custom_object__name", "custom_object__label")
+    ordering = ("custom_object__label", "object_type", "label")
 
 
 class CustomFieldValueInline(admin.TabularInline):
