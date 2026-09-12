@@ -56,6 +56,25 @@ def _label_for(field: CustomField) -> str:
     return field.label or (field.name or "").replace("__c", "").replace("_", " ").title()
 
 
+def _lookup_queryset(lookup_model: str):
+    """Queryset for a lookup custom field's target model (e.g. 'cpq.Opportunity')."""
+    try:
+        from django.apps import apps as django_apps
+
+        label, _, model_name = (lookup_model or "").partition(".")
+        if not label or not model_name:
+            return None
+        model = django_apps.get_model(label, model_name)
+    except Exception:
+        return None
+    if model is None:
+        return None
+    try:
+        return model._default_manager.all()
+    except Exception:
+        return None
+
+
 def _form_field(field: CustomField) -> forms.Field:
     data_type = (field.data_type or "text").lower()
     label = _label_for(field)
@@ -83,6 +102,16 @@ def _form_field(field: CustomField) -> forms.Field:
     if data_type == "datetime":
         return forms.DateTimeField(required=required, label=label)
 
+    if data_type == "lookup" and (field.lookup_model or "").strip():
+        target = _lookup_queryset(field.lookup_model)
+        if target is not None:
+            return forms.ModelChoiceField(
+                queryset=target,
+                required=required,
+                label=label,
+                empty_label="—",
+            )
+
     if data_type in {"textarea", "text_multiline"}:
         return forms.CharField(required=required, label=label, widget=forms.Textarea(attrs={"rows": 3}))
 
@@ -104,6 +133,10 @@ def _initial_values(record: Optional[CustomRecord], custom_fields) -> Dict[str, 
         data_type = (field.data_type or "text").lower()
         if data_type in {"boolean", "checkbox"}:
             initial[_key_for(field)] = str(raw).lower() in {"true", "1", "yes"}
+        elif data_type == "lookup" and (field.lookup_model or "").strip():
+            queryset = _lookup_queryset(field.lookup_model)
+            obj = queryset.filter(pk=raw).first() if queryset is not None and str(raw).isdigit() else None
+            initial[_key_for(field)] = obj or raw
         else:
             initial[_key_for(field)] = raw
     return initial
@@ -120,6 +153,8 @@ def _save_values(record: CustomRecord, custom_fields, cleaned: Dict[str, object]
         value = cleaned.get(key)
         if value is None:
             text = ""
+        elif hasattr(value, "pk"):
+            text = str(value.pk)
         elif isinstance(value, bool):
             text = "true" if value else "false"
         else:

@@ -418,7 +418,7 @@ def handle_custom_fields_creation(user, extracted_custom_fields, response_messag
             "object_type": object_type if custom_object_name is None else custom_object_name,
             "required": required if required else False,
             "custom_object_name": custom_object_name if custom_object_name else None,
-            "lookup_model": lookup_model if lookup_model else "",
+            "lookup_model": (lookup_model or "") if (data_type or "").lower() == "lookup" else "",
             "options": options if options else None
         }
 
