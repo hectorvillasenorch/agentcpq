@@ -457,6 +457,17 @@ class Opportunity(models.Model):
     def save(self, *args, **kwargs):
         if not self.oppid:
             self.oppid = generate_agentcpq_id()
+
+        # The Amount follows the primary quote: whenever a primary quote is set
+        # (or changed), the opportunity amount mirrors its net amount.
+        if not getattr(self, "_skip_amount_sync", False) and self.primary_quote_id:
+            try:
+                quote_net = self.primary_quote.net_amount
+            except Exception:
+                quote_net = None
+            if quote_net is not None and self.amount != quote_net:
+                self.amount = quote_net
+
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -711,6 +722,19 @@ class Quote(models.Model):
             self.name = f"Q-{self.pk:05d}"
 
         if is_new:
+            # Numeric columns are NOT NULL: seed them so a quote can be created
+            # without passing amounts explicitly (they are recalculated below).
+            for field_name in (
+                "subtotal",
+                "discount_amount",
+                "discount_percentage",
+                "tax_amount",
+                "tax_percentage",
+                "net_amount",
+            ):
+                if getattr(self, field_name, None) is None:
+                    setattr(self, field_name, Decimal("0.00"))
+
             # Solo guardar sin lógica extra, evitar conflictos con force_insert
             super().save(*args, **kwargs)
 
@@ -822,12 +846,20 @@ class QuoteLine(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_quote_lines')
     updated_at = models.DateTimeField(auto_now=True)
 
+    def _as_decimal(self, value) -> Decimal:
+        """Coerce ints/floats/strings to Decimal (float fields/inputs are common)."""
+        if value is None:
+            return Decimal("0.00")
+        if isinstance(value, Decimal):
+            return value
+        return Decimal(str(value))
+
     def update_discount_fields(self):
         """Update discount_amount or discount_percentage according to discount_type."""
-        unit_price = self.unit_price
+        unit_price = self._as_decimal(self.unit_price)
 
-        self.discount_percentage = max(self.discount_percentage, Decimal("0.00"))
-        self.discount_amount = max(self.discount_amount, Decimal("0.00"))
+        self.discount_percentage = max(self._as_decimal(self.discount_percentage), Decimal("0.00"))
+        self.discount_amount = max(self._as_decimal(self.discount_amount), Decimal("0.00"))
 
         if self.discount_type == "percentage":
             self.discount_amount = (
@@ -844,32 +876,34 @@ class QuoteLine(models.Model):
 
     def update_subtotal(self):
         """Calculate subtotal = unit_price - discount_per_unit"""
+        unit_price = self._as_decimal(self.unit_price)
         if self.discount_type == "amount":
-            discount_per_unit = self.discount_amount
+            discount_per_unit = self._as_decimal(self.discount_amount)
         elif self.discount_type == "percentage":
             discount_per_unit = (
-                self.unit_price * self.discount_percentage / Decimal("100.00")
+                unit_price * self._as_decimal(self.discount_percentage) / Decimal("100.00")
             ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         else:
             discount_per_unit = Decimal("0.00")
 
-        discount_per_unit = min(discount_per_unit, self.unit_price)
+        discount_per_unit = min(discount_per_unit, unit_price)
 
         self.subtotal = (self.unit_price - discount_per_unit).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     def update_total_price(self):
         """Calculate total_price = quantity * unit_price - discount according to discount_type"""
 
+        unit_price = self._as_decimal(self.unit_price)
         if self.discount_type == "amount":
-            discount_per_unit = self.discount_amount
+            discount_per_unit = self._as_decimal(self.discount_amount)
         elif self.discount_type == "percentage":
             discount_per_unit = (
-                self.unit_price * self.discount_percentage / Decimal("100.00")
+                unit_price * self._as_decimal(self.discount_percentage) / Decimal("100.00")
             ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         else:
             discount_per_unit = Decimal("0.00")
 
-        discount_per_unit = min(discount_per_unit, self.unit_price)  # Evitar que el descuento sea mayor al unit price
+        discount_per_unit = min(discount_per_unit, unit_price)  # Evitar que el descuento sea mayor al unit price
 
         unit_net_price = self.unit_price - discount_per_unit
         base_price = unit_net_price * self.quantity
@@ -1001,6 +1035,38 @@ class QuoteLine(models.Model):
             self.check_if_is_bundle_component_deselected()
 
         super().save(*args, **kwargs)
+
+        # Keep the parent quote (and therefore the opportunity amount) in sync:
+        # line changes must recalculate subtotal / net amount.
+        self.sync_parent_quote()
+
+    def sync_parent_quote(self):
+        """Recalculate the parent quote totals from its lines."""
+        quote = getattr(self, "quote", None)
+        if quote is None:
+            return
+        try:
+            quote.subtotal = quote.get_subtotal_amount()
+            quote.update_discount_fields()
+            quote.update_net_amount()
+            quote.save(update_fields=["subtotal", "discount_percentage", "discount_amount", "net_amount"])
+        except Exception:
+            logging.getLogger(__name__).exception("Unable to recalc quote %s from line %s", getattr(quote, "pk", None), getattr(self, "pk", None))
+
+    def delete(self, *args, **kwargs):
+        quote = getattr(self, "quote", None)
+        result = super().delete(*args, **kwargs)
+        if quote is not None:
+            try:
+                quote.refresh_from_db()
+            except Exception:
+                pass
+            quote.subtotal = quote.get_subtotal_amount()
+            quote.update_discount_fields()
+            quote.update_net_amount()
+            quote.save(update_fields=["subtotal", "discount_percentage", "discount_amount", "net_amount"])
+        return result
+
 
     def __str__(self):
         return f"{self.product.name} ({self.quantity}x)"

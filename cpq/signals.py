@@ -44,6 +44,40 @@ def handle_primary_quote_sync(sender, instance, **kwargs):
     if instance.hs_primary and instance.hs_deal_id:
         sync_quote_to_hubspot(instance)
 
+@receiver(post_save, sender=Quote)
+def sync_opportunity_amount_from_quote(sender, instance, created, **kwargs):
+    """Keep Opportunity.amount in sync with its primary quote's net amount.
+
+    Built-in behaviour (no action trigger required): whenever the primary quote
+    is saved — new lines, discounts, tax, status changes — the opportunity amount
+    follows. Quotes that are not the primary quote never touch the amount.
+    """
+    if should_skip_signals():
+        return
+
+    opportunity = getattr(instance, "opportunity", None)
+    if opportunity is None:
+        return
+
+    net = instance.net_amount
+    if net is None:
+        return
+
+    primary_id = opportunity.primary_quote_id
+
+    if primary_id is None:
+        # No primary yet: the first quote marked primary becomes it.
+        if getattr(instance, "is_primary", False):
+            Opportunity.objects.filter(pk=opportunity.pk).update(primary_quote=instance, amount=net)
+        return
+
+    if primary_id != instance.pk:
+        return
+
+    if opportunity.amount != net:
+        Opportunity.objects.filter(pk=opportunity.pk).update(amount=net)
+
+
 @receiver(post_save, sender=CustomField)
 def set_custom_fields_to_quote_template(sender, instance, **kwargs):
     if should_skip_signals():
