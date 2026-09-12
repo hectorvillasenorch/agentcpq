@@ -1524,3 +1524,11 @@ class ObjectRelationConfigAdmin(admin.ModelAdmin):
         if not obj.created_by_id:
             obj.created_by = request.user
         super().save_model(request, obj, form, change)
+
+# ---------------------------------------------------------------------------
+# Dynamic admin entries: one per custom object (POV, G-Drive Documentation, …)
+# so each behaves like a real model in the admin (browse / add / change / delete).
+# ---------------------------------------------------------------------------
+from cpq.dynamic_admin import patch_admin_site  # noqa: E402
+
+patch_admin_site(admin.site)
