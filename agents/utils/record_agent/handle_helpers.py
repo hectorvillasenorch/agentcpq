@@ -464,7 +464,7 @@ def build_related_records(record: Model, model_name: str) -> List[Dict[str, obje
             _row(o, {"stage": o.stage or "", "amount": str(o.amount) if o.amount is not None else ""})
             for o in record.opportunities.all()[:15]
         ])
-        acts = Activity.objects.filter(Q(opportunity__account=record) | Q(contact__account=record)).distinct().order_by("-created_at")
+        acts = Activity.objects.filter(Q(opportunity__account=record) | Q(contact__account=record) | Q(account=record)).distinct().order_by("-created_at")
         _add("Activities", "Activity", _activities(acts))
         _add("Quotes", "Quote", _quotes(record.quotes.all()))
 

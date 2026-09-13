@@ -495,6 +495,7 @@ class Activity(models.Model):
     lead = models.ForeignKey('Lead', on_delete=models.SET_NULL, null=True, blank=True, related_name='activities')
     opportunity = models.ForeignKey('Opportunity', on_delete=models.SET_NULL, null=True, blank=True, related_name='activities')
     contact = models.ForeignKey('Contact', on_delete=models.SET_NULL, null=True, blank=True, related_name='activities')
+    account = models.ForeignKey('Account', on_delete=models.SET_NULL, null=True, blank=True, related_name='activities')
     notes = models.TextField(blank=True)
     activityid = models.CharField(max_length=18, unique=True, db_index=True, editable=False)
     external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)

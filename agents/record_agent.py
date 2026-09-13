@@ -408,7 +408,7 @@ def show_record_activities(user, user_message, session_data):
     from django.db.models import Q
 
     if object_name == "Account":
-        qs = Activity.objects.filter(Q(opportunity__account=record) | Q(contact__account=record)).distinct()
+        qs = Activity.objects.filter(Q(opportunity__account=record) | Q(contact__account=record) | Q(account=record)).distinct()
     else:
         qs = Activity.objects.filter(**{supported[object_name]: record})
 

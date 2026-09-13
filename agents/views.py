@@ -682,8 +682,8 @@ def create_activity_for_record(request):
     """Create an Activity already linked to the record open in the chat record form.
 
     POST JSON: {object, record_id, subject, activity_type, status, due_date, notes}
-    Lead/Opportunity/Contact link directly; Account links via its newest opportunity
-    (or contact), since Activity has no direct account FK.
+    Lead/Opportunity/Contact link directly (plus their account); Account links
+    directly to the account (and its newest opportunity/contact when present).
     """
     import json as _json
     from django.utils.dateparse import parse_date
@@ -713,32 +713,38 @@ def create_activity_for_record(request):
     if status not in dict(Activity.STATUS_CHOICES):
         return JsonResponse({"error": f"Invalid status '{status}'."}, status=400)
 
-    link_field = None
-    link_value = None
+    link_kwargs = {}
     linked_note = ""
 
     try:
         if object_name == "Lead":
-            link_field, link_value = "lead", Lead.objects.get(pk=record_id)
+            lead = Lead.objects.get(pk=record_id)
+            link_kwargs["lead"] = lead
+            if lead.account_id:
+                link_kwargs["account"] = lead.account
         elif object_name == "Opportunity":
-            link_field, link_value = "opportunity", Opportunity.objects.get(pk=record_id)
+            opp = Opportunity.objects.get(pk=record_id)
+            link_kwargs["opportunity"] = opp
+            if opp.account_id:
+                link_kwargs["account"] = opp.account
         elif object_name == "Contact":
-            link_field, link_value = "contact", Contact.objects.get(pk=record_id)
+            contact = Contact.objects.get(pk=record_id)
+            link_kwargs["contact"] = contact
+            if contact.account_id:
+                link_kwargs["account"] = contact.account
         elif object_name == "Account":
             account = Account.objects.get(pk=record_id)
+            # Link directly to the account — no opportunity/contact required.
+            link_kwargs["account"] = account
             opp = account.opportunities.order_by("-id").first()
             if opp is not None:
-                link_field, link_value = "opportunity", opp
+                link_kwargs["opportunity"] = opp
                 linked_note = f" (linked to Opportunity '{opp.name}')"
             else:
                 contact = account.contacts.order_by("-id").first()
-                if contact is None:
-                    return JsonResponse(
-                        {"error": "This Account has no opportunity or contact to attach an activity to yet."},
-                        status=400,
-                    )
-                link_field, link_value = "contact", contact
-                linked_note = f" (linked to Contact '{contact}')"
+                if contact is not None:
+                    link_kwargs["contact"] = contact
+                    linked_note = f" (linked to Contact '{contact}')"
         else:
             return JsonResponse({"error": f"Activities can't be linked directly to {object_name}."}, status=400)
     except (Lead.DoesNotExist, Opportunity.DoesNotExist, Contact.DoesNotExist, Account.DoesNotExist):
@@ -752,7 +758,7 @@ def create_activity_for_record(request):
             due_date=due_date,
             notes=notes,
             created_by=request.user,
-            **{link_field: link_value},
+            **link_kwargs,
         )
     except Exception as exc:  # noqa: BLE001
         return JsonResponse({"error": f"Failed to create activity: {exc}"}, status=500)
