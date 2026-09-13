@@ -157,6 +157,19 @@ def resolve_metrics_object_name(raw_object: str) -> str | None:
         "accts": "Account",
         "prod": "Product",
         "prods": "Product",
+        "activity": "Activity",
+        "activities": "Activity",
+        "quote": "Quote",
+        "quotes": "Quote",
+        "contract": "Contract",
+        "contracts": "Contract",
+        "subscription": "Subscription",
+        "subscriptions": "Subscription",
+        "tenant": "Tenant",
+        "tenants": "Tenant",
+        "knowledge": "Knowledge",
+        "option": "Option",
+        "options": "Option",
     }
     alias_target = alias_map.get(cleaned.lower())
     if alias_target and get_object_metadata(alias_target):

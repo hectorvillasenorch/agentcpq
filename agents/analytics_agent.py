@@ -189,6 +189,78 @@ _FILTERED_LIST_RE = re.compile(
     re.IGNORECASE,
 )
 
+_ONLY_FILTER_RE = re.compile(
+    r"^(?:show|list|display|get|find)\s+(?:me\s+)?(?:the\s+)?only\s+"
+    r"(?P<value>.+?)\s+(?P<object>[A-Za-z][\w]*)\s*$",
+    re.IGNORECASE,
+)
+
+_ACTIVITY_STATUS_MAP = {
+    "not started": "not_started",
+    "not_started": "not_started",
+    "in progress": "in_progress",
+    "in_progress": "in_progress",
+    "completed": "completed",
+    "complete": "completed",
+    "done": "completed",
+    "deferred": "deferred",
+    "postponed": "deferred",
+    "open": "not_started",
+}
+
+
+def _parse_only_filter_request(user_message):
+    """'show only not started activities' → Activity status=not_started filter.
+
+    Also handles 'show only closed won opportunities' (stage) and
+    'show only draft quotes' (status).
+    """
+    if not user_message:
+        return None
+    match = _ONLY_FILTER_RE.match(user_message.strip())
+    if not match:
+        return None
+
+    resolved_object = _resolve_metrics_object_name(match.group("object").strip())
+    if not resolved_object:
+        return None
+
+    raw_value = " ".join(match.group("value").split()).strip().lower()
+
+    field = None
+    value = raw_value
+    operator = "equals"
+
+    if resolved_object == "Activity":
+        field = "status"
+        value = _ACTIVITY_STATUS_MAP.get(raw_value, raw_value.replace(" ", "_"))
+    elif resolved_object == "Opportunity":
+        field = "stage"
+        # apply_operator normalizes Opportunity.stage (lower, strip spaces).
+    elif resolved_object == "Quote":
+        field = "status"
+        value = raw_value.title()
+    elif resolved_object == "Contract":
+        field = "status"
+        value = raw_value.title()
+    elif resolved_object == "Lead":
+        field = "status"
+    elif resolved_object == "Subscription":
+        field = "status"
+        value = raw_value.title()
+
+    if not field:
+        return None
+
+    return {
+        "object": resolved_object,
+        "method": "read",
+        "conditions": [{"field": field, "operator": operator, "value": value}],
+        "sort": {"field": "created_at", "order": "desc"},
+        "limit": 100,
+    }
+
+
 _FIELD_SINGULAR = {
     "names": "name",
     "skus": "sku",
@@ -694,6 +766,7 @@ def show_metrics(user, user_message, session_data):
 
     direct_request = (
         _parse_filtered_list_request(user_message)
+        or _parse_only_filter_request(user_message)
         or _parse_grouped_metrics_request(user_message)
         or _parse_groupby_field_request(user_message)
         or _parse_revenue_request(user_message)
