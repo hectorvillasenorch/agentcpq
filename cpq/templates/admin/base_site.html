@@ -44,6 +44,27 @@
   {{ block.super }}
   <script>
     document.addEventListener("DOMContentLoaded", function () {
+      // 2026 form polish: drop trailing colons from labels + clean empty inlines.
+      document.querySelectorAll(".aligned label, .form-row label").forEach(function (label) {
+        var text = label.textContent;
+        if (text.trim().endsWith(":")) {
+          label.textContent = text.replace(/:\s*$/, "");
+        }
+      });
+      document.querySelectorAll(".inline-group .tabular").forEach(function (inline) {
+        var tbody = inline.querySelector("tbody");
+        var rows = tbody ? Array.prototype.slice.call(tbody.querySelectorAll("tr")).filter(function (r) {
+          return !r.classList.contains("empty-form");
+        }) : [];
+        if (rows.length === 0) {
+          inline.classList.add("no-rows");
+          var empty = document.createElement("p");
+          empty.className = "inline-empty";
+          empty.textContent = "No records yet — use \u201cAdd\u201d above to create one.";
+          inline.insertBefore(empty, inline.firstChild);
+        }
+      });
+
       const dropdowns = document.querySelectorAll(".admin-user-dropdown");
       const dropdownTriggers = document.querySelectorAll(".admin-user-dropdown > summary");
       const isPasswordChangePage = /\/admin\/password_change\/?$/.test(window.location.pathname);
