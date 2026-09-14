@@ -1087,10 +1087,10 @@ input[type="email"]:not(.browser-default):focus:not([readonly]) + label {
 .main-content .cpq-btn--primary,
 .main-content .add-field-btn,
 .main-content button.btn {
-  background-color: #4662c9 !important;
+  background-color: #fc6a3d !important;
 }
 .main-content a:not(.btn):not(.add-field-btn):not(.cpq-btn):not(.cpq-btn--primary):not(.cpq-btn--ghost):not(.cpq-btn--secondary) {
-  color: #4662c9;
+  color: #fc6a3d;
 }
 .main-content a:not(.btn):not(.add-field-btn):not(.cpq-btn):not(.cpq-btn--primary):not(.cpq-btn--ghost):not(.cpq-btn--secondary):hover {
   color: #3650ab;

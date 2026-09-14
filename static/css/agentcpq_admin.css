@@ -11,9 +11,9 @@
   --adm-border-strong: #e2e8f0;
   --adm-text: #1a202c;
   --adm-muted: #64748b;
-  --adm-primary: #0d9488;
-  --adm-primary-hover: #0f766e;
-  --adm-primary-soft: #f0fdfa;
+  --adm-primary: #fc6a3d;
+  --adm-primary-hover: #e2551f;
+  --adm-primary-soft: #fff3ed;
   --adm-danger: #dc2626;
   --adm-success: #16a34a;
   --adm-warning: #d97706;
@@ -27,7 +27,7 @@
      the same variables that django/contrib/admin dark_mode.css sets — including
      the html[data-theme="dark"] block (higher specificity than plain :root). */
   color-scheme: light;
-  --primary: #0d9488;
+  --primary: #fc6a3d;
   --primary-fg: #ffffff;
   --secondary: #fafbfc;
   --body-fg: #1a202c;
@@ -37,13 +37,13 @@
   --body-loud-color: #1a202c;
   --header-bg: #ffffff;
   --header-color: #1a202c;
-  --header-link-color: #0d9488;
+  --header-link-color: #fc6a3d;
   --breadcrumbs-bg: #ffffff;
   --breadcrumbs-fg: #64748b;
-  --breadcrumbs-link-fg: #0d9488;
-  --link-fg: #0d9488;
-  --link-hover-color: #0f766e;
-  --link-selected-fg: #0d9488;
+  --breadcrumbs-link-fg: #fc6a3d;
+  --link-fg: #fc6a3d;
+  --link-hover-color: #e2551f;
+  --link-selected-fg: #fc6a3d;
   --hairline-color: #edf0f4;
   --border-color: #e2e8f0;
   --error-fg: #dc2626;
@@ -54,11 +54,11 @@
   --message-error-bg: #fef2f2;
   --message-error-fg: #991b1b;
   --darkened-bg: #f8fafc;
-  --selected-bg: #f0fdfa;
-  --selected-row: #f0fdfa;
-  --button-bg: #0d9488;
+  --selected-bg: #fff3ed;
+  --selected-row: #fff3ed;
+  --button-bg: #fc6a3d;
   --button-fg: #ffffff;
-  --button-hover-bg: #0f766e;
+  --button-hover-bg: #e2551f;
   --field-bg: #ffffff;
   --field-fg: #1a202c;
   --field-border-color: #e2e8f0;
@@ -71,7 +71,7 @@
 html[data-theme="dark"],
 html[data-theme="auto"] {
   color-scheme: light;
-  --primary: #0d9488;
+  --primary: #fc6a3d;
   --primary-fg: #ffffff;
   --secondary: #fafbfc;
   --body-fg: #1a202c;
@@ -81,13 +81,13 @@ html[data-theme="auto"] {
   --body-loud-color: #1a202c;
   --header-bg: #ffffff;
   --header-color: #1a202c;
-  --header-link-color: #0d9488;
+  --header-link-color: #fc6a3d;
   --breadcrumbs-bg: #ffffff;
   --breadcrumbs-fg: #64748b;
-  --breadcrumbs-link-fg: #0d9488;
-  --link-fg: #0d9488;
-  --link-hover-color: #0f766e;
-  --link-selected-fg: #0d9488;
+  --breadcrumbs-link-fg: #fc6a3d;
+  --link-fg: #fc6a3d;
+  --link-hover-color: #e2551f;
+  --link-selected-fg: #fc6a3d;
   --hairline-color: #edf0f4;
   --border-color: #e2e8f0;
   --error-fg: #dc2626;
@@ -98,11 +98,11 @@ html[data-theme="auto"] {
   --message-error-bg: #fef2f2;
   --message-error-fg: #991b1b;
   --darkened-bg: #f8fafc;
-  --selected-bg: #f0fdfa;
-  --selected-row: #f0fdfa;
-  --button-bg: #0d9488;
+  --selected-bg: #fff3ed;
+  --selected-row: #fff3ed;
+  --button-bg: #fc6a3d;
   --button-fg: #ffffff;
-  --button-hover-bg: #0f766e;
+  --button-hover-bg: #e2551f;
   --field-bg: #ffffff;
   --field-fg: #1a202c;
   --field-border-color: #e2e8f0;
@@ -678,7 +678,7 @@ textarea:focus,
 select:focus,
 .vTextField:focus {
   border-color: var(--adm-primary);
-  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
+  box-shadow: 0 0 0 3px rgba(252, 106, 61, 0.15);
 }
 select {
   cursor: pointer;
@@ -1248,7 +1248,7 @@ body.dashboard #content-main .module td a.viewlink {
   background-image: none !important;
 }
 body.dashboard #content-main .module td a.addlink {
-  border-color: #99f6e4;
+  border-color: #ffd9c7;
   background: var(--adm-primary-soft);
   color: var(--adm-primary);
 }
@@ -1686,7 +1686,7 @@ body.dashboard #content-main .app-sessions.module caption a.section::before {
 .form-row textarea:focus,
 .form-row select:focus {
   border-color: var(--adm-primary);
-  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
+  box-shadow: 0 0 0 3px rgba(252, 106, 61, 0.18);
 }
 
 /* Save row: one primary, the rest ghost, consistent casing */
@@ -1875,14 +1875,14 @@ td.field-expiration_date {
   font-weight: 600;
   letter-spacing: 0.4px;
   text-transform: uppercase;
-  background: var(--adm-primary-soft);
-  color: var(--adm-primary);
+  background: #fff1e9;
+  color: #c2410c;
   white-space: nowrap;
 }
 .adm-pill--green { background: #e7f7ef; color: #15803d; }
 .adm-pill--red { background: #fdeaea; color: #dc2626; }
-.adm-pill--amber { background: #fef3e2; color: #b45309; }
-.adm-pill--purple { background: #f1ecfd; color: #7c3aed; }
+.adm-pill--amber { background: #ffe8d6; color: #9a3412; }
+.adm-pill--purple { background: #fff1e9; color: #c2410c; }
 .adm-pill--gray { background: #f1f3f5; color: #64748b; }
 
 /* tighter, uniform micro-headers */
@@ -2005,7 +2005,7 @@ body.dashboard #content-main { float: none !important; width: 100% !important; }
 }
 .admin-kpi:hover {
   border-color: var(--adm-primary);
-  box-shadow: 0 4px 16px rgba(13, 148, 136, 0.10);
+  box-shadow: 0 4px 16px rgba(252, 106, 61, 0.12);
 }
 .admin-kpi-label {
   font-size: 12px;
@@ -2098,16 +2098,17 @@ body.dashboard #content-main { float: none !important; width: 100% !important; }
   background: var(--adm-primary-soft);
 }
 
-/* Dashboard: drop the reserved sidebar space so content is truly full-width */
-body.dashboard #nav-sidebar,
-body.dashboard .toggle-nav-sidebar {
+/* Navigation lives in the header now: drop the sidebar on ALL admin views and
+   let the content use the full width (also stops tables clipping). */
+#nav-sidebar,
+.toggle-nav-sidebar {
   display: none !important;
 }
-body.dashboard .main,
-body.dashboard #main {
+.main,
+#main {
   display: block !important;
 }
-body.dashboard #content-start {
+#content-start {
   width: 100% !important;
   max-width: none !important;
 }
@@ -2116,4 +2117,113 @@ body.dashboard #content-start {
    hero → KPI row → app grid vertically. */
 body.dashboard #content-main {
   display: block !important;
+}
+
+
+/* ===================== Header navigation (readable, no underline) ========= */
+#header a,
+#header a:link,
+#header a:visited,
+#header a:hover,
+#header a:focus,
+#header a:active {
+  text-decoration: none !important;
+}
+#header .admin-topnav a,
+#header .admin-topnav-link,
+#header .admin-topnav-link:link,
+#header .admin-topnav-link:visited {
+  color: #475569 !important;
+  text-decoration: none !important;
+  background: transparent !important;
+}
+#header .admin-topnav-link:hover,
+#header .admin-topnav-link:focus {
+  color: #0f172a !important;
+  background: #f1f5f9 !important;
+  text-decoration: none !important;
+}
+#header .admin-topnav-link.is-active,
+#header .admin-topnav-link.is-active:link,
+#header .admin-topnav-link.is-active:visited,
+#header .admin-topnav-link.is-active:hover {
+  color: #c2410c !important;
+  background: #fff1e9 !important;
+  text-decoration: none !important;
+}
+#header .admin-topnav-link.is-active::after {
+  display: none !important;
+  content: none !important;
+}
+
+
+/* Custom "*_js" date columns (UTC display helpers) — mono + no wrap */
+td.field-created_at_js,
+td.field-updated_at_js,
+td.field-created_js,
+td.field-modified_js,
+td.field-generated_at,
+td.field-executed_at,
+td.field-send_at,
+td.field-timestamp {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  color: var(--adm-muted);
+  white-space: nowrap;
+}
+
+
+/* Sidebar: calm gray links, orange only for hover/active */
+#nav-sidebar a,
+#nav-sidebar td a {
+  color: #475569 !important;
+}
+#nav-sidebar a:hover,
+#nav-sidebar td a:hover {
+  color: #fc6a3d !important;
+}
+#nav-sidebar .current-model a,
+#nav-sidebar .current-app caption a {
+  color: #c2410c !important;
+}
+
+/* Let the changelist scroll horizontally instead of clipping under the filter */
+#changelist #changelist-form {
+  min-width: 0;
+}
+#changelist-form .results {
+  overflow-x: auto !important;
+}
+#result_list {
+  width: auto !important;
+  min-width: 100%;
+}
+#result_list tbody td.field-phone,
+#result_list tbody td.field-email,
+#result_list tbody td.field-website,
+#result_list tbody td.field-external_id {
+  white-space: nowrap;
+}
+
+
+/* "Show counts" toggle: orange eye instead of Django's blue icon */
+#changelist-filter .viewlink {
+  background-image: none !important;
+  padding-left: 0 !important;
+  color: #fc6a3d !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#changelist-filter .viewlink::before {
+  content: "visibility";
+  font-family: "Material Icons";
+  font-size: 16px;
+  line-height: 1;
+  color: #fc6a3d;
+}
+
+/* Slightly narrower filter rail so the table has more room */
+#changelist-filter {
+  flex: 0 0 220px;
 }

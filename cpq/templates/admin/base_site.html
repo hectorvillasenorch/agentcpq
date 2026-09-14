@@ -64,7 +64,7 @@
         if (/(closedlost|lost|overdue|cancelled|canceled|expired|failed|rejected|false|no|cold|churned|disabled|terminated)/.test(t)) return "adm-pill--red";
         if (/(pending|inprogress|scheduled|deferred|paused|draft|qualified|notstarted|warm|processing|queued)/.test(t)) return "adm-pill--amber";
         if (/(review|onboarding|negotiation|submitted)/.test(t)) return "adm-pill--purple";
-        return "adm-pill--gray";
+        return "";
       };
       document.querySelectorAll("#result_list tbody td").forEach(function (td) {
         var m = (td.className || "").match(/field-([\w]+)/);
@@ -76,7 +76,8 @@
         if (td.querySelector("a")) return; // leave links untouched
         var human = txt.replace(/_/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
         var pill = document.createElement("span");
-        pill.className = "adm-pill " + pillClass(txt);
+        var mod = pillClass(txt);
+        pill.className = mod ? ("adm-pill " + mod) : "adm-pill";
         pill.textContent = human;
         td.textContent = "";
         td.appendChild(pill);
