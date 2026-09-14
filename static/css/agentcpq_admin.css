@@ -872,6 +872,32 @@ label.required {
 #changelist-search label {
   display: none;
 }
+#changelist-search #searchbar,
+#changelist-search input[type="text"],
+#changelist-search input[type="search"] {
+  height: 40px;
+  min-height: 40px;
+  border-radius: 8px;
+  min-width: 260px;
+}
+#changelist-search input[type="submit"],
+#changelist-search .button {
+  height: 40px;
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 8px;
+  border: 1px solid var(--adm-border-strong);
+  background: var(--adm-surface);
+  color: var(--adm-primary);
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1;
+  box-shadow: none;
+}
+#changelist-search input[type="submit"]:hover,
+#changelist-search .button:hover {
+  background: var(--adm-primary-soft);
+}
 #changelist .actions {
   display: flex;
   align-items: center;
@@ -880,15 +906,33 @@ label.required {
   font-size: 13px;
   color: var(--adm-muted);
 }
+#changelist .actions label {
+  margin-bottom: 0;
+}
 #changelist .actions select {
   min-width: 160px;
+  height: 40px;
+  min-height: 40px;
 }
 #changelist .actions .action-counter {
   margin: 0 4px;
 }
 #changelist .actions .button,
 #changelist .actions button {
-  padding: 7px 14px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid var(--adm-border-strong);
+  background: var(--adm-surface);
+  color: var(--adm-primary);
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1;
+}
+#changelist .actions .button:hover,
+#changelist .actions button:hover {
+  background: var(--adm-primary-soft);
 }
 
 .paginator {
@@ -1325,4 +1369,276 @@ body.dashboard #content-main .app-sessions.module caption a.section::before {
 }
 #header #user-tools .admin-nav-chip--primary .material-icons {
   color: #ffffff !important;
+}
+
+/* ===================== Changelist modernization ===================== */
+
+/* --- "ADD <model>" / history / view buttons → primary pill --- */
+.object-tools {
+  margin: 0 0 16px;
+  padding: 0;
+}
+.object-tools li {
+  margin-left: 8px;
+  float: right;
+}
+.object-tools li:first-child {
+  margin-left: 0;
+}
+.object-tools a.addlink,
+.object-tools a.historylink,
+.object-tools a.viewsitelink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none !important;
+  background: var(--adm-primary) !important;
+  color: #ffffff !important;
+  border: none;
+}
+.object-tools a.addlink:hover,
+.object-tools a.historylink:hover {
+  background: var(--adm-primary-hover) !important;
+  color: #ffffff !important;
+}
+
+/* --- Search toolbar --- */
+#changelist-search {
+  margin-bottom: 12px;
+}
+#changelist-search div,
+#changelist-search form > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+#changelist-search input[type="text"],
+#changelist-search input[type="search"] {
+  height: 36px;
+  border-radius: 8px;
+  min-width: 240px;
+}
+#changelist-search input[type="submit"],
+#changelist-search .button {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid var(--adm-border-strong);
+  background: var(--adm-surface);
+  color: var(--adm-primary);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+#changelist-search input[type="submit"]:hover,
+#changelist-search .button:hover {
+  background: var(--adm-primary-soft);
+}
+
+/* --- Actions bar --- */
+#changelist-form .actions,
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0 12px;
+}
+.actions label {
+  font-size: 13px;
+  color: var(--adm-muted);
+  margin-bottom: 0;
+}
+.actions select {
+  height: 36px;
+  min-height: 36px;
+  min-width: 160px;
+}
+.actions .button {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+}
+.actions .action-counter {
+  font-size: 12px;
+  color: var(--adm-muted);
+  margin-left: auto;
+}
+
+/* --- Results table → clean card rows --- */
+#changelist-form .results,
+.change-list .results {
+  border: none;
+  box-shadow: none;
+}
+#result_list {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+}
+#result_list thead th {
+  background: #f8fafc;
+  color: var(--adm-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--adm-border-strong);
+  text-align: left;
+}
+#result_list tbody td {
+  padding: 10px 12px;
+  font-size: 13.5px;
+  border-bottom: 1px solid #eef1f6;
+  vertical-align: middle;
+}
+#result_list tbody tr:last-child td {
+  border-bottom: none;
+}
+#result_list tbody tr:hover td {
+  background: #f8fafc;
+}
+#result_list tbody a {
+  color: var(--adm-primary);
+  font-weight: 500;
+}
+
+/* --- Breadcrumbs --- */
+.breadcrumbs {
+  background: transparent !important;
+  padding: 0 24px 12px !important;
+  color: var(--adm-muted) !important;
+  font-size: 12.5px;
+  border: none;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.breadcrumbs a {
+  color: var(--adm-muted) !important;
+}
+.breadcrumbs a:hover {
+  color: var(--adm-primary) !important;
+}
+
+/* --- Paginator / result counter --- */
+.paginator {
+  border: none !important;
+  background: transparent !important;
+  font-size: 13px;
+  color: var(--adm-muted);
+  padding: 12px 0 0;
+}
+.paginator a {
+  color: var(--adm-primary);
+}
+
+/* --- Sidebar: consistent captions + drop legacy green add links --- */
+#nav-sidebar caption {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--adm-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+#nav-sidebar .addlink,
+#nav-sidebar a.addlink,
+#nav-sidebar .module td a.addlink {
+  color: var(--adm-muted) !important;
+}
+#nav-sidebar .addlink:hover,
+#nav-sidebar a.addlink:hover {
+  color: var(--adm-primary) !important;
+}
+#nav-sidebar .toggle-nav-sidebar {
+  color: var(--adm-muted) !important;
+}
+
+/* ============ Final polish (high-priority overrides) ============ */
+
+/* Flat, consistent buttons: Search / Go / any admin submit */
+#changelist-search input[type="submit"],
+#changelist .actions button.button,
+#changelist .actions .button,
+#changelist button[type="submit"] {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  border: 1px solid var(--adm-border-strong) !important;
+  color: var(--adm-primary) !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  padding: 0 16px !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  line-height: 1 !important;
+}
+#changelist-search input[type="submit"]:hover,
+#changelist .actions button.button:hover,
+#changelist .actions .button:hover {
+  background-color: var(--adm-primary-soft) !important;
+}
+
+/* Search input height matches the buttons */
+#changelist-search #searchbar,
+#changelist-search input[type="text"] {
+  height: 40px !important;
+  min-height: 40px !important;
+  border-radius: 8px !important;
+}
+
+/* Nav sidebar: uniform app captions */
+#nav-sidebar caption,
+#nav-sidebar caption a.section,
+#nav-sidebar .module caption a.section {
+  color: var(--adm-muted) !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  font-weight: 600 !important;
+}
+
+/* Nav sidebar: "Add" links match the theme (drop the green) */
+#nav-sidebar a.addlink,
+#nav-sidebar td a.addlink {
+  color: var(--adm-muted) !important;
+  font-size: 12px !important;
+}
+#nav-sidebar a.addlink:hover,
+#nav-sidebar td a.addlink:hover {
+  color: var(--adm-primary) !important;
+}
+
+/* Unify object-name link colour with the primary blue */
+#result_list tbody a,
+#changelist-form a,
+.change-list a {
+  color: var(--adm-primary) !important;
+}
+
+/* Remove the legacy green "+" icon on sidebar Add links */
+#nav-sidebar a.addlink,
+#nav-sidebar td a.addlink {
+  background-image: none !important;
+  padding-left: 0 !important;
+}
+
+/* Match search input + submit box sizing */
+#changelist-search #searchbar,
+#changelist-search input[type="text"],
+#changelist-search input[type="submit"],
+#changelist .actions button.button {
+  box-sizing: border-box;
 }
