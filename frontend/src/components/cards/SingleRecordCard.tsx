@@ -237,11 +237,13 @@ function EditableField({
   const dataType = (field.data_type || "text").toLowerCase();
   const inputClass =
     "w-full rounded-md border border-[#E2E8F0] bg-white px-2.5 py-1.5 text-[13px] text-foreground outline-none transition-colors focus:border-[#3B62D9]";
+  const selectClass =
+    "h-9 w-full truncate rounded-md border border-[#E2E8F0] bg-white px-2.5 pr-8 text-[13px] leading-none text-foreground outline-none transition-colors focus:border-[#3B62D9]";
 
   let control: React.ReactNode;
   if (dataType === "boolean") {
     control = (
-      <select className={inputClass} value={value} onChange={(e) => onSelect(e.target.value)} onBlur={onBlurCommit}>
+      <select className={selectClass} value={value} onChange={(e) => onSelect(e.target.value)} onBlur={onBlurCommit}>
         <option value="">Unset</option>
         <option value="true">Yes</option>
         <option value="false">No</option>
@@ -294,7 +296,7 @@ function EditableField({
     (Array.isArray(field.options) && field.options.length > 0)
   ) {
     control = (
-      <select className={inputClass} value={value} onChange={(e) => onSelect(e.target.value)} onBlur={onBlurCommit}>
+      <select className={selectClass} value={value} onChange={(e) => onSelect(e.target.value)} onBlur={onBlurCommit}>
         <option value="">—</option>
         {(field.options || []).map((opt, i) => {
           // Options arrive as strings (picklist: ["Planned", "In Progress", …]) or
