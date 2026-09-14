@@ -2227,3 +2227,87 @@ td.field-timestamp {
 #changelist-filter {
   flex: 0 0 220px;
 }
+
+/* ===================== Changelist polish (robust) ===================== */
+
+/* Flat header: single hairline, no shadow (kills the "double rule" look) */
+#header {
+  box-shadow: none !important;
+  border-bottom: 1px solid var(--adm-border) !important;
+}
+
+/* Object tools must never float over the table */
+.object-tools {
+  float: none !important;
+  clear: both;
+}
+
+/* Table lives in a card with breathing room */
+#changelist-form .results,
+.change-list .results {
+  border: 1px solid var(--adm-border);
+  border-radius: var(--adm-radius);
+  background: var(--adm-surface);
+  overflow-x: auto !important;
+  padding-bottom: 2px;
+}
+
+/* Changelist layout: let the table column shrink and scroll (no clipping) */
+.changelist-form-container {
+  min-width: 0;
+}
+.changelist-form-container > .results {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#changelist-form {
+  min-width: 0;
+}
+
+/* Calm the toolbar controls a notch (they felt oversized vs the table) */
+#changelist-search #searchbar,
+#changelist-search input[type="text"],
+#changelist-search input[type="submit"],
+#changelist-search .button,
+#changelist .actions select,
+#changelist .actions .button,
+#changelist .actions button {
+  height: 36px !important;
+  min-height: 36px !important;
+  font-size: 13px !important;
+}
+#changelist-search #searchbar,
+#changelist-search input[type="text"] {
+  max-width: 420px;
+}
+
+/* Filter rail: light chevrons instead of heavy triangles */
+#changelist-filter details > summary,
+#changelist-filter h3 {
+  font-weight: 600;
+  color: var(--adm-muted);
+}
+
+/* Object-tools container was collapsing (font-size:0) → give it real height */
+.object-tools {
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-height: 40px;
+  margin: 0 0 20px !important;
+  font-size: 13px !important;
+  line-height: 1 !important;
+}
+.object-tools li {
+  display: flex !important;
+  align-items: center;
+  margin: 0 !important;
+}
+
+/* Stronger card so the table reads as its own surface */
+#changelist-form .results,
+.change-list .results {
+  border: 1px solid var(--adm-border-strong) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
