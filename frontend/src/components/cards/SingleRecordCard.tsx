@@ -295,21 +295,31 @@ function EditableField({
     dataType === "lookup" ||
     (Array.isArray(field.options) && field.options.length > 0)
   ) {
+    // Normalize options once and remap the current value: the backend sometimes
+    // sends the *label* (e.g. "Qualified to Buy") while options are keyed by the
+    // *value* ("qualifiedtobuy"), which made the select show nothing selected.
+    const optionPairs = (field.options || []).map((opt) => {
+      const isObj = typeof opt === "object" && opt !== null;
+      const optValue = isObj ? String((opt as { value?: unknown }).value) : String(opt);
+      const optLabel = isObj ? String((opt as { label?: unknown }).label ?? (opt as { value?: unknown }).value) : String(opt);
+      return { value: optValue, label: optLabel };
+    });
+    const selectValue = (() => {
+      const current = String(value);
+      if (optionPairs.some((o) => o.value === current)) return current;
+      const byLabel = optionPairs.find((o) => o.label.toLowerCase() === current.toLowerCase());
+      if (byLabel) return byLabel.value;
+      return current;
+    })();
+
     control = (
-      <select className={selectClass} value={value} onChange={(e) => onSelect(e.target.value)} onBlur={onBlurCommit}>
+      <select className={selectClass} value={selectValue} onChange={(e) => onSelect(e.target.value)} onBlur={onBlurCommit}>
         <option value="">—</option>
-        {(field.options || []).map((opt, i) => {
-          // Options arrive as strings (picklist: ["Planned", "In Progress", …]) or
-          // as {value, label} objects (lookups). Normalize both.
-          const isObj = typeof opt === "object" && opt !== null;
-          const optValue = isObj ? String((opt as { value?: unknown }).value) : String(opt);
-          const optLabel = isObj ? String((opt as { label?: unknown }).label) : String(opt);
-          return (
-            <option key={i} value={optValue}>
-              {optLabel}
-            </option>
-          );
-        })}
+        {optionPairs.map((opt, i) => (
+          <option key={i} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
       </select>
     );
   } else if (field.is_multiline) {
