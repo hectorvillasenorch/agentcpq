@@ -407,6 +407,20 @@ body.change-form #content > h2 {
   padding-left: 24px;
   padding-right: 24px;
 }
+/* Park the object-tools (History / View) on the object-name row so the
+   button reads with the heading block instead of floating in the gap. */
+body.change-form #content {
+  position: relative;
+}
+body.change-form #content > h2 {
+  padding-right: 180px;
+}
+body.change-form #content-main .object-tools {
+  position: absolute;
+  top: 48px;
+  right: 48px;
+  margin: 0 !important;
+}
 #content-main {
   float: none;
   width: auto;
@@ -1178,6 +1192,16 @@ body.admin-password-change #content-main {
   }
   .selector {
     flex-direction: column;
+  }
+  /* Let the History button flow normally on small screens. */
+  body.change-form #content > h2 {
+    padding-right: 24px;
+  }
+  body.change-form #content-main .object-tools {
+    position: relative;
+    top: auto;
+    right: auto;
+    margin: 0 0 16px !important;
   }
 }
 
