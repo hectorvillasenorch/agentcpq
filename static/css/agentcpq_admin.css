@@ -2316,3 +2316,60 @@ td.field-timestamp {
 .module.filtered {
   padding: 1.5rem;
 }
+
+/* ===================== Two-column change forms ===================== */
+
+/* Fieldsets flow into two columns so more fields are visible at once. */
+#content-main fieldset.aligned,
+#content-main fieldset.module.aligned {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 28px;
+  row-gap: 0;
+  align-items: start;
+}
+#content-main fieldset.aligned > h2,
+#content-main fieldset.aligned > .description {
+  grid-column: 1 / -1;
+}
+#content-main fieldset.aligned > .form-row {
+  min-width: 0;
+  border-bottom: 1px solid var(--adm-border);
+  padding: 12px 0;
+}
+/* Fields whose widget needs the full width span both columns */
+#content-main fieldset.aligned > .form-row:has(textarea),
+#content-main fieldset.aligned > .form-row:has(.selector),
+#content-main fieldset.aligned > .form-row:has(select[multiple]),
+#content-main fieldset.aligned > .form-row:has(.vLargeTextField),
+#content-main fieldset.aligned > .form-row:has(input[type="file"]),
+#content-main fieldset.aligned > .form-row:has(.related-widget-wrapper select) {
+  grid-column: 1 / -1;
+}
+/* Inside the grid the 640px measure is too narrow — fill the column */
+#content-main fieldset.aligned .form-row .flex-container,
+#content-main fieldset.aligned .form-row > div {
+  max-width: none !important;
+  width: 100% !important;
+}
+#content-main fieldset.aligned .form-row input[type="text"],
+#content-main fieldset.aligned .form-row input[type="email"],
+#content-main fieldset.aligned .form-row input[type="number"],
+#content-main fieldset.aligned .form-row input[type="url"],
+#content-main fieldset.aligned .form-row input[type="date"],
+#content-main fieldset.aligned .form-row input[type="datetime-local"],
+#content-main fieldset.aligned .form-row select,
+#content-main fieldset.aligned .form-row textarea,
+#content-main fieldset.aligned .form-row .vTextField,
+#content-main fieldset.aligned .form-row .vLargeTextField {
+  max-width: none !important;
+  width: 100% !important;
+}
+
+/* Single-column fallback on narrow screens */
+@media (max-width: 900px) {
+  #content-main fieldset.aligned,
+  #content-main fieldset.module.aligned {
+    grid-template-columns: 1fr;
+  }
+}
