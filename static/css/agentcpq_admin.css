@@ -5,19 +5,19 @@
 
 :root {
   --adm-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --adm-bg: #fafbfc;
+  --adm-bg: #f5f6f8;
   --adm-surface: #ffffff;
   --adm-border: #edf0f4;
   --adm-border-strong: #e2e8f0;
   --adm-text: #1a202c;
   --adm-muted: #64748b;
-  --adm-primary: #3b62d9;
-  --adm-primary-hover: #2f4fc0;
-  --adm-primary-soft: #eef2ff;
+  --adm-primary: #0d9488;
+  --adm-primary-hover: #0f766e;
+  --adm-primary-soft: #f0fdfa;
   --adm-danger: #dc2626;
   --adm-success: #16a34a;
   --adm-warning: #d97706;
-  --adm-radius: 10px;
+  --adm-radius: 12px;
   --adm-radius-sm: 8px;
   --adm-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   --adm-shadow-md: 0 6px 16px rgba(15, 23, 42, 0.06);
@@ -27,7 +27,7 @@
      the same variables that django/contrib/admin dark_mode.css sets — including
      the html[data-theme="dark"] block (higher specificity than plain :root). */
   color-scheme: light;
-  --primary: #3b62d9;
+  --primary: #0d9488;
   --primary-fg: #ffffff;
   --secondary: #fafbfc;
   --body-fg: #1a202c;
@@ -37,13 +37,13 @@
   --body-loud-color: #1a202c;
   --header-bg: #ffffff;
   --header-color: #1a202c;
-  --header-link-color: #3b62d9;
+  --header-link-color: #0d9488;
   --breadcrumbs-bg: #ffffff;
   --breadcrumbs-fg: #64748b;
-  --breadcrumbs-link-fg: #3b62d9;
-  --link-fg: #3b62d9;
-  --link-hover-color: #2f4fc0;
-  --link-selected-fg: #3b62d9;
+  --breadcrumbs-link-fg: #0d9488;
+  --link-fg: #0d9488;
+  --link-hover-color: #0f766e;
+  --link-selected-fg: #0d9488;
   --hairline-color: #edf0f4;
   --border-color: #e2e8f0;
   --error-fg: #dc2626;
@@ -54,11 +54,11 @@
   --message-error-bg: #fef2f2;
   --message-error-fg: #991b1b;
   --darkened-bg: #f8fafc;
-  --selected-bg: #eef2ff;
-  --selected-row: #eef2ff;
-  --button-bg: #3b62d9;
+  --selected-bg: #f0fdfa;
+  --selected-row: #f0fdfa;
+  --button-bg: #0d9488;
   --button-fg: #ffffff;
-  --button-hover-bg: #2f4fc0;
+  --button-hover-bg: #0f766e;
   --field-bg: #ffffff;
   --field-fg: #1a202c;
   --field-border-color: #e2e8f0;
@@ -71,7 +71,7 @@
 html[data-theme="dark"],
 html[data-theme="auto"] {
   color-scheme: light;
-  --primary: #3b62d9;
+  --primary: #0d9488;
   --primary-fg: #ffffff;
   --secondary: #fafbfc;
   --body-fg: #1a202c;
@@ -81,13 +81,13 @@ html[data-theme="auto"] {
   --body-loud-color: #1a202c;
   --header-bg: #ffffff;
   --header-color: #1a202c;
-  --header-link-color: #3b62d9;
+  --header-link-color: #0d9488;
   --breadcrumbs-bg: #ffffff;
   --breadcrumbs-fg: #64748b;
-  --breadcrumbs-link-fg: #3b62d9;
-  --link-fg: #3b62d9;
-  --link-hover-color: #2f4fc0;
-  --link-selected-fg: #3b62d9;
+  --breadcrumbs-link-fg: #0d9488;
+  --link-fg: #0d9488;
+  --link-hover-color: #0f766e;
+  --link-selected-fg: #0d9488;
   --hairline-color: #edf0f4;
   --border-color: #e2e8f0;
   --error-fg: #dc2626;
@@ -98,11 +98,11 @@ html[data-theme="auto"] {
   --message-error-bg: #fef2f2;
   --message-error-fg: #991b1b;
   --darkened-bg: #f8fafc;
-  --selected-bg: #eef2ff;
-  --selected-row: #eef2ff;
-  --button-bg: #3b62d9;
+  --selected-bg: #f0fdfa;
+  --selected-row: #f0fdfa;
+  --button-bg: #0d9488;
   --button-fg: #ffffff;
-  --button-hover-bg: #2f4fc0;
+  --button-hover-bg: #0f766e;
   --field-bg: #ffffff;
   --field-fg: #1a202c;
   --field-border-color: #e2e8f0;
@@ -678,7 +678,7 @@ textarea:focus,
 select:focus,
 .vTextField:focus {
   border-color: var(--adm-primary);
-  box-shadow: 0 0 0 3px rgba(59, 98, 217, 0.12);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
 }
 select {
   cursor: pointer;
@@ -1248,7 +1248,7 @@ body.dashboard #content-main .module td a.viewlink {
   background-image: none !important;
 }
 body.dashboard #content-main .module td a.addlink {
-  border-color: #d6dffb;
+  border-color: #99f6e4;
   background: var(--adm-primary-soft);
   color: var(--adm-primary);
 }
@@ -1375,15 +1375,16 @@ body.dashboard #content-main .app-sessions.module caption a.section::before {
 
 /* --- "ADD <model>" / history / view buttons → primary pill --- */
 .object-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
   margin: 0 0 16px;
   padding: 0;
 }
 .object-tools li {
-  margin-left: 8px;
-  float: right;
-}
-.object-tools li:first-child {
-  margin-left: 0;
+  margin: 0;
+  float: none;
 }
 .object-tools a.addlink,
 .object-tools a.historylink,
@@ -1621,10 +1622,8 @@ body.dashboard #content-main .app-sessions.module caption a.section::before {
   color: var(--adm-primary) !important;
 }
 
-/* Unify object-name link colour with the primary blue */
-#result_list tbody a,
-#changelist-form a,
-.change-list a {
+/* Unify object-name link colour with the primary blue (table links only) */
+#result_list tbody a {
   color: var(--adm-primary) !important;
 }
 
@@ -1687,7 +1686,7 @@ body.dashboard #content-main .app-sessions.module caption a.section::before {
 .form-row textarea:focus,
 .form-row select:focus {
   border-color: var(--adm-primary);
-  box-shadow: 0 0 0 3px rgba(59, 98, 217, 0.15);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
 }
 
 /* Save row: one primary, the rest ghost, consistent casing */
@@ -1831,4 +1830,84 @@ fieldset.aligned label,
   gap: 6px !important;
   width: 100% !important;
   max-width: 640px;
+}
+
+/* ===================== 2026 dashboard polish ===================== */
+
+/* Monospace IDs + timestamps (flat-dashboard feel) */
+td.field-id,
+td.field-accid,
+td.field-activityid,
+td.field-contactId,
+td.field-leadId,
+td.field-oppid,
+td.field-qteid,
+td.field-prdid,
+td.field-sku,
+td.field-public_id,
+td.field-external_id,
+td.field-tenant_id,
+td.field-created_at,
+td.field-updated_at,
+td.field-close_date,
+td.field-due_date,
+td.field-expiration_date {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--adm-muted);
+}
+td.field-created_at,
+td.field-updated_at,
+td.field-close_date,
+td.field-due_date,
+td.field-expiration_date {
+  white-space: nowrap;
+}
+
+/* Status / choice pills */
+.adm-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  background: var(--adm-primary-soft);
+  color: var(--adm-primary);
+  white-space: nowrap;
+}
+.adm-pill--green { background: #e7f7ef; color: #15803d; }
+.adm-pill--red { background: #fdeaea; color: #dc2626; }
+.adm-pill--amber { background: #fef3e2; color: #b45309; }
+.adm-pill--purple { background: #f1ecfd; color: #7c3aed; }
+.adm-pill--gray { background: #f1f3f5; color: #64748b; }
+
+/* tighter, uniform micro-headers */
+#result_list thead th {
+  letter-spacing: 0.6px;
+  font-size: 11px;
+}
+
+/* Force white text on object-tools buttons (beats the global teal link rule) */
+.change-list .object-tools a.addlink,
+.object-tools a.addlink,
+.object-tools a.historylink {
+  color: #ffffff !important;
+  background: var(--adm-primary) !important;
+}
+
+/* Let wide tables scroll instead of overflowing the card */
+.change-list .results,
+#changelist-form .results {
+  overflow-x: auto;
+}
+
+/* Let narrow column headers wrap instead of truncating */
+#result_list thead th {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }

@@ -613,8 +613,22 @@ class OpportunityAdmin(UTCDisplayAdmin, DynamicCustomFieldAdmin):
     form = OpportunityEditableForm
     list_display = ()
 
+    def stage_label(self, obj):
+        try:
+            from .models import picklist_choices
+            for value, label in picklist_choices("Opportunity", "stage"):
+                if value == obj.stage:
+                    return label
+        except Exception:
+            pass
+        return obj.stage
+    stage_label.short_description = "Stage"
+
     def get_list_display(self, request):
-        return [field.name for field in self.model._meta.fields]
+        return [
+            ("stage_label" if field.name == "stage" else field.name)
+            for field in self.model._meta.fields
+        ]
     def get_fieldsets(self, request, obj=None):
         fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
 

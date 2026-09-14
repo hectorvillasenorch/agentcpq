@@ -51,6 +51,37 @@
           label.textContent = text.replace(/:\s*$/, "");
         }
       });
+      // Status/choice values → modern pills (matching the flat dashboard look).
+      var statusFields = [
+        "stage", "status", "state", "active", "is_active", "activity_type", "type",
+        "severity", "priority", "outcome", "rating", "lead_source", "source",
+        "lifecycle_status", "contract_status", "subscription_status",
+        "payment_status", "invoice_status", "approval_status"
+      ];
+      var pillClass = function (txt) {
+        var t = txt.toLowerCase().replace(/[\s_-]+/g, "");
+        if (/(closedwon|won|active|completed|complete|approved|paid|true|yes|hot|signed|activated|running|enabled|success)/.test(t)) return "adm-pill--green";
+        if (/(closedlost|lost|overdue|cancelled|canceled|expired|failed|rejected|false|no|cold|churned|disabled|terminated)/.test(t)) return "adm-pill--red";
+        if (/(pending|inprogress|scheduled|deferred|paused|draft|qualified|notstarted|warm|processing|queued)/.test(t)) return "adm-pill--amber";
+        if (/(review|onboarding|negotiation|submitted)/.test(t)) return "adm-pill--purple";
+        return "adm-pill--gray";
+      };
+      document.querySelectorAll("#result_list tbody td").forEach(function (td) {
+        var m = (td.className || "").match(/field-([\w]+)/);
+        if (!m) return;
+        var fieldBase = m[1].replace(/_label$/, "");
+        if (statusFields.indexOf(fieldBase) === -1) return;
+        var txt = (td.textContent || "").trim();
+        if (!txt || txt === "\u2013" || txt === "-") return;
+        if (td.querySelector("a")) return; // leave links untouched
+        var human = txt.replace(/_/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+        var pill = document.createElement("span");
+        pill.className = "adm-pill " + pillClass(txt);
+        pill.textContent = human;
+        td.textContent = "";
+        td.appendChild(pill);
+      });
+
       document.querySelectorAll(".inline-group .tabular").forEach(function (inline) {
         var tbody = inline.querySelector("tbody");
         var rows = tbody ? Array.prototype.slice.call(tbody.querySelectorAll("tr")).filter(function (r) {
