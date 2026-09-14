@@ -346,17 +346,28 @@ h6 {
 /* ==========================================================================
    Breadcrumbs
    ========================================================================== */
-.breadcrumbs {
-  padding: 10px 24px;
+/* The breadcrumb strip sits on a white bar attached below the header so it
+   reads as part of the admin chrome instead of floating on the page canvas. */
+nav[aria-label="Breadcrumbs"] {
   background: var(--adm-surface);
   border-bottom: 1px solid var(--adm-border);
+}
+.breadcrumbs {
+  padding: 12px 24px;
+  background: transparent;
+  border: none;
   font-size: 12.5px;
   color: var(--adm-muted);
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 .breadcrumbs a {
+  color: var(--adm-muted);
+}
+.breadcrumbs a:hover {
   color: var(--adm-primary);
 }
 
@@ -368,13 +379,40 @@ h6 {
   margin: 0 auto;
   max-width: 1400px;
 }
-#content h1 {
+#content > h1 {
   font-size: 20px;
   margin: 0 0 20px;
+}
+/* Change forms: the record being edited is the hero heading. The page title
+   ("Change …") shrinks to a small eyebrow label above it, and the padded
+   content-main section gives the form card breathing room. */
+body.change-form #content > h1:has(+ h2) {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--adm-muted);
+  margin: 0 0 6px;
+}
+body.change-form #content > h2 {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--adm-text);
+  margin: 0 0 20px;
+}
+/* Keep the heading column aligned with the padded content-main card. */
+body.change-form #content > h1,
+body.change-form #content > h2 {
+  padding-left: 24px;
+  padding-right: 24px;
 }
 #content-main {
   float: none;
   width: auto;
+}
+body.change-form #content-main {
+  padding: 24px;
 }
 #content-main > .module,
 .module {
@@ -1515,9 +1553,13 @@ body.dashboard #content-main .app-sessions.module caption a.section::before {
 }
 
 /* --- Breadcrumbs --- */
+nav[aria-label="Breadcrumbs"] {
+  background: var(--adm-surface) !important;
+  border-bottom: 1px solid var(--adm-border) !important;
+}
 .breadcrumbs {
   background: transparent !important;
-  padding: 0 24px 12px !important;
+  padding: 12px 24px !important;
   color: var(--adm-muted) !important;
   font-size: 12.5px;
   border: none;
@@ -2335,7 +2377,7 @@ td.field-timestamp {
 #content-main fieldset.aligned > .form-row {
   min-width: 0;
   border-bottom: 1px solid var(--adm-border);
-  padding: 12px 0;
+  padding: 12px 20px;
 }
 /* Fields whose widget needs the full width span both columns */
 #content-main fieldset.aligned > .form-row:has(textarea),
@@ -2362,6 +2404,7 @@ td.field-timestamp {
 #content-main fieldset.aligned .form-row textarea,
 #content-main fieldset.aligned .form-row .vTextField,
 #content-main fieldset.aligned .form-row .vLargeTextField {
+  box-sizing: border-box;
   max-width: none !important;
   width: 100% !important;
 }
