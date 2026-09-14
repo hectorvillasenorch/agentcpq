@@ -1911,3 +1911,209 @@ td.field-expiration_date {
   overflow: visible;
   text-overflow: clip;
 }
+
+/* ===================== 2026 admin dashboard ===================== */
+
+/* --- Header: horizontal nav (branding | nav | user tools) --- */
+#header #branding { order: 1; flex: 0 0 auto; }
+#header .admin-topnav {
+  order: 2;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 2px;
+  margin: 0 8px;
+}
+#header #user-tools { order: 3; flex: 0 0 auto; }
+.admin-topnav-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--adm-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: 8px;
+}
+.admin-topnav-link:hover {
+  color: var(--adm-text);
+  background: var(--adm-bg);
+}
+.admin-topnav-link.is-active {
+  color: var(--adm-primary);
+  font-weight: 600;
+}
+.admin-topnav-link.is-active::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--adm-primary);
+}
+
+/* --- Dashboard hero (kicker + h1 + subtitle) --- */
+.admin-dash-hero {
+  margin: 0 0 28px;
+}
+.admin-dash-kicker {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--adm-primary);
+  margin: 0 0 6px;
+}
+.admin-dash-hero h1 {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--adm-text);
+  margin: 0 0 6px;
+}
+.admin-dash-subtitle {
+  font-size: 14px;
+  color: var(--adm-muted);
+  margin: 0;
+  max-width: 640px;
+}
+
+/* --- KPI cards --- */
+body.dashboard #content-main { float: none !important; width: 100% !important; }
+.admin-dashboard { display: block; }
+.admin-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 16px;
+  margin: 0 0 28px;
+}
+.admin-kpi {
+  background: var(--adm-surface);
+  border: 1px solid var(--adm-border);
+  border-radius: var(--adm-radius);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-decoration: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.admin-kpi:hover {
+  border-color: var(--adm-primary);
+  box-shadow: 0 4px 16px rgba(13, 148, 136, 0.10);
+}
+.admin-kpi-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--adm-muted);
+}
+.admin-kpi-value {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--adm-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- App cards grid --- */
+.admin-app-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .admin-kpis { grid-template-columns: repeat(3, 1fr); }
+  .admin-app-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+  .admin-kpis { grid-template-columns: repeat(2, 1fr); }
+  .admin-app-grid { grid-template-columns: 1fr; }
+}
+.admin-app-card {
+  background: var(--adm-surface);
+  border: 1px solid var(--adm-border);
+  border-radius: var(--adm-radius);
+  padding: 0;
+  overflow: hidden;
+}
+.admin-app-title {
+  margin: 0;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--adm-border);
+}
+.admin-app-title a {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--adm-text);
+  text-decoration: none;
+}
+.admin-app-title a:hover { color: var(--adm-primary); }
+.admin-app-models {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+}
+.admin-app-model {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.admin-app-model-link {
+  flex: 1 1 auto;
+  padding: 9px 16px;
+  font-size: 13.5px;
+  color: var(--adm-text);
+  text-decoration: none;
+}
+.admin-app-model-link:hover {
+  color: var(--adm-primary);
+  background: var(--adm-bg);
+}
+.admin-app-add {
+  flex: 0 0 auto;
+  margin-right: 12px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--adm-muted);
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.admin-app-add:hover {
+  color: var(--adm-primary);
+  background: var(--adm-primary-soft);
+}
+
+/* Dashboard: drop the reserved sidebar space so content is truly full-width */
+body.dashboard #nav-sidebar,
+body.dashboard .toggle-nav-sidebar {
+  display: none !important;
+}
+body.dashboard .main,
+body.dashboard #main {
+  display: block !important;
+}
+body.dashboard #content-start {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+/* Override the legacy dashboard 3-col module grid: the new dashboard stacks
+   hero → KPI row → app grid vertically. */
+body.dashboard #content-main {
+  display: block !important;
+}

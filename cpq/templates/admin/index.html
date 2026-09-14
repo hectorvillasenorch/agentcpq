@@ -1,8 +1,50 @@
-{% extends "admin/index.html" %}
-{% load i18n admin_reorder %}
+{% extends "admin/base_site.html" %}
+{% load i18n admin_reorder admin_dashboard %}
+
+{% block coltype %}colM{% endblock %}
+{% block bodyclass %}{{ block.super }} dashboard{% endblock %}
+{% block nav-breadcrumbs %}{% endblock %}
+{% block nav-sidebar %}{% endblock %}
+{% block content_title %}{% endblock %}
 
 {% block content %}
+<div id="content-main" class="admin-dashboard">
+  <header class="admin-dash-hero">
+    <p class="admin-dash-kicker">AgentCPQ Administration</p>
+    <h1>Dashboard</h1>
+    <p class="admin-dash-subtitle">Manage your CRM, products, quotes, automations and system configuration — all in one place.</p>
+  </header>
+
+  {% admin_kpis as kpis %}
+  <div class="admin-kpis">
+    {% for k in kpis %}
+      <a class="admin-kpi" href="{{ k.url }}">
+        <span class="admin-kpi-label">{{ k.label }}</span>
+        <span class="admin-kpi-value">{{ k.count }}</span>
+      </a>
+    {% endfor %}
+  </div>
+
   {% with app_list=app_list|move_apps_to_end:"cpq" %}
-    {{ block.super }}
+    <div class="admin-app-grid">
+      {% for app in app_list %}
+        <section class="admin-app-card">
+          <h2 class="admin-app-title">
+            <a href="{{ app.app_url }}">{{ app.name }}</a>
+          </h2>
+          <ul class="admin-app-models">
+            {% for model in app.models %}
+              <li class="admin-app-model">
+                <a class="admin-app-model-link" href="{{ model.admin_url }}">{{ model.name }}</a>
+                {% if model.add_url %}
+                  <a class="admin-app-add" href="{{ model.add_url }}" title="Add {{ model.name }}">+</a>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endfor %}
+    </div>
   {% endwith %}
+</div>
 {% endblock %}

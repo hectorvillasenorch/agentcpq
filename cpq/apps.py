@@ -5,6 +5,7 @@ import threading
 class CpqConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "cpq"
+    verbose_name = "CPQ"
 
     # Variable de clase para evitar lanzar múltiples schedulers
     scheduler_started = False
