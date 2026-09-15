@@ -364,12 +364,20 @@ _NAME_ISH_TOKENS = ("name", "title", "subject", "label")
 
 
 def _custom_object_tokens(custom_object):
-    """Return singular/plural search tokens for a custom object's name/label."""
+    """Return singular/plural search tokens for a custom object's name/label.
+
+    Includes the raw name so "create a new project__c" matches even when the
+    user types the ``__c`` suffix explicitly.
+    """
     tokens = []
     seen = set()
     for raw in (getattr(custom_object, "name", "") or "", getattr(custom_object, "label", "") or ""):
-        base = str(raw).strip().lower()
-        base = re.sub(r"__c$", "", base)
+        lowered = str(raw).strip().lower()
+        if lowered and lowered not in seen:
+            seen.add(lowered)
+            tokens.append(lowered)
+
+        base = re.sub(r"__c$", "", lowered)
         base = base.replace("_", " ").strip()
         if not base or base in seen:
             continue
