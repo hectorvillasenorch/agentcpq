@@ -1,9 +1,13 @@
 import os
+import re
 import openai
 import logging
 import json
 from dotenv import load_dotenv
-from cpq.models import CustomObject, CustomField, CustomRecord
+from django.contrib.contenttypes.models import ContentType
+from django.db import transaction
+from django.utils import timezone
+from cpq.models import CustomObject, CustomField, CustomRecord, CustomFieldValue
 from django.db.models import Q
 
 #LLM helpers
@@ -355,8 +359,181 @@ def delete_custom_field(user, user_message, session_data):
         "temporaryMessage": True
         }
 
+
+_NAME_ISH_TOKENS = ("name", "title", "subject", "label")
+
+
+def _custom_object_tokens(custom_object):
+    """Return singular/plural search tokens for a custom object's name/label."""
+    tokens = []
+    seen = set()
+    for raw in (getattr(custom_object, "name", "") or "", getattr(custom_object, "label", "") or ""):
+        base = str(raw).strip().lower()
+        base = re.sub(r"__c$", "", base)
+        base = base.replace("_", " ").strip()
+        if not base or base in seen:
+            continue
+        seen.add(base)
+        tokens.append(base)
+        if base.endswith("s"):
+            singular = base[:-1]
+            if singular and singular not in seen:
+                seen.add(singular)
+                tokens.append(singular)
+        else:
+            plural = base + "s"
+            if plural not in seen:
+                seen.add(plural)
+                tokens.append(plural)
+    return tokens
+
+
+def _match_bare_custom_record_create(user_message):
+    """Return the custom object for a bare "create new <object>" request.
+
+    Only matches when the message contains no field values, e.g.
+    "create new project", "add a new invoice", or "new work order".
+    Returns ``None`` when the message isn't this pattern.
+    """
+    text = str(user_message or "").strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if not re.search(r"\b(create|add|register|new)\b", lowered):
+        return None
+
+    for custom_object in CustomObject.objects.all():
+        for token in _custom_object_tokens(custom_object):
+            create_pattern = (
+                r"^(?:please\s+)?(?:can\s+you\s+)?(?:create|add|register)\s+"
+                r"(?:a\s+|an\s+)?(?:new\s+)?(?:the\s+)?"
+                + re.escape(token)
+                + r"\s*[.!?]*(?:\s+please)?$"
+            )
+            if re.match(create_pattern, text, re.IGNORECASE):
+                return custom_object
+
+            new_pattern = (
+                r"^(?:a\s+|an\s+)?new\s+(?:the\s+)?"
+                + re.escape(token)
+                + r"\s*[.!?]*$"
+            )
+            if re.match(new_pattern, text, re.IGNORECASE):
+                return custom_object
+    return None
+
+
+def _pick_default_custom_field(custom_object):
+    """Choose the field that receives the record's single default value."""
+    fields = list(custom_object.custom_fields.all().order_by("id"))
+    if not fields:
+        return None
+    for field in fields:
+        key = str(field.name or "").lower().removesuffix("__c").replace("_", " ")
+        if any(token in key for token in _NAME_ISH_TOKENS):
+            return field
+    return fields[0]
+
+
+def _default_value_for_custom_field(field, object_label):
+    """Build a sensible default value for a custom field's data type."""
+    data_type = str(field.data_type or "").strip().lower()
+    if data_type in ("dropdown", "picklist", "select", "multipicklist"):
+        options = field.options or []
+        if isinstance(options, str):
+            try:
+                options = json.loads(options)
+            except Exception:
+                options = []
+        if isinstance(options, list) and options:
+            return str(options[0])
+        return ""
+    if data_type in ("number", "currency", "percent"):
+        return "0"
+    if data_type in ("boolean", "checkbox"):
+        return "false"
+    if data_type in ("date",):
+        return timezone.now().strftime("%Y-%m-%d")
+    if data_type in ("datetime", "date_time"):
+        return timezone.now().strftime("%Y-%m-%d %H:%M")
+    return f"New {object_label or 'Record'}"
+
+
+def _create_blank_custom_record_from_message(user, user_message):
+    """Handle "create new <custom object>" without LLM.
+
+    Creates one record with a single default value and returns the
+    ``single_record`` payload so the frontend opens the editable form.
+    Returns ``None`` when the message doesn't match the bare-create pattern.
+    """
+    custom_object = _match_bare_custom_record_create(user_message)
+    if custom_object is None:
+        return None
+
+    object_label = custom_object.label or custom_object.name
+    try:
+        with transaction.atomic():
+            record = CustomRecord.objects.create(
+                object_type=custom_object,
+                created_by=user,
+                updated_by=user,
+            )
+
+            default_field = _pick_default_custom_field(custom_object)
+            if default_field is not None:
+                default_value = _default_value_for_custom_field(default_field, object_label)
+                content_type = ContentType.objects.get_for_model(CustomRecord)
+                CustomFieldValue.objects.create(
+                    field=default_field,
+                    value=str(default_value),
+                    record=record,
+                    content_type=content_type,
+                    object_id=record.id,
+                )
+    except Exception as exc:
+        logging.exception("Failed to create blank custom record for %s: %s", object_label, exc)
+        return {
+            "message": f"{WARNING_ICON} Hmm, something went wrong while creating the {object_label} record. Mind trying again?",
+            "temporaryMessage": True,
+        }
+
+    message = (
+        f"{SUCCESS_ICON} Created a new <b>{object_label}</b> record and opened its form. "
+        "Fill in the details and save when ready."
+    )
+
+    try:
+        from agents.utils.record_agent.handle_helpers import get_single_record_payload
+
+        _, payload = get_single_record_payload(
+            user,
+            {"object": custom_object.name, "record_id": record.id},
+        )
+    except Exception as exc:
+        logging.exception("Failed to build single_record payload for blank custom record: %s", exc)
+        payload = None
+
+    if payload is None:
+        return {
+            "message": message + "<br><br>⚠️ The record was created, but I couldn't open its form right now.",
+            "temporaryMessage": True,
+        }
+
+    return {
+        "message": message,
+        "single_record": payload,
+    }
+
+
 def create_custom_record(user, user_message, session_data):
     """Create custom object record"""
+    # 🧠 Deterministic fast path: "create new <custom object>" with no field
+    # values should create a fresh record with one default value and open the
+    # editable form — without an LLM extraction round-trip.
+    blank_form_response = _create_blank_custom_record_from_message(user, user_message)
+    if blank_form_response is not None:
+        return blank_form_response
+
     # 🧠 Make the session context
     session_context = make_session_context(user, "CreateCustomObjectRecord", "custom_object_agent", session_data, user_message)
 
