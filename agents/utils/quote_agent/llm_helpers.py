@@ -23,7 +23,6 @@ from agents.llm import chat_json, get_llm_client, get_model
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = get_model("structured")
 
 client = get_llm_client()
 
@@ -131,11 +130,11 @@ def extract_quote_details_with_llm(user_message, current_state, previous_summary
         {"role": "user", "content": user_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages, model=get_model("structured"))
     logging.info(f"\n\n💰 FIRST LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=1
     )
@@ -248,11 +247,11 @@ def generate_final_create_quote_message(quote, db_results, previous_summary, pro
         {"role": "user", "content": final_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages_for_llm, model=get_model("structured"))
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages_for_llm,
         temperature=0.7,
         response_format={"type": "json_object"}  # fuerza JSON válido (si usas GPT-4.1 / GPT-4o / GPT-5)
@@ -356,11 +355,11 @@ def extract_products_to_add_with_llm(user_message, current_state, previous_summa
         {"role": "user", "content": user_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages, model=get_model("structured"))
     logging.info(f"\n\n💰 FIRST LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=1
     )
@@ -488,7 +487,7 @@ def extract_quote_line_items_to_delete(user_message):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": "Extract the SKU or NAME mentioned in the user's request."},
                 {"role": "user", "content": prompt}
@@ -595,11 +594,11 @@ def _extract_quote_line_to_delete_with_llm_legacy(user_message, current_state, p
         {"role": "user", "content": user_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages, model=get_model("structured"))
     logging.info(f"\n\n💰 FIRST LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=1
     )
@@ -751,11 +750,11 @@ def generate_final_add_product_to_quote_message(completed_products, db_results, 
         {"role": "user", "content": final_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages_for_llm, model=get_model("structured"))
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages_for_llm,
         temperature=0.7,
         response_format={"type": "json_object"}  # fuerza JSON válido (si usas GPT-4.1 / GPT-4o / GPT-5)
@@ -877,11 +876,11 @@ def extract_quote_line_updates_with_llm(user_message, current_state, previous_su
         {"role": "user", "content": user_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages, model=get_model("structured"))
     logging.info(f"\n\n💰 LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=0.8
     )
@@ -969,11 +968,11 @@ def generate_final_update_line_items_message(completed_updates, db_results, rema
         {"role": "user", "content": final_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages_for_llm, model=get_model("structured"))
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages_for_llm,
         temperature=0.7,
         response_format={"type": "json_object"}  # fuerza JSON válido (si usas GPT-4.1 / GPT-4o / GPT-5)
@@ -1140,11 +1139,11 @@ def extract_quote_updates_with_llm(user_message, current_state, previous_summary
         {"role": "user", "content": user_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages, model=get_model("structured"))
     logging.info(f"\n\n💰 FIRST LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=1
     )
@@ -1246,11 +1245,11 @@ def generate_final_quote_updates_message(completed_quote_updates, db_results, re
         {"role": "user", "content": final_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages_for_llm, model=get_model("structured"))
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages_for_llm,
         temperature=0.7,
         response_format={"type": "json_object"}  # fuerza JSON válido (si usas GPT-4.1 / GPT-4o / GPT-5)
@@ -1374,11 +1373,11 @@ def extract_quote_line_to_delete_with_llm(user_message, current_state, previous_
         {"role": "user", "content": user_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages, model=get_model("structured"))
     logging.info(f"\n\n💰 FIRST LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=1
     )
@@ -1470,11 +1469,11 @@ def generate_final_delete_quote_lines_message(completed_quote_lines, db_results,
         {"role": "user", "content": final_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages_for_llm, model=get_model("structured"))
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages_for_llm,
         temperature=0.7,
         response_format={"type": "json_object"}  # fuerza JSON válido (si usas GPT-4.1 / GPT-4o / GPT-5)

@@ -13,7 +13,6 @@ from agents.llm import chat_json, get_llm_client, get_model
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = get_model("structured")
 
 client = get_llm_client()
 
@@ -136,7 +135,7 @@ def extract_bundle_components(user_message):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": "Extract structured updates details for quote line."},
                 {"role": "user", "content": prompt}
@@ -210,7 +209,7 @@ def extract_option_updates(user_message):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -391,7 +390,7 @@ def extract_delete_options_from_quote(user_message):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": "Extract structured updates details for quote line."},
                 {"role": "user", "content": prompt}

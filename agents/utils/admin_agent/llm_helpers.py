@@ -12,7 +12,6 @@ from agents.llm import chat_json, get_llm_client, get_model
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = get_model("structured")
 
 client = get_llm_client()
 
@@ -213,7 +212,7 @@ def extract_validation_rules(user_message):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": "You are a CPQ assistant. Extract structured business rules from the user message."},
                 {"role": "user", "content": prompt}
@@ -270,7 +269,7 @@ def extract_inclusion_rules(user_message, current_state, previous_summary=None):
     ]
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=temperature
     )
@@ -419,7 +418,7 @@ def extract_exclusion_rules(user_message, current_state, previous_summary=None):
     ]
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=1
     )
@@ -475,7 +474,7 @@ def extract_rules_details_to_render(user_message, current_state, previous_summar
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -520,7 +519,7 @@ def extract_rule_updates(user_message, current_state, previous_summary=None):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -557,7 +556,7 @@ def extract_rule_deletes(user_message):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -595,7 +594,7 @@ def extract_custom_object_updates(user_message):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": "Extract structured updates details for rules."},
                 {"role": "user", "content": user_prompt}
@@ -717,7 +716,7 @@ def extract_email_alert_details(user, user_message, custom_objects, users):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": "Extract structured email alert details from user message."},
                 {"role": "user", "content": prompt}
@@ -786,7 +785,7 @@ def extract_email_alert_updates(user, user_message, custom_objects, users):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -908,7 +907,7 @@ def extract_email_alerts_deletes(user_message):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": "Extract structured email alert deletions from user message."},
                 {"role": "user", "content": prompt}

@@ -83,7 +83,6 @@ from .utils.orchestrator.context_handle_helpers import (
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = get_model("classifier")
 client = get_llm_client()
 logging.basicConfig(level=logging.DEBUG)
 openai.log = "warning"
@@ -738,13 +737,13 @@ def orchestrate_request(user, user_message, session_data):
         """
     })
 
-    tokens, est_cost = estimate_cost(messages, model=OPENAI_MODEL)
+    tokens, est_cost = estimate_cost(messages, model=get_model("classifier"))
     logging.info(f"\n\n💰 ORCHESTRATOR - Estimated tokens: {tokens}, approx cost: ${est_cost:.6f}\n\n")
 
     try:
-        _create_kwargs = {"temperature": 0} if temperature_supported(OPENAI_MODEL) else {}
+        _create_kwargs = {"temperature": 0} if temperature_supported(get_model("classifier")) else {}
         response = client.chat.completions.create(
-            model=OPENAI_MODEL,
+            model=get_model("classifier"),
             messages=messages,
             **_create_kwargs
         )

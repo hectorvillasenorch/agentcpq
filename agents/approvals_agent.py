@@ -1,18 +1,14 @@
 from django.db.models import Sum, F, Max
 import json
-import os
-import openai
 import logging
-from dotenv import load_dotenv
 from cpq.models import Quote, Account, Opportunity, QuoteLine, Product, ApprovalWorkflow, ApprovalStep, QuoteApproval
 from decimal import Decimal, ROUND_HALF_UP
 from django.utils import timezone
 from datetime import datetime
 
-load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+from agents.llm import get_llm_client, get_model
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = get_llm_client()
 
 def approval_agent(user, action, user_message, session_data):
     """Handles approval-related actions dynamically using GPT message parsing."""
@@ -415,9 +411,9 @@ def parse_user_message(user_message):
     """
 
     try:
-        client = openai.OpenAI()  # ✅ Create a client instance
+        client = get_llm_client()
         response = client.chat.completions.create(  # ✅ Use the correct API format
-            model="gpt-4",
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}

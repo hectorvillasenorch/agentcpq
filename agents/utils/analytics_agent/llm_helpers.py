@@ -11,7 +11,6 @@ from agents.llm import chat_json, get_llm_client, get_model
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = get_model("structured")
 
 client = get_llm_client()
 
@@ -308,12 +307,12 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
         {"role": "user", "content": user_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages, model=get_model("structured"))
     logging.info(f"\n\n💰 LLM Metrics - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(
         client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=0,
     )
@@ -422,12 +421,12 @@ def generate_final_metrics_message(completed_metrics, db_results, remaining_metr
         {"role": "user", "content": final_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages_for_llm, model=get_model("structured"))
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(
         client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages_for_llm,
         temperature=0.7,
     )

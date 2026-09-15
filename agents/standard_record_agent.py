@@ -45,7 +45,6 @@ from .utils.admin_agent.rules_helpers import check_for_validation_rules
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = get_model("structured")
 
 client = get_llm_client()
 logger = logging.getLogger(__name__)
@@ -1179,12 +1178,12 @@ Return only JSON.
         {"role": "user", "content": user_prompt},
     ]
 
-    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages, model=get_model("structured"))
     logger.info("💰 Standard-record LLM estimate → tokens: %s | approx cost: $%.6f", tokens_used, cost_est)
 
     response = chat_json(
         client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=0.2,
     )
@@ -1562,12 +1561,12 @@ Return only JSON.
         {"role": "user", "content": user_prompt},
     ]
 
-    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages, model=get_model("structured"))
     logger.info("💰 Standard-record update LLM estimate → tokens: %s | approx cost: $%.6f", tokens_used, cost_est)
 
     response = chat_json(
         client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=0.2,
     )
@@ -1654,12 +1653,12 @@ Return only JSON.
         {"role": "user", "content": user_prompt},
     ]
 
-    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages, model=get_model("structured"))
     logger.info("💰 Standard-record delete LLM estimate → tokens: %s | approx cost: $%.6f", tokens_used, cost_est)
 
     response = chat_json(
         client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=0.2,
     )

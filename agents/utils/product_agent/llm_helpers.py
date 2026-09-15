@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 from agents.llm import chat_json, get_llm_client, get_model
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = get_model("structured")
 client = get_llm_client()
 
 from ..orchestrator.context_handle_helpers import estimate_cost
@@ -74,11 +73,11 @@ def extract_product_data_with_llm(user_message, current_state, previous_summary=
         {"role": "user", "content": user_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages, model=get_model("structured"))
     logging.info(f"\n\n💰 FIRST LLM - Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=1
     )
@@ -164,11 +163,11 @@ def generate_final_product_message(completed_products, db_results, remaining_pro
         {"role": "user", "content": final_prompt}
     ]
 
-    tokens_used, cost_est = estimate_cost(messages_for_llm, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages_for_llm, model=get_model("structured"))
     logging.info(f"\n\n💰 Estimated tokens: {tokens_used}, approx cost: ${cost_est:.6f}\n\n")
 
     response = chat_json(client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages_for_llm,
         temperature=0.7,
         response_format={"type": "json_object"}  # fuerza JSON válido (si usas GPT-4.1 / GPT-4o / GPT-5)

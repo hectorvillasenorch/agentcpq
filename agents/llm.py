@@ -1,9 +1,13 @@
 """Centralized LLM configuration for AgentCPQ.
 
 Every agent should obtain its OpenAI-compatible client and model through this
-module instead of hardcoding `openai.OpenAI(...)` / a model string. That way the
-provider and model can be swapped via environment variables (OpenAI, DeepSeek,
-OpenRouter, Together, or any OpenAI-compatible endpoint) without touching code.
+module instead of hardcoding ``openai.OpenAI(...)`` / a model string.
+
+Configuration precedence
+------------------------
+1. ``LLMConfig`` row(s) in the database whose ``is_active`` is True (managed
+   from the Django admin). The newest active row wins.
+2. Environment variables (``LLM_*``, then ``OPENAI_*``).
 
 Environment variables
 ---------------------
@@ -21,15 +25,12 @@ Example (.env) to run everything on DeepSeek:
     LLM_BASE_URL=https://api.deepseek.com
     LLM_API_KEY=<your deepseek key>
     LLM_MODEL=deepseek-chat
-    # Optional: keep classification cheap, give JSON extraction a stronger model
-    # LLM_MODEL_CLASSIFIER=deepseek-chat
-    # LLM_MODEL_STRUCTURED=deepseek-chat
 """
 
 from __future__ import annotations
 
-import functools
 import os
+import time
 
 import openai
 from dotenv import load_dotenv
@@ -41,6 +42,12 @@ DEFAULT_MODEL = "gpt-4o-mini"
 # Valid tiers understood by get_model(). Everything falls back to LLM_MODEL.
 _TIERS = ("classifier", "structured", "reasoning")
 
+# How long a worker caches the active DB config before re-reading it.
+_DB_CONFIG_TTL_SECONDS = 5.0
+
+_db_config_cache: dict = {"primed": False, "ts": 0.0, "value": None}
+_client_cache: dict = {"signature": None, "client": None}
+
 
 def _read_env(name: str, default: str | None = None) -> str | None:
     """Return a stripped env value, or ``default`` when unset/blank."""
@@ -51,32 +58,131 @@ def _read_env(name: str, default: str | None = None) -> str | None:
     return value or default
 
 
-@functools.lru_cache(maxsize=1)
-def get_llm_client():
-    """Return a configured OpenAI-compatible client.
+def _fetch_db_config():
+    """Return the newest active ``LLMConfig`` row, or ``None``.
 
-    Honors ``LLM_BASE_URL`` / ``LLM_API_KEY`` (then ``OPENAI_BASE_URL`` /
-    ``OPENAI_API_KEY``) so any compatible provider can be used.
+    Never raises: if the table is missing (migrations pending) or the DB is
+    unreachable we simply fall back to environment variables.
     """
-    api_key = _read_env("LLM_API_KEY") or _read_env("OPENAI_API_KEY")
-    base_url = _read_env("LLM_BASE_URL") or _read_env("OPENAI_BASE_URL")
+    try:
+        from agents.models import LLMConfig
 
-    kwargs = {"api_key": api_key}
+        return LLMConfig.objects.filter(is_active=True).order_by("-id").first()
+    except Exception:
+        return None
+
+
+def _get_db_config():
+    """Return the active DB config, cached for a few seconds per worker."""
+    now = time.monotonic()
+    if _db_config_cache["primed"] and (now - _db_config_cache["ts"]) < _DB_CONFIG_TTL_SECONDS:
+        return _db_config_cache["value"]
+
+    config = _fetch_db_config()
+    _db_config_cache["value"] = config
+    _db_config_cache["ts"] = now
+    _db_config_cache["primed"] = True
+    return config
+
+
+def clear_llm_config_cache() -> None:
+    """Drop cached DB config / client so the next call re-reads settings.
+
+    Called by the LLMConfig admin after saves and deletes.
+    """
+    _db_config_cache["primed"] = False
+    _db_config_cache["value"] = None
+    _client_cache["signature"] = None
+    _client_cache["client"] = None
+
+
+def _resolve_api_key(config) -> str | None:
+    if config is not None and getattr(config, "api_key", ""):
+        return config.api_key
+    return _read_env("LLM_API_KEY") or _read_env("OPENAI_API_KEY")
+
+
+def _resolve_base_url(config) -> str | None:
+    if config is not None and getattr(config, "base_url", ""):
+        return config.base_url
+    return _read_env("LLM_BASE_URL") or _read_env("OPENAI_BASE_URL")
+
+
+def llm_configured() -> bool:
+    """Whether any API key is available (DB config or environment)."""
+    return bool(_resolve_api_key(_get_db_config()))
+
+
+def _build_client(config):
+    kwargs = {"api_key": _resolve_api_key(config)}
+    base_url = _resolve_base_url(config)
     if base_url:
         kwargs["base_url"] = base_url
     return openai.OpenAI(**kwargs)
+
+
+def _get_real_client():
+    """Return the real OpenAI-compatible client for the current config."""
+    config = _get_db_config()
+    signature = (
+        "db" if config is not None else "env",
+        getattr(config, "pk", None),
+        _resolve_api_key(config),
+        _resolve_base_url(config),
+    )
+    if _client_cache["signature"] != signature or _client_cache["client"] is None:
+        _client_cache["client"] = _build_client(config)
+        _client_cache["signature"] = signature
+    return _client_cache["client"]
+
+
+class _LazyLLMClient:
+    """Delegating proxy that always resolves to the current client.
+
+    Module-level ``client = get_llm_client()`` bindings therefore stay valid
+    even after the admin changes the provider configuration at runtime.
+    """
+
+    def __getattr__(self, name: str):
+        return getattr(_get_real_client(), name)
+
+
+_lazy_client = _LazyLLMClient()
+
+
+def get_llm_client():
+    """Return an OpenAI-compatible client that reflects the latest config.
+
+    The returned object is a lightweight proxy; every ``client.chat...`` /
+    ``client.embeddings...`` access resolves the underlying OpenAI client for
+    the currently active DB/env configuration.
+    """
+    return _lazy_client
 
 
 def get_model(tier: str = "default") -> str:
     """Resolve the model name for a given tier.
 
     Tiers: ``default``, ``classifier``, ``structured``, ``reasoning``.
-    Each tier reads ``LLM_MODEL_<TIER>`` and falls back to ``LLM_MODEL``,
-    which itself falls back to the built-in default.
+    Each tier reads the active ``LLMConfig`` field first, then its
+    ``LLM_MODEL_<TIER>`` env var, then ``LLM_MODEL``, then the built-in
+    default.
     """
+    config = _get_db_config()
+
+    if config is not None:
+        if tier in _TIERS:
+            db_value = getattr(config, f"model_{tier}", "") or ""
+            if db_value:
+                return db_value
+            if getattr(config, "model", ""):
+                return config.model
+        elif getattr(config, "model", ""):
+            return config.model
+
     if tier in _TIERS:
-        return _read_env(f"LLM_MODEL_{tier.upper()}", get_model("default"))
-    return _read_env("LLM_MODEL", DEFAULT_MODEL)
+        return _read_env(f"LLM_MODEL_{tier.upper()}", get_model("default")) or DEFAULT_MODEL
+    return _read_env("LLM_MODEL", DEFAULT_MODEL) or DEFAULT_MODEL
 
 
 def json_mode_enabled() -> bool:
@@ -85,6 +191,10 @@ def json_mode_enabled() -> bool:
     Enabled by default; set ``LLM_JSON_MODE=0`` to disable for providers that
     don't implement JSON mode.
     """
+    config = _get_db_config()
+    if config is not None:
+        return bool(getattr(config, "json_mode", True))
+
     value = _read_env("LLM_JSON_MODE", "1")
     return str(value).strip().lower() not in {"0", "false", "no", "off", "disabled"}
 

@@ -16,7 +16,6 @@ from agents.llm import chat_json, get_llm_client, get_model
 # ✅ Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = get_model("structured")
 
 client = get_llm_client()
 
@@ -39,7 +38,7 @@ def extract_custom_objects(user_message, previous_summary):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -103,7 +102,7 @@ def extract_custom_objects_updates(user_message, custom_objects):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -196,7 +195,7 @@ def extract_custom_objects_deletes(user_message, custom_objects):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": "Extract custom objects details to create."},
                 {"role": "user", "content": prompt}
@@ -315,7 +314,7 @@ def extract_custom_fields(user_message, custom_objects):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": "Extract custom objects details to create."},
                 {"role": "user", "content": prompt}
@@ -359,7 +358,7 @@ def extract_custom_fields_updates(user_message, custom_objects, custom_fields, p
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -451,7 +450,7 @@ def extract_custom_fields_deletes(user_message, custom_objects, custom_fields):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": "Extract custom objects details to create."},
                 {"role": "user", "content": prompt}
@@ -609,7 +608,7 @@ def extract_custom_object_data(user_message, custom_objects_data, custom_objects
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": "Extract custom objects details to create."},
                 {"role": "user", "content": prompt}
@@ -659,7 +658,7 @@ def extract_custom_records_updates(user_message, record_identifiers, custom_obje
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -753,7 +752,7 @@ def extract_custom_records_deletes(user_message, record_identifiers):
 
     try:
         response = chat_json(client,
-            model=OPENAI_MODEL,
+            model=get_model("structured"),
             messages=[
                 {"role": "system", "content": "Extract custom objects details to create."},
                 {"role": "user", "content": prompt}

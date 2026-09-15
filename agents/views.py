@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 from agents.models import ChatMessage, ChatSession, SingleRecordLayout
 from cpq.action_trigger.signal_controls import set_skip_signals
 from agents.standard_record_agent import MODEL_MAP, EXTRA_FIELDS, _refresh_allowed_fields
-from agents.llm import chat_json, get_llm_client, get_model
+from agents.llm import chat_json, get_llm_client, get_model, llm_configured
 from agents.streaming import StreamSink, set_sink
 from cpq.models import CustomField, CustomObject
 from agents.knowledge_agent import resolve_knowledge_video_request
@@ -45,9 +45,6 @@ MAX_ATTACHMENT_SIZE = 8 * 1024 * 1024  # 8 MB
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = get_model("reasoning")
-OPENAI_BATCH_MODEL = os.getenv("OPENAI_BATCH_MODEL", get_model("structured"))
 
 
 def _build_batch_schema_objects():
@@ -1069,12 +1066,12 @@ def batch_map(request):
     })
 
     mapped_headers = [None for _ in headers]
-    if OPENAI_API_KEY:
+    if llm_configured():
         client = get_llm_client()
         try:
             response = chat_json(
                 client,
-                model=OPENAI_BATCH_MODEL,
+                model=get_model("structured"),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},

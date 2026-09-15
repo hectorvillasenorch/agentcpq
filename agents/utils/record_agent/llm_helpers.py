@@ -16,7 +16,6 @@ from agents.llm import chat_json, get_llm_client, get_model
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = get_model("structured")
 
 client = get_llm_client()
 
@@ -131,7 +130,7 @@ Return JSON following the schema.
         {"role": "user", "content": user_prompt},
     ]
 
-    tokens_used, cost_est = estimate_cost(messages, model=OPENAI_MODEL)
+    tokens_used, cost_est = estimate_cost(messages, model=get_model("structured"))
     logger.info(
         "💰 Single-record LLM estimate → tokens: %s | approx cost: $%.6f",
         tokens_used,
@@ -140,7 +139,7 @@ Return JSON following the schema.
 
     response = chat_json(
         client,
-        model=OPENAI_MODEL,
+        model=get_model("structured"),
         messages=messages,
         temperature=0.2,
     )

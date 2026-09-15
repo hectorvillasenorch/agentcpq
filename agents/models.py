@@ -1,6 +1,17 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.conf import settings
+from cryptography.fernet import Fernet
+import base64
+import hashlib
 import uuid
+
+
+def _llm_fernet() -> Fernet:
+    """Fernet key derived from ``SECRET_KEY`` for LLM API-key encryption."""
+    digest = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
 
 class ChatSession(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -79,3 +90,77 @@ class SingleRecordLayout(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.object_name}"
+
+
+class LLMConfig(models.Model):
+    """Runtime LLM provider settings.
+
+    When an active config exists it overrides the ``LLM_*`` / ``OPENAI_*``
+    environment variables for chat/JSON calls. Manage it from the Django
+    admin; only the designated user is allowed to edit it.
+    """
+
+    is_active = models.BooleanField(
+        default=True,
+        help_text="When enabled, these settings override the LLM_* / OPENAI_* environment variables.",
+    )
+    api_key_encrypted = models.TextField(
+        blank=True,
+        default="",
+        help_text="Encrypted API key for the provider. Stored encrypted at rest.",
+    )
+    base_url = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="OpenAI-compatible base URL, e.g. https://api.deepseek.com. Blank falls back to environment.",
+    )
+    model = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Default model, e.g. deepseek-chat. Blank falls back to LLM_MODEL / gpt-4o-mini.",
+    )
+    model_classifier = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Model for intent routing/classification (optional).",
+    )
+    model_structured = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Model for JSON extraction (optional).",
+    )
+    model_reasoning = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Model for general answers / reasoning (optional).",
+    )
+    json_mode = models.BooleanField(
+        default=True,
+        help_text="Whether chat/JSON calls request response_format=json_object.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "LLM Config"
+        verbose_name_plural = "LLM Config"
+        ordering = ("-id",)
+
+    def __str__(self):
+        return f"LLM Config ({self.model or 'env fallback'})"
+
+    @property
+    def api_key(self) -> str:
+        if not self.api_key_encrypted:
+            return ""
+        try:
+            return _llm_fernet().decrypt(self.api_key_encrypted.encode()).decode()
+        except Exception:
+            return ""
+
+    @api_key.setter
+    def api_key(self, value: str) -> None:
+        cleaned = (value or "").strip()
+        if cleaned:
+            self.api_key_encrypted = _llm_fernet().encrypt(cleaned.encode()).decode()
+        else:
+            self.api_key_encrypted = ""
