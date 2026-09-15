@@ -712,6 +712,7 @@ def create_activity_for_record(request):
 
     link_kwargs = {}
     linked_note = ""
+    custom_account = None
 
     try:
         if object_name == "Lead":
@@ -743,7 +744,40 @@ def create_activity_for_record(request):
                     link_kwargs["contact"] = contact
                     linked_note = f" (linked to Contact '{contact}')"
         else:
-            return JsonResponse({"error": f"Activities can't be linked directly to {object_name}."}, status=400)
+            # Custom objects: resolve an Activity parent through lookup fields
+            # (e.g. a project__c record with an Account/Opportunity lookup).
+            from cpq.models import CustomObject, CustomRecord
+
+            custom_object = CustomObject.objects.filter(name__iexact=object_name).first()
+            if custom_object is None:
+                return JsonResponse({"error": f"Activities can't be linked directly to {object_name}."}, status=400)
+            custom_record = CustomRecord.objects.filter(pk=record_id, object_type=custom_object).first()
+            if custom_record is None:
+                return JsonResponse({"error": f"{object_name} record not found."}, status=404)
+
+            from cpq.views import _resolve_activity_relation_from_custom_record
+
+            relation = _resolve_activity_relation_from_custom_record(custom_record, request.user)
+            if relation.get("lead"):
+                link_kwargs["lead"] = relation["lead"]
+            if relation.get("contact"):
+                link_kwargs["contact"] = relation["contact"]
+            if relation.get("opportunity"):
+                link_kwargs["opportunity"] = relation["opportunity"]
+            custom_account = relation.get("account")
+            if custom_account:
+                link_kwargs["account"] = custom_account
+            if not link_kwargs:
+                return JsonResponse(
+                    {
+                        "error": (
+                            "No related Lead, Contact, Opportunity, or Account was found on this "
+                            "record to link the activity to."
+                        )
+                    },
+                    status=400,
+                )
+            linked_note = f" (linked via {custom_object.label or custom_object.name})"
     except (Lead.DoesNotExist, Opportunity.DoesNotExist, Contact.DoesNotExist, Account.DoesNotExist):
         return JsonResponse({"error": f"{object_name} not found."}, status=404)
 
@@ -759,6 +793,14 @@ def create_activity_for_record(request):
         )
     except Exception as exc:  # noqa: BLE001
         return JsonResponse({"error": f"Failed to create activity: {exc}"}, status=500)
+
+    if custom_account is not None:
+        try:
+            from cpq.views import _set_activity_account_lookup
+
+            _set_activity_account_lookup(activity, custom_account)
+        except Exception:  # noqa: BLE001
+            logger.warning("Failed to set activity account lookup", exc_info=True)
 
     from agents.utils.record_agent.handle_helpers import serialize_record
     from agents.utils.analytics_agent.handle_helpers import get_object_metadata

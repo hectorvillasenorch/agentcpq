@@ -61,6 +61,7 @@ export interface SingleRecordPayload {
   fields?: RecordField[];
   is_custom_object?: boolean;
   can_delete?: boolean;
+  can_log_activity?: boolean;
   layout?: { order?: string[]; hidden?: string[] };
   related?: RelatedRecordSection[];
 }
@@ -1011,7 +1012,8 @@ export default function SingleRecordCard({
           )}
         </span>
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          {ACTIVITY_RELATED_OBJECTS.has(String(live.object || "")) && !showActivityForm && (
+          {(ACTIVITY_RELATED_OBJECTS.has(String(live.object || "")) || live.can_log_activity === true) &&
+            !showActivityForm && (
             <button
               type="button"
               onClick={() => setShowActivityForm(true)}

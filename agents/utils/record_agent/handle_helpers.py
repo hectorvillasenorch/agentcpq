@@ -526,6 +526,53 @@ def build_related_records(record: Model, model_name: str) -> List[Dict[str, obje
     return related
 
 
+def _custom_object_can_link_activity(custom_object, depth: int = 0, _seen=None) -> bool:
+    """Whether a custom object can have Activities logged against it.
+
+    True when the object (directly, or through nested custom-object lookups)
+    has a lookup field that resolves to Account/Opportunity/Contact/Lead.
+    """
+    if custom_object is None or depth > 2:
+        return False
+    if _seen is None:
+        _seen = set()
+    key = getattr(custom_object, "pk", None)
+    if key is None or key in _seen:
+        return False
+    _seen.add(key)
+
+    from cpq.forms import resolve_lookup_model
+    from cpq.models import Account, Contact, CustomField, CustomObject, CustomRecord, Lead, Opportunity
+
+    activity_models = (Account, Opportunity, Contact, Lead)
+    lookup_fields = CustomField.objects.filter(custom_object=custom_object, data_type="lookup")
+    for field in lookup_fields:
+        model_class = resolve_lookup_model(
+            field.lookup_model, field_name=field.name, field_label=field.label
+        )
+        target_custom_object = None
+        if model_class is None and field.lookup_model:
+            target_custom_object = CustomObject.objects.filter(name__iexact=field.lookup_model).first()
+            if target_custom_object is not None:
+                model_class = CustomRecord
+
+        if model_class in activity_models:
+            return True
+        if model_class is CustomRecord and target_custom_object is not None:
+            if _custom_object_can_link_activity(target_custom_object, depth + 1, _seen):
+                return True
+    return False
+
+
+def _can_log_activity(record: Model, model_name: str) -> bool:
+    """Whether the record form should offer the 'Log activity' action."""
+    if model_name in ("Lead", "Opportunity", "Contact", "Account"):
+        return True
+    if model_name == "CustomRecord":
+        return _custom_object_can_link_activity(getattr(record, "object_type", None))
+    return False
+
+
 def _serialize_record(record: Model, object_name: str, custom_object, custom_fields, *, user=None) -> Dict[str, object]:
     """Build a normalized payload for front-end rendering."""
     model_name = record.__class__.__name__
@@ -563,6 +610,7 @@ def _serialize_record(record: Model, object_name: str, custom_object, custom_fie
         "fields": all_fields,
         "related": build_related_records(record, model_name),
         "is_custom_object": bool(custom_object),
+        "can_log_activity": _can_log_activity(record, model_name),
         "layout": layout,
     }
 
