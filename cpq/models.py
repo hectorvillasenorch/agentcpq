@@ -35,6 +35,7 @@ DEFAULT_OPPORTUNITY_STAGES = [
     ("presentationscheduled", "Presentation Scheduled"),
     ("decisionmakerboughtin", "Decision Maker Bought-In"),
     ("contractsent", "Contract Sent"),
+    ("disqualified", "Disqualified"),
     ("closedwon", "Closed Won"),
     ("closedlost", "Closed Lost"),
 ]

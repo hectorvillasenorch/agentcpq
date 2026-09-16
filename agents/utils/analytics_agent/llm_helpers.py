@@ -250,6 +250,13 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
       object="Opportunity", aggregate count(field="id"),
       conditions stage not_in ["closedwon","closedlost"],
       aggregate.date_field="expected_close_date" and aggregate.range based on the requested timeframe.
+    - If the user asks to "show only open opportunities" (or "open deals", "open pipeline"),
+      interpret as: object="Opportunity", conditions stage not_in ["closedwon","closedlost"].
+      Open means every stage except Closed Won and Closed Lost (so Appointment Scheduled,
+      Qualified to Buy, Presentation Scheduled, Decision Maker Bought-In, Contract Sent and
+      Disqualified all count as open).
+    - If the user filters by a specific stage (e.g. "only disqualified opportunities"),
+      use conditions stage equals "<stage>" with the stage key in lowercase (e.g. "disqualified").
 
     AGENT_MESSAGE RULES
     - Only talk about extraction status or missing info.

@@ -236,6 +236,18 @@ def _parse_only_filter_request(user_message):
         value = _ACTIVITY_STATUS_MAP.get(raw_value, raw_value.replace(" ", "_"))
     elif resolved_object == "Opportunity":
         field = "stage"
+        # "open opportunities" = every stage except Closed Won / Closed Lost
+        # (e.g. Appointment Scheduled, Qualified to Buy, …, Disqualified).
+        if raw_value in {"open", "open deals", "open opportunities", "active", "active deals", "in progress"}:
+            return {
+                "object": resolved_object,
+                "method": "read",
+                "conditions": [
+                    {"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost"]},
+                ],
+                "sort": {"field": "created_at", "order": "desc"},
+                "limit": 100,
+            }
         # apply_operator normalizes Opportunity.stage (lower, strip spaces).
     elif resolved_object == "Quote":
         field = "status"
