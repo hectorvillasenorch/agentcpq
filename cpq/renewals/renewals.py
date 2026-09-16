@@ -20,7 +20,7 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 # Terminal stages a *newly created* opportunity should never start in.
-_TERMINAL_STAGES = {"closedwon", "closedlost", "closed"}
+_TERMINAL_STAGES = {"closedwon", "closedlost", "closed", "disqualified"}
 
 
 def _open_stage_for_new_opportunity():

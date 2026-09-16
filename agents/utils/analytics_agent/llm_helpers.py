@@ -244,17 +244,17 @@ def extract_metrics_with_llm(user_message, current_state, previous_summary=None)
       object="Opportunity", aggregate sum(field="amount"), conditions stage equals "closedwon".
     - If the user asks about forecast/pipeline/expected revenue, interpret as:
       object="Opportunity", aggregate sum(field="amount"),
-      conditions stage not_in ["closedwon","closedlost"],
+      conditions stage not_in ["closedwon","closedlost","disqualified"],
       aggregate.date_field="expected_close_date" and aggregate.range based on the requested timeframe.
     - If the user asks "how many deals in pipeline", interpret as:
       object="Opportunity", aggregate count(field="id"),
-      conditions stage not_in ["closedwon","closedlost"],
+      conditions stage not_in ["closedwon","closedlost","disqualified"],
       aggregate.date_field="expected_close_date" and aggregate.range based on the requested timeframe.
     - If the user asks to "show only open opportunities" (or "open deals", "open pipeline"),
-      interpret as: object="Opportunity", conditions stage not_in ["closedwon","closedlost"].
-      Open means every stage except Closed Won and Closed Lost (so Appointment Scheduled,
-      Qualified to Buy, Presentation Scheduled, Decision Maker Bought-In, Contract Sent and
-      Disqualified all count as open).
+      interpret as: object="Opportunity", conditions stage not_in ["closedwon","closedlost","disqualified"].
+      Open means every stage except Closed Won, Closed Lost, and Disqualified
+      (so Appointment Scheduled, Qualified to Buy, Presentation Scheduled,
+      Decision Maker Bought-In, and Contract Sent count as open).
     - If the user filters by a specific stage (e.g. "only disqualified opportunities"),
       use conditions stage equals "<stage>" with the stage key in lowercase (e.g. "disqualified").
 

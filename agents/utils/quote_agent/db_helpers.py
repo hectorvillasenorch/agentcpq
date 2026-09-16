@@ -99,7 +99,7 @@ def get_or_create_account_and_opportunity(user, extracted_details, session_data)
         if existing_opps.exists():
             # Only OPEN (pipeline) opportunities are candidates for a new quote —
             # closed/won/lost deals should never be reused silently.
-            _terminal_stages = {"closedwon", "closedlost", "closed"}
+            _terminal_stages = {"closedwon", "closedlost", "closed", "disqualified"}
             open_opps = [
                 opp for opp in existing_opps
                 if str(opp.stage or "").strip().lower() not in _terminal_stages

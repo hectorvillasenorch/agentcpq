@@ -243,7 +243,7 @@ def _parse_only_filter_request(user_message):
                 "object": resolved_object,
                 "method": "read",
                 "conditions": [
-                    {"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost"]},
+                    {"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost", "disqualified"]},
                 ],
                 "sort": {"field": "created_at", "order": "desc"},
                 "limit": 100,
@@ -470,7 +470,7 @@ def _parse_pipeline_forecast_request(user_message):
         "object": "Opportunity",
         "method": "read",
         "conditions": [
-            {"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost"]},
+            {"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost", "disqualified"]},
         ],
         "sort": None,
         "limit": 100,
@@ -532,7 +532,7 @@ def _parse_count_metrics_request(user_message):
 
     conditions = []
     if stage == "open":
-        conditions = [{"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost"]}]
+        conditions = [{"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost", "disqualified"]}]
     elif stage:
         conditions = [{"field": "stage", "operator": "equals", "value": stage}]
 
@@ -690,7 +690,7 @@ def _parse_grouped_metrics_request(user_message):
 
     conditions = []
     if stage == "open":
-        conditions = [{"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost"]}]
+        conditions = [{"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost", "disqualified"]}]
     elif stage:
         conditions = [{"field": "stage", "operator": "equals", "value": stage}]
 
@@ -749,7 +749,7 @@ def _parse_followup_stage_filter(user_message, last_request):
     new_request = copy.deepcopy(last_request)
     new_conditions = [c for c in new_request.get("conditions", []) if str(c.get("field", "")).lower() != "stage"]
     if stage == "open":
-        new_conditions.append({"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost"]})
+        new_conditions.append({"field": "stage", "operator": "not_in", "value": ["closedwon", "closedlost", "disqualified"]})
     elif stage:
         new_conditions.append({"field": "stage", "operator": "equals", "value": stage})
     new_request["conditions"] = new_conditions
