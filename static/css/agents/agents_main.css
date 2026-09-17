@@ -1441,6 +1441,16 @@ textarea.bundle-edit-input {
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
 }
 
+.single-record-related--flash {
+  animation: single-record-related-flash 1.6s ease-out;
+  border-color: #3B62D9;
+}
+
+@keyframes single-record-related-flash {
+  0% { background: #F3F6FE; }
+  100% { background: #ffffff; }
+}
+
 .single-record-related h5 {
   margin: 0 0 12px;
   font-size: 0.95rem;

@@ -4337,6 +4337,18 @@ function renderRelatedButton(role) {
   </div>`;
 }
 
+function renderGenericRelatedButton(section, index) {
+  if (!section || !Array.isArray(section.records) || section.records.length === 0) return "";
+  const label = section.label || section.object || "Related records";
+  const count = section.records.length;
+  return `<div class="single-record-related-wrap">
+    <button type="button" class="single-record-related-btn single-record-related-btn--generic" data-role="generic-related" data-section-index="${index}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
+      <span class="material-icons" aria-hidden="true">link</span>
+      <span class="single-record-related-count" data-role="related-count">${count}</span>
+    </button>
+  </div>`;
+}
+
 function renderSingleRecord(record) {
   if (!record || !Array.isArray(record.fields)) {
     return `<div class="error-message">⚠️ Unable to display this record right now.</div>`;
@@ -4432,7 +4444,28 @@ function renderSingleRecord(record) {
     relatedRoles.push("related-activities");
   }
   const relatedButtons = relatedRoles.map(renderRelatedButton).filter(Boolean).join('');
-  const relatedButtonsRow = relatedButtons ? `<div class="single-record-related-actions">${relatedButtons}</div>` : '';
+
+  // Generic related buttons: every related section the backend returned that is
+  // not already covered by a hardcoded role gets a button next to Layout.
+  // This makes related actions work for any standard or custom object.
+  const hardcodedObjects = new Set(
+    relatedRoles
+      .map(role => ((RELATED_BUTTON_CONFIG[role] || {}).objectName || "").toLowerCase())
+      .filter(Boolean)
+  );
+  const genericSections = (record.related || []).filter(
+    (section) => section && Array.isArray(section.records) && section.records.length > 0
+  );
+  const genericRelatedButtons = genericSections
+    .map((section, index) => {
+      const sectionObject = String(section.object || "").toLowerCase();
+      if (hardcodedObjects.has(sectionObject)) return "";
+      return renderGenericRelatedButton(section, index);
+    })
+    .filter(Boolean)
+    .join('');
+  const allRelatedButtons = relatedButtons + genericRelatedButtons;
+  const relatedButtonsRow = allRelatedButtons ? `<div class="single-record-related-actions">${allRelatedButtons}</div>` : '';
   const headerControls = (layoutButton || deleteButton)
     ? `<div class="single-record-header-controls">${layoutButton}${deleteButton}</div>`
     : '';
@@ -4446,7 +4479,7 @@ function renderSingleRecord(record) {
   );
 
   const relatedSections = (record.related || [])
-    .map(entry => renderSingleRecordRelated(entry))
+    .map((entry, index) => renderSingleRecordRelated(entry, index))
     .join('');
 
   const gridContent = sectionsHtml || '<div class="single-record-empty">No additional details were provided for this record.</div>';
@@ -4485,13 +4518,29 @@ function initializeSingleRecordRelatedButtons(root = document) {
   const buttons = root.querySelectorAll('.single-record-related-btn[data-role]');
   buttons.forEach(button => {
     const role = button.dataset.role;
-    const config = getRelatedButtonConfig(role);
-    if (!config) return;
     if (button.dataset.bound === "true") return;
     button.dataset.bound = "true";
 
     const card = button.closest('.single-record-card');
     if (!card) return;
+
+    // Generic related buttons (built from record.related sections) simply
+    // scroll to the matching section already rendered in the card body.
+    if (role === "generic-related") {
+      const sectionIndex = button.dataset.sectionIndex;
+      button.addEventListener('click', () => {
+        const section = card.querySelector(`.single-record-related[data-related-section="${sectionIndex}"]`);
+        if (section) {
+          section.scrollIntoView({ behavior: "smooth", block: "start" });
+          section.classList.add("single-record-related--flash");
+          window.setTimeout(() => section.classList.remove("single-record-related--flash"), 1800);
+        }
+      });
+      return;
+    }
+
+    const config = getRelatedButtonConfig(role);
+    if (!config) return;
     const relationId = card.dataset.recordId;
     const objectName = card.dataset.recordObject || "";
 
@@ -6972,7 +7021,7 @@ function showQuoteToast(message, intent = "success") {
   setTimeout(remove, tone === "error" ? 4500 : 2400);
 }
 
-function renderSingleRecordRelated(entry) {
+function renderSingleRecordRelated(entry, index) {
   if (!entry || !Array.isArray(entry.records) || entry.records.length === 0) {
     return '';
   }
@@ -6990,8 +7039,9 @@ function renderSingleRecordRelated(entry) {
     })
     .join('');
 
+  const sectionAttr = index !== undefined ? ` data-related-section="${index}"` : '';
   return `
-    <div class="single-record-related">
+    <div class="single-record-related"${sectionAttr}>
       <h5>${sectionTitle}</h5>
       <ul>${rows}</ul>
     </div>

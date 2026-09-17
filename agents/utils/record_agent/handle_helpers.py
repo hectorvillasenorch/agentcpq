@@ -321,10 +321,11 @@ def _custom_object_by_name(name: str):
     return obj
 
 
-def _configured_related_section(record: Model, model_name: str, cfg) -> Optional[Dict[str, object]]:
+def _configured_related_section(record: Model, model_name: str, cfg, parent_names=None) -> Optional[Dict[str, object]]:
     """Build one configured related-records section (used by build_related_records)."""
     from cpq.models import CustomField, CustomFieldValue, CustomRecord
 
+    parent_names = parent_names or {model_name.lower()}
     related_name = (cfg.related_object or "").strip()
     if not related_name:
         return None
@@ -335,11 +336,10 @@ def _configured_related_section(record: Model, model_name: str, cfg) -> Optional
         link_field = (cfg.link_field or "").strip()
         if not link_field:
             # auto-detect: a lookup custom field on that object pointing at the parent
-            parent_model = model_name.lower()
             candidates = CustomField.objects.filter(custom_object=custom_target, lookup_model__isnull=False).exclude(lookup_model="")
             for candidate in candidates:
                 lookup_model = (candidate.lookup_model or "").split(".")[-1].lower()
-                if lookup_model == parent_model:
+                if lookup_model in parent_names:
                     link_field = candidate.name
                     break
         if not link_field:
@@ -505,23 +505,72 @@ def build_related_records(record: Model, model_name: str) -> List[Dict[str, obje
     # ------------------------------------------------------------------
     # Configured sections (Admin → Object Related Sections):
     # e.g. Opportunity form showing POV records linked via opportunity__c.
+    # Custom objects are matched by their object-type name/label as well
+    # as the generic "CustomRecord" parent.
     # ------------------------------------------------------------------
     try:
         from cpq.models import ObjectRelationConfig
 
-        configs = ObjectRelationConfig.objects.filter(
-            parent_object__iexact=model_name, is_active=True
-        ).order_by("position", "id")
+        parent_names = {model_name.lower()}
+        if model_name == "CustomRecord":
+            custom_object = getattr(record, "object_type", None)
+            if custom_object is not None:
+                parent_names.add((custom_object.name or "").strip().lower())
+                parent_names.add((custom_object.label or "").strip().lower())
+        parent_names = {n for n in parent_names if n}
+
+        config_q = Q(is_active=True)
+        for name in parent_names:
+            config_q |= Q(parent_object__iexact=name)
+        configs = ObjectRelationConfig.objects.filter(config_q).order_by("position", "id")
+
         existing_keys = {(section.get("object") or "").lower() for section in related}
         for cfg in configs:
             if (cfg.related_object or "").lower() in existing_keys:
                 continue
-            section = _configured_related_section(record, model_name, cfg)
+            section = _configured_related_section(record, model_name, cfg, parent_names=parent_names)
             if section:
                 related.append(section)
                 existing_keys.add((section.get("object") or "").lower())
     except Exception:
         logger.debug("configured related sections failed", exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Generic fallback: any other cpq standard model with a reverse
+    # relation to this record automatically gets a related section. This
+    # covers standard objects without a hand-written branch above
+    # (Product, Tenant, Option, Knowledge, …) and any future object.
+    # ------------------------------------------------------------------
+    if model_name != "CustomRecord":
+        try:
+            existing_keys = {(section.get("object") or "").lower() for section in related}
+            for rel in record._meta.related_objects:
+                related_model = rel.related_model
+                if related_model._meta.app_label != "cpq":
+                    continue
+                if related_model is record.__class__:
+                    continue
+                if not (rel.one_to_many or rel.one_to_one):
+                    continue
+                related_name = related_model.__name__
+                if related_name.lower() in existing_keys:
+                    continue
+                try:
+                    accessor = rel.get_accessor_name()
+                    if rel.one_to_many:
+                        manager = getattr(record, accessor, None)
+                        rows = [_row(obj) for obj in manager.all()[:15]] if manager is not None else []
+                    else:
+                        obj = getattr(record, accessor, None)
+                        rows = [_row(obj)] if obj is not None else []
+                except Exception:
+                    continue
+                if not rows:
+                    continue
+                label = str(getattr(related_model._meta, "verbose_name_plural", "") or related_name).strip().title() or related_name
+                _add(label, related_name, rows)
+        except Exception:
+            logger.debug("generic related sections failed", exc_info=True)
 
     return related
 

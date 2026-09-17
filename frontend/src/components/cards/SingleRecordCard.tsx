@@ -961,6 +961,7 @@ export default function SingleRecordCard({
   const [activityToast, setActivityToast] = useState<string>("");
   const [addRelated, setAddRelated] = useState<{ object: string; label?: string } | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const relatedSectionRef = useRef<HTMLDivElement | null>(null);
 
   const hiddenSet = new Set(layout.hidden);
   const allFields = (live.fields || []).filter((f) => !isDbId(f.name) && !hiddenSet.has(fieldKey(f)));
@@ -1054,6 +1055,19 @@ export default function SingleRecordCard({
               )}
             </div>
           )}
+          {(live.related || []).length > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                relatedSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+              className="flex items-center gap-1 rounded-md border border-border bg-white px-2 py-1 text-[11px] font-medium text-[#3B62D9] hover:bg-[#F3F6FE]"
+              title="View related records"
+            >
+              <Link2 size={13} />
+              Related
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowLayout(true)}
@@ -1138,7 +1152,7 @@ export default function SingleRecordCard({
       ) : null}
 
       {live.related && live.related.length > 0 && depth < 2 && (
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4" ref={relatedSectionRef}>
           <RelatedRecords
             sections={live.related}
             sessionId={sessionId}
