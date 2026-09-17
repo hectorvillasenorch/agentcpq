@@ -161,6 +161,10 @@ class OpportunityStage(models.Model):
     active = models.BooleanField(default=True)
     sort_order = models.IntegerField(default=0)
     is_default = models.BooleanField(default=False)
+    probability = models.PositiveSmallIntegerField(
+        default=50,
+        help_text="Win probability (0-100) used for the weighted forecast.",
+    )
 
     class Meta:
         verbose_name = "Opportunity Stage"
@@ -473,6 +477,16 @@ class Opportunity(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class BusinessDashboard(Opportunity):
+    """Read-only proxy model used to expose the business dashboard in the admin."""
+
+    class Meta:
+        proxy = True
+        verbose_name = "Business Dashboard"
+        verbose_name_plural = "Business Dashboard"
+
 
 class Activity(models.Model):
     ACTIVITY_TYPE_CHOICES = [

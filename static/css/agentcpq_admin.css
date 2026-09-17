@@ -2440,3 +2440,249 @@ td.field-timestamp {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================================
+   Business dashboard (/admin/cpq/businessdashboard/)
+   ========================================================================== */
+body.business-dashboard #content {
+  max-width: 1500px;
+}
+
+.biz-dash {
+  padding-bottom: 24px;
+}
+
+.biz-head {
+  margin: 0 0 18px;
+}
+.biz-kicker {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--adm-primary);
+}
+.biz-head h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--adm-text);
+}
+.biz-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--adm-muted);
+}
+
+/* KPI cards */
+.biz-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0 0 18px;
+}
+.biz-kpi {
+  background: var(--adm-surface);
+  border: 1px solid var(--adm-border);
+  border-left: 3px solid var(--adm-primary);
+  border-radius: var(--adm-radius);
+  padding: 13px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  box-shadow: var(--adm-shadow);
+}
+.biz-kpi--green { border-left-color: var(--adm-success); }
+.biz-kpi--blue { border-left-color: #3b62d9; }
+.biz-kpi--purple { border-left-color: #7c3aed; }
+.biz-kpi--amber { border-left-color: var(--adm-warning); }
+.biz-kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--adm-muted);
+}
+.biz-kpi-value {
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--adm-text);
+  font-variant-numeric: tabular-nums;
+}
+.biz-kpi-sub {
+  font-size: 12px;
+  color: var(--adm-muted);
+}
+
+/* Cards + grid */
+.biz-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0 0 16px;
+}
+.biz-card {
+  background: var(--adm-surface);
+  border: 1px solid var(--adm-border);
+  border-radius: var(--adm-radius);
+  box-shadow: var(--adm-shadow);
+  overflow: hidden;
+}
+.biz-card h2 {
+  margin: 0;
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--adm-text);
+  background: #f8fafc;
+  border-bottom: 1px solid var(--adm-border);
+}
+.biz-card-body {
+  padding: 16px;
+}
+.biz-chart {
+  position: relative;
+  height: 260px;
+}
+.biz-chart--sm {
+  height: 210px;
+}
+.biz-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+}
+
+/* Tables */
+.biz-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.biz-table th,
+.biz-table td {
+  padding: 8px 10px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--adm-border);
+  text-align: left;
+}
+.biz-table thead th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--adm-muted);
+  background: #f8fafc;
+}
+.biz-table .biz-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.biz-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.biz-table .biz-row--closed td {
+  color: var(--adm-muted);
+}
+.biz-empty {
+  color: var(--adm-muted);
+  font-size: 13px;
+}
+
+/* Key/value stats */
+.biz-stats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.biz-stats li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--adm-border);
+  font-size: 13px;
+  color: var(--adm-muted);
+}
+.biz-stats li:last-child {
+  border-bottom: 0;
+}
+.biz-stats strong {
+  color: var(--adm-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Data quality */
+.biz-quality {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.biz-quality-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--adm-border);
+  border-radius: var(--adm-radius-sm);
+  background: #f8fafc;
+}
+.biz-quality-item--warn {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.biz-quality-count {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--adm-text);
+  font-variant-numeric: tabular-nums;
+}
+.biz-quality-label {
+  font-size: 12.5px;
+  color: var(--adm-muted);
+}
+
+@media (max-width: 1400px) {
+  .biz-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 1100px) {
+  .biz-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .biz-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 767px) {
+  .biz-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .biz-split { grid-template-columns: 1fr; }
+}
+
+/* "Open Business Dashboard" button on the admin home hero */
+.admin-dash-actions {
+  margin: 14px 0 0;
+}
+.admin-dash-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: var(--adm-primary);
+  border: 1px solid var(--adm-primary);
+  color: #fff !important;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.admin-dash-cta:hover,
+.admin-dash-cta:focus {
+  background: var(--adm-primary-hover);
+  border-color: var(--adm-primary-hover);
+  color: #fff !important;
+}
+.admin-dash-cta .material-icons {
+  font-size: 17px;
+  color: #fff;
+}

@@ -1,0 +1,371 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Business Dashboard | AgentCPQ Admin{% endblock %}
+
+{% block bodyclass %}app-cpq model-businessdashboard business-dashboard{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label='cpq' %}">CPQ</a>
+  &rsaquo; Business Dashboard
+</div>
+{% endblock %}
+
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<div class="biz-dash">
+  <header class="biz-head">
+    <p class="biz-kicker">AgentCPQ &middot; CPQ</p>
+    <h1>Business Dashboard</h1>
+    <p class="biz-sub">
+      Revenue, pipeline, leads, quotes and customers at a glance.
+      Generated {{ generated_at|date:"M j, Y H:i" }}.
+    </p>
+  </header>
+
+  <section class="biz-kpis">
+    {% for kpi in kpis %}
+      <div class="biz-kpi biz-kpi--{{ kpi.tone }}">
+        <span class="biz-kpi-label">{{ kpi.label }}</span>
+        <span class="biz-kpi-value">{{ kpi.value }}</span>
+        <span class="biz-kpi-sub">{{ kpi.sub }}</span>
+      </div>
+    {% endfor %}
+  </section>
+
+  <div class="biz-grid">
+    <section class="biz-card">
+      <h2>Revenue by month (Closed Won)</h2>
+      <div class="biz-card-body">
+        <div class="biz-chart"><canvas id="bizRevenueChart"></canvas></div>
+      </div>
+    </section>
+
+    <section class="biz-card">
+      <h2>Lead funnel</h2>
+      <div class="biz-card-body">
+        <div class="biz-chart"><canvas id="bizLeadFunnelChart"></canvas></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="biz-grid">
+    <section class="biz-card">
+      <h2>Pipeline by stage</h2>
+      <div class="biz-card-body">
+        <table class="biz-table">
+          <thead>
+            <tr>
+              <th>Stage</th>
+              <th class="biz-num">Deals</th>
+              <th class="biz-num">Value</th>
+              <th class="biz-num">Prob.</th>
+              <th class="biz-num">Weighted</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in pipeline_by_stage %}
+              <tr{% if row.is_closed %} class="biz-row--closed"{% endif %}>
+                <td>{{ row.label }}</td>
+                <td class="biz-num">{{ row.count }}</td>
+                <td class="biz-num">${{ row.value_display }}</td>
+                <td class="biz-num">{{ row.probability }}%</td>
+                <td class="biz-num">${{ row.weighted_display }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5" class="biz-empty">No stages configured.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="biz-card">
+      <h2>Won vs Lost (12 months)</h2>
+      <div class="biz-card-body">
+        <div class="biz-chart"><canvas id="bizWonLostChart"></canvas></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="biz-grid">
+    <section class="biz-card">
+      <h2>Quotes</h2>
+      <div class="biz-card-body biz-split">
+        <div class="biz-chart biz-chart--sm"><canvas id="bizQuoteStatusChart"></canvas></div>
+        <ul class="biz-stats">
+          <li><span>Open quotes</span><strong>{{ quotes.open_count }}</strong></li>
+          <li><span>Open value</span><strong>${{ quotes.open_value }}</strong></li>
+          <li><span>Pending approval</span><strong>{{ quotes.pending_count }} &middot; ${{ quotes.pending_value }}</strong></li>
+          <li><span>Expiring in 30 days</span><strong>{{ quotes.expiring_soon }}</strong></li>
+          <li><span>Avg quote value</span><strong>${{ quotes.avg_value }}</strong></li>
+          <li><span>Avg discount</span><strong>{{ quotes.avg_discount }}</strong></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="biz-card">
+      <h2>Leads by source</h2>
+      <div class="biz-card-body">
+        <div class="biz-chart biz-chart--sm"><canvas id="bizSourceChart"></canvas></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="biz-grid">
+    <section class="biz-card">
+      <h2>Top customers (12 months)</h2>
+      <div class="biz-card-body">
+        <table class="biz-table">
+          <thead>
+            <tr><th>Customer</th><th class="biz-num">Deals</th><th class="biz-num">Revenue</th></tr>
+          </thead>
+          <tbody>
+            {% for row in top_customers %}
+              <tr>
+                <td>{{ row.name }}</td>
+                <td class="biz-num">{{ row.deals }}</td>
+                <td class="biz-num">${{ row.total_display }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="3" class="biz-empty">No closed-won revenue yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="biz-card">
+      <h2>Rep leaderboard (12 months)</h2>
+      <div class="biz-card-body">
+        <table class="biz-table">
+          <thead>
+            <tr><th>Rep</th><th class="biz-num">Deals</th><th class="biz-num">Revenue</th></tr>
+          </thead>
+          <tbody>
+            {% for row in leaderboard %}
+              <tr>
+                <td>{{ row.name }}</td>
+                <td class="biz-num">{{ row.deals }}</td>
+                <td class="biz-num">${{ row.revenue_display }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="3" class="biz-empty">No owner revenue yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="biz-grid">
+    <section class="biz-card">
+      <h2>Subscriptions &amp; renewals</h2>
+      <div class="biz-card-body">
+        <ul class="biz-stats">
+          <li><span>Active subscriptions</span><strong>{{ subscriptions.active }}</strong></li>
+          <li><span>MRR</span><strong>${{ subscriptions.mrr }}</strong></li>
+          <li><span>ARR</span><strong>${{ subscriptions.arr }}</strong></li>
+          <li><span>Renewals due (90 days)</span><strong>{{ subscriptions.renewals_due }}</strong></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="biz-card">
+      <h2>Activities (30 days)</h2>
+      <div class="biz-card-body">
+        <ul class="biz-stats">
+          {% for row in activity_mix %}
+            <li><span>{{ row.label }}</span><strong>{{ row.count }}</strong></li>
+          {% empty %}
+            <li class="biz-empty">No activities in the last 30 days.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <section class="biz-card">
+    <h2>Data quality</h2>
+    <div class="biz-card-body">
+      <div class="biz-quality">
+        {% for row in data_quality %}
+          <div class="biz-quality-item{% if row.count %} biz-quality-item--warn{% endif %}">
+            <span class="biz-quality-count">{{ row.count }}</span>
+            <span class="biz-quality-label">{{ row.label }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+</div>
+
+{{ revenue_labels|json_script:"biz-revenue-labels" }}
+{{ revenue_values|json_script:"biz-revenue-values" }}
+{{ won_lost_labels|json_script:"biz-wonlost-labels" }}
+{{ won_values|json_script:"biz-won-values" }}
+{{ lost_values|json_script:"biz-lost-values" }}
+{{ lead_funnel|json_script:"biz-lead-funnel" }}
+{{ quote_status_rows|json_script:"biz-quote-status" }}
+{{ leads_by_source|json_script:"biz-lead-sources" }}
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+(function () {
+  if (typeof Chart === "undefined") return;
+
+  var read = function (id) {
+    var el = document.getElementById(id);
+    return el ? JSON.parse(el.textContent) : null;
+  };
+
+  Chart.defaults.font.family = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = "#64748b";
+  var grid = { color: "#eef1f6" };
+  var money = function (value) {
+    return "$" + Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  };
+
+  var revenueEl = document.getElementById("bizRevenueChart");
+  if (revenueEl) {
+    var revenueValues = read("biz-revenue-values") || [];
+    var maxRevenue = Math.max.apply(null, revenueValues.concat([0]));
+    new Chart(revenueEl, {
+      type: "bar",
+      data: {
+        labels: read("biz-revenue-labels"),
+        datasets: [{
+          label: "Revenue",
+          data: revenueValues,
+          backgroundColor: "#fc6a3d",
+          borderRadius: 6,
+          maxBarThickness: 28
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: function (c) { return money(c.parsed.y); } } }
+        },
+        scales: {
+          x: { grid: { display: false } },
+          y: {
+            beginAtZero: true,
+            suggestedMax: maxRevenue > 0 ? undefined : 1000,
+            grid: grid,
+            ticks: { callback: function (v) { return money(v); } }
+          }
+        }
+      }
+    });
+  }
+
+  var funnelEl = document.getElementById("bizLeadFunnelChart");
+  if (funnelEl) {
+    var funnel = read("biz-lead-funnel") || [];
+    var colors = ["#3B62D9", "#7c3aed", "#16a34a", "#dc2626", "#d97706"];
+    new Chart(funnelEl, {
+      type: "bar",
+      data: {
+        labels: funnel.map(function (r) { return r.label; }),
+        datasets: [{
+          data: funnel.map(function (r) { return r.count; }),
+          backgroundColor: funnel.map(function (_, i) { return colors[i % colors.length]; }),
+          borderRadius: 6,
+          maxBarThickness: 34
+        }]
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, grid: grid, ticks: { precision: 0 } },
+          y: { grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  var wonLostEl = document.getElementById("bizWonLostChart");
+  if (wonLostEl) {
+    var wonData = read("biz-won-values") || [];
+    var lostData = read("biz-lost-values") || [];
+    var maxClosed = Math.max.apply(null, wonData.concat(lostData).concat([0]));
+    new Chart(wonLostEl, {
+      type: "bar",
+      data: {
+        labels: read("biz-wonlost-labels"),
+        datasets: [
+          { label: "Won", data: wonData, backgroundColor: "#16a34a", borderRadius: 4, maxBarThickness: 18 },
+          { label: "Lost", data: lostData, backgroundColor: "#dc2626", borderRadius: 4, maxBarThickness: 18 }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: "bottom" } },
+        scales: {
+          x: { stacked: false, grid: { display: false } },
+          y: {
+            beginAtZero: true,
+            suggestedMax: maxClosed > 0 ? undefined : 5,
+            grid: grid,
+            ticks: { precision: 0 }
+          }
+        }
+      }
+    });
+  }
+
+  var quoteEl = document.getElementById("bizQuoteStatusChart");
+  if (quoteEl) {
+    var quotes = read("biz-quote-status") || [];
+    new Chart(quoteEl, {
+      type: "doughnut",
+      data: {
+        labels: quotes.map(function (r) { return r.label; }),
+        datasets: [{
+          data: quotes.map(function (r) { return r.count; }),
+          backgroundColor: ["#94a3b8", "#3B62D9", "#d97706", "#16a34a", "#dc2626", "#0f172a"],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: "right" } }
+      }
+    });
+  }
+
+  var sourceEl = document.getElementById("bizSourceChart");
+  if (sourceEl) {
+    var sources = read("biz-lead-sources") || [];
+    new Chart(sourceEl, {
+      type: "doughnut",
+      data: {
+        labels: sources.map(function (r) { return r.label; }),
+        datasets: [{
+          data: sources.map(function (r) { return r.count; }),
+          backgroundColor: ["#fc6a3d", "#3B62D9", "#7c3aed", "#16a34a", "#d97706", "#0ea5e9"],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: "right" } }
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

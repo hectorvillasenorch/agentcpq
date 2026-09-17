@@ -44,9 +44,13 @@ from .models import (
     ApprovalRule,
     ApprovalStep,
     QuoteApproval,
+    OpportunityStage,
+    BusinessDashboard,
 )
 from .models import PicklistValue
 from .forms import  get_dynamic_form
+from .business_dashboard import build_business_dashboard_context
+from django.template.response import TemplateResponse
 from agents.models import ChatMessage, ChatSession, AgentPrompt
 from django.contrib.contenttypes.models import ContentType
 from django.utils.html import format_html, format_html_join
@@ -1538,6 +1542,46 @@ class ObjectRelationConfigAdmin(admin.ModelAdmin):
         if not obj.created_by_id:
             obj.created_by = request.user
         super().save_model(request, obj, form, change)
+
+
+# ---------------------------------------------------------------------------
+# Business dashboard (read-only admin page) + opportunity stage probabilities
+# ---------------------------------------------------------------------------
+@admin.register(OpportunityStage)
+class OpportunityStageAdmin(admin.ModelAdmin):
+    list_display = ("sort_order", "label", "key", "probability", "active", "is_default")
+    list_display_links = ("label",)
+    list_editable = ("sort_order", "probability", "active", "is_default")
+    search_fields = ("key", "label")
+    ordering = ("sort_order", "key")
+
+
+@admin.register(BusinessDashboard)
+class BusinessDashboardAdmin(admin.ModelAdmin):
+    """Renders the business dashboard at /admin/cpq/businessdashboard/."""
+
+    def changelist_view(self, request, extra_context=None):
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Business Dashboard",
+            "opts": self.model._meta,
+            "app_label": "cpq",
+            **build_business_dashboard_context(),
+        }
+        return TemplateResponse(request, "admin/cpq/business_dashboard.html", context)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_staff
+
 
 # ---------------------------------------------------------------------------
 # Dynamic admin entries: one per custom object (POV, G-Drive Documentation, …)

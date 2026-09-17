@@ -13,6 +13,12 @@
     <p class="admin-dash-kicker">AgentCPQ Administration</p>
     <h1>Dashboard</h1>
     <p class="admin-dash-subtitle">Manage your CRM, products, quotes, automations and system configuration — all in one place.</p>
+    <p class="admin-dash-actions">
+      <a class="admin-dash-cta" href="{% url 'admin:cpq_businessdashboard_changelist' %}">
+        <span class="material-icons" aria-hidden="true">insights</span>
+        Open Business Dashboard
+      </a>
+    </p>
   </header>
 
   {% admin_kpis as kpis %}
