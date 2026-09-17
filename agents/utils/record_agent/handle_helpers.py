@@ -426,6 +426,92 @@ def _configured_related_section(record: Model, model_name: str, cfg, parent_name
     return {"object": related_name, "label": plural, "records": rows, "configured": True}
 
 
+def _custom_record_reverse_lookup_sections(record: Model) -> List[Dict[str, object]]:
+    """Find records (standard or custom) whose lookup field points at this custom record.
+
+    Example: an Activity has a custom lookup field ``project__c`` targeting the
+    Project custom object. When viewing a Project record, the matching Activities
+    should appear as a related section.
+    """
+    from cpq.models import CustomField, CustomFieldValue, CustomObject
+
+    custom_object = getattr(record, "object_type", None)
+    if custom_object is None:
+        return []
+
+    target_names = {
+        (custom_object.name or "").strip().lower(),
+        (custom_object.label or "").strip().lower(),
+    }
+    target_names.discard("")
+    if not target_names:
+        return []
+
+    parent_values = {
+        str(getattr(record, "pk", "") or ""),
+        str(getattr(record, "custom_identifier", "") or ""),
+        str(getattr(record, "record_id", "") or ""),
+    }
+    parent_values.discard("")
+
+    lookup_fields = CustomField.objects.filter(data_type="lookup")
+    sections: List[Dict[str, object]] = []
+
+    for field in lookup_fields:
+        lookup_ref = (field.lookup_model or "").strip().lower()
+        lookup_short = lookup_ref.split(".")[-1] if lookup_ref else ""
+        field_name = (field.name or "").lower()
+        field_label = (field.label or "").lower()
+        if lookup_short in target_names or lookup_ref in target_names:
+            pass
+        elif not any(t in field_name or t in field_label for t in target_names):
+            # Neither the configured lookup model nor the field name/label
+            # references this custom object.
+            continue
+
+        try:
+            values = CustomFieldValue.objects.filter(field=field, value__in=list(parent_values)).select_related("content_type")
+        except Exception:
+            continue
+
+        rows = []
+        for value in values:
+            try:
+                obj = value.content_object
+            except Exception:
+                obj = None
+            if obj is None:
+                continue
+            rows.append(
+                {
+                    "id": getattr(obj, "id", None),
+                    "name": getattr(obj, "name", None) or getattr(obj, "subject", None) or str(obj),
+                }
+            )
+
+        if not rows:
+            continue
+
+        object_key = field.object_type or "Record"
+        label = object_key
+        try:
+            from django.apps import apps
+
+            for model in apps.get_app_config("cpq").get_models():
+                if model.__name__.lower() == object_key.lower():
+                    object_key = model.__name__
+                    label = str(model._meta.verbose_name_plural).strip().title()
+                    break
+        except Exception:
+            pass
+        if label == object_key and not label.endswith("s"):
+            label = f"{label}s"
+
+        sections.append({"object": object_key, "label": label, "records": rows[:15]})
+
+    return sections
+
+
 def build_related_records(record: Model, model_name: str) -> List[Dict[str, object]]:
     """Build related-record sections (Opportunities, Activities, Quotes, …) for the detail form."""
     from django.db.models import Q
@@ -534,6 +620,22 @@ def build_related_records(record: Model, model_name: str) -> List[Dict[str, obje
                 existing_keys.add((section.get("object") or "").lower())
     except Exception:
         logger.debug("configured related sections failed", exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Custom record reverse lookups: records (standard or custom) that
+    # carry a lookup custom field pointing at this custom object.
+    # e.g. Activities with a project__c lookup appear on the Project record.
+    # ------------------------------------------------------------------
+    if model_name == "CustomRecord":
+        try:
+            existing_keys = {(section.get("object") or "").lower() for section in related}
+            for section in _custom_record_reverse_lookup_sections(record):
+                key = (section.get("object") or "").lower()
+                if key and key not in existing_keys:
+                    related.append(section)
+                    existing_keys.add(key)
+        except Exception:
+            logger.debug("custom record reverse lookup sections failed", exc_info=True)
 
     # ------------------------------------------------------------------
     # Generic fallback: any other cpq standard model with a reverse
