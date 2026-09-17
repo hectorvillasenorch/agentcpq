@@ -317,8 +317,11 @@
 {% block nav-global %}
   <nav class="admin-topnav" aria-label="Primary navigation">
     <a class="admin-topnav-link{% if request.path == '/admin/' %} is-active{% endif %}" href="{% url 'admin:index' %}">Dashboard</a>
+    <a class="admin-topnav-link admin-topnav-link--cta{% if '/admin/cpq/businessdashboard/' in request.path %} is-active{% endif %}" href="{% url 'admin:cpq_businessdashboard_changelist' %}">
+      <span class="material-icons" aria-hidden="true">insights</span>Business Dashboard
+    </a>
     {% for app in available_apps %}
-      <a class="admin-topnav-link{% if app.app_url and app.app_url in request.path %} is-active{% endif %}" href="{{ app.app_url }}">{{ app.name }}</a>
+      <a class="admin-topnav-link{% if app.app_url and app.app_url in request.path and '/admin/cpq/businessdashboard/' not in request.path %} is-active{% endif %}" href="{{ app.app_url }}">{{ app.name }}</a>
     {% endfor %}
   </nav>
 {% endblock %}

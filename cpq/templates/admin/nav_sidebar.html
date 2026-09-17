@@ -1,0 +1,22 @@
+{% load i18n %}
+<button class="sticky toggle-nav-sidebar" id="toggle-nav-sidebar" aria-label="{% translate 'Toggle navigation' %}"></button>
+<nav class="sticky" id="nav-sidebar" aria-label="{% translate 'Sidebar' %}">
+  <input type="search" id="nav-filter"
+         placeholder="{% translate 'Start typing to filter…' %}"
+         aria-label="{% translate 'Filter navigation items' %}">
+
+  <div class="admin-sidebar-actions">
+    <a class="admin-sidebar-action{% if '/admin/cpq/businessdashboard/' in request.path %} is-active{% endif %}"
+       href="{% url 'admin:cpq_businessdashboard_changelist' %}">
+      <span class="material-icons" aria-hidden="true">insights</span>
+      <span>Business Dashboard</span>
+    </a>
+    <a class="admin-sidebar-action{% if request.path == '/admin/' %} is-active{% endif %}"
+       href="{% url 'admin:index' %}">
+      <span class="material-icons" aria-hidden="true">dashboard</span>
+      <span>Admin Home</span>
+    </a>
+  </div>
+
+  {% include 'admin/app_list.html' with app_list=available_apps show_changelinks=False %}
+</nav>

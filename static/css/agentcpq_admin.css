@@ -2022,6 +2022,22 @@ td.field-expiration_date {
   border-radius: 2px;
   background: var(--adm-primary);
 }
+.admin-topnav-link .material-icons {
+  font-size: 16px;
+  margin-right: 6px;
+}
+.admin-topnav-link--cta {
+  color: var(--adm-primary) !important;
+  font-weight: 600;
+}
+.admin-topnav-link--cta:hover,
+.admin-topnav-link--cta:focus {
+  background: #fff4ef;
+  color: var(--adm-primary-hover) !important;
+}
+.admin-topnav-link--cta.is-active::after {
+  background: var(--adm-primary);
+}
 
 /* --- Dashboard hero (kicker + h1 + subtitle) --- */
 .admin-dash-hero {
@@ -2685,4 +2701,67 @@ body.business-dashboard #content {
 .admin-dash-cta .material-icons {
   font-size: 17px;
   color: #fff;
+}
+
+/* Quick links pinned to the top of the admin sidebar (nav_sidebar.html override) */
+.admin-sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px 6px;
+}
+.admin-sidebar-action {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--adm-border);
+  background: var(--adm-surface);
+  color: var(--adm-text) !important;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.admin-sidebar-action:hover,
+.admin-sidebar-action:focus {
+  background: var(--adm-bg);
+  color: var(--adm-text) !important;
+}
+.admin-sidebar-action .material-icons {
+  font-size: 18px;
+  color: var(--adm-primary);
+}
+.admin-sidebar-action.is-active {
+  background: var(--adm-primary);
+  border-color: var(--adm-primary);
+  color: #fff !important;
+}
+.admin-sidebar-action.is-active .material-icons {
+  color: #fff;
+}
+
+/* Header CTA link — needs #header specificity to beat the base topnav rules */
+#header .admin-topnav-link--cta,
+#header .admin-topnav-link--cta:link,
+#header .admin-topnav-link--cta:visited {
+  color: var(--adm-primary) !important;
+  font-weight: 600;
+  background: transparent !important;
+}
+#header .admin-topnav-link--cta:hover,
+#header .admin-topnav-link--cta:focus {
+  color: var(--adm-primary-hover) !important;
+  background: #fff1e9 !important;
+}
+#header .admin-topnav-link--cta.is-active,
+#header .admin-topnav-link--cta.is-active:link,
+#header .admin-topnav-link--cta.is-active:visited,
+#header .admin-topnav-link--cta.is-active:hover {
+  color: #c2410c !important;
+  background: #fff1e9 !important;
+}
+#header .admin-topnav-link--cta .material-icons {
+  color: inherit;
 }
