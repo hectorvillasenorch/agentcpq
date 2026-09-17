@@ -770,15 +770,40 @@ def create_activity_for_record(request):
             if custom_account:
                 link_kwargs["account"] = custom_account
             if not link_kwargs:
-                return JsonResponse(
-                    {
-                        "error": (
-                            "No related Lead, Contact, Opportunity, or Account was found on this "
-                            "record to link the activity to."
-                        )
-                    },
-                    status=400,
-                )
+                # Allow activities linked only through an Activity lookup
+                # custom field (e.g. project__c) even when the custom record
+                # has no Lead/Contact/Opportunity/Account to resolve.
+                has_activity_lookup = False
+                try:
+                    from cpq.models import CustomField
+
+                    target_names = {
+                        (custom_object.name or "").strip().lower(),
+                        (custom_object.label or "").strip().lower(),
+                    }
+                    target_names.discard("")
+                    for field in CustomField.objects.filter(
+                        crm="AgentCPQ", object_type="Activity", data_type="lookup"
+                    ):
+                        lookup_ref = (field.lookup_model or "").strip().lower()
+                        lookup_short = lookup_ref.split(".")[-1] if lookup_ref else ""
+                        field_name = (field.name or "").lower()
+                        field_label = (field.label or "").lower()
+                        if lookup_short in target_names or lookup_ref in target_names or any(t in field_name or t in field_label for t in target_names):
+                            has_activity_lookup = True
+                            break
+                except Exception:
+                    has_activity_lookup = False
+                if not has_activity_lookup:
+                    return JsonResponse(
+                        {
+                            "error": (
+                                "No related Lead, Contact, Opportunity, or Account was found on this "
+                                "record to link the activity to."
+                            )
+                        },
+                        status=400,
+                    )
             linked_note = f" (linked via {custom_object.label or custom_object.name})"
     except (Lead.DoesNotExist, Opportunity.DoesNotExist, Contact.DoesNotExist, Account.DoesNotExist):
         return JsonResponse({"error": f"{object_name} not found."}, status=404)
