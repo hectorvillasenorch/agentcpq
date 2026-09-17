@@ -1412,6 +1412,47 @@ def related_activities_api(request):
                 filters |= account_filter
             has_filter = True
 
+        # Also include activities linked through an Activity lookup custom
+        # field that targets this custom object (e.g. project__c).
+        try:
+            target_names = {
+                (custom_object.name or "").strip().lower(),
+                (custom_object.label or "").strip().lower(),
+            }
+            target_names.discard("")
+            linked_activity_ids = set()
+            parent_values = {
+                str(custom_record.pk),
+                str(getattr(custom_record, "custom_identifier", "") or ""),
+                str(getattr(custom_record, "record_id", "") or ""),
+            }
+            parent_values.discard("")
+            for field in CustomField.objects.filter(
+                crm="AgentCPQ", object_type="Activity", data_type="lookup"
+            ):
+                lookup_ref = (field.lookup_model or "").strip().lower()
+                lookup_short = lookup_ref.split(".")[-1] if lookup_ref else ""
+                field_name = (field.name or "").lower()
+                field_label = (field.label or "").lower()
+                if not (
+                    lookup_short in target_names
+                    or lookup_ref in target_names
+                    or any(t in field_name or t in field_label for t in target_names)
+                ):
+                    continue
+                linked_activity_ids.update(
+                    CustomFieldValue.objects.filter(
+                        field=field,
+                        content_type=ContentType.objects.get_for_model(Activity),
+                        value__in=list(parent_values),
+                    ).values_list("object_id", flat=True)
+                )
+            if linked_activity_ids:
+                filters |= Q(id__in=list(linked_activity_ids))
+                has_filter = True
+        except Exception:
+            logging.getLogger(__name__).warning("activity custom-lookup filter failed", exc_info=True)
+
         activities = Activity.objects.filter(filters) if has_filter else Activity.objects.none()
         parent_label = custom_object.label or custom_object.name
         parent_name = custom_record.custom_identifier or str(custom_record)

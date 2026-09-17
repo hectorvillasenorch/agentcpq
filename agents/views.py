@@ -713,6 +713,8 @@ def create_activity_for_record(request):
     link_kwargs = {}
     linked_note = ""
     custom_account = None
+    custom_object = None
+    custom_record = None
 
     try:
         if object_name == "Lead":
@@ -801,6 +803,43 @@ def create_activity_for_record(request):
             _set_activity_account_lookup(activity, custom_account)
         except Exception:  # noqa: BLE001
             logger.warning("Failed to set activity account lookup", exc_info=True)
+
+    # When the activity was logged against a custom object (e.g. Project),
+    # persist any Activity lookup custom field that targets that object
+    # (e.g. project__c) so the custom record can show the activity as related.
+    if custom_object is not None and custom_record is not None:
+        try:
+            from django.contrib.contenttypes.models import ContentType as ActivityContentType
+
+            from cpq.models import CustomField, CustomFieldValue
+
+            activity_ct = ActivityContentType.objects.get_for_model(Activity)
+            target_names = {
+                (custom_object.name or "").strip().lower(),
+                (custom_object.label or "").strip().lower(),
+            }
+            target_names.discard("")
+            for field in CustomField.objects.filter(
+                crm="AgentCPQ", object_type="Activity", data_type="lookup"
+            ):
+                lookup_ref = (field.lookup_model or "").strip().lower()
+                lookup_short = lookup_ref.split(".")[-1] if lookup_ref else ""
+                field_name = (field.name or "").lower()
+                field_label = (field.label or "").lower()
+                if not (
+                    lookup_short in target_names
+                    or lookup_ref in target_names
+                    or any(t in field_name or t in field_label for t in target_names)
+                ):
+                    continue
+                CustomFieldValue.objects.update_or_create(
+                    field=field,
+                    content_type=activity_ct,
+                    object_id=activity.pk,
+                    defaults={"value": str(custom_record.pk)},
+                )
+        except Exception:  # noqa: BLE001
+            logger.warning("Failed to set activity custom-object lookup", exc_info=True)
 
     from agents.utils.record_agent.handle_helpers import serialize_record
     from agents.utils.analytics_agent.handle_helpers import get_object_metadata

@@ -854,7 +854,31 @@ admin.site.register(Product, ProductAdmin)
 
 class ActivityAdmin(DynamicCustomFieldAdmin):
     form = get_dynamic_form(Activity, crm="AgentCPQ", object_type="Activity")
-    
+
+    def save_model(self, request, obj, form, change):
+        if not change and hasattr(obj, 'created_by'):
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
+
+        # Persist Activity custom fields (including lookup fields such as
+        # project__c) so related records can resolve them later.
+        for field in CustomField.objects.filter(crm="AgentCPQ", object_type="Activity"):
+            field_name = field.name
+            if field_name not in form.cleaned_data:
+                continue
+            value = form.cleaned_data[field_name]
+            if hasattr(value, "pk"):
+                value = value.pk
+            cf_value, _ = CustomFieldValue.objects.get_or_create(
+                content_type=ContentType.objects.get_for_model(obj),
+                object_id=obj.id,
+                field=field,
+            )
+            cf_value.value = str(value) if value not in (None, "") else ""
+            if hasattr(cf_value, 'updated_by_user'):
+                cf_value.updated_by_user = request.user
+            cf_value.save()
+
     def get_fieldsets(self, request, obj=None):
         fields = [f for f in self.form().fields.keys() if f not in ['created_at', 'updated_at']]
         return [(None, {'fields': fields})]
