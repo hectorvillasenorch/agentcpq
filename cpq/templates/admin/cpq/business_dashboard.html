@@ -93,18 +93,25 @@
 
   <div class="biz-grid">
     <section class="biz-card">
-      <h2>Quotes</h2>
+      <h2>Open Quotes</h2>
       <div class="biz-card-body biz-split">
         <div class="biz-chart biz-chart--sm"><canvas id="bizQuoteStatusChart"></canvas></div>
         <ul class="biz-stats">
-          <li><span>Open quotes</span><strong>{{ quotes.open_count }}</strong></li>
-          <li><span>Open value</span><strong>${{ quotes.open_value }}</strong></li>
+          <li class="biz-stat--primary"><span>Open pipeline</span><strong>${{ quotes.open_value }} &middot; {{ quotes.open_opportunities }} opportunities &middot; {{ quotes.open_count }} quotes</strong></li>
+          <li><span>In approval</span><strong>{{ quotes.approval_count }} &middot; ${{ quotes.approval_value }}</strong></li>
           <li><span>Pending approval</span><strong>{{ quotes.pending_count }} &middot; ${{ quotes.pending_value }}</strong></li>
+          <li><span>Approved</span><strong>{{ quotes.approved_count }} &middot; ${{ quotes.approved_value }}</strong></li>
+          <li><span>Draft / Forecast</span><strong>{{ quotes.draft_count }} &middot; ${{ quotes.draft_value }}</strong></li>
           <li><span>Expiring in 30 days</span><strong>{{ quotes.expiring_soon }}</strong></li>
           <li><span>Avg quote value</span><strong>${{ quotes.avg_value }}</strong></li>
           <li><span>Avg discount</span><strong>{{ quotes.avg_discount }}</strong></li>
         </ul>
       </div>
+      <p class="biz-note">
+        Open pipeline is measured in opportunities: it counts open opportunities that have a
+        Draft, Forecast, Pending Approval or Approved quote. Dollar values use each quote's net amount.
+        {% if quotes.without_opportunity %}{{ quotes.without_opportunity }} quote{{ quotes.without_opportunity|pluralize }} without an opportunity excluded.{% endif %}
+      </p>
     </section>
 
     <section class="biz-card">
@@ -328,13 +335,21 @@
   var quoteEl = document.getElementById("bizQuoteStatusChart");
   if (quoteEl) {
     var quotes = read("biz-quote-status") || [];
+    var quoteColors = {
+      "Draft": "#94a3b8",
+      "Forecast": "#3B62D9",
+      "Pending Approval": "#d97706",
+      "Approved": "#16a34a",
+      "Rejected": "#dc2626",
+      "Closed": "#0f172a"
+    };
     new Chart(quoteEl, {
       type: "doughnut",
       data: {
         labels: quotes.map(function (r) { return r.label; }),
         datasets: [{
           data: quotes.map(function (r) { return r.count; }),
-          backgroundColor: ["#94a3b8", "#3B62D9", "#d97706", "#16a34a", "#dc2626", "#0f172a"],
+          backgroundColor: quotes.map(function (r) { return quoteColors[r.label] || "#94a3b8"; }),
           borderWidth: 0
         }]
       },

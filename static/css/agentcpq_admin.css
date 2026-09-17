@@ -2607,6 +2607,14 @@ body.business-dashboard #content {
   color: var(--adm-muted);
   font-size: 13px;
 }
+.biz-note {
+  margin: 0;
+  padding: 10px 16px 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--adm-muted);
+  border-top: 1px dashed var(--adm-border);
+}
 
 /* Key/value stats */
 .biz-stats {
@@ -2626,6 +2634,15 @@ body.business-dashboard #content {
 }
 .biz-stats li:last-child {
   border-bottom: 0;
+}
+.biz-stats li.biz-stat--primary {
+  padding: 10px 0;
+  font-size: 14px;
+  color: var(--adm-text);
+}
+.biz-stats li.biz-stat--primary strong {
+  color: var(--adm-primary);
+  font-size: 15px;
 }
 .biz-stats strong {
   color: var(--adm-text);

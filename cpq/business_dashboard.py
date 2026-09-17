@@ -7,8 +7,13 @@ Conventions:
 - Revenue = Closed-Won opportunities (``Opportunity.stage == "closedwon"``).
 - Periods use ``expected_close_date`` (the closest thing the model has to an
   actual close date).
-- Open pipeline = every stage except Closed Won / Closed Lost / Disqualified.
-- Weighted forecast = open amount x stage probability (``OpportunityStage.probability``).
+- Open pipeline = open opportunities that have an open quote (status Draft,
+  Forecast, Pending Approval or Approved) and is the headline KPI. Its value
+  uses ``Quote.net_amount``; the count is deduped by opportunity.
+- Quote metrics use quote net amounts; opportunity metrics use opportunity
+  amounts.
+- Weighted forecast = open opportunity amount x stage probability
+  (``OpportunityStage.probability``).
 - Active customer = an Account that purchased in the trailing 12 months
   (won opportunity or subscription start).
 """
@@ -45,7 +50,12 @@ def _money_sum(field: str):
     return Coalesce(Sum(field), Decimal("0"), output_field=MONEY_FIELD)
 
 
+# Open quotes are driven by approval status and only count when the quote is
+# linked to an opportunity. Open pipeline = every status except Rejected/Closed.
 OPEN_QUOTE_STATUSES = ("Draft", "Forecast", "Pending Approval", "Approved")
+APPROVAL_QUOTE_STATUSES = ("Pending Approval", "Approved")
+DRAFT_QUOTE_STATUSES = ("Draft", "Forecast")
+QUOTE_STATUS_ORDER = ["Draft", "Forecast", "Pending Approval", "Approved", "Rejected", "Closed"]
 ACTIVITY_LABELS = {
     "call": "Call",
     "email": "Email",
@@ -178,8 +188,6 @@ def build_business_dashboard_context() -> dict:
 
     revenue_all = _sum(won)
     revenue_ttm = _sum(won_ttm)
-    open_count = _count(open_opps)
-    open_value = _sum(open_opps)
 
     # --- Weighted forecast -------------------------------------------------
     stages = _stage_rows()
@@ -311,41 +319,57 @@ def build_business_dashboard_context() -> dict:
     except Exception:
         pass
 
-    # --- Quotes ------------------------------------------------------------
+    # --- Quotes (opportunity-linked, status driven) --------------------------
+    # A quote only counts when it is linked to an opportunity. Quote dollar
+    # values use the quote's own net_amount (never the opportunity amount).
     quotes = Quote.objects.all()
-    open_quotes = quotes.filter(status__in=OPEN_QUOTE_STATUSES)
+    quoted_quotes = quotes.filter(opportunity__isnull=False)
+    open_quotes = quoted_quotes.filter(status__in=OPEN_QUOTE_STATUSES)
+    approval_quotes = quoted_quotes.filter(status__in=APPROVAL_QUOTE_STATUSES)
+    pending_quotes = quoted_quotes.filter(status="Pending Approval")
+    approved_quotes = quoted_quotes.filter(status="Approved")
+    draft_quotes = quoted_quotes.filter(status__in=DRAFT_QUOTE_STATUSES)
+    unlinked_quotes = quotes.filter(opportunity__isnull=True)
+
+    def _quote_value(queryset):
+        """Sum of the quote net amounts for a quote queryset."""
+        return _sum(queryset, "net_amount")
+
     quote_status_rows = []
     try:
-        for row in quotes.values("status").annotate(count=Count("id"), value=_money_sum("net_amount")):
-            quote_status_rows.append(
-                {
-                    "label": row["status"] or "—",
-                    "count": row["count"],
-                    "value": row["value"],
-                }
-            )
+        counts_by_status = {
+            row["status"]: row["count"]
+            for row in quoted_quotes.values("status").annotate(count=Count("id"))
+        }
+        ordered_statuses = list(QUOTE_STATUS_ORDER)
+        ordered_statuses += [s for s in counts_by_status if s not in ordered_statuses]
+        for status in ordered_statuses:
+            count = counts_by_status.get(status)
+            if not count:
+                continue
+            quote_status_rows.append({"label": status or "—", "count": count})
     except Exception:
         pass
 
-    pending_quotes = quotes.filter(status="Pending Approval")
     expiring_soon = _count(
-        open_quotes.filter(
+        approval_quotes.filter(
             expiration_date__isnull=False,
             expiration_date__date__gte=today,
             expiration_date__date__lte=today + timedelta(days=30),
         )
     )
-    avg_quote = 0
-    try:
-        open_quote_count = _count(open_quotes)
-        if open_quote_count:
-            avg_quote = _sum(open_quotes, "net_amount") / open_quote_count
-    except Exception:
-        avg_quote = 0
+    approval_count = _count(approval_quotes)
+    approval_value = _quote_value(approval_quotes)
+    open_quote_count = _count(open_quotes)
+    open_quote_value = _quote_value(open_quotes)
+    # Pipeline is measured in opportunities, not quotes: several quotes can
+    # belong to the same opportunity, so dedupe by the linked opportunity.
+    open_quote_opportunities = _count(open_quotes.values("opportunity_id").distinct())
+    avg_quote_value = (open_quote_value / open_quote_count) if open_quote_count else 0
 
     avg_discount = 0
     try:
-        discounted = quotes.filter(discount_percentage__gt=0)
+        discounted = quoted_quotes.filter(discount_percentage__gt=0)
         agg = discounted.aggregate(avg=Sum("discount_percentage"), count=Count("id"))
         if agg["count"]:
             avg_discount = agg["avg"] / agg["count"]
@@ -474,6 +498,10 @@ def build_business_dashboard_context() -> dict:
             "count": _count(pending_quotes),
         },
         {
+            "label": "Quotes without an opportunity",
+            "count": _count(unlinked_quotes),
+        },
+        {
             "label": "Accounts without an owner",
             "count": _count(Account.objects.filter(owner__isnull=True)),
         },
@@ -484,6 +512,12 @@ def build_business_dashboard_context() -> dict:
     ]
 
     kpis = [
+        {
+            "label": "Open quotes",
+            "value": f"${_money(open_quote_value)}",
+            "sub": f"{open_quote_opportunities} open opportunities",
+            "tone": "blue",
+        },
         {
             "label": "Revenue (YTD)",
             "value": f"${_money(won_year and _sum(won_year) or 0)}",
@@ -497,21 +531,15 @@ def build_business_dashboard_context() -> dict:
             "tone": "green",
         },
         {
-            "label": "Open pipeline",
-            "value": f"${_money(open_value)}",
-            "sub": f"{open_count} open opportunities",
-            "tone": "blue",
-        },
-        {
             "label": "Weighted forecast",
             "value": f"${_money(weighted_forecast)}",
             "sub": f"${_money(weighted_forecast_90)} closing in 90 days",
             "tone": "purple",
         },
         {
-            "label": "Open quotes",
-            "value": f"${_money(_sum(open_quotes, 'net_amount'))}",
-            "sub": f"{_count(open_quotes)} quotes · {_count(pending_quotes)} pending approval",
+            "label": "Quotes in approval",
+            "value": f"${_money(approval_value)}",
+            "sub": f"{approval_count} in approval · {_count(pending_quotes)} pending",
             "tone": "amber",
         },
         {
@@ -559,13 +587,21 @@ def build_business_dashboard_context() -> dict:
         "pipeline_by_stage": pipeline_by_stage,
         "quote_status_rows": quote_status_rows,
         "quotes": {
-            "open_count": _count(open_quotes),
-            "open_value": _money(_sum(open_quotes, "net_amount")),
+            "open_count": open_quote_count,
+            "open_value": _money(open_quote_value),
+            "open_opportunities": open_quote_opportunities,
+            "approval_count": approval_count,
+            "approval_value": _money(approval_value),
             "pending_count": _count(pending_quotes),
-            "pending_value": _money(_sum(pending_quotes, "net_amount")),
+            "pending_value": _money(_quote_value(pending_quotes)),
+            "approved_count": _count(approved_quotes),
+            "approved_value": _money(_quote_value(approved_quotes)),
+            "draft_count": _count(draft_quotes),
+            "draft_value": _money(_quote_value(draft_quotes)),
             "expiring_soon": expiring_soon,
-            "avg_value": _money(avg_quote),
+            "avg_value": _money(avg_quote_value),
             "avg_discount": f"{Decimal(str(avg_discount)):.1f}%",
+            "without_opportunity": _count(unlinked_quotes),
         },
         "top_customers": top_customers,
         "subscriptions": {
