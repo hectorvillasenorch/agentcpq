@@ -512,6 +512,30 @@ def _custom_record_reverse_lookup_sections(record: Model) -> List[Dict[str, obje
     return sections
 
 
+def _activity_lookup_targets_custom_object(custom_object) -> bool:
+    """Whether any Activity lookup custom field points at the given custom object."""
+    if custom_object is None:
+        return False
+    from cpq.models import CustomField
+
+    target_names = {
+        (custom_object.name or "").strip().lower(),
+        (custom_object.label or "").strip().lower(),
+    }
+    target_names.discard("")
+    if not target_names:
+        return False
+
+    for field in CustomField.objects.filter(crm="AgentCPQ", object_type="Activity", data_type="lookup"):
+        lookup_ref = (field.lookup_model or "").strip().lower()
+        lookup_short = lookup_ref.split(".")[-1] if lookup_ref else ""
+        field_name = (field.name or "").lower()
+        field_label = (field.label or "").lower()
+        if lookup_short in target_names or lookup_ref in target_names or any(t in field_name or t in field_label for t in target_names):
+            return True
+    return False
+
+
 def build_related_records(record: Model, model_name: str) -> List[Dict[str, object]]:
     """Build related-record sections (Opportunities, Activities, Quotes, …) for the detail form."""
     from django.db.models import Q
@@ -673,6 +697,28 @@ def build_related_records(record: Model, model_name: str) -> List[Dict[str, obje
                 _add(label, related_name, rows)
         except Exception:
             logger.debug("generic related sections failed", exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Always expose an Activities section (with an "add" action) when the
+    # record can have activities linked — standard objects that support
+    # activity logging, or custom objects with an Activity lookup field
+    # pointing at them (e.g. project__c). Empty sections let the UI show
+    # an "Add new activity" button even before any activity exists.
+    # ------------------------------------------------------------------
+    try:
+        existing_activity = next((s for s in related if (s.get("object") or "").lower() == "activity"), None)
+        if existing_activity is None:
+            can_add_activity = _can_log_activity(record, model_name)
+            if model_name == "CustomRecord" and not can_add_activity:
+                can_add_activity = _activity_lookup_targets_custom_object(getattr(record, "object_type", None))
+            if can_add_activity:
+                related.append(
+                    {"object": "Activity", "label": "Activities", "records": [], "can_add": True}
+                )
+        else:
+            existing_activity["can_add"] = True
+    except Exception:
+        logger.debug("ensure activity section failed", exc_info=True)
 
     return related
 

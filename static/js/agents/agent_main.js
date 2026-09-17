@@ -4556,6 +4556,22 @@ function initializeSingleRecordRelatedButtons(root = document) {
     });
     setupRelatedPopoverHandlers(button, card, config);
   });
+
+  // "Add new activity" buttons rendered inside empty related sections.
+  root.querySelectorAll('.single-record-related-add-btn[data-role="add-related-activity"]').forEach(button => {
+    if (button.dataset.bound === "true") return;
+    button.dataset.bound = "true";
+    button.addEventListener('click', () => {
+      const card = button.closest('.single-record-card');
+      if (!card) return;
+      const object = card.dataset.recordObject || button.dataset.sectionObject || '';
+      const name = card.dataset.recordName || '';
+      const input = document.getElementById('user-input');
+      if (!input) return;
+      input.value = `create an activity for ${object} ${name}`;
+      if (typeof sendMessage === 'function') sendMessage();
+    });
+  });
 }
 
 function initializeSingleRecordDeleteButtons(root = document) {
@@ -7022,28 +7038,40 @@ function showQuoteToast(message, intent = "success") {
 }
 
 function renderSingleRecordRelated(entry, index) {
-  if (!entry || !Array.isArray(entry.records) || entry.records.length === 0) {
+  const hasRecords = Array.isArray(entry.records) && entry.records.length > 0;
+  if (!entry || (!hasRecords && !entry.can_add)) {
     return '';
   }
 
   const sectionTitle = escapeHtml(entry.label || 'Related Records');
-  const rows = entry.records
-    .map(item => {
-      if (typeof item === 'string') {
-        return `<li>${escapeHtml(item)}</li>`;
-      }
-      const pairs = Object.entries(item || {})
-        .map(([key, value]) => `<div class="single-related-row"><strong>${escapeHtml(key)}:</strong> <span>${formatSingleRecordValue(value)}</span></div>`)
-        .join('');
-      return `<li class="single-related-item">${pairs}</li>`;
-    })
-    .join('');
+  const rows = hasRecords
+    ? entry.records
+        .map(item => {
+          if (typeof item === 'string') {
+            return `<li>${escapeHtml(item)}</li>`;
+          }
+          const pairs = Object.entries(item || {})
+            .map(([key, value]) => `<div class="single-related-row"><strong>${escapeHtml(key)}:</strong> <span>${formatSingleRecordValue(value)}</span></div>`)
+            .join('');
+          return `<li class="single-related-item">${pairs}</li>`;
+        })
+        .join('')
+    : '';
+  const emptyState = !hasRecords
+    ? `<li class="single-related-empty">No ${sectionTitle} linked yet.</li>`
+    : '';
+  const addButton = !hasRecords && entry.can_add && entry.object === 'Activity'
+    ? `<button type="button" class="single-record-related-add-btn" data-role="add-related-activity" data-section-object="${escapeHtml(entry.object || '')}" data-section-label="${escapeHtml(entry.label || '')}">
+         <span class="material-icons" aria-hidden="true">add</span> Add new activity
+       </button>`
+    : '';
 
   const sectionAttr = index !== undefined ? ` data-related-section="${index}"` : '';
   return `
     <div class="single-record-related"${sectionAttr}>
       <h5>${sectionTitle}</h5>
-      <ul>${rows}</ul>
+      <ul>${rows}${emptyState}</ul>
+      ${addButton}
     </div>
   `;
 }

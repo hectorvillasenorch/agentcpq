@@ -72,6 +72,8 @@ export interface RelatedRecordSection {
   records?: RelatedRecordRow[];
   /** True for sections configured in Admin → Object Related Sections. */
   configured?: boolean;
+  /** True when the user can add this related record from the card. */
+  can_add?: boolean;
 }
 
 export interface RelatedRecordRow {
@@ -757,7 +759,7 @@ function RelatedRecords({
               <span className="truncate">
                 {sec.label || sec.object} · {(sec.records || []).length}
               </span>
-              {onAdd && sec.object && (
+              {onAdd && sec.object && sec.can_add !== false && (
                 <button
                   type="button"
                   onClick={() => onAdd(sec.object as string, sec.label)}
@@ -770,8 +772,18 @@ function RelatedRecords({
               )}
             </div>
             {(sec.records || []).length === 0 ? (
-              <div className="px-3 py-2 text-[12px] text-muted-foreground">
-                No {sec.label || sec.object} linked yet.
+              <div className="flex items-center justify-between gap-3 px-3 py-2 text-[12px] text-muted-foreground">
+                <span>No {sec.label || sec.object} linked yet.</span>
+                {onAdd && sec.object === "Activity" && sec.can_add !== false && (
+                  <button
+                    type="button"
+                    onClick={() => onAdd("Activity", sec.label)}
+                    className="flex shrink-0 items-center gap-1 rounded border border-border bg-white px-1.5 py-0.5 text-[11px] font-medium text-[#3B62D9] hover:bg-[#F3F6FE]"
+                  >
+                    <Plus size={12} />
+                    Add new activity
+                  </button>
+                )}
               </div>
             ) : (
             <table className="w-full text-left text-[13px]">
@@ -1013,7 +1025,8 @@ export default function SingleRecordCard({
           )}
         </span>
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          {(ACTIVITY_RELATED_OBJECTS.has(String(live.object || "")) || live.can_log_activity === true) &&
+          {((ACTIVITY_RELATED_OBJECTS.has(String(live.object || "")) || live.can_log_activity === true) ||
+            (live.related || []).some((s) => s.object === "Activity" && s.can_add !== false)) &&
             !showActivityForm && (
             <button
               type="button"
