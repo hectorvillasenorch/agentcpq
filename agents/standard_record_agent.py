@@ -829,6 +829,13 @@ def _fill_lead_company_from_text(user_message: str, data: Dict[str, object]) -> 
             text or "",
             re.IGNORECASE,
         )
+        if not match:
+            # Also accept the bare form: "…, company Acme Test Corp, title CFO"
+            match = re.search(
+                r"\bcompany\s+([^,;]+?)(?=\s*(?:,|;|$|\btitle\b|\be-?mail\b|\bphone\b|\bmobile\b))",
+                text or "",
+                re.IGNORECASE,
+            )
         if match:
             company = match.group(1).strip(" .")
             if company:
@@ -2132,7 +2139,8 @@ def _create_lead(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, 
     if status and status not in dict(Lead.STATUS_CHOICES):
         return False, f"⚠️ Invalid lead status '{status}'. Allowed: {', '.join(dict(Lead.STATUS_CHOICES))}.", {}
 
-    # Capture optional company/title into notes only when no matching custom field exists
+    # Capture optional company/title into notes only when they are custom fields
+    # (the native Lead model has company/title columns, so those go on the row).
     notes = (fields.get("notes") or "").strip()
     extras = []
     custom_map = _get_custom_field_map("Lead")
@@ -2140,10 +2148,10 @@ def _create_lead(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, 
         return key and key.lower() in custom_map
 
     for key in ("company", "company_name"):
-        if fields.get(key) and not _has_cf(key):
+        if fields.get(key) and _has_cf(key):
             extras.append(f"Company: {fields.get(key)}")
             break
-    if fields.get("title") and not _has_cf("title"):
+    if fields.get("title") and _has_cf("title"):
         extras.append(f"Title: {fields.get('title')}")
     if extras:
         notes = (notes + ("\n" if notes else "") + "\n".join(extras)).strip()
@@ -2154,6 +2162,10 @@ def _create_lead(user, fields: Dict[str, object]) -> Tuple[bool, str, Dict[str, 
         email=fields.get("email") or "",
         phone=fields.get("phone") or "",
         source=fields.get("source") or "",
+        company=fields.get("company") or fields.get("company_name") or "",
+        title=fields.get("title") or "",
+        website=fields.get("website") or None,
+        rating=fields.get("rating") or "warm",
         status=status or Lead.STATUS_CHOICES[0][0],
         notes=notes,
         assigned_to=fields.get("assigned_to") or "",

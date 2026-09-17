@@ -2375,9 +2375,10 @@ class TriggerEngine:
 
     def _handle_closed_won_contract(self, action, instance):
         """
-        Create contract/subscriptions from an Opportunity Closed Won event.
+        Create contract/subscriptions from an Opportunity Closed Won event,
+        then create the renewal opportunity + quote automatically.
         """
-        from cpq.renewals.renewals import create_contract_after_closed_won
+        from cpq.renewals.renewals import create_contract_after_closed_won, make_opportunity_renewal
 
         if self._normalize_model_name(instance.__class__.__name__) != "opportunity":
             return {"created": False, "reason": "unsupported_instance"}
@@ -2386,6 +2387,13 @@ class TriggerEngine:
             if not getattr(instance, "quotes", None) or not instance.quotes.exists():
                 return {"created": False, "reason": "missing_quote"}
             create_contract_after_closed_won(instance)
+            try:
+                # Lead-to-cash automation: once a deal is won, the renewal
+                # opportunity (and its copied quote) should exist for the rep
+                # to work next. Failures here must never break Closed Won.
+                make_opportunity_renewal(instance)
+            except Exception as exc:
+                logger.exception("Renewal creation after Closed Won failed: %s", exc)
             return {"created": True}
         except Exception as exc:
             logger.exception("❌ Closed Won contract creation failed: %s", exc)
