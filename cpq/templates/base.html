@@ -61,6 +61,11 @@
         <a href="{% url 'cpq:usage_dashboard' %}">
             <i class="material-icons">receipt_long</i> <span class="nav-label">Usage</span>
         </a>
+        {% if request.user.is_staff %}
+        <a href="{% url 'admin:cpq_businessdashboard_changelist' %}">
+            <i class="material-icons">insights</i> <span class="nav-label">Business Dashboard</span>
+        </a>
+        {% endif %}
 
         <div class="divider"></div>
 
