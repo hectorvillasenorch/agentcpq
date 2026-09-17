@@ -443,7 +443,7 @@ def resolve_duplicate_confirmation(user, user_message, session_data):
     if lowered in ("cancel", "no", "skip", "stop", "abort", "nevermind", "never mind", "no thanks", "don't", "do not") or lowered.startswith(
         ("cancel ", "no thanks", "nevermind", "never mind")
     ):
-        return {"message": "🛑 Cancelled. No new record was created."}
+        return {"message": "Cancelled. No new record was created."}
 
     # --- Use the existing record ----------------------------------------
     looks_like_use = lowered in ("use it", "use", "use the existing", "use existing", "use that", "use this", "yes", "yep", "yeah", "open it", "show it", "show me it")

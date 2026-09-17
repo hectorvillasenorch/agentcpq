@@ -1217,7 +1217,7 @@ def update_quote_from_ui(user,user_message, session_data):
                     logging.warning("Inclusion rules post-update failed: %s", exc)
 
                 return {
-                    "message": "✅ Quote updated successfully.",
+                    "message": f"{SUCCESS_ICON} Quote updated successfully.",
                     "success": True,
                     "quote_details": get_quote_details(quote),
                     "hiddenMessage": True

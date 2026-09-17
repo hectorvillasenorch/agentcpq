@@ -1220,7 +1220,7 @@ def generate_final_quote_updates_message(completed_quote_updates, db_results, re
     - The message is user-facing and can use <br> for line breaks.
     - If an add fails, explain it as a short, natural comment for the user, not as a system error. Keep it user-friendly and conversational, not technical or formal.
     - NEVER start the message with phrases like "Great news!", "Good job!", "Perfect!", or similar interjections.
-    - Use this emoji: ✅ to indicate that a quote has been successfully updated.
+    - Do NOT use emojis in the message; the interface adds its own icons automatically.
     Begin directly with the content.
 
     Instructions for "summary":
@@ -1228,7 +1228,7 @@ def generate_final_quote_updates_message(completed_quote_updates, db_results, re
     - Summarize successes, failures, and incompletes in 2–4 sentences max.
     - The summary is NOT for the user directly, it's for keeping track of progress across iterations.
 
-    ⚠️ IMPORTANT: Return ONLY valid JSON in this format:
+    IMPORTANT: Return ONLY valid JSON in this format:
     {{
         "message": "...",
         "summary": "..."

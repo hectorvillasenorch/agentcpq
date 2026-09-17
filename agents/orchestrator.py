@@ -35,7 +35,25 @@ def _decode_chat_text(text: str) -> str:
             decoded = decoded.encode("utf-8").decode("unicode_escape")
         except UnicodeDecodeError:
             pass
+
+    # Strip emoji/symbol artifacts that often render as "????" (or tofu) in
+    # chat clients and stored history. The UI's own HTML material-icons are
+    # pure ASCII and are preserved.
+    decoded = _EMOJI_ARTIFACT_RE.sub("", decoded).strip()
     return decoded
+
+
+# Emoji/symbol ranges that are never part of a normal CRM message and cause
+# "????" artifacts when the font/DB can't render them.
+_EMOJI_ARTIFACT_RE = re.compile(
+    "[\U0001F000-\U0001FAFF"  # emoji pictographs
+    "\U00002600-\U000027BF"   # misc symbols & dingbats (✅ ⚠ ✖ …)
+    "\U00002B00-\U00002BFF"   # misc symbols & arrows
+    "\U00002100-\U0000214F"   # letterlike symbols (ℹ ™ …)
+    "\U0000FE00-\U0000FE0F"   # variation selectors
+    "\U0000FFFD"              # replacement character
+    "]+"
+)
 
 
 def _build_batch_prefix(session_data: dict) -> str:
@@ -58,7 +76,7 @@ def _build_batch_prefix(session_data: dict) -> str:
         f'<span class="batch-result-pill">Batch {index}/{total}</span>'
         f'<span class="batch-result-label">Results{label_text}</span>'
         "</div>"
-        f'<div class="batch-result-status">✅ Batch {index}/{total} completed.</div>'
+        f'<div class="batch-result-status">Batch {index}/{total} completed.</div>'
     )
 from django.contrib.auth.models import User
 from django.utils import timezone
