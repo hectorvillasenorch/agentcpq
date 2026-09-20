@@ -720,8 +720,13 @@ def create_activity_for_record(request):
         if object_name == "Lead":
             lead = Lead.objects.get(pk=record_id)
             link_kwargs["lead"] = lead
-            if lead.account_id:
-                link_kwargs["account"] = lead.account
+            # Lead has no direct account FK: resolve through its contact, or
+            # the account created when the lead was converted.
+            lead_contact = getattr(lead, "contact", None)
+            if lead_contact is not None and lead_contact.account_id:
+                link_kwargs["account"] = lead_contact.account
+            elif getattr(lead, "converted_account_id", None):
+                link_kwargs["account"] = lead.converted_account
         elif object_name == "Opportunity":
             opp = Opportunity.objects.get(pk=record_id)
             link_kwargs["opportunity"] = opp
