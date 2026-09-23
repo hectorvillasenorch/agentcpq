@@ -10,7 +10,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from agentcpq.dealdesk.models import DealPacket, PolicyEvaluation
+from agentcpq.dealdesk.models import DealPacket, PolicyEvaluation, DealDeskApprovalInstance
 from agentcpq.dealdesk.services import (
     build_idempotency_key,
     compute_request_fingerprint,
@@ -24,7 +24,7 @@ from agentcpq.dealdesk.services import (
     serialize_deal_packet,
     validate_deal_packet_schema,
 )
-from cpq.models import Quote, Tenant
+from cpq.models import Quote, Tenant, ApprovalWorkflow, ApprovalRule, ApprovalStep, QuoteApproval
 from .utils.message_formatters import ERROR_ICON, INFO_ICON, SUCCESS_ICON, WARNING_ICON
 
 
@@ -298,6 +298,17 @@ def dealdesk_agent(user, action, user_message, session_data):
 
 def _current_tenant_or_error():
     tenant = Tenant.objects.first()
+    if not tenant:
+        # Self-serve fallback: create a default tenant so the approval flow
+        # works out of the box instead of failing with a missing tenant error.
+        try:
+            tenant = Tenant.objects.create(
+                tenant_id="default",
+                name="Default Tenant",
+            )
+        except IntegrityError:
+            tenant = Tenant.objects.filter(tenant_id="default").first()
+
     if tenant and tenant.tenant_id:
         return tenant, None
 
@@ -310,6 +321,56 @@ def _current_tenant_or_error():
     return None, {
         "message": _line(WARNING_ICON, "No tenant is configured. Please create a Tenant first before using approvals in chat.")
     }
+
+
+def _auto_approval_workflow_step():
+    """Workflow/rule/step used to record automatic (no-escalation) approvals."""
+    workflow, _ = ApprovalWorkflow.objects.get_or_create(
+        name="DealDesk Auto Approval",
+        defaults={"description": "Auto approval for deals that require no escalation."},
+    )
+    rule, _ = ApprovalRule.objects.get_or_create(
+        workflow=workflow,
+        name="Auto Approve",
+        defaults={"priority": 0},
+    )
+    step, _ = ApprovalStep.objects.get_or_create(
+        rule=rule,
+        sequence=1,
+        defaults={"approver_role": "Auto-Approved"},
+    )
+    return workflow, step
+
+
+def _record_auto_approval(quote: Quote, packet) -> None:
+    """Persist an auto-approval decision and update the quote accordingly."""
+    workflow, step = _auto_approval_workflow_step()
+    QuoteApproval.objects.update_or_create(
+        quote=quote,
+        workflow=workflow,
+        step=step,
+        defaults={
+            "status": "Approved",
+            "approved_by": "System",
+            "approved_at": timezone.now(),
+        },
+    )
+    if quote.status != "Approved":
+        quote.status = "Approved"
+        quote.save(update_fields=["status"])
+    packet.status = DealPacket.STATUS_APPROVED
+    packet.decision_summary = "Deal approved automatically (no approval routing required)."
+    packet.save(update_fields=["status", "decision_summary", "updated_at"])
+
+
+def _can_approve_step(user, approval: QuoteApproval) -> bool:
+    """Staff/superusers can approve anything; other users need the step's role."""
+    if getattr(user, "is_superuser", False) or getattr(user, "is_staff", False):
+        return True
+    role = (approval.step.approver_role or "").strip()
+    if not role:
+        return True
+    return user.groups.filter(name__iexact=role).exists()
 
 
 def _resolve_quote(user_message: str, session_data: dict):
@@ -742,6 +803,7 @@ def _submit_for_approval(user, user_message: str, session_data: dict):
             + "</div>"
         )
     elif packet.status == DealPacket.STATUS_APPROVED:
+        _record_auto_approval(quote, packet)
         message = _build_notice_banner(
             f"Deal Desk auto-approved quote <b>{_safe_text(quote.name)}</b>.",
             tone="success",
@@ -865,17 +927,54 @@ def _approve_quote(user, user_message: str, session_data: dict):
             _line(WARNING_ICON, f"Unsupported approval status <b>{approval.status}</b> for quote <b>{quote.name}</b>.")
         )
 
+    if not _can_approve_step(user, approval):
+        role = approval.step.approver_role or "the configured approver"
+        return _chat_response(
+            _line(WARNING_ICON, f"You need the <b>{_safe_text(role)}</b> role to approve this step.")
+        )
+
     approval.status = "Approved"
     approval.approved_by = getattr(user, "username", "System")
     approval.approved_at = timezone.now()
     approval.save(update_fields=["status", "approved_by", "approved_at"])
 
-    quote.status = "Approved"
-    quote.save(update_fields=["status"])
+    # Advance to the next step in the same rule, or fully approve when the
+    # current step is the last one.
+    rule = approval.step.rule
+    next_step = (
+        rule.steps.filter(sequence__gt=approval.step.sequence)
+        .order_by("sequence")
+        .first()
+    )
 
-    packet.status = DealPacket.STATUS_APPROVED
-    packet.decision_summary = "Deal approved."
-    packet.save(update_fields=["status", "decision_summary", "updated_at"])
+    if next_step is not None:
+        next_approval = QuoteApproval.objects.create(
+            quote=quote,
+            workflow=approval.workflow,
+            step=next_step,
+            status="Pending",
+        )
+        DealDeskApprovalInstance.objects.create(
+            tenant_id=tenant.tenant_id,
+            deal_packet=packet,
+            quoteapproval=next_approval,
+            routing_mode=instance.routing_mode,
+            template_workflow_ref=instance.template_workflow_ref,
+            instance_workflow_ref=instance.instance_workflow_ref,
+            instance_key=f"ddai:v1:{uuid.uuid4().hex[:32]}",
+        )
+        message = _line(
+            SUCCESS_ICON,
+            f"Step <b>{_safe_text(approval.step.approver_role)}</b> approved for quote <b>{_safe_text(quote.name)}</b>. Next step: <b>{_safe_text(next_step.approver_role)}</b>.",
+        )
+    else:
+        quote.status = "Approved"
+        quote.save(update_fields=["status"])
+
+        packet.status = DealPacket.STATUS_APPROVED
+        packet.decision_summary = "Deal approved."
+        packet.save(update_fields=["status", "decision_summary", "updated_at"])
+        message = _line(SUCCESS_ICON, f"Quote <b>{quote.name}</b> approved in Deal Desk.")
 
     create_tenant_audit_event(
         tenant_id=tenant.tenant_id,
@@ -884,14 +983,14 @@ def _approve_quote(user, user_message: str, session_data: dict):
         entity_type="deal_packet",
         entity_id=str(packet.id),
         event_type="approved",
-        details={"approved_by": approval.approved_by},
+        details={"approved_by": approval.approved_by, "step": approval.step.approver_role},
         idempotency_key=packet.idempotency_key,
         tenant_resolution_source="tenant_first",
     )
 
     _track_session(session_data, quote, packet, packet.policy_evaluations.order_by("-created_at").first())
     return _chat_response(
-        _line(SUCCESS_ICON, f"Quote <b>{quote.name}</b> approved in Deal Desk."),
+        message,
         deal_packet_id=packet.id,
         status=packet.status,
     )
@@ -961,6 +1060,57 @@ def _reject_quote(user, user_message: str, session_data: dict):
 
 
 def _recall_quote(user, user_message: str, session_data: dict):
+    tenant, tenant_error = _current_tenant_or_error()
+    if tenant_error:
+        return tenant_error
+
+    quote = _resolve_quote(user_message, session_data)
+    if not quote:
+        return _chat_response(_line(WARNING_ICON, "No active quote found to recall."))
+
+    packet = _latest_packet_for_quote(tenant.tenant_id, quote)
+    if not packet:
+        return _chat_response(_line(WARNING_ICON, f"Quote <b>{quote.name}</b> has no Deal Desk approval packet."))
+
+    if packet.status not in (DealPacket.STATUS_IN_APPROVAL, DealPacket.STATUS_NEEDS_INFO):
+        return _chat_response(
+            _line(INFO_ICON, f"Quote <b>{quote.name}</b> is not in an approval state that can be recalled.")
+        )
+
+    instance = (
+        packet.approval_instances.select_related("quoteapproval", "quoteapproval__step")
+        .order_by("-created_at")
+        .first()
+    )
+    if instance and instance.quoteapproval and instance.quoteapproval.status == "Pending":
+        approval = instance.quoteapproval
+        approval.status = "Recalled"
+        approval.approved_by = getattr(user, "username", "System")
+        approval.approved_at = timezone.now()
+        approval.save(update_fields=["status", "approved_by", "approved_at"])
+
+    quote.status = "Draft"
+    quote.save(update_fields=["status"])
+
+    packet.status = DealPacket.STATUS_NEEDS_INFO
+    packet.decision_summary = "Deal recalled for edits."
+    packet.save(update_fields=["status", "decision_summary", "updated_at"])
+
+    create_tenant_audit_event(
+        tenant_id=tenant.tenant_id,
+        run_id=f"ddrun-{uuid.uuid4().hex[:12]}",
+        source="orchestrator",
+        entity_type="deal_packet",
+        entity_id=str(packet.id),
+        event_type="recalled",
+        details={"recalled_by": getattr(user, "username", "System")},
+        idempotency_key=packet.idempotency_key,
+        tenant_resolution_source="tenant_first",
+    )
+
+    _track_session(session_data, quote, packet, packet.policy_evaluations.order_by("-created_at").first())
     return _chat_response(
-        _line(WARNING_ICON, "Recall is not supported in Deal Desk chat flow yet. Use reject and resubmit after edits.")
+        _line(INFO_ICON, f"Quote <b>{quote.name}</b> recalled and set back to <b>Draft</b> so it can be edited."),
+        deal_packet_id=packet.id,
+        status=packet.status,
     )

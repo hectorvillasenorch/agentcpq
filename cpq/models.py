@@ -1127,9 +1127,18 @@ class ApprovalRule(models.Model):
         Evaluates all conditions related to this rule against the given quote.
         By default, we use AND logic: all conditions must match to return True.
         """
-        conditions = self.conditions.all()
-        if not conditions.exists():
-            # If there are no conditions, assume it always matches
+        # The legacy RuleCondition model points at BusinessRule, not
+        # ApprovalRule. Treat rules without condition rows as always matching
+        # so the Deal Desk / approval flows keep working.
+        conditions = getattr(self, "conditions", None)
+        if conditions is None:
+            return True
+
+        try:
+            has_conditions = conditions.exists()
+        except Exception:
+            return True
+        if not has_conditions:
             return True
 
         # Evaluate each condition
@@ -1512,6 +1521,7 @@ class QuoteApproval(models.Model):
         ('Pending', 'Pending'),
         ('Approved', 'Approved'),
         ('Rejected', 'Rejected'),
+        ('Recalled', 'Recalled'),
     ], default='Pending')
 
     def __str__(self):

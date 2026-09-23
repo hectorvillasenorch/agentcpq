@@ -174,9 +174,19 @@ def get_approval_status(user_message=None, session_data=None, quote_id=None, sta
                 "message": "⚠️ No active quote found. Please specify a quote ID or ensure a quote is selected in the session."
             }
 
-        # ✅ 3. Retrieve the quote
+        # ✅ 3. Retrieve the quote (by id, name, or external id)
+        from django.db.models import Q
 
-        quote = Quote.objects.get(id=quote_id)
+        if str(quote_id).isdigit():
+            quote = Quote.objects.filter(
+                Q(id=int(quote_id)) | Q(name=str(quote_id)) | Q(qteid=str(quote_id)) | Q(external_id=str(quote_id))
+            ).first()
+        else:
+            quote = Quote.objects.filter(
+                Q(name__iexact=str(quote_id)) | Q(qteid__iexact=str(quote_id)) | Q(external_id__iexact=str(quote_id))
+            ).first()
+        if quote is None:
+            raise Quote.DoesNotExist(str(quote_id))
         # except Quote.DoesNotExist:
         #     logging.warning(f"⚠️ Quote with ID `{quote_id}` not found. Auto-approving it.")
         #     # Simulate auto-approval for a missing quote:
@@ -242,7 +252,7 @@ def approve_quote(user_message, session_data):
     try:
         # ✅ Retrieve Quote
         quote = Quote.objects.get(id=active_quote['quote_id'])
-        approval = QuoteApproval.objects.filter(quote=quote, status="Pending Approval").first()
+        approval = QuoteApproval.objects.filter(quote=quote, status="Pending").order_by("step__sequence").first()
 
         if not approval:
             return {"message": f"⚠️ No pending approval found for quote {quote.name}."}
@@ -250,33 +260,19 @@ def approve_quote(user_message, session_data):
         if approval.status == "Approved":
             return {"message": f"✅ Quote {quote.name} has already been approved."}
 
-        # ✅ Retrieve Approval Workflow
-        workflow = approval.workflow
-        steps = ApprovalStep.objects.filter(workflow=workflow).order_by('sequence')
+        # ✅ Auto-approve when the pending step is configured as Auto-Approved
+        if (approval.step.approver_role or "").strip().lower() == "auto-approved":
+            approval.status = "Approved"
+            approval.approved_by = "System"
+            approval.approved_at = timezone.now()
+            approval.save()
 
-        # ✅ Get the highest discount in the quote
-        max_discount = Decimal(quote.quoteline_set.aggregate(max_discount=Max("additional_discount"))["max_discount"] or 0)
-        logging.info(f"🔍 Max Discount in Quote: {max_discount}%")
+            quote.status = "Approved"
+            quote.save()
+            logging.info(f"🟢 Quote {quote.name} auto-approved.")
+            return {"message": f"✅ Quote {quote.name} auto-approved. No manual approval required."}
 
-        # ✅ Determine the required approval step
-        required_step = steps.filter(approval_threshold__gte=max_discount).order_by("approval_threshold").first()
-
-        if required_step:
-            if required_step.approver_role == "Auto-Approved":
-                approval.status = "Approved"
-                approval.approved_by = "System"
-                approval.approved_at = timezone.now()
-                approval.save()
-
-                quote.status = "Approved"
-                quote.save()
-                logging.info(f"🟢 Quote {quote.name} auto-approved (Discount: {max_discount}%).")
-                return {"message": f"✅ Quote {quote.name} auto-approved. No manual approval required."}
-
-            else:
-                return {"message": f"⚠️ Quote {quote.name} requires `{required_step.approver_role}` approval due to a {max_discount}% discount."}
-
-        return {"message": f"⚠️ No approval step found for {max_discount}% discount in workflow `{workflow.name}`."}
+        return {"message": f"⚠️ Quote {quote.name} requires `{approval.step.approver_role}` approval."}
 
     except Quote.DoesNotExist:
         return {"message": "⚠️ Quote not found. Please provide a valid quote ID."}
@@ -295,7 +291,7 @@ def reject_quote(user_message, session_data):
 
     try:
         quote = Quote.objects.get(id=active_quote['quote_id'])
-        approval = QuoteApproval.objects.filter(quote=quote, status="Pending Approval").first()
+        approval = QuoteApproval.objects.filter(quote=quote, status="Pending").order_by("step__sequence").first()
 
         if not approval:
             return {"message": f"⚠️ No pending approval found for quote `{quote.name}`."}
@@ -328,7 +324,7 @@ def recall_quote(user_message, session_data):
 
     try:
         quote = Quote.objects.get(id=active_quote['quote_id'])
-        approval = QuoteApproval.objects.filter(quote=quote, status="Pending Approval").first()
+        approval = QuoteApproval.objects.filter(quote=quote, status="Pending").order_by("step__sequence").first()
 
         if not approval:
             return {"message": f"⚠️ No pending approval found for quote `{quote.name}`."}
