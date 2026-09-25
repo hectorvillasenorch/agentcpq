@@ -271,6 +271,11 @@ def handle_show_metrics(user, completed_metrics):
         else:
             qs = model.objects.all()
 
+        # Business rule: converted Leads must never appear in list, search,
+        # or metrics reads. Only single-record views may open them by id.
+        if object_name == "Lead":
+            qs = qs.exclude(status="converted")
+
         qs = apply_partner_access_filter(user, object_name, qs, custom_object=custom_object)
 
         display_name = (custom_object.label or custom_object.name) if custom_object else object_name

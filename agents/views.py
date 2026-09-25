@@ -987,6 +987,10 @@ def search_records(request):
     if custom_object is not None:
         queryset = queryset.filter(object_type=custom_object)
 
+    # Business rule: never suggest converted Leads in lookup/search comboboxes.
+    if object_name == "Lead":
+        queryset = queryset.exclude(status="converted")
+
     field_names = {f.name for f in model._meta.get_fields()}
     search_filter = Q()
     for key in ("name", "title", "subject", "email", "username", "company", "company_name", "sku", "phone", "domain", "custom_identifier"):

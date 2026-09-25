@@ -25,11 +25,12 @@ logger = logging.getLogger(__name__)
 
 
 def _tenant_lead_queryset(tenant: Tenant | None):
+    # Business rule: converted Leads never appear in lead metrics/dashboards.
     if tenant and getattr(tenant, "tenant_id", None):
         return Lead.objects.filter(
             Q(contact__account__tenant_id=tenant.tenant_id) | Q(contact__isnull=True)
-        ).distinct()
-    return Lead.objects.all()
+        ).exclude(status="converted").distinct()
+    return Lead.objects.exclude(status="converted")
 
 
 def _normalize_in_values(values):
