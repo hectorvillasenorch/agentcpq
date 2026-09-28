@@ -1982,6 +1982,13 @@ body.is-chat-empty {
   line-height: 1.2;
 }
 
+.chat-empty-shell h1.chat-empty-greeting {
+  margin: 14px 0 10px;
+  font-size: clamp(2rem, 4.2vw, 3.4rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
 .chat-empty-subtitle {
   margin: 0 auto 18px;
   color: rgba(15, 23, 42, 0.72);

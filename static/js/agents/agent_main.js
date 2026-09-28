@@ -166,6 +166,13 @@ function updateSessionIdFromRedirect(redirectUrl) {
   }
 }
 
+function getTimeBasedGreeting(date = new Date()) {
+  const hour = date.getHours();
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 function initializeAgentsEmptyState() {
   const chatContainer = document.querySelector(".chat-container");
   const chatBox = document.getElementById("chat-box");
@@ -176,6 +183,11 @@ function initializeAgentsEmptyState() {
   const nameTarget = emptyState.querySelector("[data-user-name]");
   if (nameTarget) {
     nameTarget.textContent = window.USER_NAME || "there";
+  }
+
+  const greetingTarget = emptyState.querySelector("[data-greeting]");
+  if (greetingTarget) {
+    greetingTarget.textContent = getTimeBasedGreeting();
   }
 
   if (document.documentElement.dataset.agentsEmptyStateBound === "true") {

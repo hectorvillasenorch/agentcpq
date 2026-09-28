@@ -11,15 +11,23 @@ const SUGGESTIONS = [
   { label: "Insights", example: "Show my forecast grouped by month" },
 ];
 
+function getTimeBasedGreeting(date = new Date()) {
+  const hour = date.getHours();
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 export default function EmptyState({ userName, onExample }: EmptyStateProps) {
+  const greeting = getTimeBasedGreeting();
   return (
     <div className="flex h-full items-center justify-center overflow-y-auto p-6">
       <div className="w-full max-w-xl text-center">
         <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-primary">
           AgentCPQ Assistant
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          What can I do for you, <span className="text-primary">{userName}</span>?
+        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+          {greeting}, <span className="text-primary">{userName}</span>
         </h1>
         <p className="mt-2 text-[14px] text-muted-foreground">
           Ask me to create quotes, leads, opportunities, or search records.
