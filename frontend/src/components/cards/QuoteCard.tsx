@@ -290,6 +290,7 @@ export default function QuoteCard({
             <thead>
               <tr className="bg-[#F7F8FA]">
                 <th className="whitespace-nowrap px-4 py-3 font-semibold text-foreground">Product</th>
+                <th className="whitespace-nowrap px-4 py-3 font-semibold text-foreground">Description</th>
                 <th className="whitespace-nowrap px-4 py-3 font-semibold text-foreground">Qty</th>
                 <th className="whitespace-nowrap px-4 py-3 font-semibold text-foreground">Unit Price</th>
                 <th className="whitespace-nowrap px-4 py-3 font-semibold text-foreground">Discount %</th>
@@ -307,6 +308,14 @@ export default function QuoteCard({
                   <td className="px-4 py-3 text-foreground">
                     <div className="text-[13px] font-medium">{item.product || "—"}</div>
                     {item.sku && <div className="text-[11px] text-muted-foreground">{item.sku}</div>}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    <div
+                      className="max-w-[260px] truncate text-[12px] leading-snug"
+                      title={String(item.description || "")}
+                    >
+                      {item.description || "—"}
+                    </div>
                   </td>
                   <td className="px-4 py-3">{editableInput(item, "quantity")}</td>
                   <td className="px-4 py-3">{editableInput(item, "unit_price")}</td>
