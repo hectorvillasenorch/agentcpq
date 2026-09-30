@@ -7063,7 +7063,13 @@ function renderSingleRecordRelated(entry, index) {
             return `<li>${escapeHtml(item)}</li>`;
           }
           const pairs = Object.entries(item || {})
-            .map(([key, value]) => `<div class="single-related-row"><strong>${escapeHtml(key)}:</strong> <span>${formatSingleRecordValue(value)}</span></div>`)
+            .map(([key, value]) => {
+              if (key === "url") return "";
+              if (key === "name" && item.url && /^https?:\/\//i.test(String(item.url).trim())) {
+                return `<div class="single-related-row"><strong>${escapeHtml(key)}:</strong> <span><a href="${escapeHtml(item.url.trim())}" target="_blank" rel="noreferrer" class="single-related-link">${formatSingleRecordValue(value)}</a></span></div>`;
+              }
+              return `<div class="single-related-row"><strong>${escapeHtml(key)}:</strong> <span>${formatSingleRecordValue(value)}</span></div>`;
+            })
             .join('');
           return `<li class="single-related-item">${pairs}</li>`;
         })

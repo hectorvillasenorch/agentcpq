@@ -1480,6 +1480,16 @@ textarea.bundle-edit-input {
   line-height: 1.4;
 }
 
+.single-related-link {
+  color: #3B62D9;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.single-related-link:hover {
+  text-decoration: underline;
+}
+
 .single-record-nested {
   display: flex;
   flex-direction: column;

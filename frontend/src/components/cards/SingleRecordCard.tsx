@@ -789,19 +789,32 @@ function RelatedRecords({
             <table className="w-full text-left text-[13px]">
               <tbody>
                 {(sec.records || []).map((row, i) => {
-                  const cols = Object.keys(row).filter((k) => k !== "id" && k !== "name");
+                  const cols = Object.keys(row).filter((k) => k !== "id" && k !== "name" && k !== "url");
+                  const rowUrl = typeof row.url === "string" && /^https?:\/\//i.test(row.url.trim()) ? row.url.trim() : null;
                   return (
                     <tr key={i} className="border-t border-[#EDEEF1]">
                       <td className="px-3 py-2">
-                        <button
-                          type="button"
-                          className="font-medium text-primary hover:underline"
-                          onClick={() => {
-                            if (sec.object && row.id != null) void view(sec.object, row.id);
-                          }}
-                        >
-                          {String(row.name ?? "—")}
-                        </button>
+                        {rowUrl ? (
+                          <a
+                            href={rowUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium text-primary hover:underline"
+                            title={String(row.name ?? "")}
+                          >
+                            {String(row.name ?? "—")}
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            className="font-medium text-primary hover:underline"
+                            onClick={() => {
+                              if (sec.object && row.id != null) void view(sec.object, row.id);
+                            }}
+                          >
+                            {String(row.name ?? "—")}
+                          </button>
+                        )}
                       </td>
                       {cols.map((c) => {
                         const raw = row[c];

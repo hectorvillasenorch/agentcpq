@@ -548,6 +548,13 @@ def build_related_records(record: Model, model_name: str) -> List[Dict[str, obje
             "id": getattr(obj, "id", None),
             "name": getattr(obj, "name", None) or getattr(obj, "subject", None) or str(obj),
         }
+        # Expose file-backed records (e.g., QuoteDocument PDFs) as links.
+        file_field = getattr(obj, "file", None)
+        try:
+            if file_field is not None and getattr(file_field, "name", None):
+                row["url"] = file_field.url
+        except Exception:
+            pass
         if extra:
             row.update(extra)
         return row
